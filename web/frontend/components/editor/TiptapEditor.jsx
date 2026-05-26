@@ -13,6 +13,15 @@ import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
+import { ProductGridExtension } from "./extensions/ProductGridExtension";
+import { CollectionExtension } from "./extensions/CollectionExtension";
+import { BuyButtonExtension } from "./extensions/BuyButtonExtension";
+import { LegacyProductCardExtension, LegacyStickyProductExtension, LegacyFeaturedProductExtension } from "./extensions/LegacyBuyButtonExtensions";
+import { LegacyProductSwitcherExtension, LegacyProductSliderExtension } from "./extensions/LegacyProductGridExtensions";
+import { CTAButtonExtension } from "./extensions/CTAButtonExtension";
+import { HeroExtension } from "./extensions/HeroExtension";
+import { VideoExtension } from "./extensions/VideoExtension";
+import { SpacerExtension } from "./extensions/SpacerExtension";
 import ShopifyFilePicker from "../ShopifyFilePicker";
 import { useState, useEffect } from "react";
 import "./TiptapEditor.css";
@@ -61,6 +70,18 @@ export default function TiptapEditor({
       TableRow,
       TableHeader,
       TableCell,
+      ProductGridExtension,
+      CollectionExtension,
+      BuyButtonExtension,
+      LegacyProductCardExtension,
+      LegacyStickyProductExtension,
+      LegacyFeaturedProductExtension,
+      LegacyProductSwitcherExtension,
+      LegacyProductSliderExtension,
+      CTAButtonExtension,
+      HeroExtension,
+      VideoExtension,
+      SpacerExtension,
     ],
     content,
     onUpdate: ({ editor }) => {
@@ -295,6 +316,105 @@ export default function TiptapEditor({
             title="Embed YouTube/Video"
           >
             ▶️
+          </Btn>
+        </div>
+        <Sep />
+
+        {/* ── Commerce Blocks ── */}
+        <div className="tiptap-toolbar__group">
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'buyButton' }).run()}
+            active={editor.isActive("buyButton")}
+            title="Insert Buy Button"
+          >
+            🛒
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'productGrid' }).run()}
+            active={editor.isActive("productGrid")}
+            title="Insert Product Grid"
+          >
+            🛍️
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'collection' }).run()}
+            active={editor.isActive("collection")}
+            title="Insert Collection"
+          >
+            📦
+          </Btn>
+        </div>
+        <Sep />
+
+        {/* ── Layout Blocks ── */}
+        <div className="tiptap-toolbar__group">
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'ctaButton' }).run()}
+            active={editor.isActive("ctaButton")}
+            title="Insert CTA Button"
+          >
+            🔘
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'heroBlock' }).run()}
+            active={editor.isActive("heroBlock")}
+            title="Insert Hero Section"
+          >
+            🦸
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'videoBlock' }).run()}
+            active={editor.isActive("videoBlock")}
+            title="Insert Video Embed"
+          >
+            🎬
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'spacerBlock' }).run()}
+            active={editor.isActive("spacerBlock")}
+            title="Insert Spacer"
+          >
+            ↕
+          </Btn>
+        </div>
+        <Sep />
+
+        {/* ── Legacy Blocks ── */}
+        <div className="tiptap-toolbar__group">
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'product' }).run()}
+            active={editor.isActive("product")}
+            title="Insert Product Card (Legacy)"
+          >
+            🏷
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'product_sidebar' }).run()}
+            active={editor.isActive("product_sidebar")}
+            title="Insert Sticky Product (Legacy)"
+          >
+            📌
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'featured_product' }).run()}
+            active={editor.isActive("featured_product")}
+            title="Insert Featured Product (Legacy)"
+          >
+            ⭐
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'product_switcher' }).run()}
+            active={editor.isActive("product_switcher")}
+            title="Insert Product Switcher (Legacy)"
+          >
+            🔄
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'product_slider' }).run()}
+            active={editor.isActive("product_slider")}
+            title="Insert Product Slider (Legacy)"
+          >
+            ↔
           </Btn>
         </div>
         <Sep />
