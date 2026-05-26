@@ -1,0 +1,277 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Shopify Session (required by @shopify/shopify-app-session-storage-prisma) ──────
+model Session {
+  id                   String    @id
+  shop                 String
+  state                String
+  isOnline             Boolean   @default(false)
+  scope                String?
+  expires              DateTime?
+  accessToken          String
+  userId               BigInt?
+  firstName            String?
+  lastName             String?
+  email                String?
+  accountOwner         Boolean   @default(false)
+  locale               String?
+  collaborator         Boolean?  @default(false)
+  emailVerified        Boolean?  @default(false)
+  refreshToken         String?
+  refreshTokenExpires  DateTime?
+}
+
+// ─── Shop / Tenant ─────────────────────────────────────────────────────────────
+model Shop {
+  id              Int       @id @default(autoincrement())
+  domain          String    @unique
+  accessToken     String    @db.Text
+  planKey         String    @default("free")
+  installedAt     DateTime  @default(now())
+  uninstalledAt   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  posts           Post[]
+  categories      Category[]
+  tags            Tag[]
+  products        Product[]
+  appPlans        AppPlan[]
+  webhookLogs     WebhookLog[]
+  settings        ShopSetting[]
+}
+
+// ─── App Plans ─────────────────────────────────────────────────────────────────
+model AppPlan {
+  id             Int      @id @default(autoincrement())
+  shopId         Int
+  planKey        String   // free | starter | pro | business
+  articleLimit   Int?     // null = unlimited
+  sectionLimit   Int?     // null = unlimited
+  features       Json?    // JSON array of enabled features
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+}
+
+// ─── Plan Feature Flags ────────────────────────────────────────────────────────
+model PlanFeature {
+  id         Int     @id @default(autoincrement())
+  plan       String  // free | starter | pro | business
+  featureKey String  // heading | text | product_slider | etc.
+  enabled    Boolean @default(true)
+  limit      Int?
+
+  @@unique([plan, featureKey])
+  @@index([plan])
+}
+
+// ─── Shop Settings ─────────────────────────────────────────────────────────────
+model ShopSetting {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  key       String
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, key])
+  @@index([shopId])
+}
+
+// ─── Categories ────────────────────────────────────────────────────────────────
+model Category {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  name      String
+  slug      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  posts     Post[]
+
+  @@unique([shopId, slug])
+  @@index([shopId])
+}
+
+// ─── Tags ──────────────────────────────────────────────────────────────────────
+model Tag {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  name      String
+  slug      String
+  createdAt DateTime @default(now())
+
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  posts     PostTag[]
+
+  @@unique([shopId, slug])
+  @@index([shopId])
+}
+
+// ─── Posts (Blog Articles) ─────────────────────────────────────────────────────
+model Post {
+  id                     Int       @id @default(autoincrement())
+  shopId                 Int
+  categoryId             Int?
+  title                  String
+  slug                   String
+  status                 String    @default("draft") // draft | published
+  author                 String?
+  vendor                 String?
+  excerpt                String?   @db.Text
+  featuredImage          String?   @db.Text
+  contentJson            Json?     // block-based content array
+  contentHtml            String?   @db.LongText
+  customCss              String?   @db.Text
+  customJs               String?   @db.Text
+  productSliderPosition  String    @default("none") // none | top | bottom | both
+  productSliderSource    String    @default("recommendations") // recommendations | manual
+  productSliderConfig    Json?
+  publishedAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  shop                   Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  category               Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  blocks                 PostBlock[]
+  tags                   PostTag[]
+  products               PostProduct[]
+  shopifyArticle         ShopifyArticle?
+  analytics              PostAnalytic[]
+
+  @@index([shopId])
+  @@index([shopId, status])
+  @@index([shopId, categoryId])
+}
+
+// ─── Post Blocks (Section-Based Editor) ───────────────────────────────────────
+model PostBlock {
+  id         Int    @id @default(autoincrement())
+  postId     Int
+  blockType  String // heading | text | image | product | product_slider | etc.
+  orderIndex Int    @default(0)
+  settings   Json?  // block-specific settings
+
+  post       Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+// ─── Post Tags (pivot) ────────────────────────────────────────────────────────
+model PostTag {
+  postId Int
+  tagId  Int
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+}
+
+// ─── Products (cached from Shopify) ───────────────────────────────────────────
+model Product {
+  id               Int      @id @default(autoincrement())
+  shopId           Int
+  shopifyProductId String   @unique
+  title            String
+  handle           String
+  image            String?  @db.Text
+  price            Float?
+  compareAtPrice   Float?
+  variantId        String?
+  variantAvailable Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  shop             Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  posts            PostProduct[]
+
+  @@index([shopId])
+  @@index([shopifyProductId])
+}
+
+// ─── Post Products (pivot) ────────────────────────────────────────────────────
+model PostProduct {
+  postId    Int
+  productId Int
+  position  Int  @default(0)
+
+  post      Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([postId, productId])
+  @@index([postId])
+}
+
+// ─── Shopify Articles (sync tracking) ─────────────────────────────────────────
+model ShopifyArticle {
+  id              Int       @id @default(autoincrement())
+  postId          Int       @unique
+  shopifyArticleId String?
+  shopifyBlogId   String?
+  status          String    @default("draft") // draft | published | failed
+  syncedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  post            Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+// ─── Blog Templates ───────────────────────────────────────────────────────────
+model BlogTemplate {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  name        String
+  description String?
+  thumbnail   String?
+  blocks      Json     // array of default block definitions
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Webhook Logs ─────────────────────────────────────────────────────────────
+model WebhookLog {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  topic     String
+  payload   Json?
+  status    String   @default("received") // received | processed | failed
+  createdAt DateTime @default(now())
+
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([topic])
+}
+
+// ─── Post Analytics ───────────────────────────────────────────────────────────
+model PostAnalytic {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  views     Int      @default(0)
+  date      DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, date])
+  @@index([postId])
+}
