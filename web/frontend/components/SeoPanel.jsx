@@ -3,7 +3,16 @@
  * Provides meta title, meta description, canonical URL with character counters and SEO score.
  */
 import { useState } from "react";
-import { Card, TextField, Text, BlockStack, InlineStack, Box, Divider, Badge } from "@shopify/polaris";
+import {
+  Card,
+  TextField,
+  Text,
+  BlockStack,
+  InlineStack,
+  Box,
+  Divider,
+  Badge,
+} from "@shopify/polaris";
 
 function SeoScore({ title, description }) {
   let score = 0;
@@ -11,12 +20,17 @@ function SeoScore({ title, description }) {
   const tips = [];
 
   if (title && title.length >= 30 && title.length <= 60) score += 40;
-  else if (title) { score += 15; issues.push("Title: ideal length is 30–60 characters"); }
-  else issues.push("Missing meta title");
+  else if (title) {
+    score += 15;
+    issues.push("Title: ideal length is 30–60 characters");
+  } else issues.push("Missing meta title");
 
-  if (description && description.length >= 100 && description.length <= 155) score += 40;
-  else if (description) { score += 15; issues.push("Description: ideal length is 100–155 characters"); }
-  else issues.push("Missing meta description");
+  if (description && description.length >= 100 && description.length <= 155)
+    score += 40;
+  else if (description) {
+    score += 15;
+    issues.push("Description: ideal length is 100–155 characters");
+  } else issues.push("Missing meta description");
 
   if (score >= 70) tips.push("Great SEO setup! 🎉");
 
@@ -24,20 +38,46 @@ function SeoScore({ title, description }) {
   const label = score >= 70 ? "Good" : score >= 40 ? "Needs Work" : "Poor";
 
   return (
-    <div style={{ background: "#f9fafb", borderRadius: "8px", padding: "12px" }}>
+    <div
+      style={{ background: "#f9fafb", borderRadius: "8px", padding: "12px" }}
+    >
       <InlineStack align="space-between" blockAlign="center">
-        <Text variant="bodySm" fontWeight="semibold">SEO Score</Text>
-        <Badge tone={score >= 70 ? "success" : score >= 40 ? "attention" : "critical"}>
+        <Text variant="bodySm" fontWeight="semibold">
+          SEO Score
+        </Text>
+        <Badge
+          tone={
+            score >= 70 ? "success" : score >= 40 ? "attention" : "critical"
+          }
+        >
           {label} — {score}/80
         </Badge>
       </InlineStack>
-      <div style={{ marginTop: "8px", background: "#e1e3e5", borderRadius: "4px", height: "6px", overflow: "hidden" }}>
-        <div style={{ height: "100%", background: color, width: `${(score / 80) * 100}%`, transition: "width 0.4s ease", borderRadius: "4px" }} />
+      <div
+        style={{
+          marginTop: "8px",
+          background: "#e1e3e5",
+          borderRadius: "4px",
+          height: "6px",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            background: color,
+            width: `${(score / 80) * 100}%`,
+            transition: "width 0.4s ease",
+            borderRadius: "4px",
+          }}
+        />
       </div>
       {issues.length > 0 && (
         <BlockStack gap="100" style={{ marginTop: "8px" }}>
           {issues.map((issue, i) => (
-            <Text key={i} variant="bodySm" tone="critical">⚠ {issue}</Text>
+            <Text key={i} variant="bodySm" tone="critical">
+              ⚠ {issue}
+            </Text>
           ))}
         </BlockStack>
       )}
@@ -69,8 +109,22 @@ export default function SeoPanel({ data = {}, onChange }) {
             placeholder="Page title for search engines..."
             autoComplete="off"
             helpText={
-              <span style={{ color: titleLen > 60 ? "#d82c0d" : titleLen >= 30 ? "#008060" : "#6d7175" }}>
-                {titleLen}/60 characters {titleLen > 60 ? "— too long!" : titleLen >= 30 ? "— good length ✓" : "— aim for 30–60"}
+              <span
+                style={{
+                  color:
+                    titleLen > 60
+                      ? "#d82c0d"
+                      : titleLen >= 30
+                        ? "#008060"
+                        : "#6d7175",
+                }}
+              >
+                {titleLen}/60 characters{" "}
+                {titleLen > 60
+                  ? "— too long!"
+                  : titleLen >= 30
+                    ? "— good length ✓"
+                    : "— aim for 30–60"}
               </span>
             }
           />
@@ -83,8 +137,22 @@ export default function SeoPanel({ data = {}, onChange }) {
             multiline={3}
             autoComplete="off"
             helpText={
-              <span style={{ color: descLen > 155 ? "#d82c0d" : descLen >= 100 ? "#008060" : "#6d7175" }}>
-                {descLen}/155 characters {descLen > 155 ? "— too long!" : descLen >= 100 ? "— good length ✓" : "— aim for 100–155"}
+              <span
+                style={{
+                  color:
+                    descLen > 155
+                      ? "#d82c0d"
+                      : descLen >= 100
+                        ? "#008060"
+                        : "#6d7175",
+                }}
+              >
+                {descLen}/155 characters{" "}
+                {descLen > 155
+                  ? "— too long!"
+                  : descLen >= 100
+                    ? "— good length ✓"
+                    : "— aim for 100–155"}
               </span>
             }
           />

@@ -8,7 +8,7 @@ import {
   Badge,
   Grid,
   Divider,
-  List
+  List,
 } from "@shopify/polaris";
 import { useState, useEffect } from "react";
 
@@ -33,12 +33,12 @@ export default function Plans() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plan: planName }),
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.confirmationUrl) {
           // Redirect the top-level frame to the confirmation URL
-          window.open(data.confirmationUrl, '_top');
+          window.open(data.confirmationUrl, "_top");
         } else if (data.isFree) {
           setActivePlan("free");
           setIsLoading(false);
@@ -66,22 +66,36 @@ export default function Plans() {
       title: "Starter",
       price: "$4.99/mo",
       description: "Perfect for growing blogs.",
-      features: ["Up to 50 articles", "Premium templates", "Priority support", "No branding"],
+      features: [
+        "Up to 50 articles",
+        "Premium templates",
+        "Priority support",
+        "No branding",
+      ],
     },
     {
       name: "Blogger Pro",
       title: "Pro",
       price: "$9.99/mo",
       description: "For professional content creators.",
-      features: ["Unlimited articles", "All templates", "24/7 support", "Custom CSS/JS"],
+      features: [
+        "Unlimited articles",
+        "All templates",
+        "24/7 support",
+        "Custom CSS/JS",
+      ],
     },
     {
       name: "Blogger Business",
       title: "Business",
       price: "$19.99/mo",
       description: "Advanced features for enterprises.",
-      features: ["Unlimited everything", "Dedicated account manager", "White-glove onboarding"],
-    }
+      features: [
+        "Unlimited everything",
+        "Dedicated account manager",
+        "White-glove onboarding",
+      ],
+    },
   ];
 
   return (
@@ -90,7 +104,10 @@ export default function Plans() {
         <Layout.Section>
           <Grid>
             {planTiers.map((tier) => (
-              <Grid.Cell key={tier.name} columnSpan={{xs: 6, sm: 6, md: 3, lg: 3, xl: 3}}>
+              <Grid.Cell
+                key={tier.name}
+                columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}
+              >
                 <Card>
                   <BlockStack gap="400">
                     <BlockStack gap="100">
@@ -106,7 +123,7 @@ export default function Plans() {
                         {tier.description}
                       </Text>
                     </BlockStack>
-                    
+
                     <Text as="p" variant="headingLg">
                       {tier.price}
                     </Text>
@@ -125,7 +142,11 @@ export default function Plans() {
                       disabled={activePlan === tier.name || isLoading}
                       onClick={() => handleSubscribe(tier.name)}
                     >
-                      {activePlan === tier.name ? "Current Plan" : (tier.name === 'free' ? "Downgrade" : "Upgrade")}
+                      {activePlan === tier.name
+                        ? "Current Plan"
+                        : tier.name === "free"
+                          ? "Downgrade"
+                          : "Upgrade"}
                     </Button>
                   </BlockStack>
                 </Card>

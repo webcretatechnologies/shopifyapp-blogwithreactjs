@@ -12,7 +12,7 @@ import {
   Spinner,
   BlockStack,
   InlineStack,
-  Banner
+  Banner,
 } from "@shopify/polaris";
 import { useNavigate } from "react-router-dom";
 import { ImportIcon } from "@shopify/polaris-icons";
@@ -100,17 +100,26 @@ export default function ArticleImporter() {
     }
   };
 
-  const blogOptions = blogs.map((b) => ({ label: b.title, value: String(b.id) }));
+  const blogOptions = blogs.map((b) => ({
+    label: b.title,
+    value: String(b.id),
+  }));
 
   return (
     <Page
-      breadcrumbs={[{ content: "Dashboard", onAction: () => navigate("/posts") }]}
+      breadcrumbs={[
+        { content: "Dashboard", onAction: () => navigate("/posts") },
+      ]}
       title="Import from Shopify Blog"
       subtitle="Select an existing article to import and edit in the visual builder."
     >
       <BlockStack gap="400">
         {error && (
-          <Banner title="Import Error" tone="critical" onDismiss={() => setError(null)}>
+          <Banner
+            title="Import Error"
+            tone="critical"
+            onDismiss={() => setError(null)}
+          >
             {error}
           </Banner>
         )}
@@ -121,9 +130,14 @@ export default function ArticleImporter() {
               <Card padding="400">
                 <BlockStack gap="400">
                   {loadingBlogs ? (
-                    <InlineStack align="center"><Spinner size="small" /></InlineStack>
+                    <InlineStack align="center">
+                      <Spinner size="small" />
+                    </InlineStack>
                   ) : blogs.length === 0 ? (
-                    <Text as="p">No Shopify Blogs found. Please create a blog in your Shopify admin first.</Text>
+                    <Text as="p">
+                      No Shopify Blogs found. Please create a blog in your
+                      Shopify admin first.
+                    </Text>
                   ) : (
                     <Select
                       label="Select Blog"
@@ -146,16 +160,33 @@ export default function ArticleImporter() {
                       resourceName={{ singular: "article", plural: "articles" }}
                       items={articles}
                       renderItem={(item) => {
-                        const { id, title, author, published_at, is_imported } = item;
+                        const { id, title, author, published_at, is_imported } =
+                          item;
                         return (
-                          <ResourceItem id={id} onClick={() => {}} persistActions>
-                            <InlineStack align="space-between" blockAlign="center">
+                          <ResourceItem
+                            id={id}
+                            onClick={() => {}}
+                            persistActions
+                          >
+                            <InlineStack
+                              align="space-between"
+                              blockAlign="center"
+                            >
                               <BlockStack gap="100">
-                                <Text variant="bodyMd" fontWeight="bold" as="h3">
+                                <Text
+                                  variant="bodyMd"
+                                  fontWeight="bold"
+                                  as="h3"
+                                >
                                   {title}
                                 </Text>
                                 <Text variant="bodySm" tone="subdued">
-                                  By {author || "Unknown"} • {published_at ? new Date(published_at).toLocaleDateString() : "Draft"}
+                                  By {author || "Unknown"} •{" "}
+                                  {published_at
+                                    ? new Date(
+                                        published_at,
+                                      ).toLocaleDateString()
+                                    : "Draft"}
                                 </Text>
                               </BlockStack>
                               <InlineStack gap="300" blockAlign="center">
@@ -166,7 +197,9 @@ export default function ArticleImporter() {
                                   size="slim"
                                   icon={ImportIcon}
                                   loading={importingId === id}
-                                  disabled={importingId !== null && importingId !== id}
+                                  disabled={
+                                    importingId !== null && importingId !== id
+                                  }
                                   onClick={() => handleImport(id)}
                                 >
                                   Import

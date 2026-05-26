@@ -1,5 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
-import { Modal, Grid, Card, Thumbnail, Spinner, Banner, TextField, Button, InlineStack, BlockStack, Text } from "@shopify/polaris";
+import {
+  Modal,
+  Grid,
+  Card,
+  Thumbnail,
+  Spinner,
+  Banner,
+  TextField,
+  Button,
+  InlineStack,
+  BlockStack,
+  Text,
+} from "@shopify/polaris";
 
 export default function ShopifyFilePicker({ open, onClose, onSelect }) {
   const [files, setFiles] = useState([]);
@@ -15,11 +27,11 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
       const q = new URLSearchParams();
       if (cursor) q.append("after", cursor);
       if (search) q.append("query", search);
-      
+
       const res = await fetch(`/api/posts/shopify/files?${q.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load files");
-      
+
       return data;
     } catch (err) {
       throw err;
@@ -52,7 +64,7 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
     setFetchingMore(true);
     try {
       const data = await fetchFiles(after, query);
-      setFiles(prev => [...prev, ...(data.files || [])]);
+      setFiles((prev) => [...prev, ...(data.files || [])]);
       setHasNextPage(data.pageInfo?.hasNextPage || false);
       setAfter(data.pageInfo?.endCursor || null);
     } catch (err) {
@@ -79,25 +91,36 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
     >
       <Modal.Section>
         <BlockStack gap="400">
-          {error && <Banner tone="critical" onDismiss={() => setError(null)}>{error}</Banner>}
-          
+          {error && (
+            <Banner tone="critical" onDismiss={() => setError(null)}>
+              {error}
+            </Banner>
+          )}
+
           <InlineStack gap="200" align="space-between">
-             <div style={{ flex: 1 }}>
-               <TextField
-                 value={query}
-                 onChange={handleSearch}
-                 placeholder="Search files..."
-                 autoComplete="off"
-                 clearButton
-                 onClearButtonClick={() => { setQuery(""); setTimeout(() => loadInitial(), 0); }}
-                 onKeyPress={(e) => { if(e.key === "Enter") handleSearchSubmit(); }}
-               />
-             </div>
-             <Button onClick={handleSearchSubmit}>Search</Button>
+            <div style={{ flex: 1 }}>
+              <TextField
+                value={query}
+                onChange={handleSearch}
+                placeholder="Search files..."
+                autoComplete="off"
+                clearButton
+                onClearButtonClick={() => {
+                  setQuery("");
+                  setTimeout(() => loadInitial(), 0);
+                }}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter") handleSearchSubmit();
+                }}
+              />
+            </div>
+            <Button onClick={handleSearchSubmit}>Search</Button>
           </InlineStack>
 
           {loading ? (
-            <div style={{ textAlign: "center", padding: "2rem" }}><Spinner /></div>
+            <div style={{ textAlign: "center", padding: "2rem" }}>
+              <Spinner />
+            </div>
           ) : files.length === 0 ? (
             <div style={{ textAlign: "center", padding: "2rem" }}>
               <Text tone="subdued">No images found.</Text>
@@ -105,17 +128,41 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
           ) : (
             <Grid>
               {files.map((file) => (
-                <Grid.Cell key={file.id} columnSpan={{xs: 6, sm: 3, md: 3, lg: 3, xl: 3}}>
-                  <div 
-                     style={{ cursor: "pointer", border: "1px solid #dfe3e8", borderRadius: "8px", overflow: "hidden" }}
-                     onClick={() => {
-                        onSelect(file.url);
-                        onClose();
-                     }}
+                <Grid.Cell
+                  key={file.id}
+                  columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}
+                >
+                  <div
+                    style={{
+                      cursor: "pointer",
+                      border: "1px solid #dfe3e8",
+                      borderRadius: "8px",
+                      overflow: "hidden",
+                    }}
+                    onClick={() => {
+                      onSelect(file.url);
+                      onClose();
+                    }}
                   >
-                     <div style={{ height: "120px", display: "flex", alignItems: "center", justifyContent: "center", background: "#f4f6f8" }}>
-                        <img src={file.url} alt={file.alt} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-                     </div>
+                    <div
+                      style={{
+                        height: "120px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "#f4f6f8",
+                      }}
+                    >
+                      <img
+                        src={file.url}
+                        alt={file.alt}
+                        style={{
+                          maxWidth: "100%",
+                          maxHeight: "100%",
+                          objectFit: "contain",
+                        }}
+                      />
+                    </div>
                   </div>
                 </Grid.Cell>
               ))}
@@ -124,7 +171,9 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
 
           {hasNextPage && (
             <div style={{ textAlign: "center", marginTop: "1rem" }}>
-              <Button onClick={loadMore} loading={fetchingMore}>Load More</Button>
+              <Button onClick={loadMore} loading={fetchingMore}>
+                Load More
+              </Button>
             </div>
           )}
         </BlockStack>

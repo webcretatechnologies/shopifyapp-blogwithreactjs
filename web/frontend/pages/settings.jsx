@@ -3,8 +3,22 @@
  * default language, Table of Contents, and global color settings.
  */
 import {
-  Page, Layout, Card, BlockStack, InlineStack, Text, Button, Select,
-  TextField, Divider, Toast, Frame, Spinner, Box, Badge, Checkbox,
+  Page,
+  Layout,
+  Card,
+  BlockStack,
+  InlineStack,
+  Text,
+  Button,
+  Select,
+  TextField,
+  Divider,
+  Toast,
+  Frame,
+  Spinner,
+  Box,
+  Badge,
+  Checkbox,
 } from "@shopify/polaris";
 import { SaveIcon } from "@shopify/polaris-icons";
 import { useState, useEffect, useCallback } from "react";
@@ -93,19 +107,37 @@ export default function Settings() {
   };
 
   if (isFetching) {
-    return <Frame><Page><Box padding="800" align="center"><Spinner /></Box></Page></Frame>;
+    return (
+      <Frame>
+        <Page>
+          <Box padding="800" align="center">
+            <Spinner />
+          </Box>
+        </Page>
+      </Frame>
+    );
   }
 
   return (
     <Frame>
-      {toast && <Toast content={toast.content} error={toast.error} onDismiss={() => setToast(null)} />}
+      {toast && (
+        <Toast
+          content={toast.content}
+          error={toast.error}
+          onDismiss={() => setToast(null)}
+        />
+      )}
       <Page
         title="Settings"
         subtitle="Configure global blog appearance and behavior"
-        primaryAction={{ content: "Save Settings", icon: SaveIcon, loading: isSaving, onAction: handleSave }}
+        primaryAction={{
+          content: "Save Settings",
+          icon: SaveIcon,
+          loading: isSaving,
+          onAction: handleSave,
+        }}
       >
         <Layout>
-
           {/* ─── Branding & Colors ─────────────────────────────── */}
           <Layout.Section>
             <Card>
@@ -115,13 +147,28 @@ export default function Settings() {
                   <Divider />
                   <InlineStack gap="500" wrap={false}>
                     <BlockStack gap="200" style={{ flex: 1 }}>
-                      <Text variant="bodySm" fontWeight="semibold">Primary Color</Text>
-                      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                      <Text variant="bodySm" fontWeight="semibold">
+                        Primary Color
+                      </Text>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "10px",
+                          alignItems: "center",
+                        }}
+                      >
                         <input
                           type="color"
                           value={settings.primaryColor}
                           onChange={(e) => set("primaryColor")(e.target.value)}
-                          style={{ width: 44, height: 44, border: "1px solid #c9cccf", borderRadius: "8px", cursor: "pointer", padding: 0 }}
+                          style={{
+                            width: 44,
+                            height: 44,
+                            border: "1px solid #c9cccf",
+                            borderRadius: "8px",
+                            cursor: "pointer",
+                            padding: 0,
+                          }}
                         />
                         <TextField
                           label=""
@@ -133,13 +180,30 @@ export default function Settings() {
                       </div>
                     </BlockStack>
                     <BlockStack gap="200" style={{ flex: 1 }}>
-                      <Text variant="bodySm" fontWeight="semibold">Secondary Color</Text>
-                      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                      <Text variant="bodySm" fontWeight="semibold">
+                        Secondary Color
+                      </Text>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "10px",
+                          alignItems: "center",
+                        }}
+                      >
                         <input
                           type="color"
                           value={settings.secondaryColor}
-                          onChange={(e) => set("secondaryColor")(e.target.value)}
-                          style={{ width: 44, height: 44, border: "1px solid #c9cccf", borderRadius: "8px", cursor: "pointer", padding: 0 }}
+                          onChange={(e) =>
+                            set("secondaryColor")(e.target.value)
+                          }
+                          style={{
+                            width: 44,
+                            height: 44,
+                            border: "1px solid #c9cccf",
+                            borderRadius: "8px",
+                            cursor: "pointer",
+                            padding: 0,
+                          }}
                         />
                         <TextField
                           label=""
@@ -153,12 +217,60 @@ export default function Settings() {
                   </InlineStack>
 
                   {/* Live Preview */}
-                  <div style={{ padding: "16px", borderRadius: "8px", border: "1px solid #e1e3e5", background: "#f9fafb" }}>
-                    <Text variant="bodySm" tone="subdued">Color Preview</Text>
-                    <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-                      <div style={{ background: settings.primaryColor, padding: "8px 20px", borderRadius: "6px", color: "#fff", fontSize: "13px", fontWeight: "600" }}>Primary Button</div>
-                      <div style={{ background: settings.secondaryColor, padding: "8px 20px", borderRadius: "6px", color: "#fff", fontSize: "13px", fontWeight: "600" }}>Secondary</div>
-                      <div style={{ border: `2px solid ${settings.primaryColor}`, padding: "8px 20px", borderRadius: "6px", color: settings.primaryColor, fontSize: "13px", fontWeight: "600" }}>Outline</div>
+                  <div
+                    style={{
+                      padding: "16px",
+                      borderRadius: "8px",
+                      border: "1px solid #e1e3e5",
+                      background: "#f9fafb",
+                    }}
+                  >
+                    <Text variant="bodySm" tone="subdued">
+                      Color Preview
+                    </Text>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        marginTop: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          background: settings.primaryColor,
+                          padding: "8px 20px",
+                          borderRadius: "6px",
+                          color: "#fff",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                        }}
+                      >
+                        Primary Button
+                      </div>
+                      <div
+                        style={{
+                          background: settings.secondaryColor,
+                          padding: "8px 20px",
+                          borderRadius: "6px",
+                          color: "#fff",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                        }}
+                      >
+                        Secondary
+                      </div>
+                      <div
+                        style={{
+                          border: `2px solid ${settings.primaryColor}`,
+                          padding: "8px 20px",
+                          borderRadius: "6px",
+                          color: settings.primaryColor,
+                          fontSize: "13px",
+                          fontWeight: "600",
+                        }}
+                      >
+                        Outline
+                      </div>
                     </div>
                   </div>
                 </BlockStack>
@@ -180,9 +292,24 @@ export default function Settings() {
                     onChange={set("fontFamily")}
                     helpText="Applied to article content on the storefront"
                   />
-                  <div style={{ padding: "12px", borderRadius: "6px", border: "1px solid #e1e3e5", background: "#f9fafb" }}>
-                    <p style={{ fontFamily: settings.fontFamily, fontSize: "15px", margin: 0, lineHeight: "1.7" }}>
-                      The quick brown fox jumps over the lazy dog. <strong>Bold text.</strong> <em>Italic text.</em>
+                  <div
+                    style={{
+                      padding: "12px",
+                      borderRadius: "6px",
+                      border: "1px solid #e1e3e5",
+                      background: "#f9fafb",
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontFamily: settings.fontFamily,
+                        fontSize: "15px",
+                        margin: 0,
+                        lineHeight: "1.7",
+                      }}
+                    >
+                      The quick brown fox jumps over the lazy dog.{" "}
+                      <strong>Bold text.</strong> <em>Italic text.</em>
                     </p>
                   </div>
                   <Select
@@ -220,8 +347,17 @@ export default function Settings() {
                     helpText="Used for new articles. Translations can be managed per-article."
                   />
                   {settings.language === "ar" && (
-                    <div style={{ padding: "10px 14px", background: "#fff8e1", border: "1px solid #f5a623", borderRadius: "6px", fontSize: "13px" }}>
-                      ⚠️ Arabic is a right-to-left (RTL) language. The blog layout will automatically switch to RTL mode.
+                    <div
+                      style={{
+                        padding: "10px 14px",
+                        background: "#fff8e1",
+                        border: "1px solid #f5a623",
+                        borderRadius: "6px",
+                        fontSize: "13px",
+                      }}
+                    >
+                      ⚠️ Arabic is a right-to-left (RTL) language. The blog
+                      layout will automatically switch to RTL mode.
                     </div>
                   )}
                   <TextField
@@ -244,12 +380,38 @@ export default function Settings() {
                 <BlockStack gap="400">
                   <Text variant="headingMd">📋 Article Display Options</Text>
                   <Divider />
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
-                    <Checkbox label="Show Reading Time" checked={settings.showReadingTime} onChange={set("showReadingTime")} />
-                    <Checkbox label="Show Author Name" checked={settings.showAuthor} onChange={set("showAuthor")} />
-                    <Checkbox label="Show Published Date" checked={settings.showPublishedDate} onChange={set("showPublishedDate")} />
-                    <Checkbox label="Show Related Posts" checked={settings.showRelatedPosts} onChange={set("showRelatedPosts")} />
-                    <Checkbox label="Enable Table of Contents (TOC)" checked={settings.showToc} onChange={set("showToc")} />
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, 1fr)",
+                      gap: "12px",
+                    }}
+                  >
+                    <Checkbox
+                      label="Show Reading Time"
+                      checked={settings.showReadingTime}
+                      onChange={set("showReadingTime")}
+                    />
+                    <Checkbox
+                      label="Show Author Name"
+                      checked={settings.showAuthor}
+                      onChange={set("showAuthor")}
+                    />
+                    <Checkbox
+                      label="Show Published Date"
+                      checked={settings.showPublishedDate}
+                      onChange={set("showPublishedDate")}
+                    />
+                    <Checkbox
+                      label="Show Related Posts"
+                      checked={settings.showRelatedPosts}
+                      onChange={set("showRelatedPosts")}
+                    />
+                    <Checkbox
+                      label="Enable Table of Contents (TOC)"
+                      checked={settings.showToc}
+                      onChange={set("showToc")}
+                    />
                   </div>
                   {settings.showToc && (
                     <Select
@@ -267,7 +429,10 @@ export default function Settings() {
                   {settings.showRelatedPosts && (
                     <Select
                       label="Number of Related Posts"
-                      options={["2", "3", "4", "6"].map((n) => ({ label: `${n} posts`, value: n }))}
+                      options={["2", "3", "4", "6"].map((n) => ({
+                        label: `${n} posts`,
+                        value: n,
+                      }))}
                       value={settings.relatedPostsCount}
                       onChange={set("relatedPostsCount")}
                     />
@@ -315,12 +480,17 @@ export default function Settings() {
           {/* ─── Save Button (bottom) ──────────────────────────── */}
           <Layout.Section>
             <InlineStack align="end">
-              <Button variant="primary" size="large" loading={isSaving} onClick={handleSave} icon={SaveIcon}>
+              <Button
+                variant="primary"
+                size="large"
+                loading={isSaving}
+                onClick={handleSave}
+                icon={SaveIcon}
+              >
                 Save All Settings
               </Button>
             </InlineStack>
           </Layout.Section>
-
         </Layout>
       </Page>
     </Frame>

@@ -1,6 +1,20 @@
 import {
-  Page, Layout, Card, BlockStack, InlineStack, Text, Button, Select,
-  TextField, Divider, Toast, Frame, Spinner, Box, Badge, Banner
+  Page,
+  Layout,
+  Card,
+  BlockStack,
+  InlineStack,
+  Text,
+  Button,
+  Select,
+  TextField,
+  Divider,
+  Toast,
+  Frame,
+  Spinner,
+  Box,
+  Badge,
+  Banner,
 } from "@shopify/polaris";
 import { SaveIcon, ArrowLeftIcon, LanguageIcon } from "@shopify/polaris-icons";
 import { useState, useEffect, useCallback } from "react";
@@ -107,11 +121,21 @@ export default function PostTranslationPage() {
     setToast({ content: "🪄 Simulating Auto-Translate..." });
     // Simulate auto-translate using a mock service delay
     setTimeout(() => {
-      setTranslatedTitle(`[Translated ${selectedLocale.toUpperCase()}] ${post.title}`);
-      setTranslatedExcerpt(`[Translated ${selectedLocale.toUpperCase()}] ${post.excerpt || ""}`);
-      setTranslatedContent(`[Translated ${selectedLocale.toUpperCase()}]\n${post.contentHtml || ""}`);
-      setTranslatedMetaTitle(`[Translated ${selectedLocale.toUpperCase()}] ${post.metaTitle || ""}`);
-      setTranslatedMetaDesc(`[Translated ${selectedLocale.toUpperCase()}] ${post.metaDescription || ""}`);
+      setTranslatedTitle(
+        `[Translated ${selectedLocale.toUpperCase()}] ${post.title}`,
+      );
+      setTranslatedExcerpt(
+        `[Translated ${selectedLocale.toUpperCase()}] ${post.excerpt || ""}`,
+      );
+      setTranslatedContent(
+        `[Translated ${selectedLocale.toUpperCase()}]\n${post.contentHtml || ""}`,
+      );
+      setTranslatedMetaTitle(
+        `[Translated ${selectedLocale.toUpperCase()}] ${post.metaTitle || ""}`,
+      );
+      setTranslatedMetaDesc(
+        `[Translated ${selectedLocale.toUpperCase()}] ${post.metaDescription || ""}`,
+      );
       setToast({ content: "✨ Auto-translation generated!" });
     }, 800);
   };
@@ -119,7 +143,11 @@ export default function PostTranslationPage() {
   if (isLoading) {
     return (
       <Frame>
-        <Page><Box padding="800" align="center"><Spinner /></Box></Page>
+        <Page>
+          <Box padding="800" align="center">
+            <Spinner />
+          </Box>
+        </Page>
       </Frame>
     );
   }
@@ -128,7 +156,9 @@ export default function PostTranslationPage() {
     return (
       <Frame>
         <Page title="Post Not Found">
-          <Banner tone="critical">The requested article could not be loaded.</Banner>
+          <Banner tone="critical">
+            The requested article could not be loaded.
+          </Banner>
         </Page>
       </Frame>
     );
@@ -136,12 +166,27 @@ export default function PostTranslationPage() {
 
   return (
     <Frame>
-      {toast && <Toast content={toast.content} error={toast.error} onDismiss={() => setToast(null)} />}
+      {toast && (
+        <Toast
+          content={toast.content}
+          error={toast.error}
+          onDismiss={() => setToast(null)}
+        />
+      )}
       <Page
-        backAction={{ content: "Back to Edit", onAction: () => navigate(`/posts/${id}/edit`), icon: ArrowLeftIcon }}
+        backAction={{
+          content: "Back to Edit",
+          onAction: () => navigate(`/posts/${id}/edit`),
+          icon: ArrowLeftIcon,
+        }}
         title={`Translate: ${post.title}`}
         subtitle="Manage multi-language translations of this article for storefront localization"
-        primaryAction={{ content: "Save Translation", icon: SaveIcon, loading: isSaving, onAction: handleSave }}
+        primaryAction={{
+          content: "Save Translation",
+          icon: SaveIcon,
+          loading: isSaving,
+          onAction: handleSave,
+        }}
       >
         <Layout>
           {/* Left panel: Original post Reference */}
@@ -150,18 +195,28 @@ export default function PostTranslationPage() {
               <Card>
                 <Box padding="400">
                   <BlockStack gap="300">
-                    <Text variant="headingMd">📝 Original Content (English)</Text>
+                    <Text variant="headingMd">
+                      📝 Original Content (English)
+                    </Text>
                     <Divider />
                     <BlockStack gap="100">
-                      <Text variant="bodySm" fontWeight="bold">Title</Text>
+                      <Text variant="bodySm" fontWeight="bold">
+                        Title
+                      </Text>
                       <Text variant="bodyMd">{post.title}</Text>
                     </BlockStack>
                     <BlockStack gap="100">
-                      <Text variant="bodySm" fontWeight="bold">Excerpt</Text>
-                      <Text variant="bodyMd" tone="subdued">{post.excerpt || "No excerpt added."}</Text>
+                      <Text variant="bodySm" fontWeight="bold">
+                        Excerpt
+                      </Text>
+                      <Text variant="bodyMd" tone="subdued">
+                        {post.excerpt || "No excerpt added."}
+                      </Text>
                     </BlockStack>
                     <BlockStack gap="100">
-                      <Text variant="bodySm" fontWeight="bold">Content HTML Preview</Text>
+                      <Text variant="bodySm" fontWeight="bold">
+                        Content HTML Preview
+                      </Text>
                       <div
                         style={{
                           maxHeight: "300px",
@@ -173,7 +228,9 @@ export default function PostTranslationPage() {
                           lineHeight: "1.6",
                           background: "#f9fafb",
                         }}
-                        dangerouslySetInnerHTML={{ __html: post.contentHtml || "" }}
+                        dangerouslySetInnerHTML={{
+                          __html: post.contentHtml || "",
+                        }}
                       />
                     </BlockStack>
                   </BlockStack>
@@ -190,7 +247,13 @@ export default function PostTranslationPage() {
                   <BlockStack gap="400">
                     <InlineStack align="space-between" blockAlign="center">
                       <Text variant="headingMd">🌍 Localized Content</Text>
-                      <Button size="slim" icon={LanguageIcon} onClick={handleAutoTranslate}>Auto-Translate</Button>
+                      <Button
+                        size="slim"
+                        icon={LanguageIcon}
+                        onClick={handleAutoTranslate}
+                      >
+                        Auto-Translate
+                      </Button>
                     </InlineStack>
                     <Divider />
                     <Select

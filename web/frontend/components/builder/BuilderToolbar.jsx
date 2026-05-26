@@ -19,6 +19,9 @@ const BLOCK_GROUPS = [
     label: "Commerce",
     blocks: [
       { type: "product", icon: "🛍", label: "Product Card" },
+      { type: "product_sidebar", icon: "📌", label: "Sticky Product" },
+      { type: "product_switcher", icon: "🔄", label: "Product Switcher" },
+      { type: "featured_product", icon: "⭐", label: "Featured Product" },
       { type: "product_slider", icon: "↔", label: "Product Slider" },
     ],
   },
@@ -34,17 +37,21 @@ const BLOCK_GROUPS = [
 
 export default function BuilderToolbar({ onAddBlock }) {
   return (
-    <div style={{
-      width: "180px",
-      flexShrink: 0,
-      borderRight: "1px solid #e1e3e5",
-      background: "#fff",
-      padding: "12px 8px",
-      overflow: "auto",
-    }}>
+    <div
+      style={{
+        width: "180px",
+        flexShrink: 0,
+        borderRight: "1px solid #e1e3e5",
+        background: "#fff",
+        padding: "12px 8px",
+        overflow: "auto",
+      }}
+    >
       <div style={{ padding: "0 4px 8px" }}>
         <Text variant="headingSm">Blocks</Text>
-        <Text variant="bodySm" tone="subdued">Click to add</Text>
+        <Text variant="bodySm" tone="subdued">
+          Click to add
+        </Text>
       </div>
 
       {BLOCK_GROUPS.map((group) => (
@@ -84,13 +91,21 @@ export default function BuilderToolbar({ onAddBlock }) {
                 e.currentTarget.style.borderColor = "transparent";
               }}
             >
-              <span style={{
-                width: 28, height: 28, borderRadius: "4px",
-                background: "#f1f2f3",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "13px", fontWeight: "bold", color: "#6d7175",
-                flexShrink: 0,
-              }}>
+              <span
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "4px",
+                  background: "#f1f2f3",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                  color: "#6d7175",
+                  flexShrink: 0,
+                }}
+              >
                 {block.icon}
               </span>
               <span>{block.label}</span>

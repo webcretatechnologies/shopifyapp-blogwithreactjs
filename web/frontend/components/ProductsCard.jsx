@@ -36,7 +36,7 @@ export function ProductsCard() {
       await refetchProductCount();
 
       shopify.toast.show(
-        t("ProductsCard.productsCreatedToast", { count: productsCount })
+        t("ProductsCard.productsCreatedToast", { count: productsCount }),
       );
     } else {
       shopify.toast.show(t("ProductsCard.errorCreatingProductsToast"), {

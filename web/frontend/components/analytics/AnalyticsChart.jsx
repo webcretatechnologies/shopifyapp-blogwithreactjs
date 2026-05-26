@@ -1,8 +1,19 @@
 import { useState, useEffect } from "react";
 import ReactApexChart from "react-apexcharts";
-import { Card, Text, Box, InlineStack, BlockStack, Select } from "@shopify/polaris";
+import {
+  Card,
+  Text,
+  Box,
+  InlineStack,
+  BlockStack,
+  Select,
+} from "@shopify/polaris";
 
-export default function AnalyticsChart({ data = [], title = "Views", color = "#008060" }) {
+export default function AnalyticsChart({
+  data = [],
+  title = "Views",
+  color = "#008060",
+}) {
   const [period, setPeriod] = useState("30");
 
   const filtered = data.slice(-parseInt(period));
@@ -14,7 +25,8 @@ export default function AnalyticsChart({ data = [], title = "Views", color = "#0
       type: "area",
       toolbar: { show: false },
       zoom: { enabled: false },
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'San Francisco', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+      fontFamily:
+        "-apple-system, BlinkMacSystemFont, 'San Francisco', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
       sparkline: { enabled: false },
       animations: { enabled: true, speed: 600 },
     },
@@ -37,7 +49,10 @@ export default function AnalyticsChart({ data = [], title = "Views", color = "#0
     xaxis: {
       categories: filtered.map((d) => {
         const date = new Date(d.date);
-        return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        return date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        });
       }),
       labels: { style: { colors: "#6d7175", fontSize: "11px" } },
       axisBorder: { show: false },
@@ -64,7 +79,11 @@ export default function AnalyticsChart({ data = [], title = "Views", color = "#0
           <BlockStack gap="050">
             <Text variant="headingMd">{title}</Text>
             <Text variant="bodySm" tone="subdued">
-              Total: {filtered.reduce((sum, d) => sum + (d.views || 0), 0).toLocaleString()} views
+              Total:{" "}
+              {filtered
+                .reduce((sum, d) => sum + (d.views || 0), 0)
+                .toLocaleString()}{" "}
+              views
             </Text>
           </BlockStack>
           <Select

@@ -71,7 +71,14 @@ export default function PostEditor() {
   const [newPostId, setNewPostId] = useState(null);
   const [editorMode, setEditorMode] = useState("wysiwyg"); // 'wysiwyg' | 'builder'
   const [builderBlocks, setBuilderBlocks] = useState([]);
-  const [seoData, setSeoData] = useState({ metaTitle: "", metaDescription: "", canonicalUrl: "", ogTitle: "", ogDescription: "", ogImage: "" });
+  const [seoData, setSeoData] = useState({
+    metaTitle: "",
+    metaDescription: "",
+    canonicalUrl: "",
+    ogTitle: "",
+    ogDescription: "",
+    ogImage: "",
+  });
 
   // Load existing post
   const loadPost = useCallback(async () => {
@@ -120,7 +127,8 @@ export default function PostEditor() {
     if (isEditing) loadPost();
   }, [isEditing, loadPost]);
 
-  const handleField = (field) => (value) => setPost((p) => ({ ...p, [field]: value }));
+  const handleField = (field) => (value) =>
+    setPost((p) => ({ ...p, [field]: value }));
 
   const generateSlug = (title) =>
     title
@@ -139,9 +147,9 @@ export default function PostEditor() {
     const selection = await window.shopify.resourcePicker({
       type: "product",
       multiple: true,
-      selectionIds: selectedProducts.map(p => ({ id: p.shopifyProductId })),
+      selectionIds: selectedProducts.map((p) => ({ id: p.shopifyProductId })),
     });
-    
+
     if (selection) {
       const products = selection.map((p) => ({
         shopifyProductId: p.id,
@@ -192,7 +200,7 @@ export default function PostEditor() {
         handleImageUpload(acceptedFiles[0]);
       }
     },
-    []
+    [],
   );
 
   const buildPayload = () => ({
@@ -314,12 +322,20 @@ export default function PostEditor() {
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Are you sure you want to delete this article?${deleteFromShopify ? " It will also be DELETED from Shopify." : ""} This cannot be undone.`)) return;
+    if (
+      !confirm(
+        `Are you sure you want to delete this article?${deleteFromShopify ? " It will also be DELETED from Shopify." : ""} This cannot be undone.`,
+      )
+    )
+      return;
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/posts/${id}?deleteFromShopify=${deleteFromShopify}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/posts/${id}?deleteFromShopify=${deleteFromShopify}`,
+        {
+          method: "DELETE",
+        },
+      );
       if (!res.ok) throw new Error("Delete failed");
       navigate("/posts");
     } catch (err) {
@@ -343,7 +359,7 @@ export default function PostEditor() {
   if (isLoading) {
     return (
       <Frame>
-        <Page>
+        <Page fullWidth>
           <Box padding="800" align="center">
             <Spinner />
           </Box>
@@ -352,9 +368,12 @@ export default function PostEditor() {
     );
   }
 
-  const statusBadge = post.status === "published"
-    ? <Badge tone="success">Published</Badge>
-    : <Badge tone="info">Draft</Badge>;
+  const statusBadge =
+    post.status === "published" ? (
+      <Badge tone="success">Published</Badge>
+    ) : (
+      <Badge tone="info">Draft</Badge>
+    );
 
   return (
     <Frame>
@@ -363,6 +382,7 @@ export default function PostEditor() {
         <Toast content={toast.content} onDismiss={() => setToast(null)} />
       )}
       <Page
+        fullWidth
         title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
         titleMetadata={statusBadge}
         backAction={{ content: "Articles", onAction: () => navigate("/") }}
@@ -372,10 +392,14 @@ export default function PostEditor() {
           onAction: () => handleSave("draft"),
         }}
         secondaryActions={[
-          ...(isEditing ? [{
-            content: "Translate Article",
-            onAction: () => navigate(`/posts/${id}/translate`),
-          }] : []),
+          ...(isEditing
+            ? [
+                {
+                  content: "Translate Article",
+                  onAction: () => navigate(`/posts/${id}/translate`),
+                },
+              ]
+            : []),
           {
             content: isPublishing ? "Publishing..." : "Publish to Shopify",
             loading: isPublishing,
@@ -429,7 +453,14 @@ export default function PostEditor() {
                   {/* ─── Editor Mode Toggle ─────────────────────────────── */}
                   <InlineStack align="space-between" blockAlign="center">
                     <Text variant="headingMd">Content</Text>
-                    <div style={{ display: "flex", border: "1px solid #e1e3e5", borderRadius: "6px", overflow: "hidden" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        border: "1px solid #e1e3e5",
+                        borderRadius: "6px",
+                        overflow: "hidden",
+                      }}
+                    >
                       <button
                         type="button"
                         onClick={() => setEditorMode("wysiwyg")}
@@ -439,7 +470,8 @@ export default function PostEditor() {
                           fontWeight: "600",
                           border: "none",
                           cursor: "pointer",
-                          background: editorMode === "wysiwyg" ? "#008060" : "#fff",
+                          background:
+                            editorMode === "wysiwyg" ? "#008060" : "#fff",
                           color: editorMode === "wysiwyg" ? "#fff" : "#6d7175",
                           transition: "all 0.2s ease",
                         }}
@@ -456,7 +488,8 @@ export default function PostEditor() {
                           border: "none",
                           borderLeft: "1px solid #e1e3e5",
                           cursor: "pointer",
-                          background: editorMode === "builder" ? "#008060" : "#fff",
+                          background:
+                            editorMode === "builder" ? "#008060" : "#fff",
                           color: editorMode === "builder" ? "#fff" : "#6d7175",
                           transition: "all 0.2s ease",
                         }}
@@ -570,7 +603,11 @@ export default function PostEditor() {
                   />
                   <BlockStack gap="200">
                     <Text variant="bodyMd">Featured Image</Text>
-                    <DropZone onDrop={handleDropZoneDrop} allowMultiple={false} accept="image/*">
+                    <DropZone
+                      onDrop={handleDropZoneDrop}
+                      allowMultiple={false}
+                      accept="image/*"
+                    >
                       {isUploadingImage ? (
                         <Box padding="400" align="center">
                           <Spinner size="small" />
@@ -579,16 +616,27 @@ export default function PostEditor() {
                         <DropZone.FileUpload />
                       )}
                     </DropZone>
-                    <Button fullWidth onClick={() => setShowFilePicker(true)}>Browse Shopify Images</Button>
+                    <Button fullWidth onClick={() => setShowFilePicker(true)}>
+                      Browse Shopify Images
+                    </Button>
                     {post.featuredImage && (
                       <div style={{ position: "relative", marginTop: "8px" }}>
                         <img
                           src={post.featuredImage}
                           alt="Featured"
-                          style={{ width: "100%", borderRadius: 8, maxHeight: 150, objectFit: "cover" }}
+                          style={{
+                            width: "100%",
+                            borderRadius: 8,
+                            maxHeight: 150,
+                            objectFit: "cover",
+                          }}
                         />
                         <div style={{ position: "absolute", top: 8, right: 8 }}>
-                          <Button size="micro" onClick={() => handleField("featuredImage")("")} tone="critical">
+                          <Button
+                            size="micro"
+                            onClick={() => handleField("featuredImage")("")}
+                            tone="critical"
+                          >
                             Remove
                           </Button>
                         </div>
@@ -604,7 +652,9 @@ export default function PostEditor() {
                   <Text variant="headingMd">Tags</Text>
                   <InlineStack gap="200">
                     {tags.map((tag) => (
-                      <Tag key={tag} onRemove={() => removeTag(tag)}>{tag}</Tag>
+                      <Tag key={tag} onRemove={() => removeTag(tag)}>
+                        {tag}
+                      </Tag>
                     ))}
                   </InlineStack>
                   <InlineStack gap="200">
@@ -640,22 +690,33 @@ export default function PostEditor() {
                         <Text tone="subdued" variant="bodySm">
                           {selectedProducts.length} products selected
                         </Text>
-                        <Button
-                          onClick={handleOpenPicker}
-                          fullWidth
-                        >
-                          {selectedProducts.length ? "Change Products" : "Select Products"}
+                        <Button onClick={handleOpenPicker} fullWidth>
+                          {selectedProducts.length
+                            ? "Change Products"
+                            : "Select Products"}
                         </Button>
                         {selectedProducts.length > 0 && (
                           <BlockStack gap="200">
                             {selectedProducts.slice(0, 3).map((p) => (
-                              <InlineStack key={p.shopifyProductId || p.id} gap="200" blockAlign="center">
-                                {p.image && <Thumbnail source={p.image} size="small" alt={p.title} />}
+                              <InlineStack
+                                key={p.shopifyProductId || p.id}
+                                gap="200"
+                                blockAlign="center"
+                              >
+                                {p.image && (
+                                  <Thumbnail
+                                    source={p.image}
+                                    size="small"
+                                    alt={p.title}
+                                  />
+                                )}
                                 <Text variant="bodySm">{p.title}</Text>
                               </InlineStack>
                             ))}
                             {selectedProducts.length > 3 && (
-                              <Text tone="subdued" variant="bodySm">+{selectedProducts.length - 3} more</Text>
+                              <Text tone="subdued" variant="bodySm">
+                                +{selectedProducts.length - 3} more
+                              </Text>
                             )}
                           </BlockStack>
                         )}
@@ -671,14 +732,25 @@ export default function PostEditor() {
                   <BlockStack gap="200">
                     <Text variant="headingMd">Shopify Sync</Text>
                     <InlineStack gap="200" align="space-between">
-                      <Text tone="subdued" variant="bodySm">Status</Text>
-                      <Badge tone={post.shopifyArticle.status === "published" ? "success" : "attention"}>
+                      <Text tone="subdued" variant="bodySm">
+                        Status
+                      </Text>
+                      <Badge
+                        tone={
+                          post.shopifyArticle.status === "published"
+                            ? "success"
+                            : "attention"
+                        }
+                      >
                         {post.shopifyArticle.status}
                       </Badge>
                     </InlineStack>
                     {post.shopifyArticle.syncedAt && (
                       <Text tone="subdued" variant="bodySm">
-                        Last synced: {new Date(post.shopifyArticle.syncedAt).toLocaleString()}
+                        Last synced:{" "}
+                        {new Date(
+                          post.shopifyArticle.syncedAt,
+                        ).toLocaleString()}
                       </Text>
                     )}
                   </BlockStack>
@@ -691,16 +763,26 @@ export default function PostEditor() {
               {isEditing && (
                 <Card>
                   <BlockStack gap="200">
-                    <Text variant="headingMd" tone="critical">Danger Zone</Text>
-                    <Text tone="subdued" variant="bodySm">Delete this article entirely. This action is irreversible.</Text>
+                    <Text variant="headingMd" tone="critical">
+                      Danger Zone
+                    </Text>
+                    <Text tone="subdued" variant="bodySm">
+                      Delete this article entirely. This action is irreversible.
+                    </Text>
                     {post.status === "published" && (
-                       <Checkbox
-                         label="Also delete this article from my Shopify store"
-                         checked={deleteFromShopify}
-                         onChange={setDeleteFromShopify}
-                       />
+                      <Checkbox
+                        label="Also delete this article from my Shopify store"
+                        checked={deleteFromShopify}
+                        onChange={setDeleteFromShopify}
+                      />
                     )}
-                    <Button tone="critical" loading={isDeleting} onClick={handleDelete}>Delete Article</Button>
+                    <Button
+                      tone="critical"
+                      loading={isDeleting}
+                      onClick={handleDelete}
+                    >
+                      Delete Article
+                    </Button>
                   </BlockStack>
                 </Card>
               )}
@@ -712,7 +794,7 @@ export default function PostEditor() {
       <ShopifyFilePicker
         open={showFilePicker}
         onClose={() => setShowFilePicker(false)}
-        onSelect={(url) => setPost(p => ({ ...p, featuredImage: url }))}
+        onSelect={(url) => setPost((p) => ({ ...p, featuredImage: url }))}
       />
 
       <Modal
@@ -741,7 +823,9 @@ export default function PostEditor() {
               You've created your first blog post!
             </Text>
             <Text variant="bodyMd" as="p" alignment="center" tone="subdued">
-              Amazing job! Your first blog post has been successfully created. You can now publish it to your store, add products to it, or keep editing the content.
+              Amazing job! Your first blog post has been successfully created.
+              You can now publish it to your store, add products to it, or keep
+              editing the content.
             </Text>
           </BlockStack>
         </Modal.Section>

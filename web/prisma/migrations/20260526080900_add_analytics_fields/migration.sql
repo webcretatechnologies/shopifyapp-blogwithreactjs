@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE `PostAnalytic` ADD COLUMN `countries` JSON NULL,
+    ADD COLUMN `deviceDesktop` INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN `deviceMobile` INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN `deviceTablet` INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN `sources` JSON NULL,
+    ADD COLUMN `uniqueVisitors` INTEGER NOT NULL DEFAULT 0;

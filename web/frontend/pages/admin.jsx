@@ -20,7 +20,7 @@ import {
   ProgressBar,
   Tabs,
   Toast,
-  Frame
+  Frame,
 } from "@shopify/polaris";
 import {
   LayoutDashboard,
@@ -38,7 +38,7 @@ import {
   Info,
   CheckCircle,
   AlertCircle,
-  MessageSquare
+  MessageSquare,
 } from "lucide-react";
 
 const DownloadIcon = (props) => <Download size={16} {...props} />;
@@ -47,7 +47,9 @@ const RefreshIcon = (props) => <RefreshCw size={16} {...props} />;
 const SendIcon = (props) => <Send size={16} {...props} />;
 
 export default function Admin() {
-  const [token, setToken] = useState(localStorage.getItem("super_admin_token") || "");
+  const [token, setToken] = useState(
+    localStorage.getItem("super_admin_token") || "",
+  );
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [successToast, setSuccessToast] = useState("");
@@ -65,7 +67,7 @@ export default function Admin() {
     churnedThisMonth: 0,
     mrr: 0,
     arr: 0,
-    planBreakdown: { free: 0, starter: 0, pro: 0, business: 0 }
+    planBreakdown: { free: 0, starter: 0, pro: 0, business: 0 },
   });
   const [monthlyChartData, setMonthlyChartData] = useState([]);
   const [recentShops, setRecentShops] = useState([]);
@@ -165,21 +167,24 @@ export default function Admin() {
   };
 
   // Helper fetcher
-  const adminFetch = useCallback(async (path, options = {}) => {
-    const headers = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...options.headers,
-    };
-    const res = await fetch(path, { ...options, headers });
-    if (res.status === 401) {
-      handleLogout();
-      throw new Error("Session expired. Please log in again.");
-    }
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Request failed");
-    return data;
-  }, [token]);
+  const adminFetch = useCallback(
+    async (path, options = {}) => {
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...options.headers,
+      };
+      const res = await fetch(path, { ...options, headers });
+      if (res.status === 401) {
+        handleLogout();
+        throw new Error("Session expired. Please log in again.");
+      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      return data;
+    },
+    [token],
+  );
 
   // Load Dashboard Data
   const loadDashboard = useCallback(async () => {
@@ -206,15 +211,27 @@ export default function Admin() {
         sortBy,
         sortDir,
         page: storesPage.toString(),
-        limit: "20"
+        limit: "20",
       });
-      const data = await adminFetch(`/admin-api/stores?${queryParams.toString()}`);
+      const data = await adminFetch(
+        `/admin-api/stores?${queryParams.toString()}`,
+      );
       setStores(data.stores || []);
       setStoresTotal(data.total || 0);
     } catch (err) {
       setError(err.message);
     }
-  }, [adminFetch, storesSearch, statusFilter, planFilter, dateFrom, dateTo, sortBy, sortDir, storesPage]);
+  }, [
+    adminFetch,
+    storesSearch,
+    statusFilter,
+    planFilter,
+    dateFrom,
+    dateTo,
+    sortBy,
+    sortDir,
+    storesPage,
+  ]);
 
   // Load Pricing & Plan Features settings
   const loadPricingAndFeatures = useCallback(async () => {
@@ -245,7 +262,12 @@ export default function Admin() {
 
   // Reset plan features to default presets
   const handleResetFeatures = async () => {
-    if (!window.confirm("Are you sure you want to restore all plan feature configurations to defaults? All custom rules will be overwritten.")) return;
+    if (
+      !window.confirm(
+        "Are you sure you want to restore all plan feature configurations to defaults? All custom rules will be overwritten.",
+      )
+    )
+      return;
     try {
       await adminFetch("/admin-api/pricing/features/reset", { method: "POST" });
       showToast("Plan features restored to system defaults");
@@ -268,7 +290,9 @@ export default function Admin() {
   // Load Sent Email Logs
   const loadEmails = useCallback(async () => {
     try {
-      const data = await adminFetch(`/admin-api/emails?page=${emailsPage}&limit=20`);
+      const data = await adminFetch(
+        `/admin-api/emails?page=${emailsPage}&limit=20`,
+      );
       setEmails(data.emails || []);
       setEmailsTotal(data.total || 0);
     } catch (err) {
@@ -279,7 +303,9 @@ export default function Admin() {
   // Load System Activities
   const loadActivities = useCallback(async () => {
     try {
-      const data = await adminFetch(`/admin-api/activities?page=${activitiesPage}&limit=20`);
+      const data = await adminFetch(
+        `/admin-api/activities?page=${activitiesPage}&limit=20`,
+      );
       setActivities(data.activities || []);
       setActivitiesTotal(data.total || 0);
     } catch (err) {
@@ -319,7 +345,10 @@ export default function Admin() {
   useEffect(() => {
     if (!selectedChatRoom) return;
 
-    const socketConnection = io({ path: "/chat-socket", transports: ["websocket"] });
+    const socketConnection = io({
+      path: "/chat-socket",
+      transports: ["websocket"],
+    });
 
     socketConnection.on("connect", () => {
       socketConnection.emit("join_room", { room: selectedChatRoom });
@@ -329,7 +358,11 @@ export default function Admin() {
       setChatHistory((prev) => {
         const room = msg.room || selectedChatRoom;
         const currentMsgs = prev[room] || [];
-        if (currentMsgs.some((m) => m.timestamp === msg.timestamp && m.text === msg.text)) {
+        if (
+          currentMsgs.some(
+            (m) => m.timestamp === msg.timestamp && m.text === msg.text,
+          )
+        ) {
           return prev;
         }
         return {
@@ -356,7 +389,10 @@ export default function Admin() {
     try {
       await adminFetch(`/admin-api/stores/${selectedStoreDomain}/override`, {
         method: "POST",
-        body: JSON.stringify({ plan: overridePlan, expiresAt: overrideExpiry || null }),
+        body: JSON.stringify({
+          plan: overridePlan,
+          expiresAt: overrideExpiry || null,
+        }),
       });
       setOverrideModalActive(false);
       showToast(`Overrode plan for ${selectedStoreDomain} successfully`);
@@ -369,9 +405,16 @@ export default function Admin() {
 
   // Soft Deactivate store
   const handleSoftDeactivateStore = async (domain) => {
-    if (!window.confirm(`Are you sure you want to soft deactivate ${domain}? This will set uninstalledAt and send a deactivation notification email.`)) return;
+    if (
+      !window.confirm(
+        `Are you sure you want to soft deactivate ${domain}? This will set uninstalledAt and send a deactivation notification email.`,
+      )
+    )
+      return;
     try {
-      await adminFetch(`/admin-api/stores/${domain}/deactivate`, { method: "POST" });
+      await adminFetch(`/admin-api/stores/${domain}/deactivate`, {
+        method: "POST",
+      });
       showToast(`Soft deactivated ${domain}`);
       loadStores();
       loadDashboard();
@@ -383,7 +426,9 @@ export default function Admin() {
   // Reactivate store
   const handleReactivateStore = async (domain) => {
     try {
-      await adminFetch(`/admin-api/stores/${domain}/reactivate`, { method: "POST" });
+      await adminFetch(`/admin-api/stores/${domain}/reactivate`, {
+        method: "POST",
+      });
       showToast(`Reactivated store ${domain} and sent confirmation email`);
       loadStores();
       loadDashboard();
@@ -394,9 +439,16 @@ export default function Admin() {
 
   // Force cascade delete store from database
   const handleForceDeleteStore = async (domain) => {
-    if (!window.confirm(`CRITICAL WARNING: Are you absolutely sure you want to permanently force delete ${domain} from the database? This cascade deletes all posts, sessions, plan entries, overrides and configurations.`)) return;
+    if (
+      !window.confirm(
+        `CRITICAL WARNING: Are you absolutely sure you want to permanently force delete ${domain} from the database? This cascade deletes all posts, sessions, plan entries, overrides and configurations.`,
+      )
+    )
+      return;
     try {
-      await adminFetch(`/admin-api/stores/${domain}/delete`, { method: "POST" });
+      await adminFetch(`/admin-api/stores/${domain}/delete`, {
+        method: "POST",
+      });
       showToast(`Force deleted store ${domain} from app database`);
       loadStores();
       loadDashboard();
@@ -426,7 +478,10 @@ export default function Admin() {
     try {
       await adminFetch(`/admin-api/stores/${selectedStoreDomain}/email`, {
         method: "POST",
-        body: JSON.stringify({ subject: singleEmailSubject, body: singleEmailBody }),
+        body: JSON.stringify({
+          subject: singleEmailSubject,
+          body: singleEmailBody,
+        }),
       });
       setSingleEmailModalActive(false);
       setSingleEmailSubject("");
@@ -451,8 +506,8 @@ export default function Admin() {
           recipientPlanId: recipientPlanId,
           subject: emailSubject,
           body: emailBody,
-          templateKey: selectedTemplateKey
-        })
+          templateKey: selectedTemplateKey,
+        }),
       });
       showToast(data.message || "Bulk email sent successfully");
       setEmailSubject("");
@@ -566,20 +621,22 @@ export default function Admin() {
     loadTemplates,
     loadEmails,
     loadActivities,
-    loadChats
+    loadChats,
   ]);
 
   // Login view if session token is empty
   if (!token) {
     return (
-      <div style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#f6f8fa",
-        fontFamily: "Inter, sans-serif"
-      }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#f6f8fa",
+          fontFamily: "Inter, sans-serif",
+        }}
+      >
         <div style={{ width: "100%", maxWidth: "440px", padding: "20px" }}>
           <BlockStack gap="400">
             {error && (
@@ -596,7 +653,8 @@ export default function Admin() {
                   </Text>
                 </InlineStack>
                 <Text variant="bodyMd" tone="subdued" alignment="center">
-                  Authenticate with system credentials to access the administrative supervisor portal.
+                  Authenticate with system credentials to access the
+                  administrative supervisor portal.
                 </Text>
                 <FormLayout>
                   <TextField
@@ -605,9 +663,16 @@ export default function Admin() {
                     value={password}
                     onChange={setPassword}
                     autoComplete="current-password"
-                    onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleLogin();
+                    }}
                   />
-                  <Button variant="primary" onClick={handleLogin} loading={loading} fullWidth>
+                  <Button
+                    variant="primary"
+                    onClick={handleLogin}
+                    loading={loading}
+                    fullWidth
+                  >
                     Login to supervisor account
                   </Button>
                 </FormLayout>
@@ -622,13 +687,20 @@ export default function Admin() {
   // Get dynamic header names
   const getSectionTitle = () => {
     switch (activeSection) {
-      case "dashboard": return "Console Dashboard";
-      case "stores": return "Stores Audit Auditor";
-      case "pricing": return "Pricing & Plan Features";
-      case "emails": return "Mailing & Broadcast Center";
-      case "chats": return "Live Support Chat Desk";
-      case "activities": return "Supervisor Activity Logs";
-      default: return "Dashboard";
+      case "dashboard":
+        return "Console Dashboard";
+      case "stores":
+        return "Stores Audit Auditor";
+      case "pricing":
+        return "Pricing & Plan Features";
+      case "emails":
+        return "Mailing & Broadcast Center";
+      case "chats":
+        return "Live Support Chat Desk";
+      case "activities":
+        return "Supervisor Activity Logs";
+      default:
+        return "Dashboard";
     }
   };
 
@@ -638,33 +710,55 @@ export default function Admin() {
 
   return (
     <Frame>
-      <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#f6f8fa", color: "#202223", fontFamily: "Inter, sans-serif" }}>
-        
-        {/* ─── SIDEBAR NAVIGATION ─── */}
-        <div style={{
-          width: "260px",
-          backgroundColor: "#ffffff",
-          borderRight: "1px solid #e1e3e5",
+      <div
+        style={{
           display: "flex",
-          flexDirection: "column",
-          position: "fixed",
-          height: "100vh",
-          left: 0,
-          top: 0,
-          zIndex: 100
-        }}>
-          {/* Header */}
-          <div style={{
-            padding: "24px 20px",
-            borderBottom: "1px solid #e1e3e5",
+          minHeight: "100vh",
+          backgroundColor: "#f6f8fa",
+          color: "#202223",
+          fontFamily: "Inter, sans-serif",
+        }}
+      >
+        {/* ─── SIDEBAR NAVIGATION ─── */}
+        <div
+          style={{
+            width: "260px",
+            backgroundColor: "#ffffff",
+            borderRight: "1px solid #e1e3e5",
             display: "flex",
-            alignItems: "center",
-            gap: "10px"
-          }}>
+            flexDirection: "column",
+            position: "fixed",
+            height: "100vh",
+            left: 0,
+            top: 0,
+            zIndex: 100,
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              padding: "24px 20px",
+              borderBottom: "1px solid #e1e3e5",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+          >
             <Shield size={24} color="#008060" />
             <Text variant="headingMd" as="span">
               <span style={{ color: "#202223", fontWeight: 700 }}>Blogger</span>
-              <span style={{ color: "#008060", fontSize: "12px", marginLeft: "4px", padding: "2px 6px", background: "#e2f1eb", borderRadius: "4px" }}>Admin</span>
+              <span
+                style={{
+                  color: "#008060",
+                  fontSize: "12px",
+                  marginLeft: "4px",
+                  padding: "2px 6px",
+                  background: "#e2f1eb",
+                  borderRadius: "4px",
+                }}
+              >
+                Admin
+              </span>
             </Text>
           </div>
 
@@ -672,12 +766,24 @@ export default function Admin() {
           <div style={{ flexGrow: 1, padding: "24px 12px" }}>
             <BlockStack gap="150">
               {[
-                { id: "dashboard", label: "Dashboard Overview", icon: LayoutDashboard },
+                {
+                  id: "dashboard",
+                  label: "Dashboard Overview",
+                  icon: LayoutDashboard,
+                },
                 { id: "stores", label: "Stores Auditor", icon: Store },
                 { id: "pricing", label: "Pricing & Features", icon: Settings },
                 { id: "emails", label: "Email Center", icon: Mail },
-                { id: "chats", label: "Live Support Chats", icon: MessageSquare },
-                { id: "activities", label: "Supervisor Activity", icon: FileText }
+                {
+                  id: "chats",
+                  label: "Live Support Chats",
+                  icon: MessageSquare,
+                },
+                {
+                  id: "activities",
+                  label: "Supervisor Activity",
+                  icon: FileText,
+                },
               ].map((item) => {
                 const Icon = item.icon;
                 const isActive = activeSection === item.id;
@@ -699,13 +805,15 @@ export default function Admin() {
                       cursor: "pointer",
                       fontSize: "14px",
                       fontWeight: "500",
-                      transition: "all 0.2s ease-in-out"
+                      transition: "all 0.2s ease-in-out",
                     }}
                     onMouseEnter={(e) => {
-                      if (!isActive) e.currentTarget.style.backgroundColor = "#f1f2f4";
+                      if (!isActive)
+                        e.currentTarget.style.backgroundColor = "#f1f2f4";
                     }}
                     onMouseLeave={(e) => {
-                      if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
+                      if (!isActive)
+                        e.currentTarget.style.backgroundColor = "transparent";
                     }}
                   >
                     <Icon size={18} />
@@ -733,7 +841,7 @@ export default function Admin() {
                 textAlign: "left",
                 cursor: "pointer",
                 fontSize: "14px",
-                fontWeight: "500"
+                fontWeight: "500",
               }}
             >
               <LogOut size={18} />
@@ -743,21 +851,30 @@ export default function Admin() {
         </div>
 
         {/* ─── MAIN APP PAGE BODY ─── */}
-        <div style={{ flexGrow: 1, marginLeft: "260px", display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          
-          {/* Header bar */}
-          <header style={{
-            height: "64px",
-            backgroundColor: "#ffffff",
-            borderBottom: "1px solid #e1e3e5",
+        <div
+          style={{
+            flexGrow: 1,
+            marginLeft: "260px",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "0 32px",
-            position: "sticky",
-            top: 0,
-            zIndex: 90
-          }}>
+            flexDirection: "column",
+            minHeight: "100vh",
+          }}
+        >
+          {/* Header bar */}
+          <header
+            style={{
+              height: "64px",
+              backgroundColor: "#ffffff",
+              borderBottom: "1px solid #e1e3e5",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0 32px",
+              position: "sticky",
+              top: 0,
+              zIndex: 90,
+            }}
+          >
             <Text variant="headingLg" as="h1">
               <span style={{ color: "#202223" }}>{getSectionTitle()}</span>
             </Text>
@@ -785,11 +902,25 @@ export default function Admin() {
                     <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
                       <Card>
                         <Box padding="400">
-                          <Text variant="headingSm" tone="subdued">Active / Total Installs</Text>
+                          <Text variant="headingSm" tone="subdued">
+                            Active / Total Installs
+                          </Text>
                           <Box paddingBlockStart="200">
                             <Text variant="heading2xl" as="p">
-                              <span style={{ color: "#10b981", fontWeight: 700 }}>{metrics.activeShops}</span>
-                              <span style={{ color: "#6b7280", fontSize: "16px", marginLeft: "6px" }}>/ {metrics.totalShops} stores</span>
+                              <span
+                                style={{ color: "#10b981", fontWeight: 700 }}
+                              >
+                                {metrics.activeShops}
+                              </span>
+                              <span
+                                style={{
+                                  color: "#6b7280",
+                                  fontSize: "16px",
+                                  marginLeft: "6px",
+                                }}
+                              >
+                                / {metrics.totalShops} stores
+                              </span>
                             </Text>
                           </Box>
                         </Box>
@@ -798,11 +929,25 @@ export default function Admin() {
                     <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
                       <Card>
                         <Box padding="400">
-                          <Text variant="headingSm" tone="subdued">Monthly Installs / Churns</Text>
+                          <Text variant="headingSm" tone="subdued">
+                            Monthly Installs / Churns
+                          </Text>
                           <Box paddingBlockStart="200">
                             <Text variant="heading2xl" as="p">
-                              <span style={{ color: "#3b82f6", fontWeight: 700 }}>+{metrics.newThisMonth}</span>
-                              <span style={{ color: "#ef4444", fontWeight: 700, marginLeft: "12px" }}>-{metrics.churnedThisMonth}</span>
+                              <span
+                                style={{ color: "#3b82f6", fontWeight: 700 }}
+                              >
+                                +{metrics.newThisMonth}
+                              </span>
+                              <span
+                                style={{
+                                  color: "#ef4444",
+                                  fontWeight: 700,
+                                  marginLeft: "12px",
+                                }}
+                              >
+                                -{metrics.churnedThisMonth}
+                              </span>
                             </Text>
                           </Box>
                         </Box>
@@ -811,11 +956,25 @@ export default function Admin() {
                     <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
                       <Card>
                         <Box padding="400">
-                          <Text variant="headingSm" tone="subdued">Monthly Recurring Revenue (MRR)</Text>
+                          <Text variant="headingSm" tone="subdued">
+                            Monthly Recurring Revenue (MRR)
+                          </Text>
                           <Box paddingBlockStart="200">
                             <Text variant="heading2xl" as="p">
-                              <span style={{ color: "#ffffff", fontWeight: 700 }}>${metrics.mrr.toFixed(2)}</span>
-                              <span style={{ color: "#6b7280", fontSize: "14px", marginLeft: "8px" }}>ARR: ${metrics.arr.toFixed(2)}</span>
+                              <span
+                                style={{ color: "#ffffff", fontWeight: 700 }}
+                              >
+                                ${metrics.mrr.toFixed(2)}
+                              </span>
+                              <span
+                                style={{
+                                  color: "#6b7280",
+                                  fontSize: "14px",
+                                  marginLeft: "8px",
+                                }}
+                              >
+                                ARR: ${metrics.arr.toFixed(2)}
+                              </span>
                             </Text>
                           </Box>
                         </Box>
@@ -824,13 +983,24 @@ export default function Admin() {
                     <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
                       <Card>
                         <Box padding="400">
-                          <Text variant="headingSm" tone="subdued">Billing Gating Settings</Text>
+                          <Text variant="headingSm" tone="subdued">
+                            Billing Gating Settings
+                          </Text>
                           <Box paddingBlockStart="200">
                             <InlineStack align="space-between" alignY="center">
-                              <Badge tone={pricingEnabled ? "success" : "warning"}>
-                                {pricingEnabled ? "Shopify Billing Active" : "Bypassed / Free Mode"}
+                              <Badge
+                                tone={pricingEnabled ? "success" : "warning"}
+                              >
+                                {pricingEnabled
+                                  ? "Shopify Billing Active"
+                                  : "Bypassed / Free Mode"}
                               </Badge>
-                              <Button size="micro" onClick={() => setActiveSection("pricing")}>Edit</Button>
+                              <Button
+                                size="micro"
+                                onClick={() => setActiveSection("pricing")}
+                              >
+                                Edit
+                              </Button>
                             </InlineStack>
                           </Box>
                         </Box>
@@ -844,21 +1014,63 @@ export default function Admin() {
                       <Card>
                         <Box padding="450">
                           <BlockStack gap="400">
-                            <Text variant="headingMd" as="h3">Active Plan Distributions</Text>
+                            <Text variant="headingMd" as="h3">
+                              Active Plan Distributions
+                            </Text>
                             {[
-                              { key: "free", label: "Free Plan", val: metrics.planBreakdown.free, total: metrics.activeShops || 1, color: "#9ca3af" },
-                              { key: "starter", label: "Blogger Starter ($4.99)", val: metrics.planBreakdown.starter, total: metrics.activeShops || 1, color: "#60a5fa" },
-                              { key: "pro", label: "Blogger Pro ($9.99)", val: metrics.planBreakdown.pro, total: metrics.activeShops || 1, color: "#10b981" },
-                              { key: "business", label: "Blogger Business ($19.99)", val: metrics.planBreakdown.business, total: metrics.activeShops || 1, color: "#a78bfa" }
+                              {
+                                key: "free",
+                                label: "Free Plan",
+                                val: metrics.planBreakdown.free,
+                                total: metrics.activeShops || 1,
+                                color: "#9ca3af",
+                              },
+                              {
+                                key: "starter",
+                                label: "Blogger Starter ($4.99)",
+                                val: metrics.planBreakdown.starter,
+                                total: metrics.activeShops || 1,
+                                color: "#60a5fa",
+                              },
+                              {
+                                key: "pro",
+                                label: "Blogger Pro ($9.99)",
+                                val: metrics.planBreakdown.pro,
+                                total: metrics.activeShops || 1,
+                                color: "#10b981",
+                              },
+                              {
+                                key: "business",
+                                label: "Blogger Business ($19.99)",
+                                val: metrics.planBreakdown.business,
+                                total: metrics.activeShops || 1,
+                                color: "#a78bfa",
+                              },
                             ].map((p) => {
                               const pct = Math.round((p.val / p.total) * 100);
                               return (
                                 <BlockStack gap="100" key={p.key}>
                                   <InlineStack align="space-between">
-                                    <Text variant="bodySm" fontWeight="bold">{p.label}</Text>
-                                    <Text variant="bodySm" tone="subdued">{p.val} stores ({pct}%)</Text>
+                                    <Text variant="bodySm" fontWeight="bold">
+                                      {p.label}
+                                    </Text>
+                                    <Text variant="bodySm" tone="subdued">
+                                      {p.val} stores ({pct}%)
+                                    </Text>
                                   </InlineStack>
-                                  <ProgressBar progress={pct} size="small" tone={p.key === "free" ? "default" : p.key === "starter" ? "info" : p.key === "pro" ? "success" : "attention"} />
+                                  <ProgressBar
+                                    progress={pct}
+                                    size="small"
+                                    tone={
+                                      p.key === "free"
+                                        ? "default"
+                                        : p.key === "starter"
+                                          ? "info"
+                                          : p.key === "pro"
+                                            ? "success"
+                                            : "attention"
+                                    }
+                                  />
                                 </BlockStack>
                               );
                             })}
@@ -872,8 +1084,17 @@ export default function Admin() {
                         <Box padding="450">
                           <BlockStack gap="300">
                             <InlineStack align="space-between" alignY="center">
-                              <Text variant="headingMd" as="h3">Monthly Churn & Signups ({new Date().getFullYear()})</Text>
-                              <Button icon={DownloadIcon} onClick={handleExportRevenueCsv} size="slim">Export Revenue Report</Button>
+                              <Text variant="headingMd" as="h3">
+                                Monthly Churn & Signups (
+                                {new Date().getFullYear()})
+                              </Text>
+                              <Button
+                                icon={DownloadIcon}
+                                onClick={handleExportRevenueCsv}
+                                size="slim"
+                              >
+                                Export Revenue Report
+                              </Button>
                             </InlineStack>
                             <IndexTable
                               resourceName={{ singular: "row", plural: "rows" }}
@@ -882,16 +1103,46 @@ export default function Admin() {
                                 { title: "Month" },
                                 { title: "New Installs" },
                                 { title: "Churned Stores" },
-                                { title: "Estimated Revenue" }
+                                { title: "Estimated Revenue" },
                               ]}
                               selectable={false}
                             >
                               {monthlyChartData.map((row, index) => (
-                                <IndexTable.Row id={String(index)} key={index} position={index}>
-                                  <IndexTable.Cell><Text variant="bodyMd" fontWeight="bold">{row.month}</Text></IndexTable.Cell>
-                                  <IndexTable.Cell><span style={{ color: "#60a5fa", fontWeight: 600 }}>+{row.installs}</span></IndexTable.Cell>
-                                  <IndexTable.Cell><span style={{ color: "#f87171", fontWeight: 600 }}>-{row.churned}</span></IndexTable.Cell>
-                                  <IndexTable.Cell><Text fontWeight="bold">${row.revenue.toFixed(2)}</Text></IndexTable.Cell>
+                                <IndexTable.Row
+                                  id={String(index)}
+                                  key={index}
+                                  position={index}
+                                >
+                                  <IndexTable.Cell>
+                                    <Text variant="bodyMd" fontWeight="bold">
+                                      {row.month}
+                                    </Text>
+                                  </IndexTable.Cell>
+                                  <IndexTable.Cell>
+                                    <span
+                                      style={{
+                                        color: "#60a5fa",
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      +{row.installs}
+                                    </span>
+                                  </IndexTable.Cell>
+                                  <IndexTable.Cell>
+                                    <span
+                                      style={{
+                                        color: "#f87171",
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      -{row.churned}
+                                    </span>
+                                  </IndexTable.Cell>
+                                  <IndexTable.Cell>
+                                    <Text fontWeight="bold">
+                                      ${row.revenue.toFixed(2)}
+                                    </Text>
+                                  </IndexTable.Cell>
                                 </IndexTable.Row>
                               ))}
                             </IndexTable>
@@ -907,24 +1158,53 @@ export default function Admin() {
                       <Card>
                         <Box padding="450">
                           <BlockStack gap="300">
-                            <Text variant="headingMd" as="h3">Recent Merchant Onboarding</Text>
+                            <Text variant="headingMd" as="h3">
+                              Recent Merchant Onboarding
+                            </Text>
                             <IndexTable
-                              resourceName={{ singular: "store", plural: "stores" }}
+                              resourceName={{
+                                singular: "store",
+                                plural: "stores",
+                              }}
                               itemCount={recentShops.length}
                               headings={[
                                 { title: "Domain" },
                                 { title: "Email" },
                                 { title: "Plan" },
-                                { title: "Installed" }
+                                { title: "Installed" },
                               ]}
                               selectable={false}
                             >
                               {recentShops.map((shop, index) => (
-                                <IndexTable.Row id={String(shop.id)} key={shop.id} position={index}>
-                                  <IndexTable.Cell><Text variant="bodyMd" fontWeight="bold">{shop.domain}</Text></IndexTable.Cell>
-                                  <IndexTable.Cell>{shop.email}</IndexTable.Cell>
-                                  <IndexTable.Cell><Badge tone={shop.planKey === "free" ? "default" : "info"}>{shop.planKey}</Badge></IndexTable.Cell>
-                                  <IndexTable.Cell>{new Date(shop.installedAt).toLocaleDateString()}</IndexTable.Cell>
+                                <IndexTable.Row
+                                  id={String(shop.id)}
+                                  key={shop.id}
+                                  position={index}
+                                >
+                                  <IndexTable.Cell>
+                                    <Text variant="bodyMd" fontWeight="bold">
+                                      {shop.domain}
+                                    </Text>
+                                  </IndexTable.Cell>
+                                  <IndexTable.Cell>
+                                    {shop.email}
+                                  </IndexTable.Cell>
+                                  <IndexTable.Cell>
+                                    <Badge
+                                      tone={
+                                        shop.planKey === "free"
+                                          ? "default"
+                                          : "info"
+                                      }
+                                    >
+                                      {shop.planKey}
+                                    </Badge>
+                                  </IndexTable.Cell>
+                                  <IndexTable.Cell>
+                                    {new Date(
+                                      shop.installedAt,
+                                    ).toLocaleDateString()}
+                                  </IndexTable.Cell>
                                 </IndexTable.Row>
                               ))}
                             </IndexTable>
@@ -937,18 +1217,45 @@ export default function Admin() {
                       <Card>
                         <Box padding="450">
                           <BlockStack gap="300">
-                            <Text variant="headingMd" as="h3">Supervisor Activity Log Feed</Text>
-                            <div style={{ maxHeight: "280px", overflowY: "auto" }}>
+                            <Text variant="headingMd" as="h3">
+                              Supervisor Activity Log Feed
+                            </Text>
+                            <div
+                              style={{ maxHeight: "280px", overflowY: "auto" }}
+                            >
                               <BlockStack gap="300">
                                 {recentActivities.length === 0 ? (
-                                  <Text tone="subdued">No recent system activities found.</Text>
+                                  <Text tone="subdued">
+                                    No recent system activities found.
+                                  </Text>
                                 ) : (
                                   recentActivities.map((act) => (
-                                    <div key={act.id} style={{ display: "flex", gap: "12px", borderBottom: "1px solid #e1e3e5", paddingBottom: "10px" }}>
-                                      <Info size={16} color="#008060" style={{ flexShrink: 0, marginTop: "2px" }} />
+                                    <div
+                                      key={act.id}
+                                      style={{
+                                        display: "flex",
+                                        gap: "12px",
+                                        borderBottom: "1px solid #e1e3e5",
+                                        paddingBottom: "10px",
+                                      }}
+                                    >
+                                      <Info
+                                        size={16}
+                                        color="#008060"
+                                        style={{
+                                          flexShrink: 0,
+                                          marginTop: "2px",
+                                        }}
+                                      />
                                       <div>
-                                        <Text variant="bodySm" tone="subdued">{new Date(act.createdAt).toLocaleString()}</Text>
-                                        <Text variant="bodyMd">{act.action}</Text>
+                                        <Text variant="bodySm" tone="subdued">
+                                          {new Date(
+                                            act.createdAt,
+                                          ).toLocaleString()}
+                                        </Text>
+                                        <Text variant="bodyMd">
+                                          {act.action}
+                                        </Text>
                                       </div>
                                     </div>
                                   ))
@@ -976,7 +1283,10 @@ export default function Admin() {
                           <TextField
                             placeholder="Domain keyword..."
                             value={storesSearch}
-                            onChange={(val) => { setStoresSearch(val); setStoresPage(1); }}
+                            onChange={(val) => {
+                              setStoresSearch(val);
+                              setStoresPage(1);
+                            }}
                             autoComplete="off"
                             label="Search Stores"
                           />
@@ -987,10 +1297,13 @@ export default function Admin() {
                             options={[
                               { label: "All Stores", value: "all" },
                               { label: "Active", value: "active" },
-                              { label: "Deactivated", value: "deactivated" }
+                              { label: "Deactivated", value: "deactivated" },
                             ]}
                             value={statusFilter}
-                            onChange={(val) => { setStatusFilter(val); setStoresPage(1); }}
+                            onChange={(val) => {
+                              setStatusFilter(val);
+                              setStoresPage(1);
+                            }}
                           />
                         </Grid.Cell>
                         <Grid.Cell columnSpan={{ xs: 6, sm: 2, md: 2, lg: 2 }}>
@@ -999,12 +1312,21 @@ export default function Admin() {
                             options={[
                               { label: "All Plans", value: "all" },
                               { label: "Free tier", value: "free" },
-                              { label: "Blogger Starter", value: "Blogger Starter" },
+                              {
+                                label: "Blogger Starter",
+                                value: "Blogger Starter",
+                              },
                               { label: "Blogger Pro", value: "Blogger Pro" },
-                              { label: "Blogger Business", value: "Blogger Business" }
+                              {
+                                label: "Blogger Business",
+                                value: "Blogger Business",
+                              },
                             ]}
                             value={planFilter}
-                            onChange={(val) => { setPlanFilter(val); setStoresPage(1); }}
+                            onChange={(val) => {
+                              setPlanFilter(val);
+                              setStoresPage(1);
+                            }}
                           />
                         </Grid.Cell>
                         <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
@@ -1014,7 +1336,10 @@ export default function Admin() {
                                 label="Date From"
                                 type="date"
                                 value={dateFrom}
-                                onChange={(val) => { setDateFrom(val); setStoresPage(1); }}
+                                onChange={(val) => {
+                                  setDateFrom(val);
+                                  setStoresPage(1);
+                                }}
                                 autoComplete="off"
                               />
                             </div>
@@ -1023,16 +1348,33 @@ export default function Admin() {
                                 label="Date To"
                                 type="date"
                                 value={dateTo}
-                                onChange={(val) => { setDateTo(val); setStoresPage(1); }}
+                                onChange={(val) => {
+                                  setDateTo(val);
+                                  setStoresPage(1);
+                                }}
                                 autoComplete="off"
                               />
                             </div>
                           </InlineStack>
                         </Grid.Cell>
                         <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
-                          <div style={{ display: "flex", height: "100%", alignItems: "flex-end", gap: "10px" }}>
-                            <Button icon={DownloadIcon} onClick={handleExportStoresCsv}>Export CSV</Button>
-                            <Button onClick={loadStores} variant="primary">Apply</Button>
+                          <div
+                            style={{
+                              display: "flex",
+                              height: "100%",
+                              alignItems: "flex-end",
+                              gap: "10px",
+                            }}
+                          >
+                            <Button
+                              icon={DownloadIcon}
+                              onClick={handleExportStoresCsv}
+                            >
+                              Export CSV
+                            </Button>
+                            <Button onClick={loadStores} variant="primary">
+                              Apply
+                            </Button>
                           </div>
                         </Grid.Cell>
                       </Grid>
@@ -1048,51 +1390,120 @@ export default function Admin() {
                           { title: "Override" },
                           { title: "Installed" },
                           { title: "Status" },
-                          { title: "Actions" }
+                          { title: "Actions" },
                         ]}
                         selectable={false}
                       >
                         {stores.map((s, index) => (
-                          <IndexTable.Row id={String(s.id)} key={s.id} position={index}>
+                          <IndexTable.Row
+                            id={String(s.id)}
+                            key={s.id}
+                            position={index}
+                          >
                             <IndexTable.Cell>
-                              <Text variant="bodyMd" fontWeight="bold">{s.domain}</Text>
+                              <Text variant="bodyMd" fontWeight="bold">
+                                {s.domain}
+                              </Text>
                             </IndexTable.Cell>
                             <IndexTable.Cell>{s.email}</IndexTable.Cell>
-                            <IndexTable.Cell><Badge tone={s.planKey === "free" ? "default" : "info"}>{s.planKey}</Badge></IndexTable.Cell>
+                            <IndexTable.Cell>
+                              <Badge
+                                tone={s.planKey === "free" ? "default" : "info"}
+                              >
+                                {s.planKey}
+                              </Badge>
+                            </IndexTable.Cell>
                             <IndexTable.Cell>
                               {s.hasOverride ? (
-                                <Badge tone="attention">Yes ({s.overridePlan})</Badge>
+                                <Badge tone="attention">
+                                  Yes ({s.overridePlan})
+                                </Badge>
                               ) : (
                                 <Text tone="subdued">None</Text>
                               )}
                             </IndexTable.Cell>
-                            <IndexTable.Cell>{new Date(s.installedAt).toLocaleDateString()}</IndexTable.Cell>
+                            <IndexTable.Cell>
+                              {new Date(s.installedAt).toLocaleDateString()}
+                            </IndexTable.Cell>
                             <IndexTable.Cell>
                               {s.uninstalledAt ? (
-                                <Badge tone="critical">Deactivated ({new Date(s.uninstalledAt).toLocaleDateString()})</Badge>
+                                <Badge tone="critical">
+                                  Deactivated (
+                                  {new Date(
+                                    s.uninstalledAt,
+                                  ).toLocaleDateString()}
+                                  )
+                                </Badge>
                               ) : (
                                 <Badge tone="success">Active</Badge>
                               )}
                             </IndexTable.Cell>
                             <IndexTable.Cell>
                               <InlineStack gap="150">
-                                <Button size="slim" onClick={() => handleViewStoreDetail(s.domain)}>Detail</Button>
-                                <Button size="slim" onClick={() => {
-                                  setSelectedStoreDomain(s.domain);
-                                  setOverridePlan(s.planKey);
-                                  setOverrideExpiry(s.overrideExpiresAt ? new Date(s.overrideExpiresAt).toISOString().split("T")[0] : "");
-                                  setOverrideModalActive(true);
-                                }}>Override</Button>
-                                <Button size="slim" onClick={() => {
-                                  setSelectedStoreDomain(s.domain);
-                                  setSingleEmailModalActive(true);
-                                }}>Email</Button>
+                                <Button
+                                  size="slim"
+                                  onClick={() =>
+                                    handleViewStoreDetail(s.domain)
+                                  }
+                                >
+                                  Detail
+                                </Button>
+                                <Button
+                                  size="slim"
+                                  onClick={() => {
+                                    setSelectedStoreDomain(s.domain);
+                                    setOverridePlan(s.planKey);
+                                    setOverrideExpiry(
+                                      s.overrideExpiresAt
+                                        ? new Date(s.overrideExpiresAt)
+                                            .toISOString()
+                                            .split("T")[0]
+                                        : "",
+                                    );
+                                    setOverrideModalActive(true);
+                                  }}
+                                >
+                                  Override
+                                </Button>
+                                <Button
+                                  size="slim"
+                                  onClick={() => {
+                                    setSelectedStoreDomain(s.domain);
+                                    setSingleEmailModalActive(true);
+                                  }}
+                                >
+                                  Email
+                                </Button>
                                 {s.uninstalledAt ? (
-                                  <Button size="slim" tone="success" onClick={() => handleReactivateStore(s.domain)}>Reactivate</Button>
+                                  <Button
+                                    size="slim"
+                                    tone="success"
+                                    onClick={() =>
+                                      handleReactivateStore(s.domain)
+                                    }
+                                  >
+                                    Reactivate
+                                  </Button>
                                 ) : (
-                                  <Button size="slim" tone="destructive" onClick={() => handleSoftDeactivateStore(s.domain)}>Deactivate</Button>
+                                  <Button
+                                    size="slim"
+                                    tone="destructive"
+                                    onClick={() =>
+                                      handleSoftDeactivateStore(s.domain)
+                                    }
+                                  >
+                                    Deactivate
+                                  </Button>
                                 )}
-                                <Button size="slim" tone="destructive" variant="primary" icon={TrashIcon} onClick={() => handleForceDeleteStore(s.domain)} />
+                                <Button
+                                  size="slim"
+                                  tone="destructive"
+                                  variant="primary"
+                                  icon={TrashIcon}
+                                  onClick={() =>
+                                    handleForceDeleteStore(s.domain)
+                                  }
+                                />
                               </InlineStack>
                             </IndexTable.Cell>
                           </IndexTable.Row>
@@ -1104,11 +1515,15 @@ export default function Admin() {
                         <InlineStack align="center" gap="400">
                           <Button
                             disabled={storesPage === 1}
-                            onClick={() => setStoresPage((p) => Math.max(p - 1, 1))}
+                            onClick={() =>
+                              setStoresPage((p) => Math.max(p - 1, 1))
+                            }
                           >
                             Prev
                           </Button>
-                          <Text variant="bodyMd">Page {storesPage} of {Math.ceil(storesTotal / 20)}</Text>
+                          <Text variant="bodyMd">
+                            Page {storesPage} of {Math.ceil(storesTotal / 20)}
+                          </Text>
                           <Button
                             disabled={storesPage * 20 >= storesTotal}
                             onClick={() => setStoresPage((p) => p + 1)}
@@ -1130,9 +1545,14 @@ export default function Admin() {
                   <Card>
                     <Box padding="500">
                       <BlockStack gap="400">
-                        <Text variant="headingLg" as="h3">Global Billing Gating</Text>
+                        <Text variant="headingLg" as="h3">
+                          Global Billing Gating
+                        </Text>
                         <Text variant="bodyMd" tone="subdued">
-                          Configure whether merchants are redirected to Shopify App Subscription charge authorization requests. When disabled, merchants are bypass-gated to selected tiers for free.
+                          Configure whether merchants are redirected to Shopify
+                          App Subscription charge authorization requests. When
+                          disabled, merchants are bypass-gated to selected tiers
+                          for free.
                         </Text>
                         <Divider />
                         <Checkbox
@@ -1150,11 +1570,22 @@ export default function Admin() {
                       <BlockStack gap="400">
                         <InlineStack align="space-between" alignY="center">
                           <div>
-                            <Text variant="headingLg" as="h3">Dynamic Feature Gates & Limits Configuration</Text>
-                            <Text variant="bodySm" tone="subdued">Modify limits or enable/disable components per plan level dynamically in the database.</Text>
+                            <Text variant="headingLg" as="h3">
+                              Dynamic Feature Gates & Limits Configuration
+                            </Text>
+                            <Text variant="bodySm" tone="subdued">
+                              Modify limits or enable/disable components per
+                              plan level dynamically in the database.
+                            </Text>
                           </div>
                           <InlineStack gap="200">
-                            <Button tone="critical" onClick={handleResetFeatures} icon={RefreshIcon}>Reset to Defaults</Button>
+                            <Button
+                              tone="critical"
+                              onClick={handleResetFeatures}
+                              icon={RefreshIcon}
+                            >
+                              Reset to Defaults
+                            </Button>
                           </InlineStack>
                         </InlineStack>
 
@@ -1166,7 +1597,7 @@ export default function Admin() {
                             { id: "free", content: "Free tier" },
                             { id: "starter", content: "Blogger Starter" },
                             { id: "pro", content: "Blogger Pro" },
-                            { id: "business", content: "Blogger Business" }
+                            { id: "business", content: "Blogger Business" },
                           ]}
                           selected={selectedPlanTab}
                           onSelect={setSelectedPlanTab}
@@ -1174,18 +1605,27 @@ export default function Admin() {
 
                         {/* Feature grid table for the active selected tab */}
                         <IndexTable
-                          resourceName={{ singular: "feature", plural: "features" }}
-                          itemCount={features.filter(f => f.plan === planTabKeys[selectedPlanTab]).length}
+                          resourceName={{
+                            singular: "feature",
+                            plural: "features",
+                          }}
+                          itemCount={
+                            features.filter(
+                              (f) => f.plan === planTabKeys[selectedPlanTab],
+                            ).length
+                          }
                           headings={[
                             { title: "Feature Identifier Key" },
                             { title: "Gating Status" },
                             { title: "Usage/Count Limit" },
-                            { title: "Action" }
+                            { title: "Action" },
                           ]}
                           selectable={false}
                         >
                           {features
-                            .filter(f => f.plan === planTabKeys[selectedPlanTab])
+                            .filter(
+                              (f) => f.plan === planTabKeys[selectedPlanTab],
+                            )
                             .map((feat, idx) => {
                               return (
                                 <FeatureRow
@@ -1211,7 +1651,7 @@ export default function Admin() {
                   <Tabs
                     tabs={[
                       { id: "send", content: "Send Broadcast Email" },
-                      { id: "logs", content: "Sent Mail Audit Logs" }
+                      { id: "logs", content: "Sent Mail Audit Logs" },
                     ]}
                     selected={emailSubTab}
                     onSelect={setEmailSubTab}
@@ -1223,44 +1663,86 @@ export default function Admin() {
                       <Box padding="500">
                         <FormLayout>
                           <Grid>
-                            <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
+                            <Grid.Cell
+                              columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}
+                            >
                               <Select
                                 label="Target Recipients Group"
                                 options={[
-                                  { label: "All Database Stores", value: "all" },
-                                  { label: "Active Installations Only", value: "active" },
-                                  { label: "Deactivated / Churned Stores Only", value: "deactivated" },
-                                  { label: "Target By Active Plan Level", value: "by_plan" }
+                                  {
+                                    label: "All Database Stores",
+                                    value: "all",
+                                  },
+                                  {
+                                    label: "Active Installations Only",
+                                    value: "active",
+                                  },
+                                  {
+                                    label: "Deactivated / Churned Stores Only",
+                                    value: "deactivated",
+                                  },
+                                  {
+                                    label: "Target By Active Plan Level",
+                                    value: "by_plan",
+                                  },
                                 ]}
                                 value={recipientType}
                                 onChange={setRecipientType}
                               />
                             </Grid.Cell>
                             {recipientType === "by_plan" && (
-                              <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
+                              <Grid.Cell
+                                columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}
+                              >
                                 <Select
                                   label="Target Plan Level"
                                   options={[
                                     { label: "Free tier", value: "free" },
-                                    { label: "Blogger Starter", value: "starter" },
+                                    {
+                                      label: "Blogger Starter",
+                                      value: "starter",
+                                    },
                                     { label: "Blogger Pro", value: "pro" },
-                                    { label: "Blogger Business", value: "business" }
+                                    {
+                                      label: "Blogger Business",
+                                      value: "business",
+                                    },
                                   ]}
                                   value={recipientPlanId}
                                   onChange={setRecipientPlanId}
                                 />
                               </Grid.Cell>
                             )}
-                            <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6 }}>
+                            <Grid.Cell
+                              columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6 }}
+                            >
                               <Select
                                 label="Load Email Preset Template"
                                 options={[
-                                  { label: "Custom Message (Empty Template)", value: "" },
-                                  { label: "Welcome New Shop Presets", value: "welcome" },
-                                  { label: "Deactivation Supervisor Warning", value: "deactivation_notice" },
-                                  { label: "Pro Gating / Plan Upgrade Promo", value: "plan_upgrade_prompt" },
-                                  { label: "Billing Payment Failed Notice", value: "payment_failed" },
-                                  { label: "Monthly Blogger Newsletter", value: "monthly_newsletter" }
+                                  {
+                                    label: "Custom Message (Empty Template)",
+                                    value: "",
+                                  },
+                                  {
+                                    label: "Welcome New Shop Presets",
+                                    value: "welcome",
+                                  },
+                                  {
+                                    label: "Deactivation Supervisor Warning",
+                                    value: "deactivation_notice",
+                                  },
+                                  {
+                                    label: "Pro Gating / Plan Upgrade Promo",
+                                    value: "plan_upgrade_prompt",
+                                  },
+                                  {
+                                    label: "Billing Payment Failed Notice",
+                                    value: "payment_failed",
+                                  },
+                                  {
+                                    label: "Monthly Blogger Newsletter",
+                                    value: "monthly_newsletter",
+                                  },
                                 ]}
                                 value={selectedTemplateKey}
                                 onChange={handleLoadTemplate}
@@ -1305,7 +1787,10 @@ export default function Admin() {
                       <Box padding="400">
                         <BlockStack gap="400">
                           <IndexTable
-                            resourceName={{ singular: "email", plural: "emails" }}
+                            resourceName={{
+                              singular: "email",
+                              plural: "emails",
+                            }}
                             itemCount={emails.length}
                             headings={[
                               { title: "Recipient Email" },
@@ -1313,20 +1798,40 @@ export default function Admin() {
                               { title: "Subject Line" },
                               { title: "Template Key" },
                               { title: "Delivery Status" },
-                              { title: "Sent At" }
+                              { title: "Sent At" },
                             ]}
                             selectable={false}
                           >
                             {emails.map((e, index) => (
-                              <IndexTable.Row id={String(e.id)} key={e.id} position={index}>
-                                <IndexTable.Cell><Text variant="bodyMd" fontWeight="bold">{e.recipientEmail}</Text></IndexTable.Cell>
-                                <IndexTable.Cell>{e.recipientDomain || "System/Internal"}</IndexTable.Cell>
+                              <IndexTable.Row
+                                id={String(e.id)}
+                                key={e.id}
+                                position={index}
+                              >
+                                <IndexTable.Cell>
+                                  <Text variant="bodyMd" fontWeight="bold">
+                                    {e.recipientEmail}
+                                  </Text>
+                                </IndexTable.Cell>
+                                <IndexTable.Cell>
+                                  {e.recipientDomain || "System/Internal"}
+                                </IndexTable.Cell>
                                 <IndexTable.Cell>{e.subject}</IndexTable.Cell>
                                 <IndexTable.Cell>{e.template}</IndexTable.Cell>
                                 <IndexTable.Cell>
-                                  <Badge tone={e.status === "sent" ? "success" : "critical"}>{e.status}</Badge>
+                                  <Badge
+                                    tone={
+                                      e.status === "sent"
+                                        ? "success"
+                                        : "critical"
+                                    }
+                                  >
+                                    {e.status}
+                                  </Badge>
                                 </IndexTable.Cell>
-                                <IndexTable.Cell>{new Date(e.createdAt).toLocaleString()}</IndexTable.Cell>
+                                <IndexTable.Cell>
+                                  {new Date(e.createdAt).toLocaleString()}
+                                </IndexTable.Cell>
                               </IndexTable.Row>
                             ))}
                           </IndexTable>
@@ -1336,11 +1841,16 @@ export default function Admin() {
                             <InlineStack align="center" gap="400">
                               <Button
                                 disabled={emailsPage === 1}
-                                onClick={() => setEmailsPage((p) => Math.max(p - 1, 1))}
+                                onClick={() =>
+                                  setEmailsPage((p) => Math.max(p - 1, 1))
+                                }
                               >
                                 Prev
                               </Button>
-                              <Text variant="bodyMd">Page {emailsPage} of {Math.ceil(emailsTotal / 20)}</Text>
+                              <Text variant="bodyMd">
+                                Page {emailsPage} of{" "}
+                                {Math.ceil(emailsTotal / 20)}
+                              </Text>
                               <Button
                                 disabled={emailsPage * 20 >= emailsTotal}
                                 onClick={() => setEmailsPage((p) => p + 1)}
@@ -1370,16 +1880,30 @@ export default function Admin() {
                           { title: "Supervisor Action Date & Time" },
                           { title: "Activity Detail / Change Description" },
                           { title: "Modified Object" },
-                          { title: "Target Ref ID" }
+                          { title: "Target Ref ID" },
                         ]}
                         selectable={false}
                       >
                         {activities.map((a, index) => (
-                          <IndexTable.Row id={String(a.id)} key={a.id} position={index}>
-                            <IndexTable.Cell>{new Date(a.createdAt).toLocaleString()}</IndexTable.Cell>
-                            <IndexTable.Cell><Text variant="bodyMd" fontWeight="bold">{a.action}</Text></IndexTable.Cell>
-                            <IndexTable.Cell>{a.targetType || "setting"}</IndexTable.Cell>
-                            <IndexTable.Cell>{a.targetId || "N/A"}</IndexTable.Cell>
+                          <IndexTable.Row
+                            id={String(a.id)}
+                            key={a.id}
+                            position={index}
+                          >
+                            <IndexTable.Cell>
+                              {new Date(a.createdAt).toLocaleString()}
+                            </IndexTable.Cell>
+                            <IndexTable.Cell>
+                              <Text variant="bodyMd" fontWeight="bold">
+                                {a.action}
+                              </Text>
+                            </IndexTable.Cell>
+                            <IndexTable.Cell>
+                              {a.targetType || "setting"}
+                            </IndexTable.Cell>
+                            <IndexTable.Cell>
+                              {a.targetId || "N/A"}
+                            </IndexTable.Cell>
                           </IndexTable.Row>
                         ))}
                       </IndexTable>
@@ -1389,11 +1913,16 @@ export default function Admin() {
                         <InlineStack align="center" gap="400">
                           <Button
                             disabled={activitiesPage === 1}
-                            onClick={() => setActivitiesPage((p) => Math.max(p - 1, 1))}
+                            onClick={() =>
+                              setActivitiesPage((p) => Math.max(p - 1, 1))
+                            }
                           >
                             Prev
                           </Button>
-                          <Text variant="bodyMd">Page {activitiesPage} of {Math.ceil(activitiesTotal / 20)}</Text>
+                          <Text variant="bodyMd">
+                            Page {activitiesPage} of{" "}
+                            {Math.ceil(activitiesTotal / 20)}
+                          </Text>
                           <Button
                             disabled={activitiesPage * 20 >= activitiesTotal}
                             onClick={() => setActivitiesPage((p) => p + 1)}
@@ -1421,7 +1950,9 @@ export default function Admin() {
                           <Divider />
                           {Object.keys(chatHistory).length === 0 ? (
                             <Box padding="400" align="center">
-                              <Text variant="bodyMd" tone="subdued">No active chat sessions</Text>
+                              <Text variant="bodyMd" tone="subdued">
+                                No active chat sessions
+                              </Text>
                             </Box>
                           ) : (
                             <BlockStack gap="150">
@@ -1437,15 +1968,23 @@ export default function Admin() {
                                       padding: "12px",
                                       borderRadius: "8px",
                                       border: "1px solid",
-                                      borderColor: isSelected ? "#008060" : "#e1e3e5",
-                                      backgroundColor: isSelected ? "#e2f1eb" : "#ffffff",
+                                      borderColor: isSelected
+                                        ? "#008060"
+                                        : "#e1e3e5",
+                                      backgroundColor: isSelected
+                                        ? "#e2f1eb"
+                                        : "#ffffff",
                                       cursor: "pointer",
-                                      transition: "all 0.15s ease-in-out"
+                                      transition: "all 0.15s ease-in-out",
                                     }}
                                   >
                                     <BlockStack gap="100">
                                       <InlineStack align="space-between">
-                                        <Text variant="bodySm" fontWeight="bold" tone={isSelected ? "success" : "base"}>
+                                        <Text
+                                          variant="bodySm"
+                                          fontWeight="bold"
+                                          tone={isSelected ? "success" : "base"}
+                                        >
                                           {room.replace("shop_", "")}
                                         </Text>
                                         {msgs.length > 0 && (
@@ -1455,8 +1994,13 @@ export default function Admin() {
                                         )}
                                       </InlineStack>
                                       {lastMsg && (
-                                        <Text variant="bodyXs" tone="subdued" truncate>
-                                          {lastMsg.senderName || lastMsg.sender}: {lastMsg.text || lastMsg.message}
+                                        <Text
+                                          variant="bodyXs"
+                                          tone="subdued"
+                                          truncate
+                                        >
+                                          {lastMsg.senderName || lastMsg.sender}
+                                          : {lastMsg.text || lastMsg.message}
                                         </Text>
                                       )}
                                     </BlockStack>
@@ -1477,7 +2021,9 @@ export default function Admin() {
                         {selectedChatRoom ? (
                           <BlockStack gap="400">
                             <InlineStack align="space-between">
-                              <Text variant="headingMd">Room: {selectedChatRoom.replace("shop_", "")}</Text>
+                              <Text variant="headingMd">
+                                Room: {selectedChatRoom.replace("shop_", "")}
+                              </Text>
                               <Button
                                 size="slim"
                                 icon={RefreshIcon}
@@ -1499,49 +2045,85 @@ export default function Admin() {
                                 border: "1px solid #e1e3e5",
                                 display: "flex",
                                 flexDirection: "column",
-                                gap: "8px"
+                                gap: "8px",
                               }}
                             >
-                              {(chatHistory[selectedChatRoom] || []).length === 0 ? (
+                              {(chatHistory[selectedChatRoom] || []).length ===
+                              0 ? (
                                 <Box padding="800" align="center">
-                                  <Text variant="bodyMd" tone="subdued">No messages in this room yet.</Text>
+                                  <Text variant="bodyMd" tone="subdued">
+                                    No messages in this room yet.
+                                  </Text>
                                 </Box>
                               ) : (
-                                (chatHistory[selectedChatRoom] || []).map((msg, i) => {
-                                  const isSupport = msg.sender === "Support";
-                                  return (
-                                    <div
-                                      key={i}
-                                      style={{
-                                        display: "flex",
-                                        justifyContent: isSupport ? "flex-end" : "flex-start",
-                                        marginBottom: "4px"
-                                      }}
-                                    >
+                                (chatHistory[selectedChatRoom] || []).map(
+                                  (msg, i) => {
+                                    const isSupport = msg.sender === "Support";
+                                    return (
                                       <div
+                                        key={i}
                                         style={{
-                                          maxWidth: "75%",
-                                          padding: "8px 12px",
-                                          borderRadius: isSupport ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
-                                          backgroundColor: isSupport ? "#008060" : "#ffffff",
-                                          color: isSupport ? "#ffffff" : "#202223",
-                                          border: isSupport ? "none" : "1px solid #e1e3e5",
-                                          boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                                          display: "flex",
+                                          justifyContent: isSupport
+                                            ? "flex-end"
+                                            : "flex-start",
+                                          marginBottom: "4px",
                                         }}
                                       >
-                                        <div style={{ fontSize: "10px", fontWeight: "bold", color: isSupport ? "rgba(255,255,255,0.85)" : "#6d7175", marginBottom: "2px" }}>
-                                          {msg.senderName || msg.sender}
-                                        </div>
-                                        <Text variant="bodyMd">{msg.text || msg.message}</Text>
-                                        {msg.timestamp && (
-                                          <div style={{ fontSize: "9px", opacity: 0.6, marginTop: "4px", textAlign: "right" }}>
-                                            {new Date(msg.timestamp).toLocaleTimeString()}
+                                        <div
+                                          style={{
+                                            maxWidth: "75%",
+                                            padding: "8px 12px",
+                                            borderRadius: isSupport
+                                              ? "12px 12px 2px 12px"
+                                              : "12px 12px 12px 2px",
+                                            backgroundColor: isSupport
+                                              ? "#008060"
+                                              : "#ffffff",
+                                            color: isSupport
+                                              ? "#ffffff"
+                                              : "#202223",
+                                            border: isSupport
+                                              ? "none"
+                                              : "1px solid #e1e3e5",
+                                            boxShadow:
+                                              "0 1px 2px rgba(0,0,0,0.05)",
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              fontSize: "10px",
+                                              fontWeight: "bold",
+                                              color: isSupport
+                                                ? "rgba(255,255,255,0.85)"
+                                                : "#6d7175",
+                                              marginBottom: "2px",
+                                            }}
+                                          >
+                                            {msg.senderName || msg.sender}
                                           </div>
-                                        )}
+                                          <Text variant="bodyMd">
+                                            {msg.text || msg.message}
+                                          </Text>
+                                          {msg.timestamp && (
+                                            <div
+                                              style={{
+                                                fontSize: "9px",
+                                                opacity: 0.6,
+                                                marginTop: "4px",
+                                                textAlign: "right",
+                                              }}
+                                            >
+                                              {new Date(
+                                                msg.timestamp,
+                                              ).toLocaleTimeString()}
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
-                                    </div>
-                                  );
-                                })
+                                    );
+                                  },
+                                )
                               )}
                             </div>
 
@@ -1570,7 +2152,10 @@ export default function Admin() {
                           </BlockStack>
                         ) : (
                           <Box padding="800" align="center">
-                            <Text variant="headingMd" tone="subdued">Select a conversation from the sidebar to start chatting</Text>
+                            <Text variant="headingMd" tone="subdued">
+                              Select a conversation from the sidebar to start
+                              chatting
+                            </Text>
                           </Box>
                         )}
                       </Box>
@@ -1626,11 +2211,17 @@ export default function Admin() {
         {/* ─── MODAL: STORE DETAIL AUDITOR ─── */}
         <Modal
           open={detailModalActive}
-          onClose={() => { setDetailModalActive(false); setStoreDetail(null); }}
+          onClose={() => {
+            setDetailModalActive(false);
+            setStoreDetail(null);
+          }}
           title={`Auditing Domain details: ${storeDetail?.domain || ""}`}
           primaryAction={{
             content: "Close details",
-            onAction: () => { setDetailModalActive(false); setStoreDetail(null); },
+            onAction: () => {
+              setDetailModalActive(false);
+              setStoreDetail(null);
+            },
           }}
         >
           <Modal.Section>
@@ -1640,7 +2231,9 @@ export default function Admin() {
                   <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
                     <Card>
                       <Box padding="300">
-                        <Text variant="headingSm" tone="subdued">DB Primary ID</Text>
+                        <Text variant="headingSm" tone="subdued">
+                          DB Primary ID
+                        </Text>
                         <Text variant="headingMd">{storeDetail.id}</Text>
                       </Box>
                     </Card>
@@ -1648,7 +2241,9 @@ export default function Admin() {
                   <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
                     <Card>
                       <Box padding="300">
-                        <Text variant="headingSm" tone="subdued">Active Tier</Text>
+                        <Text variant="headingSm" tone="subdued">
+                          Active Tier
+                        </Text>
                         <Text variant="headingMd">{storeDetail.planKey}</Text>
                       </Box>
                     </Card>
@@ -1656,7 +2251,9 @@ export default function Admin() {
                   <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
                     <Card>
                       <Box padding="300">
-                        <Text variant="headingSm" tone="subdued">Owner Email</Text>
+                        <Text variant="headingSm" tone="subdued">
+                          Owner Email
+                        </Text>
                         <Text variant="headingMd">{storeDetail.email}</Text>
                       </Box>
                     </Card>
@@ -1664,8 +2261,14 @@ export default function Admin() {
                   <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
                     <Card>
                       <Box padding="300">
-                        <Text variant="headingSm" tone="subdued">Onboard Date</Text>
-                        <Text variant="headingMd">{new Date(storeDetail.installedAt).toLocaleDateString()}</Text>
+                        <Text variant="headingSm" tone="subdued">
+                          Onboard Date
+                        </Text>
+                        <Text variant="headingMd">
+                          {new Date(
+                            storeDetail.installedAt,
+                          ).toLocaleDateString()}
+                        </Text>
                       </Box>
                     </Card>
                   </Grid.Cell>
@@ -1675,20 +2278,28 @@ export default function Admin() {
                   <Grid.Cell columnSpan={{ xs: 6, sm: 4, md: 4, lg: 4 }}>
                     <Card>
                       <Box padding="300">
-                        <Text variant="bodyMd" fontWeight="bold">Published Content Metrics</Text>
+                        <Text variant="bodyMd" fontWeight="bold">
+                          Published Content Metrics
+                        </Text>
                         <Box paddingBlockStart="200">
                           <BlockStack gap="150">
                             <InlineStack align="space-between">
                               <Text>Total Posts Count:</Text>
-                              <Text fontWeight="bold">{storeDetail.postsCount}</Text>
+                              <Text fontWeight="bold">
+                                {storeDetail.postsCount}
+                              </Text>
                             </InlineStack>
                             <InlineStack align="space-between">
                               <Text>Total Categories Count:</Text>
-                              <Text fontWeight="bold">{storeDetail.categoriesCount}</Text>
+                              <Text fontWeight="bold">
+                                {storeDetail.categoriesCount}
+                              </Text>
                             </InlineStack>
                             <InlineStack align="space-between">
                               <Text>Total Tag references:</Text>
-                              <Text fontWeight="bold">{storeDetail.tagsCount}</Text>
+                              <Text fontWeight="bold">
+                                {storeDetail.tagsCount}
+                              </Text>
                             </InlineStack>
                           </BlockStack>
                         </Box>
@@ -1698,14 +2309,27 @@ export default function Admin() {
                   <Grid.Cell columnSpan={{ xs: 6, sm: 8, md: 8, lg: 8 }}>
                     <Card>
                       <Box padding="300">
-                        <Text variant="bodyMd" fontWeight="bold">Recent Specific Audit Log</Text>
+                        <Text variant="bodyMd" fontWeight="bold">
+                          Recent Specific Audit Log
+                        </Text>
                         <Box paddingBlockStart="200">
                           {storeLogs.length === 0 ? (
-                            <Text tone="subdued">No supervisor logs recorded for this store.</Text>
+                            <Text tone="subdued">
+                              No supervisor logs recorded for this store.
+                            </Text>
                           ) : (
                             storeLogs.map((log) => (
-                              <div key={log.id} style={{ borderBottom: "1px solid #e1e3e5", paddingBottom: "6px", marginBottom: "6px" }}>
-                                <Text variant="bodySm" tone="subdued">{new Date(log.createdAt).toLocaleString()}</Text>
+                              <div
+                                key={log.id}
+                                style={{
+                                  borderBottom: "1px solid #e1e3e5",
+                                  paddingBottom: "6px",
+                                  marginBottom: "6px",
+                                }}
+                              >
+                                <Text variant="bodySm" tone="subdued">
+                                  {new Date(log.createdAt).toLocaleString()}
+                                </Text>
                                 <Text>{log.action}</Text>
                               </div>
                             ))
@@ -1758,7 +2382,6 @@ export default function Admin() {
 
         {/* Toast success notifier */}
         {toastMarkup}
-
       </div>
     </Frame>
   );
@@ -1767,7 +2390,9 @@ export default function Admin() {
 // Subcomponent: Inline Row Editing helper for features auditor
 function FeatureRow({ feat, idx, onSave }) {
   const [enabled, setEnabled] = useState(feat.enabled);
-  const [limit, setLimit] = useState(feat.limit === null ? "" : String(feat.limit));
+  const [limit, setLimit] = useState(
+    feat.limit === null ? "" : String(feat.limit),
+  );
   const [isDirty, setIsDirty] = useState(false);
 
   const handleSave = () => {
@@ -1779,13 +2404,18 @@ function FeatureRow({ feat, idx, onSave }) {
   return (
     <IndexTable.Row id={String(feat.id)} position={idx}>
       <IndexTable.Cell>
-        <Text variant="bodyMd" fontWeight="bold">{feat.featureKey}</Text>
+        <Text variant="bodyMd" fontWeight="bold">
+          {feat.featureKey}
+        </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Checkbox
           label="Component Enabled"
           checked={enabled}
-          onChange={(val) => { setEnabled(val); setIsDirty(true); }}
+          onChange={(val) => {
+            setEnabled(val);
+            setIsDirty(true);
+          }}
         />
       </IndexTable.Cell>
       <IndexTable.Cell>
@@ -1794,7 +2424,10 @@ function FeatureRow({ feat, idx, onSave }) {
           labelHidden
           placeholder="Unlimited (null)"
           value={limit}
-          onChange={(val) => { setLimit(val); setIsDirty(true); }}
+          onChange={(val) => {
+            setLimit(val);
+            setIsDirty(true);
+          }}
           autoComplete="off"
           type="number"
         />

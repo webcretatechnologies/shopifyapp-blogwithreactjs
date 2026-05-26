@@ -10,7 +10,7 @@ import {
   Banner,
   BlockStack,
   InlineStack,
-  Icon
+  Icon,
 } from "@shopify/polaris";
 import { EmailIcon, ChatIcon } from "@shopify/polaris-icons";
 import { useNavigate } from "react-router-dom";
@@ -29,7 +29,7 @@ export default function Support() {
       setError("Please fill out the subject and message.");
       return;
     }
-    
+
     setLoading(true);
     setError(null);
     try {
@@ -40,7 +40,7 @@ export default function Support() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to submit feedback");
-      
+
       setSuccess(true);
       setSubject("");
       setMessage("");
@@ -54,7 +54,9 @@ export default function Support() {
 
   return (
     <Page
-      breadcrumbs={[{ content: "Dashboard", onAction: () => navigate("/posts") }]}
+      breadcrumbs={[
+        { content: "Dashboard", onAction: () => navigate("/posts") },
+      ]}
       title="Support & Feedback"
       subtitle="Need help or want to suggest a feature? Let us know!"
     >
@@ -66,10 +68,11 @@ export default function Support() {
                 {error}
               </Banner>
             )}
-            
+
             {success && (
               <Banner tone="success" onDismiss={() => setSuccess(false)}>
-                Thank you for your feedback! Our support team will review it shortly.
+                Thank you for your feedback! Our support team will review it
+                shortly.
               </Banner>
             )}
 
@@ -82,7 +85,7 @@ export default function Support() {
                   placeholder="e.g. Bug report, Feature request, Help needed..."
                   autoComplete="off"
                 />
-                
+
                 <TextField
                   label="Message"
                   value={message}
@@ -104,7 +107,11 @@ export default function Support() {
                 />
 
                 <div style={{ marginTop: "1rem" }}>
-                  <Button variant="primary" onClick={handleSubmit} loading={loading}>
+                  <Button
+                    variant="primary"
+                    onClick={handleSubmit}
+                    loading={loading}
+                  >
                     Submit Request
                   </Button>
                 </div>
@@ -118,32 +125,42 @@ export default function Support() {
             <Card padding="400">
               <BlockStack gap="300">
                 <Text variant="headingMd">Contact Methods</Text>
-                
+
                 <InlineStack gap="300" blockAlign="center">
                   <Icon source={EmailIcon} tone="base" />
                   <Text as="p">
-                    <strong>Email Support</strong><br />
-                    <a href="mailto:support@webcreta.com">support@webcreta.com</a>
+                    <strong>Email Support</strong>
+                    <br />
+                    <a href="mailto:support@webcreta.com">
+                      support@webcreta.com
+                    </a>
                   </Text>
                 </InlineStack>
 
                 <InlineStack gap="300" blockAlign="center">
                   <Icon source={ChatIcon} tone="base" />
                   <Text as="p">
-                    <strong>Live Chat</strong><br />
+                    <strong>Live Chat</strong>
+                    <br />
                     Available 9 AM - 6 PM EST
                   </Text>
                 </InlineStack>
               </BlockStack>
             </Card>
-            
+
             <Card padding="400">
               <BlockStack gap="300">
                 <Text variant="headingMd">Documentation</Text>
                 <Text as="p">
-                  Check out our detailed guides to get the most out of the Blog App.
+                  Check out our detailed guides to get the most out of the Blog
+                  App.
                 </Text>
-                <Button fullWidth onClick={() => window.open('https://help.webcreta.com', '_blank')}>
+                <Button
+                  fullWidth
+                  onClick={() =>
+                    window.open("https://help.webcreta.com", "_blank")
+                  }
+                >
                   Visit Help Center
                 </Button>
               </BlockStack>

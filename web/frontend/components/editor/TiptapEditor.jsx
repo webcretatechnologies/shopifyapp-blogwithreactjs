@@ -20,7 +20,10 @@ import "./TiptapEditor.css";
 const Btn = ({ onClick, active, title, children, style = {} }) => (
   <button
     type="button"
-    onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+    onMouseDown={(e) => {
+      e.preventDefault();
+      onClick();
+    }}
     className={`tiptap-btn${active ? " tiptap-btn--active" : ""}`}
     title={title}
     style={style}
@@ -102,7 +105,11 @@ export default function TiptapEditor({
   };
 
   const handleTableInsert = () => {
-    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+    editor
+      .chain()
+      .focus()
+      .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+      .run();
   };
 
   return (
@@ -110,56 +117,153 @@ export default function TiptapEditor({
       <div className="tiptap-toolbar" style={{ flexWrap: "wrap", gap: "2px" }}>
         {/* ── Formatting ── */}
         <div className="tiptap-toolbar__group">
-          <Btn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive("bold")} title="Bold"><b>B</b></Btn>
-          <Btn onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive("italic")} title="Italic"><i>I</i></Btn>
-          <Btn onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive("underline")} title="Underline"><u>U</u></Btn>
-          <Btn onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive("strike")} title="Strikethrough"><s>S</s></Btn>
+          <Btn
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            active={editor.isActive("bold")}
+            title="Bold"
+          >
+            <b>B</b>
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            active={editor.isActive("italic")}
+            title="Italic"
+          >
+            <i>I</i>
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            active={editor.isActive("underline")}
+            title="Underline"
+          >
+            <u>U</u>
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+            active={editor.isActive("strike")}
+            title="Strikethrough"
+          >
+            <s>S</s>
+          </Btn>
         </div>
         <Sep />
 
         {/* ── Headings ── */}
         <div className="tiptap-toolbar__group">
           {[1, 2, 3].map((l) => (
-            <Btn key={l} onClick={() => editor.chain().focus().toggleHeading({ level: l }).run()} active={editor.isActive("heading", { level: l })} title={`H${l}`}>H{l}</Btn>
+            <Btn
+              key={l}
+              onClick={() =>
+                editor.chain().focus().toggleHeading({ level: l }).run()
+              }
+              active={editor.isActive("heading", { level: l })}
+              title={`H${l}`}
+            >
+              H{l}
+            </Btn>
           ))}
-          <Btn onClick={() => editor.chain().focus().setParagraph().run()} active={editor.isActive("paragraph")} title="Paragraph">¶</Btn>
+          <Btn
+            onClick={() => editor.chain().focus().setParagraph().run()}
+            active={editor.isActive("paragraph")}
+            title="Paragraph"
+          >
+            ¶
+          </Btn>
         </div>
         <Sep />
 
         {/* ── Alignment ── */}
         <div className="tiptap-toolbar__group">
-          <Btn onClick={() => editor.chain().focus().setTextAlign("left").run()} active={editor.isActive({ textAlign: "left" })} title="Align Left">≡L</Btn>
-          <Btn onClick={() => editor.chain().focus().setTextAlign("center").run()} active={editor.isActive({ textAlign: "center" })} title="Center">≡C</Btn>
-          <Btn onClick={() => editor.chain().focus().setTextAlign("right").run()} active={editor.isActive({ textAlign: "right" })} title="Align Right">≡R</Btn>
+          <Btn
+            onClick={() => editor.chain().focus().setTextAlign("left").run()}
+            active={editor.isActive({ textAlign: "left" })}
+            title="Align Left"
+          >
+            ≡L
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().setTextAlign("center").run()}
+            active={editor.isActive({ textAlign: "center" })}
+            title="Center"
+          >
+            ≡C
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().setTextAlign("right").run()}
+            active={editor.isActive({ textAlign: "right" })}
+            title="Align Right"
+          >
+            ≡R
+          </Btn>
         </div>
         <Sep />
 
         {/* ── Lists & Blocks ── */}
         <div className="tiptap-toolbar__group">
-          <Btn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive("bulletList")} title="Bullet List">• —</Btn>
-          <Btn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive("orderedList")} title="Numbered List">1.</Btn>
-          <Btn onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive("blockquote")} title="Blockquote">"</Btn>
-          <Btn onClick={() => editor.chain().focus().setHorizontalRule().run()} active={false} title="Horizontal Rule">─</Btn>
+          <Btn
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            active={editor.isActive("bulletList")}
+            title="Bullet List"
+          >
+            • —
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            active={editor.isActive("orderedList")}
+            title="Numbered List"
+          >
+            1.
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+            active={editor.isActive("blockquote")}
+            title="Blockquote"
+          >
+            "
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().setHorizontalRule().run()}
+            active={false}
+            title="Horizontal Rule"
+          >
+            ─
+          </Btn>
         </div>
         <Sep />
 
         {/* ── Color & Highlight ── */}
         <div className="tiptap-toolbar__group" style={{ alignItems: "center" }}>
-          <label title="Text Color" style={{ cursor: "pointer", display: "flex", alignItems: "center" }} className="tiptap-btn">
+          <label
+            title="Text Color"
+            style={{ cursor: "pointer", display: "flex", alignItems: "center" }}
+            className="tiptap-btn"
+          >
             <span>A</span>
             <input
               type="color"
               style={{ width: 0, height: 0, opacity: 0, position: "absolute" }}
-              onChange={(e) => editor.chain().focus().setColor(e.target.value).run()}
+              onChange={(e) =>
+                editor.chain().focus().setColor(e.target.value).run()
+              }
             />
           </label>
-          <label title="Highlight" style={{ cursor: "pointer", display: "flex", alignItems: "center" }} className={`tiptap-btn${editor.isActive("highlight") ? " tiptap-btn--active" : ""}`}>
+          <label
+            title="Highlight"
+            style={{ cursor: "pointer", display: "flex", alignItems: "center" }}
+            className={`tiptap-btn${editor.isActive("highlight") ? " tiptap-btn--active" : ""}`}
+          >
             <span style={{ background: "#ffd700", padding: "0 2px" }}>H</span>
             <input
               type="color"
               defaultValue="#ffd700"
               style={{ width: 0, height: 0, opacity: 0, position: "absolute" }}
-              onChange={(e) => editor.chain().focus().toggleHighlight({ color: e.target.value }).run()}
+              onChange={(e) =>
+                editor
+                  .chain()
+                  .focus()
+                  .toggleHighlight({ color: e.target.value })
+                  .run()
+              }
             />
           </label>
         </div>
@@ -167,28 +271,85 @@ export default function TiptapEditor({
 
         {/* ── Code ── */}
         <div className="tiptap-toolbar__group">
-          <Btn onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive("code")} title="Inline Code">{"`"}</Btn>
-          <Btn onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive("codeBlock")} title="Code Block">{"{ }"}</Btn>
+          <Btn
+            onClick={() => editor.chain().focus().toggleCode().run()}
+            active={editor.isActive("code")}
+            title="Inline Code"
+          >
+            {"`"}
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+            active={editor.isActive("codeBlock")}
+            title="Code Block"
+          >
+            {"{ }"}
+          </Btn>
         </div>
         <Sep />
 
         {/* ── Links & Media ── */}
         <div className="tiptap-toolbar__group">
-          <Btn onClick={handleLinkInsert} active={editor.isActive("link")} title="Insert Link">🔗</Btn>
-          <Btn onClick={handleImageUpload} active={false} title="Upload Image">🖼</Btn>
-          <Btn onClick={() => setShowShopifyPicker(true)} active={false} title="Shopify Files">🛍</Btn>
-          <Btn onClick={() => setShowYoutubeModal(true)} active={editor.isActive("youtube")} title="Embed YouTube/Video">▶️</Btn>
+          <Btn
+            onClick={handleLinkInsert}
+            active={editor.isActive("link")}
+            title="Insert Link"
+          >
+            🔗
+          </Btn>
+          <Btn onClick={handleImageUpload} active={false} title="Upload Image">
+            🖼
+          </Btn>
+          <Btn
+            onClick={() => setShowShopifyPicker(true)}
+            active={false}
+            title="Shopify Files"
+          >
+            🛍
+          </Btn>
+          <Btn
+            onClick={() => setShowYoutubeModal(true)}
+            active={editor.isActive("youtube")}
+            title="Embed YouTube/Video"
+          >
+            ▶️
+          </Btn>
         </div>
         <Sep />
 
         {/* ── Table ── */}
         <div className="tiptap-toolbar__group">
-          <Btn onClick={handleTableInsert} active={editor.isActive("table")} title="Insert Table 3×3">⊞</Btn>
+          <Btn
+            onClick={handleTableInsert}
+            active={editor.isActive("table")}
+            title="Insert Table 3×3"
+          >
+            ⊞
+          </Btn>
           {editor.isActive("table") && (
             <>
-              <Btn onClick={() => editor.chain().focus().addColumnAfter().run()} active={false} title="Add Column">+Col</Btn>
-              <Btn onClick={() => editor.chain().focus().addRowAfter().run()} active={false} title="Add Row">+Row</Btn>
-              <Btn onClick={() => editor.chain().focus().deleteTable().run()} active={false} title="Delete Table" style={{ color: "#d82c0d" }}>✕Tbl</Btn>
+              <Btn
+                onClick={() => editor.chain().focus().addColumnAfter().run()}
+                active={false}
+                title="Add Column"
+              >
+                +Col
+              </Btn>
+              <Btn
+                onClick={() => editor.chain().focus().addRowAfter().run()}
+                active={false}
+                title="Add Row"
+              >
+                +Row
+              </Btn>
+              <Btn
+                onClick={() => editor.chain().focus().deleteTable().run()}
+                active={false}
+                title="Delete Table"
+                style={{ color: "#d82c0d" }}
+              >
+                ✕Tbl
+              </Btn>
             </>
           )}
         </div>
@@ -196,8 +357,20 @@ export default function TiptapEditor({
 
         {/* ── Undo/Redo ── */}
         <div className="tiptap-toolbar__group">
-          <Btn onClick={() => editor.chain().focus().undo().run()} active={false} title="Undo">↩</Btn>
-          <Btn onClick={() => editor.chain().focus().redo().run()} active={false} title="Redo">↪</Btn>
+          <Btn
+            onClick={() => editor.chain().focus().undo().run()}
+            active={false}
+            title="Undo"
+          >
+            ↩
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().redo().run()}
+            active={false}
+            title="Redo"
+          >
+            ↪
+          </Btn>
         </div>
       </div>
 
@@ -205,26 +378,75 @@ export default function TiptapEditor({
 
       {/* YouTube/Video embed modal */}
       {showYoutubeModal && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <div style={{
-            background: "#fff", padding: "24px", borderRadius: "12px",
-            width: "420px", boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
-          }}>
-            <p style={{ fontWeight: "700", fontSize: "16px", marginBottom: "12px" }}>Embed Video</p>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              padding: "24px",
+              borderRadius: "12px",
+              width: "420px",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
+            }}
+          >
+            <p
+              style={{
+                fontWeight: "700",
+                fontSize: "16px",
+                marginBottom: "12px",
+              }}
+            >
+              Embed Video
+            </p>
             <input
               type="url"
               value={youtubeUrl}
               onChange={(e) => setYoutubeUrl(e.target.value)}
               placeholder="YouTube or Vimeo URL..."
               autoFocus
-              style={{ width: "100%", padding: "10px 12px", border: "1px solid #c9cccf", borderRadius: "6px", fontSize: "14px", boxSizing: "border-box" }}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "1px solid #c9cccf",
+                borderRadius: "6px",
+                fontSize: "14px",
+                boxSizing: "border-box",
+              }}
             />
-            <div style={{ display: "flex", gap: "8px", marginTop: "12px", justifyContent: "flex-end" }}>
-              <button type="button" onClick={() => { setShowYoutubeModal(false); setYoutubeUrl(""); }} style={cancelBtnStyle}>Cancel</button>
-              <button type="button" onClick={handleYoutubeEmbed} style={primaryBtnStyle}>Embed</button>
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                marginTop: "12px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setShowYoutubeModal(false);
+                  setYoutubeUrl("");
+                }}
+                style={cancelBtnStyle}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleYoutubeEmbed}
+                style={primaryBtnStyle}
+              >
+                Embed
+              </button>
             </div>
           </div>
         </div>
@@ -240,10 +462,19 @@ export default function TiptapEditor({
 }
 
 const primaryBtnStyle = {
-  padding: "8px 20px", background: "#008060", color: "#fff",
-  border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "600",
+  padding: "8px 20px",
+  background: "#008060",
+  color: "#fff",
+  border: "none",
+  borderRadius: "6px",
+  cursor: "pointer",
+  fontWeight: "600",
 };
 const cancelBtnStyle = {
-  padding: "8px 20px", background: "#f1f2f3", color: "#202223",
-  border: "1px solid #c9cccf", borderRadius: "6px", cursor: "pointer",
+  padding: "8px 20px",
+  background: "#f1f2f3",
+  color: "#202223",
+  border: "1px solid #c9cccf",
+  borderRadius: "6px",
+  cursor: "pointer",
 };

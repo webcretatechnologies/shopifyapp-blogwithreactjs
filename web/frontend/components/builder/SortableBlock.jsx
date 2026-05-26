@@ -8,8 +8,21 @@ import { Text, InlineStack } from "@shopify/polaris";
 import { DeleteIcon, DuplicateIcon } from "@shopify/polaris-icons";
 import BlockPreview from "./BlockPreview";
 
-export default function SortableBlock({ block, isSelected, onSelect, onRemove, onDuplicate }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id });
+export default function SortableBlock({
+  block,
+  isSelected,
+  onSelect,
+  onRemove,
+  onDuplicate,
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: block.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -32,35 +45,52 @@ export default function SortableBlock({ block, isSelected, onSelect, onRemove, o
       onClick={onSelect}
     >
       {/* Drag handle + block label bar */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "6px 10px",
-        borderBottom: `1px solid ${isSelected ? "#b7e0d4" : "#e1e3e5"}`,
-        background: isSelected ? "#f0fdf4" : "#f9fafb",
-        borderRadius: "6px 6px 0 0",
-        gap: "8px",
-      }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "6px 10px",
+          borderBottom: `1px solid ${isSelected ? "#b7e0d4" : "#e1e3e5"}`,
+          background: isSelected ? "#f0fdf4" : "#f9fafb",
+          borderRadius: "6px 6px 0 0",
+          gap: "8px",
+        }}
+      >
         <InlineStack gap="200" blockAlign="center">
           {/* Drag handle */}
           <span
             {...attributes}
             {...listeners}
             onClick={(e) => e.stopPropagation()}
-            style={{ cursor: "grab", color: "#babec3", padding: "0 2px", fontSize: "14px", lineHeight: 1 }}
+            style={{
+              cursor: "grab",
+              color: "#babec3",
+              padding: "0 2px",
+              fontSize: "14px",
+              lineHeight: 1,
+            }}
             title="Drag to reorder"
           >
             ⠿
           </span>
-          <Text variant="bodySm" fontWeight="semibold" tone={isSelected ? "success" : "subdued"}>
-            {block.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+          <Text
+            variant="bodySm"
+            fontWeight="semibold"
+            tone={isSelected ? "success" : "subdued"}
+          >
+            {block.type
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase())}
           </Text>
         </InlineStack>
         <InlineStack gap="100">
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDuplicate();
+            }}
             title="Duplicate block"
             style={iconBtnStyle}
           >
@@ -68,7 +98,10 @@ export default function SortableBlock({ block, isSelected, onSelect, onRemove, o
           </button>
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
             title="Delete block"
             style={{ ...iconBtnStyle, color: "#d82c0d" }}
           >

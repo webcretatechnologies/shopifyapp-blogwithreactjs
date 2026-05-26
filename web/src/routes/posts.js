@@ -8,6 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
 import BlockRenderer from "../services/BlockRenderer.js";
+import JsonLdService from "../services/JsonLdService.js";
 import shopify from "../../shopify.js";
 import {
   getFeaturesForPlan,
@@ -104,7 +105,14 @@ router.get("/:id", async (req, res) => {
     if (!post) return res.status(404).json({ error: "Post not found" });
 
     const features = getFeaturesForPlan(shop.planKey);
-    res.json({ post: serializePost(post), features });
+    const serialized = serializePost(post);
+
+    // Generate JSON-LD schema for the post
+    const jsonLd = req.query.include_schema !== "false"
+      ? JsonLdService.renderPostSchema(serialized, shop.domain)
+      : null;
+
+    res.json({ post: { ...serialized, jsonLd }, features });
   } catch (err) {
     console.error("GET /api/posts/:id error:", err);
     res.status(500).json({ error: err.message });
@@ -158,6 +166,11 @@ router.post("/", async (req, res) => {
     const blocks = Array.isArray(contentJson) ? contentJson : [];
     const contentHtml = BlockRenderer.render(blocks, shop.domain, {
       product_slider_position: productSliderPosition,
+      product_slider_source: req.body.productSliderSource || 'recommendations',
+      product_slider_config: req.body.productSliderConfig || {},
+      product_slider_products: [],
+      custom_css: customCss || '',
+      custom_js: customJs || '',
     });
 
     const post = await prisma.post.create({
@@ -260,6 +273,11 @@ router.put("/:id", async (req, res) => {
 
     const contentHtml = BlockRenderer.render(blocks, shop.domain, {
       product_slider_position: productSliderPosition || post.productSliderPosition,
+      product_slider_source: productSliderSource || post.productSliderSource || 'recommendations',
+      product_slider_config: productSliderConfig || post.productSliderConfig || {},
+      product_slider_products: [],
+      custom_css: customCss || post.customCss || '',
+      custom_js: customJs || post.customJs || '',
     });
 
     const updated = await prisma.post.update({
@@ -695,7 +713,7 @@ router.get("/analytics/summary", async (req, res) => {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
 
-    const [totalPosts, published, drafts, recentAnalytics, topPosts] = await Promise.all([
+    const [totalPosts, published, drafts, recentAnalytics, topPosts, allAnalytics] = await Promise.all([
       prisma.post.count({ where: { shopId: shop.id } }),
       prisma.post.count({ where: { shopId: shop.id, status: "published" } }),
       prisma.post.count({ where: { shopId: shop.id, status: "draft" } }),
@@ -716,14 +734,59 @@ router.get("/analytics/summary", async (req, res) => {
         orderBy: { _sum: { views: "desc" } },
         take: 5,
       }),
+      // All-time aggregated analytics for device/source/country
+      prisma.postAnalytic.findMany({
+        where: { post: { shopId: shop.id } },
+        select: {
+          uniqueVisitors: true,
+          deviceDesktop: true,
+          deviceMobile: true,
+          deviceTablet: true,
+          sources: true,
+          countries: true,
+        },
+      }),
     ]);
 
     // Aggregate daily views across all posts
     const viewsByDate = {};
+    let totalUniqueVisitors = 0;
+    const totalDevices = { desktop: 0, mobile: 0, tablet: 0 };
+    const totalSources = {};
+    const totalCountries = {};
+
     recentAnalytics.forEach((a) => {
       const dateKey = a.date.toISOString().split("T")[0];
       viewsByDate[dateKey] = (viewsByDate[dateKey] || 0) + a.views;
     });
+
+    allAnalytics.forEach((a) => {
+      totalUniqueVisitors += a.uniqueVisitors || 0;
+      totalDevices.desktop += a.deviceDesktop || 0;
+      totalDevices.mobile += a.deviceMobile || 0;
+      totalDevices.tablet += a.deviceTablet || 0;
+
+      // Merge sources JSON
+      if (a.sources) {
+        try {
+          const srcs = a.sources instanceof Buffer ? JSON.parse(a.sources.toString()) : a.sources;
+          for (const [key, val] of Object.entries(srcs)) {
+            totalSources[key] = (totalSources[key] || 0) + val;
+          }
+        } catch { /* ignore */ }
+      }
+
+      // Merge countries JSON
+      if (a.countries) {
+        try {
+          const cntrs = a.countries instanceof Buffer ? JSON.parse(a.countries.toString()) : a.countries;
+          for (const [key, val] of Object.entries(cntrs)) {
+            totalCountries[key] = (totalCountries[key] || 0) + val;
+          }
+        } catch { /* ignore */ }
+      }
+    });
+
     const dailyViews = Object.entries(viewsByDate).map(([date, views]) => ({ date, views }));
     const totalViews = dailyViews.reduce((s, d) => s + d.views, 0);
 
@@ -738,10 +801,23 @@ router.get("/analytics/summary", async (req, res) => {
       return { ...detail, totalViews: t._sum.views || 0 };
     });
 
+    // Sort sources and countries by value descending, take top entries
+    const sortedSources = Object.entries(totalSources)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([name, count]) => ({ name, count }));
+    const sortedCountries = Object.entries(totalCountries)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([code, count]) => ({ code, count }));
+
     res.json({
-      stats: { totalPosts, published, drafts, totalViews },
+      stats: { totalPosts, published, drafts, totalViews, totalUniqueVisitors },
       dailyViews,
       topPosts: topPostsEnriched,
+      deviceBreakdown: totalDevices,
+      topSources: sortedSources,
+      topCountries: sortedCountries,
     });
   } catch (err) {
     console.error("GET /api/posts/analytics/summary error:", err);
@@ -749,21 +825,132 @@ router.get("/analytics/summary", async (req, res) => {
   }
 });
 
-// ─── POST /api/posts/:id/view — Track post view ───────────────────────────────
+// ─── POST /api/posts/:id/view — Track post view with enriched analytics ─────
 router.post("/:id/view", async (req, res) => {
   try {
     const postId = parseInt(req.params.id);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    await prisma.postAnalytic.upsert({
+    // ── Device Type ────────────────────────────────────────────────────────
+    const ua = (req.headers["user-agent"] || "").toLowerCase();
+    let deviceDesktop = 0, deviceMobile = 0, deviceTablet = 0;
+    if (/tablet|ipad|playbook|silk|android(?!.*mobile)/i.test(ua)) {
+      deviceTablet = 1;
+    } else if (/mobile|iphone|ipod|android|blackberry|opera mini|iemobile|wpdesktop/i.test(ua)) {
+      deviceMobile = 1;
+    } else {
+      deviceDesktop = 1;
+    }
+
+    // ── Traffic Source ─────────────────────────────────────────────────────
+    const referer = req.headers["referer"] || req.headers["referrer"] || "";
+    let source = "direct";
+    if (referer) {
+      try {
+        const refUrl = new URL(referer);
+        const hostname = refUrl.hostname.toLowerCase();
+        if (/google\./.test(hostname)) source = "google";
+        else if (/facebook\.|fb\.me|meta\./.test(hostname)) source = "facebook";
+        else if (/twitter\.|x\.com/.test(hostname)) source = "twitter";
+        else if (/linkedin\./.test(hostname)) source = "linkedin";
+        else if (/instagram\./.test(hostname)) source = "instagram";
+        else if (/pinterest\./.test(hostname)) source = "pinterest";
+        else if (/youtube\./.test(hostname)) source = "youtube";
+        else if (/bing\.|yahoo\.|duckduckgo\.|baidu\./i.test(hostname)) source = "search";
+        else if (/mail\.|outlook\.|yahoo\.com\/mail/.test(hostname)) source = "email";
+        else if (hostname === req.get("host") || hostname.includes(req.get("host") || "")) source = "internal";
+        else source = "other";
+      } catch {
+        source = "other";
+      }
+    }
+
+    // ── Country (roughly from Accept-Language) ─────────────────────────────
+    const acceptLang = req.headers["accept-language"] || "";
+    let country = "";
+    if (acceptLang) {
+      // Parse first locale tag (e.g. "en-US" -> "US", "fr-FR" -> "FR")
+      const match = acceptLang.match(/^[a-z]{2}[-_]([a-z]{2})\b/i);
+      if (match) country = match[1].toUpperCase();
+    }
+
+    // ── Unique Visitor (by IP, with TTL cleanup) ───────────────────────────
+    const rawIp = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+    const dateStr = today.toISOString().split("T")[0];
+    const visitorKey = `${postId}:${dateStr}:${rawIp}`;
+    if (!req.app.locals._viewedIps) req.app.locals._viewedIps = new Map();
+    // Prune entries older than 48 hours (the Map key includes dateStr so this is efficient)
+    if (req.app.locals._viewedIps.size > 100000) {
+      const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+      for (const [k] of req.app.locals._viewedIps) {
+        const [, entryDate] = k.split(":");
+        if (entryDate && new Date(entryDate).getTime() < cutoff) {
+          req.app.locals._viewedIps.delete(k);
+        }
+      }
+    }
+    const ipSeen = req.app.locals._viewedIps.has(visitorKey);
+    req.app.locals._viewedIps.set(visitorKey, Date.now());
+
+    // ── Update Analytics ───────────────────────────────────────────────────
+    const analytic = await prisma.postAnalytic.upsert({
       where: { postId_date: { postId, date: today } },
-      update: { views: { increment: 1 } },
-      create: { postId, date: today, views: 1 },
+      update: {
+        views: { increment: 1 },
+        ...(!ipSeen ? { uniqueVisitors: { increment: 1 } } : {}),
+        deviceDesktop: { increment: deviceDesktop },
+        deviceMobile: { increment: deviceMobile },
+        deviceTablet: { increment: deviceTablet },
+      },
+      create: {
+        postId,
+        date: today,
+        views: 1,
+        uniqueVisitors: 1,
+        deviceDesktop,
+        deviceMobile,
+        deviceTablet,
+        // sources and countries are excluded from create — the update block handles
+        // the first increment, avoiding a double-count race.
+      },
     });
+
+    // ── Update sources JSON (increment count for this source) ──────────────
+    const currentSources = (analytic.sources || {}) instanceof Buffer
+      ? JSON.parse(analytic.sources.toString())
+      : (analytic.sources || {});
+    const newSources = {
+      ...currentSources,
+      [source]: (currentSources[source] || 0) + 1,
+    };
+
+    // ── Update countries JSON ──────────────────────────────────────────────
+    let newCountries = null;
+    if (country) {
+      const currentCountries = (analytic.countries || {}) instanceof Buffer
+        ? JSON.parse(analytic.countries.toString())
+        : (analytic.countries || {});
+      newCountries = {
+        ...currentCountries,
+        [country]: (currentCountries[country] || 0) + 1,
+      };
+    }
+
+    // If it's the initial create, sources/countries are already set; only update if modified
+    if (analytic.views > 0 || source !== "direct" || country) {
+      await prisma.postAnalytic.update({
+        where: { id: analytic.id },
+        data: {
+          sources: newSources,
+          ...(newCountries ? { countries: newCountries } : {}),
+        },
+      });
+    }
 
     res.json({ success: true });
   } catch (err) {
+    console.error("POST /api/posts/:id/view error:", err);
     res.status(500).json({ error: err.message });
   }
 });
