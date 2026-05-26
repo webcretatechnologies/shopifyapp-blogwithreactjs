@@ -22,6 +22,8 @@ import { CTAButtonExtension } from "./extensions/CTAButtonExtension";
 import { HeroExtension } from "./extensions/HeroExtension";
 import { VideoExtension } from "./extensions/VideoExtension";
 import { SpacerExtension } from "./extensions/SpacerExtension";
+import { DividerExtension } from "./extensions/DividerExtension";
+import { ImageBlockExtension } from "./extensions/ImageBlockExtension";
 import ShopifyFilePicker from "../ShopifyFilePicker";
 import { useState, useEffect } from "react";
 import "./TiptapEditor.css";
@@ -82,6 +84,8 @@ export default function TiptapEditor({
       HeroExtension,
       VideoExtension,
       SpacerExtension,
+      DividerExtension,
+      ImageBlockExtension,
     ],
     content,
     onUpdate: ({ editor }) => {
@@ -375,6 +379,20 @@ export default function TiptapEditor({
             title="Insert Spacer"
           >
             ↕
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'dividerBlock' }).run()}
+            active={editor.isActive("dividerBlock")}
+            title="Insert Stylized Divider"
+          >
+            ➖
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'imageBlock' }).run()}
+            active={editor.isActive("imageBlock")}
+            title="Insert Image Block with Caption/Border/Link"
+          >
+            🖼️
           </Btn>
         </div>
         <Sep />

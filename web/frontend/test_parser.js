@@ -19,6 +19,7 @@ const htmlInput = `
 <h2>Premium Fragrances That Match Every Mood</h2>
 <p>AAURAM offers a variety of fragrances designed for different moods and moments.</p>
 <h3>Royal Oudh Cones</h3>
+<div data-type="buyButton" data-buttontext="Add to Cart Now!" data-buttoncolor="#ff0000" data-showprice="true" data-product='{"title": "Product Title", "handle": "test"}'></div>
 `;
 
 const jsdom = new JSDOM();
@@ -59,6 +60,103 @@ const parseHtmlToBlocks = (html) => {
     }
 
     if (node.nodeType === Node.ELEMENT_NODE) {
+      const dataType = node.getAttribute("data-type");
+      if (dataType) {
+        const TYPE_MAP = {
+          buyButton: 'buy_button',
+          productGrid: 'product_grid',
+          collection: 'collection',
+          ctaButton: 'cta_button',
+          heroBlock: 'hero',
+          videoBlock: 'video',
+          spacerBlock: 'spacer',
+          dividerBlock: 'divider',
+          imageBlock: 'image',
+          product: 'product',
+          product_sidebar: 'product_sidebar',
+          featured_product: 'featured_product',
+          product_switcher: 'product_switcher',
+          product_slider: 'product_slider'
+        };
+
+        const ATTR_MAP = {
+          buttontext: 'buttonText',
+          buttoncolor: 'buttonColor',
+          imagesize: 'imageSize',
+          showprice: 'showPrice',
+          showdescription: 'showDescription',
+          showbadge: 'showBadge',
+          product: 'product',
+          layout: 'layout',
+          version: 'version',
+          title: 'title',
+          columns: 'columns',
+          maxproducts: 'maxProducts',
+          cardstyle: 'cardStyle',
+          gap: 'gap',
+          showbutton: 'showButton',
+          manualproducts: 'manualProducts',
+          searchquery: 'searchQuery',
+          collection: 'collection',
+          limit: 'limit',
+          text: 'text',
+          url: 'url',
+          align: 'align',
+          color: 'color',
+          textcolor: 'textColor',
+          size: 'size',
+          borderradius: 'borderRadius',
+          heading: 'heading',
+          subheading: 'subheading',
+          backgroundimage: 'backgroundImage',
+          backgroundoverlay: 'backgroundOverlay',
+          overlaycolor: 'overlayColor',
+          overlayopacity: 'overlayOpacity',
+          minheight: 'minHeight',
+          showcta: 'showCta',
+          ctatext: 'ctaText',
+          ctaurl: 'ctaUrl',
+          ctacolor: 'ctaColor',
+          ctatextcolor: 'ctaTextColor',
+          caption: 'caption',
+          aspectratio: 'aspectRatio',
+          maxwidth: 'maxWidth',
+          height: 'height',
+          style: 'style',
+          thickness: 'thickness',
+          margin: 'margin',
+          src: 'src',
+          alt: 'alt',
+          width: 'width',
+          linkurl: 'linkUrl'
+        };
+
+        const block = {
+          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: TYPE_MAP[dataType] || dataType
+        };
+
+        Array.from(node.attributes).forEach(attr => {
+          if (attr.name.startsWith("data-")) {
+            const key = attr.name.substring(5);
+            if (key === "type") return;
+            const mappedKey = ATTR_MAP[key] || key;
+            let val = attr.value;
+            if (val === "true") val = true;
+            else if (val === "false") val = false;
+            else if (val && (val.startsWith("{") || val.startsWith("["))) {
+              try { val = JSON.parse(val); } catch (e) {}
+            } else if (!isNaN(val) && val.trim() !== "" && key === "overlayopacity") {
+              val = parseFloat(val);
+            }
+            block[mappedKey] = val;
+          }
+        });
+
+        blocks.push(block);
+        continue;
+      }
+
       const tagName = node.tagName.toLowerCase();
       
       if (/^h[1-6]$/.test(tagName)) {
