@@ -3,53 +3,60 @@ import shopify, { prisma } from "../../shopify.js";
 
 const router = express.Router();
 
-const PLANS = {
-  FREE: "free",
-  STARTER: "Blogger Starter",
-  PRO: "Blogger Pro",
-  BUSINESS: "Blogger Business",
-};
+// Get all dynamic active plans
+router.get("/plans", async (req, res) => {
+  try {
+    const plans = await prisma.subscriptionPlan.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+    res.json({ plans });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch plans" });
+  }
+});
 
-// Get current billing status
+// Get current billing status using GraphQL
 router.get("/check", async (req, res) => {
   try {
     const session = res.locals.shopify.session;
     
-    // Check with Shopify API directly to ensure accuracy
-    const checkResult = await shopify.api.billing.check({
-      session,
-      plans: [PLANS.STARTER, PLANS.PRO, PLANS.BUSINESS],
-      isTest: true,
-      returnObject: true,
-    });
-
-    let activePlan = PLANS.FREE;
+    const client = new shopify.api.clients.Graphql({ session });
     
-    // Check if any plan is active
-    if (checkResult.hasActivePayment) {
-      // Find which one is active
-      if (checkResult.appSubscriptions?.length > 0) {
-        activePlan = checkResult.appSubscriptions[0].name;
-      } else {
-        // Fallback to checking Prisma if returnObject didn't include the names
-        const dbPlan = await prisma.appPlan.findFirst({
-          where: { shop: { domain: session.shop }, isActive: true },
-          orderBy: { createdAt: 'desc' }
-        });
-        if (dbPlan) {
-          activePlan = dbPlan.planKey;
+    const response = await client.request(`
+      query {
+        currentAppInstallation {
+          activeSubscriptions {
+            id
+            name
+            status
+          }
         }
       }
+    `);
+
+    const subscriptions = response.data?.currentAppInstallation?.activeSubscriptions || [];
+    const activeSub = subscriptions.find(sub => sub.status === "ACTIVE");
+
+    let activePlan = "free";
+
+    if (activeSub) {
+      activePlan = activeSub.name;
     } else {
-      // Ensure DB reflects it's on free tier if no active payment
-      await prisma.shop.update({
-        where: { domain: session.shop },
-        data: { planKey: PLANS.FREE }
-      });
-      await prisma.appPlan.updateMany({
+      // Fallback to check DB
+      const dbPlan = await prisma.appPlan.findFirst({
         where: { shop: { domain: session.shop }, isActive: true },
-        data: { isActive: false }
+        orderBy: { createdAt: 'desc' }
       });
+      if (dbPlan) {
+        activePlan = dbPlan.planKey;
+      } else {
+        // Ensure DB reflects it's on free tier
+        await prisma.shop.update({
+          where: { domain: session.shop },
+          data: { planKey: "free" }
+        });
+      }
     }
 
     res.status(200).json({ activePlan });
@@ -59,33 +66,80 @@ router.get("/check", async (req, res) => {
   }
 });
 
-// Request a new subscription
+// Request a new subscription using GraphQL
 router.post("/request", async (req, res) => {
   try {
     const session = res.locals.shopify.session;
     const { plan } = req.body;
 
-    if (!Object.values(PLANS).includes(plan)) {
-      return res.status(400).json({ error: "Invalid plan selected" });
-    }
-
-    // Free plan downgrade
-    if (plan === PLANS.FREE) {
-      // Actually cancel existing subscriptions via GraphQL or just update local if Shopify doesn't enforce free
-      // Usually, to downgrade to free, you'd cancel the current app subscription via GraphQL.
-      // For simplicity, we just return success and let the user handle it via the Shopify admin.
+    if (plan === "free") {
       return res.status(200).json({ confirmationUrl: null, isFree: true });
     }
 
-    // For paid plans, request a subscription
-    const confirmationUrl = await shopify.api.billing.request({
-      session,
-      plan: plan,
-      isTest: true,
-      returnUrl: `https://${shopify.api.config.hostName}/?shop=${session.shop}`,
+    // Fetch the dynamic plan details from DB
+    const dbPlan = await prisma.subscriptionPlan.findUnique({
+      where: { name: plan }
     });
 
-    res.status(200).json({ confirmationUrl });
+    if (!dbPlan || !dbPlan.isActive) {
+      return res.status(400).json({ error: "Invalid or inactive plan selected" });
+    }
+
+    // Fetch the test mode setting
+    const testModeSetting = await prisma.adminSetting.findUnique({
+      where: { key: "billing_test_mode" }
+    });
+    const isTestMode = testModeSetting ? testModeSetting.value === "true" : true;
+
+    const returnUrl = `https://${shopify.api.config.hostName}/?shop=${session.shop}`;
+    const client = new shopify.api.clients.Graphql({ session });
+
+    // Use EVERY_30_DAYS or ANNUAL
+    let interval = dbPlan.interval === "ANNUAL" ? "ANNUAL" : "EVERY_30_DAYS";
+
+    const mutation = `
+      mutation appSubscriptionCreate($name: String!, $lineItems: [AppSubscriptionLineItemInput!]!, $returnUrl: URL!, $test: Boolean) {
+        appSubscriptionCreate(name: $name, lineItems: $lineItems, returnUrl: $returnUrl, test: $test) {
+          appSubscription {
+            id
+          }
+          confirmationUrl
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      name: dbPlan.name,
+      returnUrl: returnUrl,
+      test: isTestMode,
+      lineItems: [
+        {
+          plan: {
+            appRecurringPricingDetails: {
+              price: {
+                amount: parseFloat(dbPlan.price),
+                currencyCode: dbPlan.currency || "USD"
+              },
+              interval: interval
+            }
+          }
+        }
+      ]
+    };
+
+    const response = await client.request(mutation, { variables });
+    const data = response.data?.appSubscriptionCreate;
+
+    if (data?.userErrors?.length > 0) {
+      console.error("GraphQL billing errors:", data.userErrors);
+      return res.status(400).json({ error: data.userErrors[0].message });
+    }
+
+    res.status(200).json({ confirmationUrl: data.confirmationUrl });
   } catch (error) {
     console.error("Failed to request billing:", error);
     res.status(500).json({ error: "Failed to request billing" });

@@ -346,3 +346,18 @@ model ShopPlanOverride {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }
+
+model SubscriptionPlan {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  title       String
+  price       Decimal  @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  interval    String   @default("EVERY_30_DAYS")
+  description String?  @db.Text
+  features    Json?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

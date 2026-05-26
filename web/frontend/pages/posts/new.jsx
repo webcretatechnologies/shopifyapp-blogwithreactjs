@@ -93,6 +93,7 @@ export default function PostEditor() {
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
       setSelectedProducts(data.post.products || []);
       setEditorMode(data.post.editorMode || "wysiwyg");
+      setBuilderBlocks(data.post.contentJson || []);
       setSeoData({
         metaTitle: data.post.metaTitle || "",
         metaDescription: data.post.metaDescription || "",
@@ -206,6 +207,7 @@ export default function PostEditor() {
   const buildPayload = () => ({
     ...post,
     contentHtml,
+    contentJson: builderBlocks,
     tags,
     blogId: shopifyBlogId || undefined,
     productSliderProducts: selectedProducts,
@@ -262,9 +264,13 @@ export default function PostEditor() {
         } else {
           navigate(`/posts/${data.post.id}/edit`);
         }
+      } else if (!isEditing) {
+         navigate(`/posts/${data.post.id}/edit`);
       }
+      return data.post.id;
     } catch (err) {
       setError(err.message);
+      return null;
     } finally {
       setIsSaving(false);
     }
@@ -279,9 +285,10 @@ export default function PostEditor() {
     setError(null);
     try {
       // First save
-      await handleSave("published");
-
-      const postId = id;
+      const savedPostId = await handleSave("published");
+      const postId = id || savedPostId;
+      if (!postId) return; // if save failed
+      
       const res = await fetch(`/api/posts/${postId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -87,9 +87,13 @@ export default function Admin() {
 
   // Pricing & Billing
   const [pricingEnabled, setPricingEnabled] = useState(true);
+  const [billingTestMode, setBillingTestMode] = useState(true);
   const [features, setFeatures] = useState([]);
   const [selectedPlanTab, setSelectedPlanTab] = useState(0);
   const planTabKeys = ["free", "starter", "pro", "business"];
+  const [dynamicPlans, setDynamicPlans] = useState([]);
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [editingPlan, setEditingPlan] = useState(null);
 
   // Email Center
   const [emailSubTab, setEmailSubTab] = useState(0); // 0 = send bulk, 1 = logs
@@ -238,9 +242,13 @@ export default function Admin() {
     try {
       const settingsData = await adminFetch("/admin-api/settings");
       setPricingEnabled(settingsData.pricingEnabled);
+      setBillingTestMode(settingsData.billingTestMode !== false); // default true
 
       const featuresData = await adminFetch("/admin-api/pricing/features");
       setFeatures(featuresData.features || []);
+
+      const plansData = await adminFetch("/admin-api/pricing/plans");
+      setDynamicPlans(plansData.plans || []);
     } catch (err) {
       setError(err.message);
     }
@@ -271,6 +279,43 @@ export default function Admin() {
     try {
       await adminFetch("/admin-api/pricing/features/reset", { method: "POST" });
       showToast("Plan features restored to system defaults");
+      loadPricingAndFeatures();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  // Dynamic Plan Management
+  const handleSavePlan = async () => {
+    if (!editingPlan.name || !editingPlan.title) {
+      setError("Name and Title are required.");
+      return;
+    }
+    try {
+      const isNew = !editingPlan.id;
+      const url = isNew ? "/admin-api/pricing/plans" : `/admin-api/pricing/plans/${editingPlan.id}`;
+      const method = isNew ? "POST" : "PUT";
+      
+      const payload = {
+        ...editingPlan,
+        price: parseFloat(editingPlan.price),
+        features: typeof editingPlan.features === "string" ? editingPlan.features.split("\n").filter(Boolean) : editingPlan.features,
+      };
+
+      await adminFetch(url, { method, body: JSON.stringify(payload) });
+      showToast(`Plan ${isNew ? 'created' : 'updated'} successfully`);
+      setShowPlanModal(false);
+      loadPricingAndFeatures();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleDeletePlan = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this plan? This action is irreversible.")) return;
+    try {
+      await adminFetch(`/admin-api/pricing/plans/${id}`, { method: "DELETE" });
+      showToast("Plan deleted successfully");
       loadPricingAndFeatures();
     } catch (err) {
       setError(err.message);
@@ -579,6 +624,19 @@ export default function Admin() {
       setPricingEnabled(data.pricingEnabled);
       showToast(`Global pricing set to ${checked ? "Active" : "Disabled"}`);
       loadDashboard();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleTestModeToggle = async (checked) => {
+    try {
+      await adminFetch("/admin-api/settings", {
+        method: "POST",
+        body: JSON.stringify({ billingTestMode: checked }),
+      });
+      setBillingTestMode(checked);
+      showToast(`Billing test mode set to ${checked ? "Active" : "Disabled"}`);
     } catch (err) {
       setError(err.message);
     }
@@ -1561,6 +1619,68 @@ export default function Admin() {
                           onChange={handlePricingToggle}
                           helpText="Checked: redirects to live Shopify subscription flow. Unchecked: bypasses billing requests, treating paid tiers as active."
                         />
+                        <Checkbox
+                          label="Enable Billing Test Mode"
+                          checked={billingTestMode}
+                          onChange={handleTestModeToggle}
+                          helpText="Checked: all charges are test charges (no real money). Unchecked: real charges will apply."
+                        />
+                      </BlockStack>
+                    </Box>
+                  </Card>
+
+                  <Card>
+                    <Box padding="500">
+                      <BlockStack gap="400">
+                        <InlineStack align="space-between" alignY="center">
+                          <div>
+                            <Text variant="headingLg" as="h3">
+                              Subscription Plans (Dynamic Pricing)
+                            </Text>
+                            <Text variant="bodySm" tone="subdued">
+                              Manage plans available to merchants. Changes here will immediately reflect on the billing page.
+                            </Text>
+                          </div>
+                          <Button variant="primary" onClick={() => {
+                            setEditingPlan({ name: "", title: "", price: "0.00", currency: "USD", interval: "EVERY_30_DAYS", description: "", features: "", isActive: true, sortOrder: 0 });
+                            setShowPlanModal(true);
+                          }}>
+                            Create Plan
+                          </Button>
+                        </InlineStack>
+                        <Divider />
+                        <IndexTable
+                          resourceName={{ singular: "plan", plural: "plans" }}
+                          itemCount={dynamicPlans.length}
+                          headings={[
+                            { title: "Plan Name" },
+                            { title: "Display Title" },
+                            { title: "Price" },
+                            { title: "Status" },
+                            { title: "Actions" },
+                          ]}
+                          selectable={false}
+                        >
+                          {dynamicPlans.map((plan, index) => (
+                            <IndexTable.Row key={plan.id} id={plan.id} position={index}>
+                              <IndexTable.Cell>{plan.name}</IndexTable.Cell>
+                              <IndexTable.Cell>{plan.title}</IndexTable.Cell>
+                              <IndexTable.Cell>${plan.price} {plan.currency}</IndexTable.Cell>
+                              <IndexTable.Cell>
+                                <Badge tone={plan.isActive ? "success" : "critical"}>{plan.isActive ? "Active" : "Inactive"}</Badge>
+                              </IndexTable.Cell>
+                              <IndexTable.Cell>
+                                <InlineStack gap="200">
+                                  <Button size="micro" onClick={() => {
+                                    setEditingPlan({ ...plan, features: Array.isArray(plan.features) ? plan.features.join("\n") : "" });
+                                    setShowPlanModal(true);
+                                  }}>Edit</Button>
+                                  <Button size="micro" tone="critical" onClick={() => handleDeletePlan(plan.id)}>Delete</Button>
+                                </InlineStack>
+                              </IndexTable.Cell>
+                            </IndexTable.Row>
+                          ))}
+                        </IndexTable>
                       </BlockStack>
                     </Box>
                   </Card>
@@ -2379,6 +2499,45 @@ export default function Admin() {
             </FormLayout>
           </Modal.Section>
         </Modal>
+
+        {/* Dynamic Plan Modal */}
+        {showPlanModal && editingPlan && (
+          <Modal
+            open={showPlanModal}
+            onClose={() => setShowPlanModal(false)}
+            title={editingPlan.id ? "Edit Subscription Plan" : "Create Subscription Plan"}
+            primaryAction={{
+              content: "Save Plan",
+              onAction: handleSavePlan,
+            }}
+            secondaryActions={[
+              {
+                content: "Cancel",
+                onAction: () => setShowPlanModal(false),
+              },
+            ]}
+          >
+            <Modal.Section>
+              <FormLayout>
+                <FormLayout.Group>
+                  <TextField label="GraphQL Identifier (name)" value={editingPlan.name} onChange={(v) => setEditingPlan({ ...editingPlan, name: v })} autoComplete="off" helpText="e.g. 'Blogger Starter' (must match Shopify's internal name if migrating)" />
+                  <TextField label="Display Title" value={editingPlan.title} onChange={(v) => setEditingPlan({ ...editingPlan, title: v })} autoComplete="off" helpText="e.g. 'Starter'" />
+                </FormLayout.Group>
+                <FormLayout.Group>
+                  <TextField label="Price" value={String(editingPlan.price)} onChange={(v) => setEditingPlan({ ...editingPlan, price: v })} type="number" autoComplete="off" />
+                  <TextField label="Currency" value={editingPlan.currency} onChange={(v) => setEditingPlan({ ...editingPlan, currency: v })} autoComplete="off" />
+                </FormLayout.Group>
+                <FormLayout.Group>
+                  <TextField label="Billing Interval" value={editingPlan.interval} onChange={(v) => setEditingPlan({ ...editingPlan, interval: v })} autoComplete="off" helpText="EVERY_30_DAYS or ANNUAL" />
+                  <TextField label="Sort Order" value={String(editingPlan.sortOrder)} onChange={(v) => setEditingPlan({ ...editingPlan, sortOrder: parseInt(v) || 0 })} type="number" autoComplete="off" />
+                </FormLayout.Group>
+                <TextField label="Description" value={editingPlan.description || ""} onChange={(v) => setEditingPlan({ ...editingPlan, description: v })} multiline={2} autoComplete="off" />
+                <TextField label="Features (one per line)" value={editingPlan.features} onChange={(v) => setEditingPlan({ ...editingPlan, features: v })} multiline={4} autoComplete="off" />
+                <Checkbox label="Is Active?" checked={editingPlan.isActive} onChange={(v) => setEditingPlan({ ...editingPlan, isActive: v })} />
+              </FormLayout>
+            </Modal.Section>
+          </Modal>
+        )}
 
         {/* Toast success notifier */}
         {toastMarkup}

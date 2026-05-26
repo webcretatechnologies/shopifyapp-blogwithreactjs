@@ -755,9 +755,14 @@ router.get("/settings", validateSuperAdmin, async (req, res) => {
     const pricingSetting = await prisma.adminSetting.findUnique({
       where: { key: "pricing_enabled" },
     });
+    
+    const testModeSetting = await prisma.adminSetting.findUnique({
+      where: { key: "billing_test_mode" },
+    });
 
     res.json({
       pricingEnabled: pricingSetting ? pricingSetting.value === "true" : true,
+      billingTestMode: testModeSetting ? testModeSetting.value === "true" : true,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -767,15 +772,25 @@ router.get("/settings", validateSuperAdmin, async (req, res) => {
 // ─── POST /admin-api/settings — Update billing settings ───────────────────────
 router.post("/settings", validateSuperAdmin, async (req, res) => {
   try {
-    const { pricingEnabled } = req.body;
+    const { pricingEnabled, billingTestMode } = req.body;
 
-    const value = pricingEnabled ? "true" : "false";
+    if (pricingEnabled !== undefined) {
+      const value = pricingEnabled ? "true" : "false";
+      await prisma.adminSetting.upsert({
+        where: { key: "pricing_enabled" },
+        create: { key: "pricing_enabled", value },
+        update: { value },
+      });
+    }
 
-    await prisma.adminSetting.upsert({
-      where: { key: "pricing_enabled" },
-      create: { key: "pricing_enabled", value },
-      update: { value },
-    });
+    if (billingTestMode !== undefined) {
+      const value = billingTestMode ? "true" : "false";
+      await prisma.adminSetting.upsert({
+        where: { key: "billing_test_mode" },
+        create: { key: "billing_test_mode", value },
+        update: { value },
+      });
+    }
 
     await prisma.adminActivityLog.create({
       data: {
@@ -857,16 +872,94 @@ router.post("/pricing/features/reset", validateSuperAdmin, async (req, res) => {
   }
 });
 
+// ─── GET /admin-api/pricing/plans — Get all dynamic subscription plans ───────
+router.get("/pricing/plans", validateSuperAdmin, async (req, res) => {
+  try {
+    const plans = await prisma.subscriptionPlan.findMany({
+      orderBy: { sortOrder: 'asc' },
+    });
+    res.json({ plans });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /admin-api/pricing/plans — Create a new dynamic subscription plan ──
+router.post("/pricing/plans", validateSuperAdmin, async (req, res) => {
+  try {
+    const { name, title, price, currency, interval, description, features, isActive, sortOrder } = req.body;
+    const newPlan = await prisma.subscriptionPlan.create({
+      data: {
+        name,
+        title,
+        price,
+        currency,
+        interval,
+        description,
+        features: Array.isArray(features) ? features : [],
+        isActive: isActive !== undefined ? isActive : true,
+        sortOrder: sortOrder || 0,
+      },
+    });
+    res.json({ success: true, plan: newPlan });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PUT /admin-api/pricing/plans/:id — Edit a dynamic subscription plan ─────
+router.put("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { name, title, price, currency, interval, description, features, isActive, sortOrder } = req.body;
+    const updatedPlan = await prisma.subscriptionPlan.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        ...(title && { title }),
+        ...(price !== undefined && { price }),
+        ...(currency && { currency }),
+        ...(interval && { interval }),
+        ...(description !== undefined && { description }),
+        ...(features && { features: Array.isArray(features) ? features : [] }),
+        ...(isActive !== undefined && { isActive }),
+        ...(sortOrder !== undefined && { sortOrder }),
+      },
+    });
+    res.json({ success: true, plan: updatedPlan });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── DELETE /admin-api/pricing/plans/:id — Delete a dynamic subscription plan ──
+router.delete("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    await prisma.subscriptionPlan.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ─── GET /admin-api/revenue/analytics — MRR breakdown reports ──────────────────
 router.get("/revenue/analytics", validateSuperAdmin, async (req, res) => {
   try {
     const currentYear = new Date().getFullYear();
-    const pricingRates = {
-      free: 0.0,
-      starter: 4.99,
-      pro: 9.99,
-      business: 19.99,
-    };
+    const dbPlans = await prisma.subscriptionPlan.findMany();
+    const pricingRates = {};
+    dbPlans.forEach(p => {
+      // Map names to lowercase key, e.g. "Blogger Starter" -> "starter"
+      const lowerName = p.name.toLowerCase();
+      if (lowerName.includes("starter")) pricingRates.starter = parseFloat(p.price);
+      else if (lowerName.includes("pro")) pricingRates.pro = parseFloat(p.price);
+      else if (lowerName.includes("business")) pricingRates.business = parseFloat(p.price);
+      else pricingRates[p.name] = parseFloat(p.price);
+    });
+    // Fallbacks
+    pricingRates.free = 0.0;
 
     // Calculate dynamic MRR/ARR based on active installations
     const activeShops = await prisma.shop.findMany({
@@ -876,10 +969,18 @@ router.get("/revenue/analytics", validateSuperAdmin, async (req, res) => {
 
     let mrr = 0;
     activeShops.forEach((s) => {
-      const plan = (s.planKey || "free").toLowerCase();
-      if (plan.includes("starter")) mrr += pricingRates.starter;
-      else if (plan.includes("pro")) mrr += pricingRates.pro;
-      else if (plan.includes("business")) mrr += pricingRates.business;
+      const plan = s.planKey || "free";
+      const planLower = plan.toLowerCase();
+      let added = false;
+      
+      // Exact match or partial match
+      if (pricingRates[plan]) { mrr += pricingRates[plan]; added = true; }
+      else if (planLower.includes("starter") && pricingRates.starter) { mrr += pricingRates.starter; added = true; }
+      else if (planLower.includes("pro") && pricingRates.pro) { mrr += pricingRates.pro; added = true; }
+      else if (planLower.includes("business") && pricingRates.business) { mrr += pricingRates.business; added = true; }
+      
+      // Custom generic fallback
+      if (!added && pricingRates[plan]) { mrr += pricingRates[plan]; }
     });
 
     const arr = mrr * 12;
@@ -941,12 +1042,18 @@ router.get("/revenue/analytics", validateSuperAdmin, async (req, res) => {
 router.get("/revenue/export", validateSuperAdmin, async (req, res) => {
   try {
     const currentYear = new Date().getFullYear();
-    const pricingRates = {
-      free: 0.0,
-      starter: 4.99,
-      pro: 9.99,
-      business: 19.99,
-    };
+    const dbPlans = await prisma.subscriptionPlan.findMany();
+    const pricingRates = {};
+    dbPlans.forEach(p => {
+      // Map names to lowercase key, e.g. "Blogger Starter" -> "starter"
+      const lowerName = p.name.toLowerCase();
+      if (lowerName.includes("starter")) pricingRates.starter = parseFloat(p.price);
+      else if (lowerName.includes("pro")) pricingRates.pro = parseFloat(p.price);
+      else if (lowerName.includes("business")) pricingRates.business = parseFloat(p.price);
+      else pricingRates[p.name] = parseFloat(p.price);
+    });
+    // Fallbacks
+    pricingRates.free = 0.0;
 
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="revenue-${currentYear}.csv"`);
@@ -978,10 +1085,18 @@ router.get("/revenue/export", validateSuperAdmin, async (req, res) => {
 
       let revenue = 0;
       activeShopsInMonth.forEach((s) => {
-        const plan = (s.planKey || "free").toLowerCase();
-        if (plan.includes("starter")) revenue += pricingRates.starter;
-        else if (plan.includes("pro")) revenue += pricingRates.pro;
-        else if (plan.includes("business")) revenue += pricingRates.business;
+        const plan = s.planKey || "free";
+        const planLower = plan.toLowerCase();
+        let added = false;
+        
+        // Exact match or partial match
+        if (pricingRates[plan]) { revenue += pricingRates[plan]; added = true; }
+        else if (planLower.includes("starter") && pricingRates.starter) { revenue += pricingRates.starter; added = true; }
+        else if (planLower.includes("pro") && pricingRates.pro) { revenue += pricingRates.pro; added = true; }
+        else if (planLower.includes("business") && pricingRates.business) { revenue += pricingRates.business; added = true; }
+        
+        // Custom generic fallback
+        if (!added && pricingRates[plan]) { revenue += pricingRates[plan]; }
       });
 
       const monthName = new Date(currentYear, m - 1, 1).toLocaleString("default", { month: "long" });

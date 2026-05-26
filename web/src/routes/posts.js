@@ -145,6 +145,7 @@ router.post("/", async (req, res) => {
       excerpt,
       featuredImage,
       contentJson,
+      contentHtml: reqContentHtml,
       customCss,
       customJs,
       productSliderPosition = "none",
@@ -162,16 +163,20 @@ router.post("/", async (req, res) => {
 
     if (!title) return res.status(422).json({ error: "Title is required" });
 
-    // Render HTML from blocks
+    // Render HTML from blocks only if using builder
     const blocks = Array.isArray(contentJson) ? contentJson : [];
-    const contentHtml = BlockRenderer.render(blocks, shop.domain, {
-      product_slider_position: productSliderPosition,
-      product_slider_source: req.body.productSliderSource || 'recommendations',
-      product_slider_config: req.body.productSliderConfig || {},
-      product_slider_products: [],
-      custom_css: customCss || '',
-      custom_js: customJs || '',
-    });
+    let finalContentHtml = reqContentHtml || "";
+    
+    if (editorMode === "builder") {
+      finalContentHtml = BlockRenderer.render(blocks, shop.domain, {
+        product_slider_position: productSliderPosition,
+        product_slider_source: req.body.productSliderSource || 'recommendations',
+        product_slider_config: req.body.productSliderConfig || {},
+        product_slider_products: [],
+        custom_css: customCss || '',
+        custom_js: customJs || '',
+      });
+    }
 
     const post = await prisma.post.create({
       data: {
@@ -184,7 +189,7 @@ router.post("/", async (req, res) => {
         excerpt: excerpt || null,
         featuredImage: featuredImage || null,
         contentJson: blocks,
-        contentHtml,
+        contentHtml: finalContentHtml,
         customCss: customCss || null,
         customJs: customJs || null,
         productSliderPosition,
@@ -245,6 +250,7 @@ router.put("/:id", async (req, res) => {
       excerpt,
       featuredImage,
       contentJson,
+      contentHtml: reqContentHtml,
       customCss,
       customJs,
       productSliderPosition,
@@ -271,14 +277,19 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    const contentHtml = BlockRenderer.render(blocks, shop.domain, {
-      product_slider_position: productSliderPosition || post.productSliderPosition,
-      product_slider_source: productSliderSource || post.productSliderSource || 'recommendations',
-      product_slider_config: productSliderConfig || post.productSliderConfig || {},
-      product_slider_products: [],
-      custom_css: customCss || post.customCss || '',
-      custom_js: customJs || post.customJs || '',
-    });
+    const finalEditorMode = editorMode !== undefined ? editorMode : post.editorMode;
+    let finalContentHtml = reqContentHtml !== undefined ? reqContentHtml : post.contentHtml;
+
+    if (finalEditorMode === "builder") {
+      finalContentHtml = BlockRenderer.render(blocks, shop.domain, {
+        product_slider_position: productSliderPosition || post.productSliderPosition,
+        product_slider_source: productSliderSource || post.productSliderSource || 'recommendations',
+        product_slider_config: productSliderConfig || post.productSliderConfig || {},
+        product_slider_products: [],
+        custom_css: customCss || post.customCss || '',
+        custom_js: customJs || post.customJs || '',
+      });
+    }
 
     const updated = await prisma.post.update({
       where: { id: post.id },
@@ -291,7 +302,7 @@ router.put("/:id", async (req, res) => {
         excerpt: excerpt !== undefined ? excerpt : post.excerpt,
         featuredImage: featuredImage !== undefined ? featuredImage : post.featuredImage,
         contentJson: blocks,
-        contentHtml,
+        contentHtml: finalContentHtml,
         customCss: customCss !== undefined ? customCss : post.customCss,
         customJs: customJs !== undefined ? customJs : post.customJs,
         ...(productSliderPosition && { productSliderPosition }),
@@ -312,6 +323,27 @@ router.put("/:id", async (req, res) => {
 
     if (Array.isArray(tags)) {
       await syncTags(shop.id, post.id, tags);
+    }
+
+    // Auto-sync to Shopify if published and linked
+    const shopifyRecord = await prisma.shopifyArticle.findUnique({ where: { postId: post.id } });
+    if (updated.status === 'published' && shopifyRecord?.shopifyArticleId && shopifyRecord?.shopifyBlogId) {
+      const session = res.locals.shopify?.session;
+      if (session) {
+        const client = new shopify.api.clients.Rest({ session });
+        client.put({
+          path: `blogs/${shopifyRecord.shopifyBlogId}/articles/${shopifyRecord.shopifyArticleId}`,
+          data: {
+            article: {
+              title: updated.title,
+              body_html: finalContentHtml || "",
+              author: updated.author || "",
+              published: true,
+              tags: Array.isArray(tags) ? tags.join(", ") : undefined,
+            }
+          }
+        }).catch(err => console.error("Auto-sync to Shopify failed:", err));
+      }
     }
 
     res.json({ post: { id: updated.id }, success: true });

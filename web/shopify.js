@@ -14,25 +14,6 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// Billing plans for the Blogger app
-const billingConfig = {
-  "Blogger Starter": {
-    amount: 4.99,
-    currencyCode: "USD",
-    interval: BillingInterval.Every30Days,
-  },
-  "Blogger Pro": {
-    amount: 9.99,
-    currencyCode: "USD",
-    interval: BillingInterval.Every30Days,
-  },
-  "Blogger Business": {
-    amount: 19.99,
-    currencyCode: "USD",
-    interval: BillingInterval.Every30Days,
-  },
-};
-
 const shopify = shopifyApp({
   api: {
     apiVersion: LATEST_API_VERSION,
@@ -42,7 +23,7 @@ const shopify = shopifyApp({
       lineItemBilling: true,
       unstable_managedPricingSupport: true,
     },
-    billing: billingConfig,
+    // Billing is handled dynamically via custom GraphQL in routes/billing.js
   },
   auth: {
     path: "/api/auth",
