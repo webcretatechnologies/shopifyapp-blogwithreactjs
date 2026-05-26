@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { serializeBlocksToHtml } from "../../hooks/useBlockSerializer";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Page,
@@ -263,28 +264,9 @@ export default function PostEditor() {
         setBuilderBlocks([]);
       }
     } else if (mode === "wysiwyg" && editorMode === "builder") {
-      // Compile builder blocks to simple HTML
-      if (builderBlocks.length > 0) {
-        const html = builderBlocks.map(b => {
-          if (b.type === "text") return b.content || "";
-          if (b.type === "heading") {
-            const tag = b.level || "h2";
-            return `<${tag}>${b.content || ""}</${tag}>`;
-          }
-          if (b.type === "image") {
-            return b.src ? `<img src="${b.src}" alt="${b.alt || ''}" style="max-width:100%; height:auto;" />` : "";
-          }
-          if (b.type === "html") return b.code || "";
-          if (b.type === "divider") return `<hr style="border:none;border-top:1px solid ${b.color || '#e1e3e5'};margin:${b.margin || '20px'} 0;"/>`;
-          if (b.type === "spacer") return `<div style="height:${b.height || '40px'}"></div>`;
-          if (b.type === "cta_button") return `<a href="${b.url || '#'}" style="display:inline-block;padding:10px 20px;background:${b.color || '#008060'};color:${b.textColor || '#fff'};text-decoration:none;border-radius:4px;">${b.text || 'Click here'}</a>`;
-          if (b.type === "product") return b.title ? `<p><strong>Product:</strong> ${b.title}</p>` : "";
-          return "";
-        }).filter(Boolean).join("<br/><br/>");
-        setContentHtml(html);
-      } else {
-        setContentHtml("");
-      }
+      // Convert builder blocks → clean HTML using the block serializer
+      const html = serializeBlocksToHtml(builderBlocks);
+      setContentHtml(html);
     }
     setEditorMode(mode);
   };
@@ -350,16 +332,25 @@ export default function PostEditor() {
     [],
   );
 
-  const buildPayload = () => ({
-    ...post,
-    contentHtml,
-    contentJson: editorMode === "wysiwyg" ? parseHtmlToBlocks(contentHtml) : builderBlocks,
-    tags,
-    blogId: shopifyBlogId || undefined,
-    productSliderProducts: selectedProducts,
-    editorMode,
-    ...seoData,
-  });
+  const buildPayload = () => {
+    // In builder mode, always derive contentHtml from the block serializer
+    // to ensure the HTML saved to Shopify matches exactly what the builder renders.
+    const resolvedContentHtml =
+      editorMode === "builder"
+        ? serializeBlocksToHtml(builderBlocks)
+        : contentHtml;
+
+    return {
+      ...post,
+      contentHtml: resolvedContentHtml,
+      contentJson: editorMode === "wysiwyg" ? parseHtmlToBlocks(contentHtml) : builderBlocks,
+      tags,
+      blogId: shopifyBlogId || undefined,
+      productSliderProducts: selectedProducts,
+      editorMode,
+      ...seoData,
+    };
+  };
 
   const handleSave = async (status) => {
     if (!post.title) {
@@ -642,6 +633,9 @@ export default function PostEditor() {
                     <PageBuilder
                       blocks={builderBlocks}
                       onChange={setBuilderBlocks}
+                      onSave={() => handleSave()}
+                      isSaving={isSaving}
+                      postTitle={post.title}
                     />
                   )}
                 </BlockStack>

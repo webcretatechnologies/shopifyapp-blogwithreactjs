@@ -731,7 +731,112 @@ router.get("/shopify/products", async (req, res) => {
   }
 });
 
+// ─── GET /api/posts/shopify/collections — Fetch Shopify collections ──────────
+router.get("/shopify/collections", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+
+    const { query = "", limit = "30" } = req.query;
+    const client = new shopify.api.clients.Graphql({ session });
+
+    const result = await client.request(`
+      query GetCollections($first: Int!, $query: String!) {
+        collections(first: $first, query: $query) {
+          edges {
+            node {
+              id
+              title
+              handle
+              image { url altText }
+              productsCount { count }
+            }
+          }
+        }
+      }
+    `, { variables: { first: parseInt(limit), query } });
+
+    const collections = (result.data?.collections?.edges || []).map(({ node }) => ({
+      shopifyCollectionId: node.id,
+      title: node.title,
+      handle: node.handle,
+      image: node.image?.url || null,
+      productsCount: node.productsCount?.count ?? 0,
+    }));
+
+    res.json({ collections });
+  } catch (err) {
+    console.error("GET /api/posts/shopify/collections error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/posts/shopify/collections/:handle/products — Collection products ─
+router.get("/shopify/collections/:handle/products", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+
+    const { handle } = req.params;
+    const { limit = "12" } = req.query;
+    const client = new shopify.api.clients.Graphql({ session });
+
+    const result = await client.request(`
+      query GetCollectionProducts($handle: String!, $first: Int!) {
+        collectionByHandle(handle: $handle) {
+          id
+          title
+          handle
+          image { url altText }
+          products(first: $first) {
+            edges {
+              node {
+                id
+                title
+                handle
+                featuredImage { url altText }
+                priceRangeV2 { minVariantPrice { amount currencyCode } }
+                variants(first: 1) {
+                  edges { node { id availableForSale } }
+                }
+              }
+            }
+          }
+        }
+      }
+    `, { variables: { handle, first: parseInt(limit) } });
+
+    const collection = result.data?.collectionByHandle;
+    if (!collection) return res.status(404).json({ error: "Collection not found" });
+
+    const products = (collection.products?.edges || []).map(({ node }) => ({
+      shopifyProductId: node.id,
+      title: node.title,
+      handle: node.handle,
+      image: node.featuredImage?.url || null,
+      price: node.priceRangeV2?.minVariantPrice?.amount || null,
+      currency: node.priceRangeV2?.minVariantPrice?.currencyCode || "USD",
+      variantId: node.variants?.edges?.[0]?.node?.id || null,
+      variantAvailable: node.variants?.edges?.[0]?.node?.availableForSale ?? true,
+    }));
+
+    res.json({
+      collection: {
+        id: collection.id,
+        title: collection.title,
+        handle: collection.handle,
+        image: collection.image?.url || null,
+      },
+      products,
+    });
+  } catch (err) {
+    console.error("GET /api/posts/shopify/collections/:handle/products error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function generateSlug(title) {
   return (
     title

@@ -29,7 +29,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 
-export default function BlockSettings({ block, onUpdate, onClose }) {
+export default function BlockSettings({ block, onUpdate, onClose, _noHeader = false }) {
   const field = (key, label, helpText, type = "text") => (
     <TextField
       label={label}
@@ -87,36 +87,38 @@ export default function BlockSettings({ block, onUpdate, onClose }) {
 
   return (
     <div style={{ padding: "0" }}>
-      {/* Header */}
-      <div
-        style={{
-          padding: "12px 16px",
-          borderBottom: "1px solid #e1e3e5",
-          background: "#f9fafb",
-        }}
-      >
-        <InlineStack align="space-between" blockAlign="center">
-          <Text variant="headingSm">
-            {block.type
-              .replace(/_/g, " ")
-              .replace(/\b\w/g, (c) => c.toUpperCase())}{" "}
-            Settings
-          </Text>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "16px",
-              color: "#6d7175",
-            }}
-          >
-            &#10005;
-          </button>
-        </InlineStack>
-      </div>
+      {/* Header — hidden when used as legacy body inside new PageBuilder */}
+      {!_noHeader && (
+        <div
+          style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid #e1e3e5",
+            background: "#f9fafb",
+          }}
+        >
+          <InlineStack align="space-between" blockAlign="center">
+            <Text variant="headingSm">
+              {block.type
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (c) => c.toUpperCase())}{" "}
+              Settings
+            </Text>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: "16px",
+                color: "#6d7175",
+              }}
+            >
+              &#10005;
+            </button>
+          </InlineStack>
+        </div>
+      )}
 
       <div style={{ padding: "16px" }}>
         <BlockStack gap="400">
