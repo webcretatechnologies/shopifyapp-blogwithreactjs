@@ -31,7 +31,9 @@ export default function App() {
               <a href="/support">Support</a>
             </NavMenu>
           )}
-          <Routes pages={pages} />
+          <div style={{ paddingBottom: "80px" }}>
+            <Routes pages={pages} />
+          </div>
           {/* Custom in-app chat bubble (shown on all pages) */}
           {!isAdminPath && <ChatBubble />}
         </QueryProvider>

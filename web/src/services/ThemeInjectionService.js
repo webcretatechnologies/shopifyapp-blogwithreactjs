@@ -38,6 +38,17 @@ export default class ThemeInjectionService {
   margin-left: auto !important;
   margin-right: auto !important;
   font-family: var(--blogger-font-family) !important;
+  padding-bottom: 80px !important;
+  margin-bottom: 80px !important;
+}
+
+/* Ensure template article and blog pages have bottom space */
+body.template-article,
+body.template-blog,
+.shopify-section-blog-posts,
+.shopify-section-article {
+  padding-bottom: 80px !important;
+  margin-bottom: 80px !important;
 }
 
 .blogger-primary-btn {

@@ -117,68 +117,70 @@ export default function ArticleImporter() {
 
         <Layout>
           <Layout.Section>
-            <Card padding="400">
-              <BlockStack gap="400">
-                {loadingBlogs ? (
-                  <InlineStack align="center"><Spinner size="small" /></InlineStack>
-                ) : blogs.length === 0 ? (
-                  <Text as="p">No Shopify Blogs found. Please create a blog in your Shopify admin first.</Text>
-                ) : (
-                  <Select
-                    label="Select Blog"
-                    options={blogOptions}
-                    value={selectedBlog}
-                    onChange={setSelectedBlog}
-                  />
-                )}
-              </BlockStack>
-            </Card>
-
-            {selectedBlog && (
-              <Card padding="0">
-                {loadingArticles ? (
-                  <div style={{ padding: "2rem", textAlign: "center" }}>
-                    <Spinner size="large" />
-                  </div>
-                ) : (
-                  <ResourceList
-                    resourceName={{ singular: "article", plural: "articles" }}
-                    items={articles}
-                    renderItem={(item) => {
-                      const { id, title, author, published_at, is_imported } = item;
-                      return (
-                        <ResourceItem id={id} onClick={() => {}} persistActions>
-                          <InlineStack align="space-between" blockAlign="center">
-                            <BlockStack gap="100">
-                              <Text variant="bodyMd" fontWeight="bold" as="h3">
-                                {title}
-                              </Text>
-                              <Text variant="bodySm" tone="subdued">
-                                By {author || "Unknown"} • {published_at ? new Date(published_at).toLocaleDateString() : "Draft"}
-                              </Text>
-                            </BlockStack>
-                            <InlineStack gap="300" blockAlign="center">
-                              {is_imported ? (
-                                <Badge tone="success">Imported</Badge>
-                              ) : null}
-                              <Button
-                                size="slim"
-                                icon={ImportIcon}
-                                loading={importingId === id}
-                                disabled={importingId !== null && importingId !== id}
-                                onClick={() => handleImport(id)}
-                              >
-                                Import
-                              </Button>
-                            </InlineStack>
-                          </InlineStack>
-                        </ResourceItem>
-                      );
-                    }}
-                  />
-                )}
+            <BlockStack gap="400">
+              <Card padding="400">
+                <BlockStack gap="400">
+                  {loadingBlogs ? (
+                    <InlineStack align="center"><Spinner size="small" /></InlineStack>
+                  ) : blogs.length === 0 ? (
+                    <Text as="p">No Shopify Blogs found. Please create a blog in your Shopify admin first.</Text>
+                  ) : (
+                    <Select
+                      label="Select Blog"
+                      options={blogOptions}
+                      value={selectedBlog}
+                      onChange={setSelectedBlog}
+                    />
+                  )}
+                </BlockStack>
               </Card>
-            )}
+
+              {selectedBlog && (
+                <Card padding="0">
+                  {loadingArticles ? (
+                    <div style={{ padding: "2rem", textAlign: "center" }}>
+                      <Spinner size="large" />
+                    </div>
+                  ) : (
+                    <ResourceList
+                      resourceName={{ singular: "article", plural: "articles" }}
+                      items={articles}
+                      renderItem={(item) => {
+                        const { id, title, author, published_at, is_imported } = item;
+                        return (
+                          <ResourceItem id={id} onClick={() => {}} persistActions>
+                            <InlineStack align="space-between" blockAlign="center">
+                              <BlockStack gap="100">
+                                <Text variant="bodyMd" fontWeight="bold" as="h3">
+                                  {title}
+                                </Text>
+                                <Text variant="bodySm" tone="subdued">
+                                  By {author || "Unknown"} • {published_at ? new Date(published_at).toLocaleDateString() : "Draft"}
+                                </Text>
+                              </BlockStack>
+                              <InlineStack gap="300" blockAlign="center">
+                                {is_imported ? (
+                                  <Badge tone="success">Imported</Badge>
+                                ) : null}
+                                <Button
+                                  size="slim"
+                                  icon={ImportIcon}
+                                  loading={importingId === id}
+                                  disabled={importingId !== null && importingId !== id}
+                                  onClick={() => handleImport(id)}
+                                >
+                                  Import
+                                </Button>
+                              </InlineStack>
+                            </InlineStack>
+                          </ResourceItem>
+                        );
+                      }}
+                    />
+                  )}
+                </Card>
+              )}
+            </BlockStack>
           </Layout.Section>
         </Layout>
       </BlockStack>
