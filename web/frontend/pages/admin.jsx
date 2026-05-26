@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import {
   Card,
@@ -56,7 +57,15 @@ export default function Admin() {
   const [loading, setLoading] = useState(false);
 
   // Active section state
-  const [activeSection, setActiveSection] = useState("dashboard");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeSection = searchParams.get("tab") || "dashboard";
+  
+  const setActiveSection = useCallback((section) => {
+    setSearchParams((prev) => {
+      prev.set("tab", section);
+      return prev;
+    });
+  }, [setSearchParams]);
 
   // Dashboard Stats
   const [metrics, setMetrics] = useState({
