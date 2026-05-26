@@ -35,10 +35,13 @@ export default function ArticleImporter() {
     setLoadingBlogs(true);
     try {
       const res = await fetch("/api/import/blogs");
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Request failed with status ${res.status}`);
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to fetch blogs");
-      setBlogs(data.blogs);
-      if (data.blogs.length > 0) {
+      setBlogs(data.blogs || []);
+      if (data.blogs && data.blogs.length > 0) {
         setSelectedBlog(String(data.blogs[0].id));
       }
     } catch (err) {
@@ -58,9 +61,12 @@ export default function ArticleImporter() {
     setLoadingArticles(true);
     try {
       const res = await fetch(`/api/import/articles?blog_id=${blogId}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Request failed with status ${res.status}`);
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to fetch articles");
-      setArticles(data.articles);
+      setArticles(data.articles || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -77,9 +83,16 @@ export default function ArticleImporter() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blog_id: selectedBlog, article_id: articleId }),
       });
+      if (!res.ok) {
+        const text = await res.text();
+        let errMsg = text;
+        try {
+          const parsed = JSON.parse(text);
+          errMsg = parsed.error || text;
+        } catch (_) {}
+        throw new Error(errMsg || `Request failed with status ${res.status}`);
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to import article");
-      
       navigate(`/posts/${data.post_id}/edit`);
     } catch (err) {
       setError(err.message);
