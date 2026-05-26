@@ -1,5 +1,5 @@
 import { createBlockExtension } from './createBlockExtension';
-import { DividerBlockPreview, DividerBlockSettings } from '../../builder/blocks/DividerBlock';
+import { DividerBlockPreview, DividerBlockSettings } from '../blocks/DividerBlock';
 
 export const DividerExtension = createBlockExtension({
   name: 'dividerBlock',

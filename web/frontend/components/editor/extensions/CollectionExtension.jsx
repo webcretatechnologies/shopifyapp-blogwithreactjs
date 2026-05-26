@@ -1,5 +1,5 @@
 import { createBlockExtension } from './createBlockExtension';
-import { CollectionBlockPreview, CollectionBlockSettings } from '../../builder/blocks/CollectionBlock';
+import { CollectionBlockPreview, CollectionBlockSettings } from '../blocks/CollectionBlock';
 
 export const CollectionExtension = createBlockExtension({
   name: 'collection',

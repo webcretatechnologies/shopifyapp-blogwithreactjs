@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Modal, Box, Text, InlineStack, Button, Icon } from "@shopify/polaris";
 import { DesktopIcon, MobileIcon } from "@shopify/polaris-icons";
-import BlockPreview from "../builder/BlockPreview";
 
 export default function ArticlePreview({
   open,
@@ -10,8 +9,6 @@ export default function ArticlePreview({
   author,
   featuredImage,
   contentHtml,
-  contentJson,
-  editorMode, // 'wysiwyg' | 'builder'
 }) {
   const [device, setDevice] = useState("desktop"); // 'desktop' | 'mobile'
 
@@ -106,29 +103,15 @@ export default function ArticlePreview({
               color: "#333",
               fontFamily: "system-ui, -apple-system, sans-serif"
             }}>
-              {editorMode === "wysiwyg" ? (
-                <div 
-                  className="tiptap-preview-content"
-                  dangerouslySetInnerHTML={{ __html: contentHtml || "<p>Start writing to see preview...</p>" }} 
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "16px"
-                  }}
-                />
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                  {contentJson?.length > 0 ? (
-                    contentJson.map((block, idx) => (
-                      <div key={block.id || idx}>
-                        <BlockPreview block={block} />
-                      </div>
-                    ))
-                  ) : (
-                    <p style={{ color: "#757575", textAlign: "center" }}>Add blocks to see preview...</p>
-                  )}
-                </div>
-              )}
+              <div 
+                className="tiptap-preview-content"
+                dangerouslySetInnerHTML={{ __html: contentHtml || "<p>Start writing to see preview...</p>" }} 
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "16px"
+                }}
+              />
             </div>
           </div>
         </div>

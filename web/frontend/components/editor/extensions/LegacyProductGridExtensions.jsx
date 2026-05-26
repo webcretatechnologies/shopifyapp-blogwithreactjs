@@ -1,5 +1,5 @@
 import { createBlockExtension } from './createBlockExtension';
-import { ProductGridBlockPreview, ProductGridBlockSettings } from '../../builder/blocks/ProductGridBlock';
+import { ProductGridBlockPreview, ProductGridBlockSettings } from '../blocks/ProductGridBlock';
 
 export const LegacyProductSwitcherExtension = createBlockExtension({
   name: 'product_switcher',

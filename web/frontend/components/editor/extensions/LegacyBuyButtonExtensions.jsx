@@ -1,5 +1,5 @@
 import { createBlockExtension } from './createBlockExtension';
-import { BuyButtonBlockPreview, BuyButtonBlockSettings } from '../../builder/blocks/BuyButtonBlock';
+import { BuyButtonBlockPreview, BuyButtonBlockSettings } from '../blocks/BuyButtonBlock';
 
 export const LegacyProductCardExtension = createBlockExtension({
   name: 'product',

@@ -1,5 +1,5 @@
 import { createBlockExtension } from './createBlockExtension';
-import { VideoBlockPreview, VideoBlockSettings } from '../../builder/blocks/VideoBlock';
+import { VideoBlockPreview, VideoBlockSettings } from '../blocks/VideoBlock';
 
 export const VideoExtension = createBlockExtension({
   name: 'videoBlock',

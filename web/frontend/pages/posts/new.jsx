@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { serializeBlocksToHtml } from "../../hooks/useBlockSerializer";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Page,
@@ -32,7 +31,6 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { ViewIcon } from "@shopify/polaris-icons";
 import confetti from "canvas-confetti";
 import TiptapEditor from "../../components/editor/TiptapEditor";
-import PageBuilder from "../../components/builder/PageBuilder";
 import SeoPanel from "../../components/SeoPanel";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
 import ArticlePreview from "../../components/editor/ArticlePreview";
@@ -270,8 +268,6 @@ export default function PostEditor() {
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [showCongratsModal, setShowCongratsModal] = useState(false);
   const [newPostId, setNewPostId] = useState(null);
-  const [editorMode, setEditorMode] = useState("wysiwyg"); // 'wysiwyg' | 'builder'
-  const [builderBlocks, setBuilderBlocks] = useState([]);
   const [showPreview, setShowPreview] = useState(false);
   const [seoData, setSeoData] = useState({
     metaTitle: "",
@@ -294,14 +290,7 @@ export default function PostEditor() {
       setFeatures(data.features || {});
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
       setSelectedProducts(data.post.products || []);
-      setEditorMode(data.post.editorMode || "wysiwyg");
-      
-      const loadedBlocks = data.post.contentJson || [];
-      if (loadedBlocks.length === 0 && data.post.contentHtml) {
-        setBuilderBlocks(parseHtmlToBlocks(data.post.contentHtml));
-      } else {
-        setBuilderBlocks(loadedBlocks);
-      }
+
 
       setSeoData({
         metaTitle: data.post.metaTitle || "",
@@ -352,21 +341,7 @@ export default function PostEditor() {
     setPost((p) => ({ ...p, title: value, slug: generateSlug(value) }));
   };
 
-  const handleModeChange = (mode) => {
-    if (mode === "builder" && editorMode === "wysiwyg") {
-      // Sync WYSIWYG HTML back to builder blocks
-      if (contentHtml && contentHtml.trim() !== "") {
-        setBuilderBlocks(parseHtmlToBlocks(contentHtml));
-      } else {
-        setBuilderBlocks([]);
-      }
-    } else if (mode === "wysiwyg" && editorMode === "builder") {
-      // Convert builder blocks → clean HTML using the block serializer
-      const html = serializeBlocksToHtml(builderBlocks);
-      setContentHtml(html);
-    }
-    setEditorMode(mode);
-  };
+
 
   const handleOpenPicker = async () => {
     if (!window.shopify?.resourcePicker) return;
@@ -430,21 +405,14 @@ export default function PostEditor() {
   );
 
   const buildPayload = () => {
-    // In builder mode, always derive contentHtml from the block serializer
-    // to ensure the HTML saved to Shopify matches exactly what the builder renders.
-    const resolvedContentHtml =
-      editorMode === "builder"
-        ? serializeBlocksToHtml(builderBlocks)
-        : contentHtml;
-
     return {
       ...post,
-      contentHtml: resolvedContentHtml,
-      contentJson: editorMode === "wysiwyg" ? parseHtmlToBlocks(contentHtml) : builderBlocks,
+      contentHtml: contentHtml,
+      contentJson: parseHtmlToBlocks(contentHtml),
       tags,
       blogId: shopifyBlogId || undefined,
       productSliderProducts: selectedProducts,
-      editorMode,
+      editorMode: "wysiwyg",
       ...seoData,
     };
   };
@@ -668,73 +636,14 @@ export default function PostEditor() {
             <BlockStack gap="400">
               <Card>
                 <BlockStack gap="300">
-                  {/* ─── Editor Mode Toggle ─────────────────────────────── */}
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text variant="headingMd">Content</Text>
-                    <div
-                      style={{
-                        display: "flex",
-                        border: "1px solid #e1e3e5",
-                        borderRadius: "6px",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleModeChange("wysiwyg")}
-                        style={{
-                          padding: "6px 14px",
-                          fontSize: "13px",
-                          fontWeight: "600",
-                          border: "none",
-                          cursor: "pointer",
-                          background:
-                            editorMode === "wysiwyg" ? "#008060" : "#fff",
-                          color: editorMode === "wysiwyg" ? "#fff" : "#6d7175",
-                          transition: "all 0.2s ease",
-                        }}
-                      >
-                        ✍️ WYSIWYG
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleModeChange("builder")}
-                        style={{
-                          padding: "6px 14px",
-                          fontSize: "13px",
-                          fontWeight: "600",
-                          border: "none",
-                          borderLeft: "1px solid #e1e3e5",
-                          cursor: "pointer",
-                          background:
-                            editorMode === "builder" ? "#008060" : "#fff",
-                          color: editorMode === "builder" ? "#fff" : "#6d7175",
-                          transition: "all 0.2s ease",
-                        }}
-                      >
-                        🧩 Page Builder
-                      </button>
-                    </div>
-                  </InlineStack>
-
+                  <Text variant="headingMd">Content</Text>
                   <Divider />
-
-                  {editorMode === "wysiwyg" ? (
-                    <TiptapEditor
-                      content={contentHtml}
-                      onChange={setContentHtml}
-                      placeholder="Write your article content here..."
-                      uploadUrl="/api/posts/upload"
-                    />
-                  ) : (
-                    <PageBuilder
-                      blocks={builderBlocks}
-                      onChange={setBuilderBlocks}
-                      onSave={() => handleSave()}
-                      isSaving={isSaving}
-                      postTitle={post.title}
-                    />
-                  )}
+                  <TiptapEditor
+                    content={contentHtml}
+                    onChange={setContentHtml}
+                    placeholder="Write your article content here..."
+                    uploadUrl="/api/posts/upload"
+                  />
                 </BlockStack>
               </Card>
 
@@ -1055,8 +964,6 @@ export default function PostEditor() {
           author={post.author}
           featuredImage={post.featuredImage}
           contentHtml={contentHtml}
-          contentJson={builderBlocks}
-          editorMode={editorMode}
         />
       )}
 

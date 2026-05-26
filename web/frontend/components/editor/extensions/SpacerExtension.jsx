@@ -1,5 +1,5 @@
 import { createBlockExtension } from './createBlockExtension';
-import { SpacerBlockPreview, SpacerBlockSettings } from '../../builder/blocks/SpacerBlock';
+import { SpacerBlockPreview, SpacerBlockSettings } from '../blocks/SpacerBlock';
 
 export const SpacerExtension = createBlockExtension({
   name: 'spacerBlock',

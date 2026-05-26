@@ -1,5 +1,5 @@
 import { createBlockExtension } from './createBlockExtension';
-import { ImageBlockPreview, ImageBlockSettings } from '../../builder/blocks/ImageBlock';
+import { ImageBlockPreview, ImageBlockSettings } from '../blocks/ImageBlock';
 
 export const ImageBlockExtension = createBlockExtension({
   name: 'imageBlock',

@@ -1,5 +1,5 @@
 import { createBlockExtension } from './createBlockExtension';
-import { CTAButtonBlockPreview, CTAButtonBlockSettings } from '../../builder/blocks/CTAButtonBlock';
+import { CTAButtonBlockPreview, CTAButtonBlockSettings } from '../blocks/CTAButtonBlock';
 
 export const CTAButtonExtension = createBlockExtension({
   name: 'ctaButton',

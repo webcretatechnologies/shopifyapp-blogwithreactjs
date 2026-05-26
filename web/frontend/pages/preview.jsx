@@ -3,17 +3,15 @@
  *
  * A full-page, standalone preview renderer.
  * - Runs OUTSIDE the Shopify Polaris shell (no nav, no frames)
- * - Receives blocks via window.postMessage from the parent editor
- * - Renders them with the same componentRegistry previews
+ * - Receives HTML content via window.postMessage from the parent editor
+ * - Renders it directly
  * - Responds with { type: 'PREVIEW_READY' } when mounted
  *
  * Security:
  * - Only accepts messages from the same origin
- * - Never executes arbitrary code; only renders known block types
+ * - Never executes arbitrary code; only renders HTML
  */
 import { useEffect, useState, useRef } from 'react';
-import { componentRegistry, isRegisteredBlock } from '../components/builder/registry/componentRegistry';
-import { serializeBlocksToHtml } from '../hooks/useBlockSerializer';
 
 // ── Minimal reset so preview page has no Polaris chrome ───────────────────────
 const PREVIEW_STYLES = `
@@ -31,9 +29,7 @@ const PREVIEW_STYLES = `
 `;
 
 export default function PreviewRenderer() {
-  const [blocks, setBlocks] = useState([]);
   const [viewport, setViewport] = useState('desktop');
-  const [mode, setMode] = useState('blocks'); // 'blocks' | 'html'
   const [htmlContent, setHtmlContent] = useState('');
   const [postTitle, setPostTitle] = useState('');
   const readyRef = useRef(false);
@@ -57,19 +53,10 @@ export default function PreviewRenderer() {
       if (!type) return;
 
       switch (type) {
-        case 'PREVIEW_UPDATE_BLOCKS':
-          if (Array.isArray(payload?.blocks)) {
-            setBlocks(payload.blocks);
-            setMode('blocks');
-          }
-          if (payload?.title !== undefined) setPostTitle(payload.title);
-          if (payload?.viewport) setViewport(payload.viewport);
-          break;
-
         case 'PREVIEW_UPDATE_HTML':
           setHtmlContent(payload?.html || '');
-          setMode('html');
           if (payload?.title !== undefined) setPostTitle(payload.title);
+          if (payload?.viewport) setViewport(payload.viewport);
           break;
 
         case 'PREVIEW_SET_VIEWPORT':
@@ -101,50 +88,13 @@ export default function PreviewRenderer() {
           </h1>
         )}
 
-        {mode === 'blocks' ? (
-          <BlocksRenderer blocks={blocks} />
-        ) : (
+        {htmlContent ? (
           <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
-        )}
-
-        {blocks.length === 0 && !htmlContent && (
+        ) : (
           <EmptyState />
         )}
       </div>
     </>
-  );
-}
-
-// ── Block renderer using the same registry ────────────────────────────────────
-
-function BlocksRenderer({ blocks }) {
-  if (!blocks?.length) return null;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {blocks.map((block) => {
-        if (!block?.type) return null;
-
-        if (isRegisteredBlock(block.type)) {
-          const { PreviewComponent } = componentRegistry[block.type];
-          return (
-            <div key={block.id || block.type} style={{ width: '100%' }}>
-              <PreviewComponent block={block} />
-            </div>
-          );
-        }
-
-        // Legacy block fallback — render serialized HTML
-        const html = serializeBlocksToHtml([block]);
-        if (!html) return null;
-        return (
-          <div
-            key={block.id || block.type}
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        );
-      })}
-    </div>
   );
 }
 
@@ -163,7 +113,7 @@ function EmptyState() {
     }}>
       <div style={{ fontSize: '48px', marginBottom: '16px' }}>📄</div>
       <p style={{ fontSize: '16px', margin: 0 }}>
-        Add blocks in the editor to see a live preview
+        Write some content in the editor to see a live preview
       </p>
     </div>
   );

@@ -1,5 +1,5 @@
 import { createBlockExtension } from './createBlockExtension';
-import { HeroBlockPreview, HeroBlockSettings } from '../../builder/blocks/HeroBlock';
+import { HeroBlockPreview, HeroBlockSettings } from '../blocks/HeroBlock';
 
 export const HeroExtension = createBlockExtension({
   name: 'heroBlock',

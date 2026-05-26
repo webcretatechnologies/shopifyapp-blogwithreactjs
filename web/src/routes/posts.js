@@ -7,7 +7,6 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
-import BlockRenderer from "../services/BlockRenderer.js";
 import JsonLdService from "../services/JsonLdService.js";
 import shopify from "../../shopify.js";
 import {
@@ -163,20 +162,8 @@ router.post("/", async (req, res) => {
 
     if (!title) return res.status(422).json({ error: "Title is required" });
 
-    // Render HTML from blocks only if using builder
     const blocks = Array.isArray(contentJson) ? contentJson : [];
     let finalContentHtml = reqContentHtml || "";
-    
-    if (editorMode === "builder") {
-      finalContentHtml = BlockRenderer.render(blocks, shop.domain, {
-        product_slider_position: productSliderPosition,
-        product_slider_source: req.body.productSliderSource || 'recommendations',
-        product_slider_config: req.body.productSliderConfig || {},
-        product_slider_products: [],
-        custom_css: customCss || '',
-        custom_js: customJs || '',
-      });
-    }
 
     const post = await prisma.post.create({
       data: {
@@ -194,7 +181,7 @@ router.post("/", async (req, res) => {
         customJs: customJs || null,
         productSliderPosition,
         categoryId: categoryId ? parseInt(categoryId) : null,
-        editorMode,
+        editorMode: "wysiwyg",
         metaTitle: metaTitle || null,
         metaDescription: metaDescription || null,
         canonicalUrl: canonicalUrl || null,
@@ -277,19 +264,8 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    const finalEditorMode = editorMode !== undefined ? editorMode : post.editorMode;
+    const finalEditorMode = "wysiwyg";
     let finalContentHtml = reqContentHtml !== undefined ? reqContentHtml : post.contentHtml;
-
-    if (finalEditorMode === "builder") {
-      finalContentHtml = BlockRenderer.render(blocks, shop.domain, {
-        product_slider_position: productSliderPosition || post.productSliderPosition,
-        product_slider_source: productSliderSource || post.productSliderSource || 'recommendations',
-        product_slider_config: productSliderConfig || post.productSliderConfig || {},
-        product_slider_products: [],
-        custom_css: customCss || post.customCss || '',
-        custom_js: customJs || post.customJs || '',
-      });
-    }
 
     const updated = await prisma.post.update({
       where: { id: post.id },
@@ -310,7 +286,7 @@ router.put("/:id", async (req, res) => {
         ...(productSliderConfig && { productSliderConfig }),
         ...(categoryId !== undefined && { categoryId: categoryId ? parseInt(categoryId) : null }),
         ...(publishedAt && { publishedAt: new Date(publishedAt) }),
-        ...(editorMode && { editorMode }),
+        editorMode: "wysiwyg",
         metaTitle: metaTitle !== undefined ? metaTitle : post.metaTitle,
         metaDescription: metaDescription !== undefined ? metaDescription : post.metaDescription,
         canonicalUrl: canonicalUrl !== undefined ? canonicalUrl : post.canonicalUrl,
