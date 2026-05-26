@@ -253,6 +253,7 @@ router.put("/:id", async (req, res) => {
       ogTitle,
       ogDescription,
       ogImage,
+      blogId,
     } = req.body;
 
     // Check section limit
@@ -301,24 +302,88 @@ router.put("/:id", async (req, res) => {
       await syncTags(shop.id, post.id, tags);
     }
 
-    // Auto-sync to Shopify if published and linked
+    // Create or update ShopifyArticle relation locally if blogId was provided
+    if (blogId) {
+      await prisma.shopifyArticle.upsert({
+        where: { postId: post.id },
+        create: {
+          postId: post.id,
+          shopifyBlogId: String(blogId),
+          status: updated.status || "draft",
+        },
+        update: {
+          shopifyBlogId: String(blogId),
+        },
+      });
+    }
+
+    // Sync to Shopify if linked or status is published
     const shopifyRecord = await prisma.shopifyArticle.findUnique({ where: { postId: post.id } });
-    if (updated.status === 'published' && shopifyRecord?.shopifyArticleId && shopifyRecord?.shopifyBlogId) {
+    const targetBlogId = blogId || shopifyRecord?.shopifyBlogId;
+
+    if (targetBlogId) {
       const session = res.locals.shopify?.session;
       if (session) {
         const client = new shopify.api.clients.Rest({ session });
-        client.put({
-          path: `blogs/${shopifyRecord.shopifyBlogId}/articles/${shopifyRecord.shopifyArticleId}`,
-          data: {
-            article: {
-              title: updated.title,
-              body_html: finalContentHtml || "",
-              author: updated.author || "",
-              published: true,
-              tags: Array.isArray(tags) ? tags.join(", ") : undefined,
+        const tagNames = Array.isArray(tags) ? tags.join(", ") : "";
+        const payload = {
+          article: {
+            title: updated.title,
+            body_html: finalContentHtml || "",
+            author: updated.author || "Admin",
+            published: updated.status === "published",
+            tags: tagNames,
+            ...(updated.featuredImage ? { image: { src: updated.featuredImage } } : {}),
+          }
+        };
+
+        try {
+          if (shopifyRecord?.shopifyArticleId) {
+            // Update existing article on Shopify
+            await client.put({
+              path: `blogs/${shopifyRecord.shopifyBlogId}/articles/${shopifyRecord.shopifyArticleId}`,
+              data: payload,
+              type: "application/json",
+            });
+            
+            // Sync status and syncedAt in db
+            await prisma.shopifyArticle.update({
+              where: { id: shopifyRecord.id },
+              data: {
+                status: updated.status,
+                syncedAt: new Date(),
+              }
+            });
+          } else if (updated.status === "published") {
+            // Create on Shopify because status is set to published but not yet created on Shopify
+            const result = await client.post({
+              path: `blogs/${targetBlogId}/articles`,
+              data: payload,
+              type: "application/json",
+            });
+            const newArticleId = result.body?.article?.id;
+            if (newArticleId) {
+              await prisma.shopifyArticle.upsert({
+                where: { postId: post.id },
+                create: {
+                  postId: post.id,
+                  shopifyArticleId: String(newArticleId),
+                  shopifyBlogId: String(targetBlogId),
+                  status: "published",
+                  syncedAt: new Date(),
+                },
+                update: {
+                  shopifyArticleId: String(newArticleId),
+                  shopifyBlogId: String(targetBlogId),
+                  status: "published",
+                  syncedAt: new Date(),
+                }
+              });
             }
           }
-        }).catch(err => console.error("Auto-sync to Shopify failed:", err));
+        } catch (shopifyErr) {
+          console.error("Shopify sync failed during PUT:", shopifyErr);
+        }
       }
     }
 
@@ -469,9 +534,15 @@ router.post("/:id/unpublish", async (req, res) => {
 
     const client = new shopify.api.clients.Rest({ session });
     
-    // Delete the article on Shopify to unpublish it
-    await client.delete({
+    // Set published to false to unpublish it
+    await client.put({
       path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
+      data: {
+        article: {
+          published: false,
+        }
+      },
+      type: "application/json",
     });
 
     await prisma.$transaction([
@@ -479,7 +550,6 @@ router.post("/:id/unpublish", async (req, res) => {
         where: { postId: post.id },
         data: {
           status: "draft",
-          shopifyArticleId: null, // Clear the ID as it's deleted on Shopify
         },
       }),
       prisma.post.update({
@@ -1152,7 +1222,7 @@ router.post("/:id/force-sync", async (req, res) => {
 
     const post = await prisma.post.findFirst({
       where: { id: parseInt(req.params.id), shopId: shop.id },
-      include: { shopifyArticle: true },
+      include: { shopifyArticle: true, tags: { include: { tag: true } } },
     });
     if (!post) return res.status(404).json({ error: "Post not found" });
     if (!post.shopifyArticle?.shopifyBlogId) {
@@ -1163,13 +1233,15 @@ router.post("/:id/force-sync", async (req, res) => {
     if (!session) return res.status(401).json({ error: "No Shopify session" });
 
     const client = new shopify.api.clients.Rest({ session });
+    const tagNames = post.tags ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ") : "";
     const articleData = {
       article: {
         title: post.title,
         body_html: post.contentHtml || "",
         author: post.author || "",
         published: post.status === "published",
-        tags: "",
+        tags: tagNames,
+        ...(post.featuredImage ? { image: { src: post.featuredImage } } : {}),
       },
     };
 
@@ -1178,11 +1250,13 @@ router.post("/:id/force-sync", async (req, res) => {
       await client.put({
         path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${articleId}`,
         data: articleData,
+        type: "application/json",
       });
     } else {
       const response = await client.post({
         path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles`,
         data: articleData,
+        type: "application/json",
       });
       articleId = response.body?.article?.id;
     }

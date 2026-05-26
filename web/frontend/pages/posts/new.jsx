@@ -596,9 +596,9 @@ export default function PostEditor() {
         titleMetadata={statusBadge}
         backAction={{ content: "Articles", onAction: () => navigate("/") }}
         primaryAction={{
-          content: isSaving ? "Saving..." : "Save Draft",
+          content: isSaving ? "Saving..." : (post.status === "published" ? "Save & Sync" : "Save Draft"),
           loading: isSaving,
-          onAction: () => handleSave("draft"),
+          onAction: () => handleSave(post.status === "published" ? "published" : "draft"),
         }}
         secondaryActions={[
           ...(isEditing
@@ -614,12 +614,24 @@ export default function PostEditor() {
             icon: ViewIcon,
             onAction: () => setShowPreview(true),
           },
-          {
-            content: isPublishing ? "Publishing..." : "Publish to Shopify",
-            loading: isPublishing,
-            onAction: handlePublish,
-            tone: "success",
-          },
+          ...(post.status === "published"
+            ? [
+                {
+                  content: isUnpublishing ? "Unpublishing..." : "Unpublish",
+                  loading: isUnpublishing,
+                  onAction: handleUnpublish,
+                  destructive: true,
+                },
+              ]
+            : [
+                {
+                  content: isPublishing ? "Publishing..." : "Publish to Shopify",
+                  loading: isPublishing,
+                  onAction: handlePublish,
+                  disabled: !shopifyBlogId,
+                  tone: "success",
+                },
+              ]),
         ]}
       >
         <Layout>
@@ -720,33 +732,43 @@ export default function PostEditor() {
                     helpText="Select which Shopify blog to push this article to"
                   />
                   <ButtonGroup fullWidth>
-                    <Button
-                      onClick={() => handleSave("draft")}
-                      loading={isSaving}
-                    >
-                      Save Draft
-                    </Button>
-                    <Button
-                      variant="primary"
-                      tone="success"
-                      onClick={handlePublish}
-                      loading={isPublishing}
-                      disabled={!shopifyBlogId}
-                    >
-                      Publish
-                    </Button>
+                    {post.status === "published" ? (
+                      <>
+                        <Button
+                          variant="primary"
+                          onClick={() => handleSave("published")}
+                          loading={isSaving}
+                        >
+                          Save & Sync
+                        </Button>
+                        <Button
+                          tone="critical"
+                          onClick={handleUnpublish}
+                          loading={isUnpublishing}
+                        >
+                          Unpublish
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          onClick={() => handleSave("draft")}
+                          loading={isSaving}
+                        >
+                          Save Draft
+                        </Button>
+                        <Button
+                          variant="primary"
+                          tone="success"
+                          onClick={handlePublish}
+                          loading={isPublishing}
+                          disabled={!shopifyBlogId}
+                        >
+                          Publish
+                        </Button>
+                      </>
+                    )}
                   </ButtonGroup>
-                  {isEditing && post.status === "published" && (
-                    <Button
-                      fullWidth
-                      onClick={handleUnpublish}
-                      loading={isUnpublishing}
-                      tone="critical"
-                      variant="plain"
-                    >
-                      Unpublish from Shopify
-                    </Button>
-                  )}
                 </BlockStack>
               </Card>
 
