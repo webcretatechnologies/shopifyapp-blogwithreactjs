@@ -8,6 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
 import BlockRenderer from "../services/BlockRenderer.js";
+import shopify from "../../shopify.js";
 import {
   getFeaturesForPlan,
   getArticleLimit,
@@ -187,7 +188,10 @@ router.post("/", async (req, res) => {
       });
     }
 
-    res.status(201).json({ post: { id: post.id }, success: true });
+    const postCount = await prisma.post.count({ where: { shopId: shop.id } });
+    const isFirstPost = postCount === 1;
+
+    res.status(201).json({ post: { id: post.id }, success: true, isFirstPost });
   } catch (err) {
     console.error("POST /api/posts error:", err);
     res.status(500).json({ error: err.message });

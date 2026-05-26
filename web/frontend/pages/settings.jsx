@@ -91,13 +91,78 @@ export default function Settings() {
                   Customize the default colors used throughout your blog layout.
                 </Text>
                 <FormLayout>
-                  <TextField
-                    label="Primary Brand Color"
-                    value={primaryColor}
-                    onChange={handleColorChange}
-                    autoComplete="off"
-                    helpText="Hex color code (e.g., #008060)."
-                  />
+                  <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                    <div style={{ flexGrow: 1 }}>
+                      <TextField
+                        label="Primary Brand Color"
+                        value={primaryColor}
+                        onChange={handleColorChange}
+                        autoComplete="off"
+                        helpText="Hex color code (e.g., #008060)."
+                      />
+                    </div>
+                    <div style={{ marginTop: "12px" }}>
+                      <input
+                        type="color"
+                        value={primaryColor}
+                        onChange={(e) => handleColorChange(e.target.value)}
+                        style={{
+                          width: "38px",
+                          height: "38px",
+                          padding: "0",
+                          border: "1px solid #c9cccf",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          backgroundColor: "transparent"
+                        }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div style={{ marginTop: "10px" }}>
+                    <Text variant="bodySm" tone="subdued">Color Presets:</Text>
+                    <div style={{ display: "flex", gap: "8px", marginTop: "6px", flexWrap: "wrap" }}>
+                      {[
+                        { label: "Shopify Green", value: "#008060" },
+                        { label: "Ocean Blue", value: "#005ea2" },
+                        { label: "Indigo Accent", value: "#4f46e5" },
+                        { label: "Crimson Red", value: "#d91e18" },
+                        { label: "Charcoal Slate", value: "#2c3e50" }
+                      ].map((preset) => (
+                        <button
+                          key={preset.value}
+                          type="button"
+                          onClick={() => handleColorChange(preset.value)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            padding: "6px 10px",
+                            border: `1px solid ${primaryColor === preset.value ? "#008060" : "#c9cccf"}`,
+                            borderRadius: "4px",
+                            backgroundColor: primaryColor === preset.value ? "#f0fdf4" : "#ffffff",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: primaryColor === preset.value ? "bold" : "normal",
+                            color: primaryColor === preset.value ? "#15803d" : "#202223",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: "12px",
+                              height: "12px",
+                              borderRadius: "50%",
+                              backgroundColor: preset.value,
+                              display: "inline-block",
+                              border: "1px solid rgba(0,0,0,0.1)"
+                            }}
+                          />
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </FormLayout>
               </BlockStack>
             </Card>

@@ -64,6 +64,8 @@ export default function PostEditor() {
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
+  const [showCongratsModal, setShowCongratsModal] = useState(false);
+  const [newPostId, setNewPostId] = useState(null);
 
   // Load existing post
   const loadPost = useCallback(async () => {
@@ -208,7 +210,12 @@ export default function PostEditor() {
 
       setToast({ content: "Article saved successfully" });
       if (!isEditing && data.post?.id) {
-        navigate(`/posts/${data.post.id}/edit`);
+        if (data.isFirstPost) {
+          setNewPostId(data.post.id);
+          setShowCongratsModal(true);
+        } else {
+          navigate(`/posts/${data.post.id}/edit`);
+        }
       }
     } catch (err) {
       setError(err.message);
@@ -614,6 +621,38 @@ export default function PostEditor() {
         onClose={() => setShowFilePicker(false)}
         onSelect={(url) => setPost(p => ({ ...p, featuredImage: url }))}
       />
+
+      <Modal
+        open={showCongratsModal}
+        onClose={() => {
+          setShowCongratsModal(false);
+          if (newPostId) {
+            navigate(`/posts/${newPostId}/edit`);
+          }
+        }}
+        title="🎉 Congratulations!"
+        primaryAction={{
+          content: "Start Editing",
+          onAction: () => {
+            setShowCongratsModal(false);
+            if (newPostId) {
+              navigate(`/posts/${newPostId}/edit`);
+            }
+          },
+        }}
+      >
+        <Modal.Section>
+          <BlockStack gap="400" align="center">
+            <div style={{ fontSize: "50px", textAlign: "center" }}>🏆</div>
+            <Text variant="headingLg" as="h2" alignment="center">
+              You've created your first blog post!
+            </Text>
+            <Text variant="bodyMd" as="p" alignment="center" tone="subdued">
+              Amazing job! Your first blog post has been successfully created. You can now publish it to your store, add products to it, or keep editing the content.
+            </Text>
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
     </Frame>
   );
 }
