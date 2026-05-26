@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Modal,
   Grid,
@@ -21,6 +21,9 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
   const [after, setAfter] = useState(null);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [fetchingMore, setFetchingMore] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const fileInputRef = useRef(null);
 
   const fetchFiles = useCallback(async (cursor = null, search = "") => {
     try {
@@ -82,6 +85,36 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
     loadInitial();
   };
 
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setError(null);
+    const form = new FormData();
+    form.append("file", file);
+
+    try {
+      const res = await fetch("/api/posts/upload", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      
+      // Immediately select the newly uploaded file and close the modal.
+      // This works gracefully even if the upload fell back to local storage.
+      if (data.url) {
+        onSelect(data.url);
+        onClose();
+      } else {
+        await loadInitial();
+      }
+    } catch (err) {
+      setError("Upload failed: " + err.message);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   return (
     <Modal
       open={open}
@@ -115,6 +148,21 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
               />
             </div>
             <Button onClick={handleSearchSubmit}>Search</Button>
+            
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleUpload}
+            />
+            <Button 
+              primary 
+              onClick={() => fileInputRef.current?.click()} 
+              loading={uploading}
+            >
+              Add media
+            </Button>
           </InlineStack>
 
           {loading ? (

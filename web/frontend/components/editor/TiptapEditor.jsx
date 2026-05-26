@@ -1,7 +1,7 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Underline } from "@tiptap/extension-underline";
-import { Image } from "@tiptap/extension-image";
+import { ResizableImage } from "./extensions/ResizableImage";
 import { Link } from "@tiptap/extension-link";
 import { Placeholder } from "@tiptap/extension-placeholder";
 import { TextAlign } from "@tiptap/extension-text-align";
@@ -43,12 +43,13 @@ export default function TiptapEditor({
   const [showShopifyPicker, setShowShopifyPicker] = useState(false);
   const [showYoutubeModal, setShowYoutubeModal] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [showHtml, setShowHtml] = useState(false);
 
   const editor = useEditor({
     extensions: [
       StarterKit,
       Underline,
-      Image.configure({ inline: false }),
+      ResizableImage.configure({ inline: false }),
       Link.configure({ openOnClick: false }),
       Placeholder.configure({ placeholder }),
       TextStyle,
@@ -68,32 +69,14 @@ export default function TiptapEditor({
   });
 
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
+    if (editor && !editor.isFocused && content !== editor.getHTML()) {
       editor.commands.setContent(content || "");
     }
   }, [content, editor]);
 
   if (!editor) return null;
 
-  const handleImageUpload = async () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.onchange = async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const form = new FormData();
-      form.append("file", file);
-      try {
-        const res = await fetch(uploadUrl, { method: "POST", body: form });
-        const { url } = await res.json();
-        if (url) editor.chain().focus().setImage({ src: url }).run();
-      } catch (err) {
-        console.error("Image upload failed:", err);
-      }
-    };
-    input.click();
-  };
+  // Removed broken local upload logic in favor of ShopifyFilePicker
 
   const handleLinkInsert = () => {
     const url = window.prompt("Enter URL:");
@@ -303,15 +286,8 @@ export default function TiptapEditor({
           >
             🔗
           </Btn>
-          <Btn onClick={handleImageUpload} active={false} title="Upload Image">
+          <Btn onClick={() => setShowShopifyPicker(true)} active={false} title="Upload / Select Image">
             🖼
-          </Btn>
-          <Btn
-            onClick={() => setShowShopifyPicker(true)}
-            active={false}
-            title="Shopify Files"
-          >
-            🛍
           </Btn>
           <Btn
             onClick={() => setShowYoutubeModal(true)}
@@ -378,9 +354,39 @@ export default function TiptapEditor({
             ↪
           </Btn>
         </div>
+        <Sep />
+        <div className="tiptap-toolbar__group" style={{ marginLeft: "auto" }}>
+          <Btn
+            onClick={() => setShowHtml(!showHtml)}
+            active={showHtml}
+            title="Edit HTML"
+          >
+            {"</>"}
+          </Btn>
+        </div>
       </div>
 
-      <EditorContent editor={editor} className="tiptap-content" />
+      {showHtml ? (
+        <textarea
+          value={content || ""}
+          onChange={(e) => onChange?.(e.target.value)}
+          style={{
+            width: "100%",
+            minHeight: "400px",
+            padding: "16px",
+            fontFamily: "monospace",
+            fontSize: "14px",
+            border: "none",
+            borderTop: "1px solid #c9cccf",
+            resize: "vertical",
+            boxSizing: "border-box",
+            background: "#fafbfc"
+          }}
+          placeholder="<p>Write your HTML here...</p>"
+        />
+      ) : (
+        <EditorContent editor={editor} className="tiptap-content" />
+      )}
 
       {/* YouTube/Video embed modal */}
       {showYoutubeModal && (

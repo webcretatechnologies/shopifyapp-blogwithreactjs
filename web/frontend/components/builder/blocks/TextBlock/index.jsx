@@ -13,11 +13,12 @@ import { Link } from '@tiptap/extension-link';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BlockStack, Text, Select, Button } from '@shopify/polaris';
 
 // ── Preview (shown in canvas) ─────────────────────────────────────────────────
 export function TextBlockPreview({ block, isSelected, onUpdate }) {
+  const [showHtml, setShowHtml] = useState(false);
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -28,26 +29,26 @@ export function TextBlockPreview({ block, isSelected, onUpdate }) {
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
     ],
     content: block.content || '<p>Your text here...</p>',
-    editable: isSelected, // only editable when the block is selected
+    editable: isSelected && !showHtml, // only editable when selected and not in HTML mode
     onUpdate: ({ editor }) => {
       onUpdate?.({ content: editor.getHTML() });
     },
   });
 
-  // Sync content when block changes externally (e.g. undo/redo)
+  // Sync content when block changes externally (e.g. undo/redo, or raw html edit)
   useEffect(() => {
-    if (editor && !editor.isFocused) {
+    if (editor && !editor.isFocused && !showHtml) {
       const current = editor.getHTML();
       if (block.content && current !== block.content) {
         editor.commands.setContent(block.content, false);
       }
     }
-  }, [block.content, editor]);
+  }, [block.content, editor, showHtml]);
 
   // Update editable state on selection change
   useEffect(() => {
-    if (editor) editor.setEditable(!!isSelected);
-  }, [isSelected, editor]);
+    if (editor) editor.setEditable(!!isSelected && !showHtml);
+  }, [isSelected, showHtml, editor]);
 
   if (!editor) return null;
 
@@ -71,19 +72,22 @@ export function TextBlockPreview({ block, isSelected, onUpdate }) {
           borderRadius: '6px',
           border: '1px solid #e1e3e5',
           flexWrap: 'wrap',
+          alignItems: 'center',
         }}>
           {[
-            { label: 'B', title: 'Bold', action: () => editor.chain().focus().toggleBold().run(), active: editor.isActive('bold'), style: { fontWeight: 700 } },
-            { label: 'I', title: 'Italic', action: () => editor.chain().focus().toggleItalic().run(), active: editor.isActive('italic'), style: { fontStyle: 'italic' } },
-            { label: 'U', title: 'Underline', action: () => editor.chain().focus().toggleUnderline().run(), active: editor.isActive('underline'), style: { textDecoration: 'underline' } },
-            { label: '≡L', title: 'Align Left', action: () => editor.chain().focus().setTextAlign('left').run(), active: editor.isActive({ textAlign: 'left' }) },
-            { label: '≡C', title: 'Center', action: () => editor.chain().focus().setTextAlign('center').run(), active: editor.isActive({ textAlign: 'center' }) },
-            { label: '≡R', title: 'Right', action: () => editor.chain().focus().setTextAlign('right').run(), active: editor.isActive({ textAlign: 'right' }) },
-          ].map(({ label, title, action, active, style }) => (
+            { label: 'B', title: 'Bold', action: () => editor.chain().focus().toggleBold().run(), active: editor.isActive('bold'), style: { fontWeight: 700 }, disabled: showHtml },
+            { label: 'I', title: 'Italic', action: () => editor.chain().focus().toggleItalic().run(), active: editor.isActive('italic'), style: { fontStyle: 'italic' }, disabled: showHtml },
+            { label: 'U', title: 'Underline', action: () => editor.chain().focus().toggleUnderline().run(), active: editor.isActive('underline'), style: { textDecoration: 'underline' }, disabled: showHtml },
+            { label: '≡L', title: 'Align Left', action: () => editor.chain().focus().setTextAlign('left').run(), active: editor.isActive({ textAlign: 'left' }), disabled: showHtml },
+            { label: '≡C', title: 'Center', action: () => editor.chain().focus().setTextAlign('center').run(), active: editor.isActive({ textAlign: 'center' }), disabled: showHtml },
+            { label: '≡R', title: 'Right', action: () => editor.chain().focus().setTextAlign('right').run(), active: editor.isActive({ textAlign: 'right' }), disabled: showHtml },
+            { label: '</>', title: 'Edit HTML', action: () => setShowHtml(!showHtml), active: showHtml, isRight: true },
+          ].map(({ label, title, action, active, style, disabled, isRight }) => (
             <button
               key={label}
               type="button"
               title={title}
+              disabled={disabled}
               onMouseDown={e => { e.preventDefault(); action(); }}
               style={{
                 padding: '2px 6px',
@@ -93,8 +97,10 @@ export function TextBlockPreview({ block, isSelected, onUpdate }) {
                 borderRadius: '4px',
                 background: active ? '#e6f5f0' : '#fff',
                 color: active ? '#008060' : '#3f4248',
-                cursor: 'pointer',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                opacity: disabled ? 0.5 : 1,
                 lineHeight: '1.4',
+                marginLeft: isRight ? 'auto' : '0',
                 ...style,
               }}
             >
@@ -103,7 +109,26 @@ export function TextBlockPreview({ block, isSelected, onUpdate }) {
           ))}
         </div>
       )}
-      <EditorContent editor={editor} />
+      {showHtml ? (
+        <textarea
+          value={block.content || ''}
+          onChange={(e) => onUpdate?.({ content: e.target.value })}
+          style={{
+            width: '100%',
+            minHeight: '150px',
+            padding: '12px',
+            fontFamily: 'monospace',
+            fontSize: '13px',
+            border: '1px solid #e1e3e5',
+            borderRadius: '4px',
+            resize: 'vertical',
+            boxSizing: 'border-box'
+          }}
+          placeholder="<p>Write your raw HTML here...</p>"
+        />
+      ) : (
+        <EditorContent editor={editor} />
+      )}
     </div>
   );
 }
