@@ -28,11 +28,114 @@ import {
   DropZone,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
+import { ViewIcon } from "@shopify/polaris-icons";
 import confetti from "canvas-confetti";
 import TiptapEditor from "../../components/editor/TiptapEditor";
 import PageBuilder from "../../components/builder/PageBuilder";
 import SeoPanel from "../../components/SeoPanel";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
+import ArticlePreview from "../../components/editor/ArticlePreview";
+
+const parseHtmlToBlocks = (html) => {
+  if (!html || html.trim() === "" || html === "undefined") return [];
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const blocks = [];
+  
+  const appendTextBlock = (contentHtmlStr) => {
+    if (!contentHtmlStr || contentHtmlStr.trim() === "") return;
+    const lastBlock = blocks[blocks.length - 1];
+    if (lastBlock && lastBlock.type === "text") {
+      lastBlock.content = (lastBlock.content || "") + contentHtmlStr;
+    } else {
+      blocks.push({
+        id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        type: "text",
+        content: contentHtmlStr
+      });
+    }
+  };
+
+  const children = Array.from(doc.body.childNodes);
+  for (let i = 0; i < children.length; i++) {
+    const node = children[i];
+    
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent.trim() !== "") {
+        appendTextBlock(`<p>${node.textContent}</p>`);
+      }
+      continue;
+    }
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName.toLowerCase();
+      
+      if (/^h[1-6]$/.test(tagName)) {
+        blocks.push({
+          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: "heading",
+          content: node.innerHTML,
+          level: tagName,
+          align: node.style?.textAlign || "left",
+          color: node.style?.color || "#202223"
+        });
+      } else if (tagName === "img") {
+        blocks.push({
+          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: "image",
+          src: node.getAttribute("src") || "",
+          alt: node.getAttribute("alt") || "",
+          width: node.style?.width || "100%",
+          caption: ""
+        });
+      } else if (tagName === "hr") {
+        blocks.push({
+          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: "divider",
+          style: "solid",
+          color: node.style?.borderTopColor || "#e1e3e5",
+          margin: "20px"
+        });
+      } else if (tagName === "a" && (node.style?.display === "inline-block" || node.style?.padding)) {
+        blocks.push({
+          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: "cta_button",
+          text: node.textContent || "Button",
+          url: node.getAttribute("href") || "#",
+          align: node.parentElement?.style?.textAlign || "center",
+          color: node.style?.backgroundColor || "#008060",
+          textColor: node.style?.color || "#fff"
+        });
+      } else if (tagName === "div" && node.style?.height) {
+        blocks.push({
+          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: "spacer",
+          height: node.style?.height
+        });
+      } else if (tagName === "p" && node.innerHTML.includes("Product:")) {
+        const text = node.textContent;
+        const parts = text.split("Product:");
+        const title = parts[1] ? parts[1].trim() : "Product";
+        blocks.push({
+          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: "product",
+          title: title,
+          shopifyProductId: "",
+          image: "",
+          price: "",
+          handle: "",
+          variantId: ""
+        });
+      } else if (tagName === "br") {
+        continue;
+      } else {
+        appendTextBlock(node.outerHTML);
+      }
+    }
+  }
+  
+  return blocks;
+};
 
 export default function PostEditor() {
   const { id } = useParams();
@@ -71,6 +174,7 @@ export default function PostEditor() {
   const [newPostId, setNewPostId] = useState(null);
   const [editorMode, setEditorMode] = useState("wysiwyg"); // 'wysiwyg' | 'builder'
   const [builderBlocks, setBuilderBlocks] = useState([]);
+  const [showPreview, setShowPreview] = useState(false);
   const [seoData, setSeoData] = useState({
     metaTitle: "",
     metaDescription: "",
@@ -93,7 +197,14 @@ export default function PostEditor() {
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
       setSelectedProducts(data.post.products || []);
       setEditorMode(data.post.editorMode || "wysiwyg");
-      setBuilderBlocks(data.post.contentJson || []);
+      
+      const loadedBlocks = data.post.contentJson || [];
+      if (loadedBlocks.length === 0 && data.post.contentHtml) {
+        setBuilderBlocks(parseHtmlToBlocks(data.post.contentHtml));
+      } else {
+        setBuilderBlocks(loadedBlocks);
+      }
+
       setSeoData({
         metaTitle: data.post.metaTitle || "",
         metaDescription: data.post.metaDescription || "",
@@ -141,6 +252,41 @@ export default function PostEditor() {
 
   const handleTitleChange = (value) => {
     setPost((p) => ({ ...p, title: value, slug: generateSlug(value) }));
+  };
+
+  const handleModeChange = (mode) => {
+    if (mode === "builder" && editorMode === "wysiwyg") {
+      // Sync WYSIWYG HTML back to builder blocks
+      if (contentHtml && contentHtml.trim() !== "") {
+        setBuilderBlocks(parseHtmlToBlocks(contentHtml));
+      } else {
+        setBuilderBlocks([]);
+      }
+    } else if (mode === "wysiwyg" && editorMode === "builder") {
+      // Compile builder blocks to simple HTML
+      if (builderBlocks.length > 0) {
+        const html = builderBlocks.map(b => {
+          if (b.type === "text") return b.content || "";
+          if (b.type === "heading") {
+            const tag = b.level || "h2";
+            return `<${tag}>${b.content || ""}</${tag}>`;
+          }
+          if (b.type === "image") {
+            return b.src ? `<img src="${b.src}" alt="${b.alt || ''}" style="max-width:100%; height:auto;" />` : "";
+          }
+          if (b.type === "html") return b.code || "";
+          if (b.type === "divider") return `<hr style="border:none;border-top:1px solid ${b.color || '#e1e3e5'};margin:${b.margin || '20px'} 0;"/>`;
+          if (b.type === "spacer") return `<div style="height:${b.height || '40px'}"></div>`;
+          if (b.type === "cta_button") return `<a href="${b.url || '#'}" style="display:inline-block;padding:10px 20px;background:${b.color || '#008060'};color:${b.textColor || '#fff'};text-decoration:none;border-radius:4px;">${b.text || 'Click here'}</a>`;
+          if (b.type === "product") return b.title ? `<p><strong>Product:</strong> ${b.title}</p>` : "";
+          return "";
+        }).filter(Boolean).join("<br/><br/>");
+        setContentHtml(html);
+      } else {
+        setContentHtml("");
+      }
+    }
+    setEditorMode(mode);
   };
 
   const handleOpenPicker = async () => {
@@ -207,7 +353,7 @@ export default function PostEditor() {
   const buildPayload = () => ({
     ...post,
     contentHtml,
-    contentJson: builderBlocks,
+    contentJson: editorMode === "wysiwyg" ? parseHtmlToBlocks(contentHtml) : builderBlocks,
     tags,
     blogId: shopifyBlogId || undefined,
     productSliderProducts: selectedProducts,
@@ -408,6 +554,11 @@ export default function PostEditor() {
               ]
             : []),
           {
+            content: "Preview",
+            icon: ViewIcon,
+            onAction: () => setShowPreview(true),
+          },
+          {
             content: isPublishing ? "Publishing..." : "Publish to Shopify",
             loading: isPublishing,
             onAction: handlePublish,
@@ -428,34 +579,6 @@ export default function PostEditor() {
           <Layout.Section>
             <BlockStack gap="400">
               <Card>
-                <BlockStack gap="400">
-                  <TextField
-                    label="Article Title"
-                    value={post.title}
-                    onChange={handleTitleChange}
-                    placeholder="Enter article title..."
-                    autoComplete="off"
-                  />
-                  <TextField
-                    label="URL Slug"
-                    value={post.slug}
-                    onChange={handleField("slug")}
-                    prefix="/"
-                    helpText="Auto-generated from title"
-                    autoComplete="off"
-                  />
-                  <TextField
-                    label="Excerpt / Meta Description"
-                    value={post.excerpt || ""}
-                    onChange={handleField("excerpt")}
-                    multiline={3}
-                    placeholder="Brief description for SEO..."
-                    autoComplete="off"
-                  />
-                </BlockStack>
-              </Card>
-
-              <Card>
                 <BlockStack gap="300">
                   {/* ─── Editor Mode Toggle ─────────────────────────────── */}
                   <InlineStack align="space-between" blockAlign="center">
@@ -470,7 +593,7 @@ export default function PostEditor() {
                     >
                       <button
                         type="button"
-                        onClick={() => setEditorMode("wysiwyg")}
+                        onClick={() => handleModeChange("wysiwyg")}
                         style={{
                           padding: "6px 14px",
                           fontSize: "13px",
@@ -487,7 +610,7 @@ export default function PostEditor() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setEditorMode("builder")}
+                        onClick={() => handleModeChange("builder")}
                         style={{
                           padding: "6px 14px",
                           fontSize: "13px",
@@ -547,6 +670,35 @@ export default function PostEditor() {
           {/* ─── Sidebar ─────────────────────────────────────────── */}
           <Layout.Section variant="oneThird">
             <BlockStack gap="400">
+              
+              <Card>
+                <BlockStack gap="400">
+                  <TextField
+                    label="Article Title"
+                    value={post.title}
+                    onChange={handleTitleChange}
+                    placeholder="Enter article title..."
+                    autoComplete="off"
+                  />
+                  <TextField
+                    label="URL Slug"
+                    value={post.slug}
+                    onChange={handleField("slug")}
+                    prefix="/"
+                    helpText="Auto-generated from title"
+                    autoComplete="off"
+                  />
+                  <TextField
+                    label="Excerpt / Meta Description"
+                    value={post.excerpt || ""}
+                    onChange={handleField("excerpt")}
+                    multiline={3}
+                    placeholder="Brief description for SEO..."
+                    autoComplete="off"
+                  />
+                </BlockStack>
+              </Card>
+
               {/* Publishing */}
               <Card>
                 <BlockStack gap="300">
@@ -798,11 +950,24 @@ export default function PostEditor() {
         </Layout>
       </Page>
 
-      <ShopifyFilePicker
+        <ShopifyFilePicker
         open={showFilePicker}
         onClose={() => setShowFilePicker(false)}
         onSelect={(url) => setPost((p) => ({ ...p, featuredImage: url }))}
       />
+
+      {showPreview && (
+        <ArticlePreview 
+          open={showPreview}
+          onClose={() => setShowPreview(false)}
+          title={post.title}
+          author={post.author}
+          featuredImage={post.featuredImage}
+          contentHtml={contentHtml}
+          contentJson={builderBlocks}
+          editorMode={editorMode}
+        />
+      )}
 
       <Modal
         open={showCongratsModal}

@@ -14,7 +14,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import ShopifyFilePicker from "../ShopifyFilePicker";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./TiptapEditor.css";
 
 const Btn = ({ onClick, active, title, children, style = {} }) => (
@@ -66,6 +66,12 @@ export default function TiptapEditor({
       onChange?.(editor.getHTML());
     },
   });
+
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      editor.commands.setContent(content || "");
+    }
+  }, [content, editor]);
 
   if (!editor) return null;
 

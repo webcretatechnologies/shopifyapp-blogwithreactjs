@@ -209,7 +209,8 @@ class BlockRenderer {
   // ─── Block Renderers ──────────────────────────────────────────────────────
 
   renderHeading(s) {
-    const level = parseInt(s.level || "2", 10) || 2;
+    const levelStr = String(s.level || "2");
+    const level = parseInt(levelStr.replace(/\D/g, ""), 10) || 2;
     const text = this.esc(s.text || s.content || "");
     const align = s.align || "left";
     return `<h${level} class="blog-heading blog-heading--h${level}" style="text-align:${align}">${text}</h${level}>`;

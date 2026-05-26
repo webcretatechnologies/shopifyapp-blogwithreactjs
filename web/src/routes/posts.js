@@ -532,8 +532,84 @@ router.get("/plan/features", async (req, res) => {
 });
 
 // ─── POST /api/posts/upload — Media upload ────────────────────────────────────
-router.post("/upload", upload.single("file"), (req, res) => {
+router.post("/upload", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  try {
+    const shop = await getShopFromSession(res);
+    if (shop) {
+      const session = res.locals.shopify.session;
+      const client = new shopify.api.clients.Graphql({ session });
+      
+      const stagedQuery = `
+        mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+          stagedUploadsCreate(input: $input) {
+            stagedTargets { url resourceUrl parameters { name value } }
+            userErrors { field message }
+          }
+        }
+      `;
+      const stagedData = await client.request(stagedQuery, {
+        variables: {
+          input: [{
+            resource: "IMAGE",
+            filename: req.file.originalname,
+            mimeType: req.file.mimetype,
+            fileSize: req.file.size.toString(),
+            httpMethod: "POST"
+          }]
+        }
+      });
+      
+      const target = stagedData.data.stagedUploadsCreate.stagedTargets[0];
+      if (target) {
+        const formData = new FormData();
+        target.parameters.forEach(p => formData.append(p.name, p.value));
+        const { Blob } = await import("node:buffer");
+        const fs = await import("fs");
+        const fileBuffer = fs.readFileSync(req.file.path);
+        formData.append("file", new Blob([fileBuffer], { type: req.file.mimetype }), req.file.originalname);
+        
+        await fetch(target.url, { method: "POST", body: formData });
+        
+        const createQuery = `
+          mutation fileCreate($files: [FileCreateInput!]!) {
+            fileCreate(files: $files) {
+              files { id ... on MediaImage { image { url } } }
+              userErrors { field message }
+            }
+          }
+        `;
+        const createData = await client.request(createQuery, {
+          variables: {
+            files: [{ originalSource: target.resourceUrl, contentType: "IMAGE" }]
+          }
+        });
+        
+        let fileObj = createData.data.fileCreate.files[0];
+        let finalUrl = fileObj?.image?.url;
+        
+        // Poll up to 5 times
+        let attempts = 0;
+        while (!finalUrl && attempts < 5 && fileObj?.id) {
+          await new Promise(r => setTimeout(r, 1000));
+          const pollQuery = `query { node(id: "${fileObj.id}") { ... on MediaImage { image { url } } } }`;
+          const pollData = await client.request(pollQuery);
+          finalUrl = pollData.data.node?.image?.url;
+          attempts++;
+        }
+        
+        if (finalUrl) {
+           const fs = await import("fs");
+           fs.unlinkSync(req.file.path); // remove local
+           return res.json({ url: finalUrl, filename: req.file.filename });
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Shopify Direct Upload failed, falling back:", e);
+  }
+
   const url = `/uploads/${req.file.filename}`;
   res.json({ url, filename: req.file.filename });
 });
