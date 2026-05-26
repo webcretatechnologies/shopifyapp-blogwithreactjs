@@ -144,6 +144,16 @@ model Post {
   productSliderPosition  String    @default("none") // none | top | bottom | both
   productSliderSource    String    @default("recommendations") // recommendations | manual
   productSliderConfig    Json?
+  editorMode             String    @default("wysiwyg") // wysiwyg | builder
+
+  // SEO Fields
+  metaTitle              String?   @db.VarChar(120)
+  metaDescription        String?   @db.Text
+  canonicalUrl           String?   @db.Text
+  ogTitle                String?   @db.VarChar(120)
+  ogDescription          String?   @db.Text
+  ogImage                String?   @db.Text
+
   publishedAt            DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
@@ -155,11 +165,32 @@ model Post {
   products               PostProduct[]
   shopifyArticle         ShopifyArticle?
   analytics              PostAnalytic[]
+  translations           PostTranslation[]
 
   @@index([shopId])
   @@index([shopId, status])
   @@index([shopId, categoryId])
 }
+
+// ─── Post Translations (Multi-Language) ───────────────────────────────────────
+model PostTranslation {
+  id              Int      @id @default(autoincrement())
+  postId          Int
+  locale          String   // en | ar | fr | de | es | ja | zh | etc.
+  title           String?
+  excerpt         String?  @db.Text
+  contentHtml     String?  @db.LongText
+  metaTitle       String?  @db.VarChar(120)
+  metaDescription String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  post            Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, locale])
+  @@index([postId])
+}
+
 
 // ─── Post Blocks (Section-Based Editor) ───────────────────────────────────────
 model PostBlock {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { io } from "socket.io-client";
 import {
   Card,
   TextField,
@@ -36,7 +37,8 @@ import {
   RefreshCw,
   Info,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  MessageSquare
 } from "lucide-react";
 
 const DownloadIcon = (props) => <Download size={16} {...props} />;
@@ -103,6 +105,12 @@ export default function Admin() {
   const [activities, setActivities] = useState([]);
   const [activitiesTotal, setActivitiesTotal] = useState(0);
   const [activitiesPage, setActivitiesPage] = useState(1);
+
+  // Chat support states
+  const [chatHistory, setChatHistory] = useState({});
+  const [selectedChatRoom, setSelectedChatRoom] = useState("");
+  const [replyText, setReplyText] = useState("");
+  const [isSendingReply, setIsSendingReply] = useState(false);
 
   // Modal: Plan Override
   const [overrideModalActive, setOverrideModalActive] = useState(false);
@@ -278,6 +286,70 @@ export default function Admin() {
       setError(err.message);
     }
   }, [adminFetch, activitiesPage]);
+
+  // Load Active Chat Support Rooms
+  const loadChats = useCallback(async () => {
+    try {
+      const data = await adminFetch("/admin-api/chats");
+      setChatHistory(data.chats || {});
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [adminFetch]);
+
+  // Reply to target chat room
+  const handleReplySubmit = async () => {
+    if (!replyText.trim() || !selectedChatRoom) return;
+    setIsSendingReply(true);
+    try {
+      await adminFetch(`/admin-api/chats/${selectedChatRoom}/reply`, {
+        method: "POST",
+        body: JSON.stringify({ message: replyText }),
+      });
+      setReplyText("");
+      await loadChats();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSendingReply(false);
+    }
+  };
+
+  // Connect to Socket.io for the selected chat room
+  useEffect(() => {
+    if (!selectedChatRoom) return;
+
+    const socketConnection = io({ path: "/chat-socket", transports: ["websocket"] });
+
+    socketConnection.on("connect", () => {
+      socketConnection.emit("join_room", { room: selectedChatRoom });
+    });
+
+    socketConnection.on("new_message", (msg) => {
+      setChatHistory((prev) => {
+        const room = msg.room || selectedChatRoom;
+        const currentMsgs = prev[room] || [];
+        if (currentMsgs.some((m) => m.timestamp === msg.timestamp && m.text === msg.text)) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [room]: [...currentMsgs, msg],
+        };
+      });
+    });
+
+    socketConnection.on("history", (history) => {
+      setChatHistory((prev) => ({
+        ...prev,
+        [selectedChatRoom]: history,
+      }));
+    });
+
+    return () => {
+      socketConnection.disconnect();
+    };
+  }, [selectedChatRoom]);
 
   // Handle plan override submission
   const handleOverrideSubmit = async () => {
@@ -469,6 +541,11 @@ export default function Admin() {
       if (emailSubTab === 1) loadEmails();
     }
     if (activeSection === "activities") loadActivities();
+    if (activeSection === "chats") {
+      loadChats();
+      const interval = setInterval(loadChats, 4000);
+      return () => clearInterval(interval);
+    }
   }, [
     token,
     activeSection,
@@ -488,7 +565,8 @@ export default function Admin() {
     loadPricingAndFeatures,
     loadTemplates,
     loadEmails,
-    loadActivities
+    loadActivities,
+    loadChats
   ]);
 
   // Login view if session token is empty
@@ -548,6 +626,7 @@ export default function Admin() {
       case "stores": return "Stores Audit Auditor";
       case "pricing": return "Pricing & Plan Features";
       case "emails": return "Mailing & Broadcast Center";
+      case "chats": return "Live Support Chat Desk";
       case "activities": return "Supervisor Activity Logs";
       default: return "Dashboard";
     }
@@ -597,6 +676,7 @@ export default function Admin() {
                 { id: "stores", label: "Stores Auditor", icon: Store },
                 { id: "pricing", label: "Pricing & Features", icon: Settings },
                 { id: "emails", label: "Email Center", icon: Mail },
+                { id: "chats", label: "Live Support Chats", icon: MessageSquare },
                 { id: "activities", label: "Supervisor Activity", icon: FileText }
               ].map((item) => {
                 const Icon = item.icon;
@@ -1325,6 +1405,178 @@ export default function Admin() {
                     </BlockStack>
                   </Box>
                 </Card>
+              )}
+
+              {/* ──────────────────────────────────────────────────────── */}
+              {/* SECTION: LIVE CHATS */}
+              {/* ──────────────────────────────────────────────────────── */}
+              {activeSection === "chats" && (
+                <Grid>
+                  {/* Active Rooms List */}
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 4, lg: 4 }}>
+                    <Card>
+                      <Box padding="400">
+                        <BlockStack gap="300">
+                          <Text variant="headingMd">Conversations</Text>
+                          <Divider />
+                          {Object.keys(chatHistory).length === 0 ? (
+                            <Box padding="400" align="center">
+                              <Text variant="bodyMd" tone="subdued">No active chat sessions</Text>
+                            </Box>
+                          ) : (
+                            <BlockStack gap="150">
+                              {Object.keys(chatHistory).map((room) => {
+                                const msgs = chatHistory[room] || [];
+                                const lastMsg = msgs[msgs.length - 1];
+                                const isSelected = selectedChatRoom === room;
+                                return (
+                                  <div
+                                    key={room}
+                                    onClick={() => setSelectedChatRoom(room)}
+                                    style={{
+                                      padding: "12px",
+                                      borderRadius: "8px",
+                                      border: "1px solid",
+                                      borderColor: isSelected ? "#008060" : "#e1e3e5",
+                                      backgroundColor: isSelected ? "#e2f1eb" : "#ffffff",
+                                      cursor: "pointer",
+                                      transition: "all 0.15s ease-in-out"
+                                    }}
+                                  >
+                                    <BlockStack gap="100">
+                                      <InlineStack align="space-between">
+                                        <Text variant="bodySm" fontWeight="bold" tone={isSelected ? "success" : "base"}>
+                                          {room.replace("shop_", "")}
+                                        </Text>
+                                        {msgs.length > 0 && (
+                                          <Badge size="small" tone="info">
+                                            {msgs.length} msg
+                                          </Badge>
+                                        )}
+                                      </InlineStack>
+                                      {lastMsg && (
+                                        <Text variant="bodyXs" tone="subdued" truncate>
+                                          {lastMsg.senderName || lastMsg.sender}: {lastMsg.text || lastMsg.message}
+                                        </Text>
+                                      )}
+                                    </BlockStack>
+                                  </div>
+                                );
+                              })}
+                            </BlockStack>
+                          )}
+                        </BlockStack>
+                      </Box>
+                    </Card>
+                  </Grid.Cell>
+
+                  {/* Active Chat Conversation View */}
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 8, lg: 8 }}>
+                    <Card>
+                      <Box padding="400">
+                        {selectedChatRoom ? (
+                          <BlockStack gap="400">
+                            <InlineStack align="space-between">
+                              <Text variant="headingMd">Room: {selectedChatRoom.replace("shop_", "")}</Text>
+                              <Button
+                                size="slim"
+                                icon={RefreshIcon}
+                                onClick={loadChats}
+                              >
+                                Refresh
+                              </Button>
+                            </InlineStack>
+                            <Divider />
+
+                            {/* Messages area */}
+                            <div
+                              style={{
+                                height: "350px",
+                                overflowY: "auto",
+                                padding: "16px",
+                                background: "#f9fafb",
+                                borderRadius: "8px",
+                                border: "1px solid #e1e3e5",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "8px"
+                              }}
+                            >
+                              {(chatHistory[selectedChatRoom] || []).length === 0 ? (
+                                <Box padding="800" align="center">
+                                  <Text variant="bodyMd" tone="subdued">No messages in this room yet.</Text>
+                                </Box>
+                              ) : (
+                                (chatHistory[selectedChatRoom] || []).map((msg, i) => {
+                                  const isSupport = msg.sender === "Support";
+                                  return (
+                                    <div
+                                      key={i}
+                                      style={{
+                                        display: "flex",
+                                        justifyContent: isSupport ? "flex-end" : "flex-start",
+                                        marginBottom: "4px"
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          maxWidth: "75%",
+                                          padding: "8px 12px",
+                                          borderRadius: isSupport ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
+                                          backgroundColor: isSupport ? "#008060" : "#ffffff",
+                                          color: isSupport ? "#ffffff" : "#202223",
+                                          border: isSupport ? "none" : "1px solid #e1e3e5",
+                                          boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                                        }}
+                                      >
+                                        <div style={{ fontSize: "10px", fontWeight: "bold", color: isSupport ? "rgba(255,255,255,0.85)" : "#6d7175", marginBottom: "2px" }}>
+                                          {msg.senderName || msg.sender}
+                                        </div>
+                                        <Text variant="bodyMd">{msg.text || msg.message}</Text>
+                                        {msg.timestamp && (
+                                          <div style={{ fontSize: "9px", opacity: 0.6, marginTop: "4px", textAlign: "right" }}>
+                                            {new Date(msg.timestamp).toLocaleTimeString()}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+
+                            {/* Reply Input Form */}
+                            <FormLayout>
+                              <InlineStack gap="300" blockAlign="end">
+                                <div style={{ flexGrow: 1 }}>
+                                  <TextField
+                                    label="Reply message"
+                                    value={replyText}
+                                    onChange={setReplyText}
+                                    placeholder="Type your support reply here..."
+                                    autoComplete="off"
+                                    disabled={isSendingReply}
+                                  />
+                                </div>
+                                <Button
+                                  variant="primary"
+                                  loading={isSendingReply}
+                                  onClick={handleReplySubmit}
+                                >
+                                  Send Reply
+                                </Button>
+                              </InlineStack>
+                            </FormLayout>
+                          </BlockStack>
+                        ) : (
+                          <Box padding="800" align="center">
+                            <Text variant="headingMd" tone="subdued">Select a conversation from the sidebar to start chatting</Text>
+                          </Box>
+                        )}
+                      </Box>
+                    </Card>
+                  </Grid.Cell>
+                </Grid>
               )}
             </BlockStack>
           </main>

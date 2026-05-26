@@ -143,6 +143,13 @@ router.post("/", async (req, res) => {
       categoryId,
       tags = [],
       blogId,
+      editorMode = "wysiwyg",
+      metaTitle,
+      metaDescription,
+      canonicalUrl,
+      ogTitle,
+      ogDescription,
+      ogImage,
     } = req.body;
 
     if (!title) return res.status(422).json({ error: "Title is required" });
@@ -169,6 +176,13 @@ router.post("/", async (req, res) => {
         customJs: customJs || null,
         productSliderPosition,
         categoryId: categoryId ? parseInt(categoryId) : null,
+        editorMode,
+        metaTitle: metaTitle || null,
+        metaDescription: metaDescription || null,
+        canonicalUrl: canonicalUrl || null,
+        ogTitle: ogTitle || null,
+        ogDescription: ogDescription || null,
+        ogImage: ogImage || null,
       },
     });
 
@@ -226,6 +240,13 @@ router.put("/:id", async (req, res) => {
       categoryId,
       tags,
       publishedAt,
+      editorMode,
+      metaTitle,
+      metaDescription,
+      canonicalUrl,
+      ogTitle,
+      ogDescription,
+      ogImage,
     } = req.body;
 
     // Check section limit
@@ -260,6 +281,13 @@ router.put("/:id", async (req, res) => {
         ...(productSliderConfig && { productSliderConfig }),
         ...(categoryId !== undefined && { categoryId: categoryId ? parseInt(categoryId) : null }),
         ...(publishedAt && { publishedAt: new Date(publishedAt) }),
+        ...(editorMode && { editorMode }),
+        metaTitle: metaTitle !== undefined ? metaTitle : post.metaTitle,
+        metaDescription: metaDescription !== undefined ? metaDescription : post.metaDescription,
+        canonicalUrl: canonicalUrl !== undefined ? canonicalUrl : post.canonicalUrl,
+        ogTitle: ogTitle !== undefined ? ogTitle : post.ogTitle,
+        ogDescription: ogDescription !== undefined ? ogDescription : post.ogDescription,
+        ogImage: ogImage !== undefined ? ogImage : post.ogImage,
         updatedAt: new Date(),
       },
     });
@@ -648,10 +676,189 @@ function serializePost(post) {
         }))
       : [],
     shopifyArticle: post.shopifyArticle || null,
+    editorMode: post.editorMode,
+    metaTitle: post.metaTitle,
+    metaDescription: post.metaDescription,
+    canonicalUrl: post.canonicalUrl,
+    ogTitle: post.ogTitle,
+    ogDescription: post.ogDescription,
+    ogImage: post.ogImage,
     publishedAt: post.publishedAt,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
   };
 }
 
+// ─── GET /api/posts/analytics/summary — Dashboard analytics ──────────────────
+router.get("/analytics/summary", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const [totalPosts, published, drafts, recentAnalytics, topPosts] = await Promise.all([
+      prisma.post.count({ where: { shopId: shop.id } }),
+      prisma.post.count({ where: { shopId: shop.id, status: "published" } }),
+      prisma.post.count({ where: { shopId: shop.id, status: "draft" } }),
+      // 30-day view history aggregated by date
+      prisma.postAnalytic.findMany({
+        where: {
+          post: { shopId: shop.id },
+          date: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+        orderBy: { date: "asc" },
+        include: { post: { select: { title: true } } },
+      }),
+      // Top 5 posts by total views
+      prisma.postAnalytic.groupBy({
+        by: ["postId"],
+        where: { post: { shopId: shop.id } },
+        _sum: { views: true },
+        orderBy: { _sum: { views: "desc" } },
+        take: 5,
+      }),
+    ]);
+
+    // Aggregate daily views across all posts
+    const viewsByDate = {};
+    recentAnalytics.forEach((a) => {
+      const dateKey = a.date.toISOString().split("T")[0];
+      viewsByDate[dateKey] = (viewsByDate[dateKey] || 0) + a.views;
+    });
+    const dailyViews = Object.entries(viewsByDate).map(([date, views]) => ({ date, views }));
+    const totalViews = dailyViews.reduce((s, d) => s + d.views, 0);
+
+    // Enrich top posts with title
+    const topPostIds = topPosts.map((t) => t.postId);
+    const topPostDetails = await prisma.post.findMany({
+      where: { id: { in: topPostIds }, shopId: shop.id },
+      select: { id: true, title: true, featuredImage: true, status: true },
+    });
+    const topPostsEnriched = topPosts.map((t) => {
+      const detail = topPostDetails.find((p) => p.id === t.postId) || {};
+      return { ...detail, totalViews: t._sum.views || 0 };
+    });
+
+    res.json({
+      stats: { totalPosts, published, drafts, totalViews },
+      dailyViews,
+      topPosts: topPostsEnriched,
+    });
+  } catch (err) {
+    console.error("GET /api/posts/analytics/summary error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/posts/:id/view — Track post view ───────────────────────────────
+router.post("/:id/view", async (req, res) => {
+  try {
+    const postId = parseInt(req.params.id);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    await prisma.postAnalytic.upsert({
+      where: { postId_date: { postId, date: today } },
+      update: { views: { increment: 1 } },
+      create: { postId, date: today, views: 1 },
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/posts/:id/sync — Force re-sync post to Shopify ────────────────
+router.post("/:id/force-sync", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const post = await prisma.post.findFirst({
+      where: { id: parseInt(req.params.id), shopId: shop.id },
+      include: { shopifyArticle: true },
+    });
+    if (!post) return res.status(404).json({ error: "Post not found" });
+    if (!post.shopifyArticle?.shopifyBlogId) {
+      return res.status(400).json({ error: "Post is not linked to a Shopify blog" });
+    }
+
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "No Shopify session" });
+
+    const client = new shopify.api.clients.Rest({ session });
+    const articleData = {
+      article: {
+        title: post.title,
+        body_html: post.contentHtml || "",
+        author: post.author || "",
+        published: post.status === "published",
+        tags: "",
+      },
+    };
+
+    let articleId = post.shopifyArticle.shopifyArticleId;
+    if (articleId) {
+      await client.put({
+        path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${articleId}`,
+        data: articleData,
+      });
+    } else {
+      const response = await client.post({
+        path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles`,
+        data: articleData,
+      });
+      articleId = response.body?.article?.id;
+    }
+
+    await prisma.shopifyArticle.update({
+      where: { postId: post.id },
+      data: { shopifyArticleId: String(articleId), status: post.status, syncedAt: new Date() },
+    });
+
+    res.json({ success: true, syncedAt: new Date() });
+  } catch (err) {
+    console.error("POST /api/posts/:id/force-sync error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Translations API Routes ───────────────────────────────────────────────
+router.get("/:id/translations", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const translations = await prisma.postTranslation.findMany({
+      where: { postId: parseInt(req.params.id) },
+    });
+    res.json({ translations });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/:id/translations", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const postId = parseInt(req.params.id);
+    const { locale, title, excerpt, contentHtml, metaTitle, metaDescription } = req.body;
+
+    if (!locale) return res.status(422).json({ error: "Locale is required" });
+
+    const translation = await prisma.postTranslation.upsert({
+      where: { postId_locale: { postId, locale } },
+      create: { postId, locale, title, excerpt, contentHtml, metaTitle, metaDescription },
+      update: { title, excerpt, contentHtml, metaTitle, metaDescription },
+    });
+
+    res.json({ success: true, translation });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
+

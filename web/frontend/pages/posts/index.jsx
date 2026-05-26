@@ -5,7 +5,6 @@ import {
   Layout,
   Card,
   IndexTable,
-  useIndexResourceState,
   Text,
   Badge,
   Button,
@@ -21,9 +20,12 @@ import {
   Box,
   InlineStack,
   BlockStack,
+  Divider,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { PlusIcon, EditIcon, DeleteIcon } from "@shopify/polaris-icons";
+import { PlusIcon, EditIcon, DeleteIcon, ImportIcon, RefreshIcon } from "@shopify/polaris-icons";
+import StatsCard from "../../components/analytics/StatsCard";
+import AnalyticsChart from "../../components/analytics/AnalyticsChart";
 
 const STATUS_BADGE_MAP = {
   published: "success",
@@ -41,6 +43,8 @@ export default function Dashboard() {
   const [page, setPage] = useState(1);
   const [toastMessage, setToastMessage] = useState(null);
   const [shopInfo, setShopInfo] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
   const PER_PAGE = 20;
 
@@ -50,7 +54,6 @@ export default function Dashboard() {
       const params = new URLSearchParams({ page, per_page: PER_PAGE });
       if (statusFilter.length === 1) params.set("status", statusFilter[0]);
       if (searchValue) params.set("search", searchValue);
-
       const res = await fetch(`/api/posts?${params}`);
       const data = await res.json();
       setPosts(data.posts || []);
@@ -62,6 +65,18 @@ export default function Dashboard() {
     }
   }, [page, statusFilter, searchValue]);
 
+  const fetchAnalytics = async () => {
+    setAnalyticsLoading(true);
+    try {
+      const res = await fetch("/api/posts/analytics/summary");
+      if (res.ok) {
+        const data = await res.json();
+        setAnalytics(data);
+      }
+    } catch {}
+    finally { setAnalyticsLoading(false); }
+  };
+
   const fetchShop = async () => {
     try {
       const res = await fetch("/api/shop");
@@ -70,27 +85,23 @@ export default function Dashboard() {
     } catch {}
   };
 
-  useEffect(() => { fetchPosts(); fetchShop(); }, [fetchPosts]);
+  useEffect(() => { fetchPosts(); fetchShop(); fetchAnalytics(); }, [fetchPosts]);
 
   const handleDelete = async (post) => {
     if (!confirm("Delete this article? This cannot be undone.")) return;
-    
     let deleteFromShopify = false;
     if (post.status === "published" || post.shopifyArticle?.status === "published") {
       deleteFromShopify = confirm("Also delete this article permanently from your live Shopify store?");
     }
-
     try {
       await fetch(`/api/posts/${post.id}?deleteFromShopify=${deleteFromShopify}`, { method: "DELETE" });
       setToastMessage({ content: "Article deleted" });
       fetchPosts();
+      fetchAnalytics();
     } catch {
       setToastMessage({ content: "Delete failed", error: true });
     }
   };
-
-  const { selectedResources, allResourcesSelected, handleSelectionChange } =
-    useIndexResourceState(posts.map((p) => String(p.id)));
 
   const filters = [
     {
@@ -118,12 +129,7 @@ export default function Dashboard() {
     : [];
 
   const rowMarkup = posts.map((post, index) => (
-    <IndexTable.Row
-      id={String(post.id)}
-      key={post.id}
-      selected={selectedResources.includes(String(post.id))}
-      position={index}
-    >
+    <IndexTable.Row id={String(post.id)} key={post.id} position={index}>
       <IndexTable.Cell>
         <InlineStack gap="300" align="start" blockAlign="center">
           {post.featuredImage ? (
@@ -140,17 +146,15 @@ export default function Dashboard() {
         </InlineStack>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Badge tone={STATUS_BADGE_MAP[post.status] || "attention"}>
-          {post.status}
-        </Badge>
-        {post.shopifyArticle?.status === "published" && (
-          <Badge tone="success" progress="complete"> Synced</Badge>
-        )}
+        <InlineStack gap="100">
+          <Badge tone={STATUS_BADGE_MAP[post.status] || "attention"}>{post.status}</Badge>
+          {post.shopifyArticle?.status === "published" && (
+            <Badge tone="success" progress="complete">Synced</Badge>
+          )}
+        </InlineStack>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Text variant="bodySm" tone="subdued">
-          {post.tags?.join(", ") || "—"}
-        </Text>
+        <Text variant="bodySm" tone="subdued">{post.tags?.join(", ") || "—"}</Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Text variant="bodySm" tone="subdued">
@@ -159,63 +163,108 @@ export default function Dashboard() {
       </IndexTable.Cell>
       <IndexTable.Cell>
         <ButtonGroup>
-          <Button
-            size="slim"
-            icon={EditIcon}
-            onClick={() => navigate(`/posts/${post.id}/edit`)}
-          >
-            Edit
-          </Button>
-          <Button
-            size="slim"
-            tone="critical"
-            icon={DeleteIcon}
-            onClick={() => handleDelete(post)}
-          >
-            Delete
-          </Button>
+          <Button size="slim" icon={EditIcon} onClick={() => navigate(`/posts/${post.id}/edit`)}>Edit</Button>
+          <Button size="slim" tone="critical" icon={DeleteIcon} onClick={() => handleDelete(post)}>Delete</Button>
         </ButtonGroup>
       </IndexTable.Cell>
     </IndexTable.Row>
   ));
 
+  const stats = analytics?.stats;
+
   return (
     <Frame>
-      <TitleBar title="Blog Articles" />
+      <TitleBar title="Blog Dashboard" />
       {toastMessage && (
-        <Toast
-          content={toastMessage.content}
-          error={toastMessage.error}
-          onDismiss={() => setToastMessage(null)}
-        />
+        <Toast content={toastMessage.content} error={toastMessage.error} onDismiss={() => setToastMessage(null)} />
       )}
       <Page
-        title="Blog Articles"
-        subtitle={`${total} total articles`}
-        primaryAction={{
-          content: "New Article",
-          icon: PlusIcon,
-          onAction: () => navigate("/posts/new"),
-        }}
+        title="Blog Dashboard"
+        subtitle={shopInfo ? `${shopInfo.domain} · Plan: ${shopInfo.planKey?.toUpperCase() || "FREE"}` : ""}
+        primaryAction={{ content: "New Article", icon: PlusIcon, onAction: () => navigate("/posts/new") }}
+        secondaryActions={[
+          { content: "Import from Shopify", icon: ImportIcon, onAction: () => navigate("/posts/import") },
+        ]}
       >
         <Layout>
-          {shopInfo && (
-            <Layout.Section>
+
+          {/* ─── Stats Cards ─── */}
+          <Layout.Section>
+            {analyticsLoading ? (
+              <Box padding="400" align="center"><Spinner /></Box>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
+                <StatsCard title="Total Articles" value={stats?.totalPosts ?? 0} icon="📝" color="#008060" />
+                <StatsCard title="Published" value={stats?.published ?? 0} icon="✅" color="#00a97c" />
+                <StatsCard title="Drafts" value={stats?.drafts ?? 0} icon="📋" color="#6d7175" />
+                <StatsCard title="Total Views (30d)" value={(stats?.totalViews ?? 0).toLocaleString()} icon="👁" color="#005bd3" />
+              </div>
+            )}
+          </Layout.Section>
+
+          {/* ─── Analytics Chart ─── */}
+          <Layout.Section>
+            <AnalyticsChart
+              data={analytics?.dailyViews || []}
+              title="Blog Views — Last 30 Days"
+              color="#008060"
+            />
+          </Layout.Section>
+
+          {/* ─── Top Posts + Quick Actions ─── */}
+          <Layout.Section variant="oneThird">
+            <BlockStack gap="400">
+              {/* Quick Actions */}
               <Card>
                 <Box padding="400">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <BlockStack gap="100">
-                      <Text variant="headingMd">Welcome to Blogger</Text>
-                      <Text tone="subdued">Plan: <Badge>{shopInfo.planKey?.toUpperCase() || "FREE"}</Badge></Text>
-                    </BlockStack>
-                    <Button onClick={() => navigate("/posts/new")} variant="primary">
-                      Create Your First Article
+                  <BlockStack gap="300">
+                    <Text variant="headingMd">Quick Actions</Text>
+                    <Divider />
+                    <Button variant="primary" fullWidth onClick={() => navigate("/posts/new")}>
+                      ✍️ &nbsp; Write New Article
                     </Button>
-                  </InlineStack>
+                    <Button fullWidth onClick={() => navigate("/posts/import")}>
+                      📥 &nbsp; Import from Shopify
+                    </Button>
+                    <Button fullWidth onClick={() => navigate("/posts/wizard")}>
+                      🧙 &nbsp; Article Setup Wizard
+                    </Button>
+                    <Button fullWidth onClick={() => { fetchPosts(); fetchAnalytics(); }} icon={RefreshIcon}>
+                      Refresh Data
+                    </Button>
+                  </BlockStack>
                 </Box>
               </Card>
-            </Layout.Section>
-          )}
+
+              {/* Top Posts */}
+              {analytics?.topPosts?.length > 0 && (
+                <Card>
+                  <Box padding="400">
+                    <BlockStack gap="300">
+                      <Text variant="headingMd">🏆 Top Posts</Text>
+                      <Divider />
+                      {analytics.topPosts.map((p) => (
+                        <InlineStack key={p.id} align="space-between" blockAlign="center">
+                          <BlockStack gap="050">
+                            <Text variant="bodySm" fontWeight="semibold"
+                              truncate
+                              style={{ maxWidth: "180px" }}
+                            >
+                              {p.title || "Untitled"}
+                            </Text>
+                            <Badge tone={p.status === "published" ? "success" : "info"}>{p.status}</Badge>
+                          </BlockStack>
+                          <Text variant="bodySm" tone="subdued">{p.totalViews.toLocaleString()} views</Text>
+                        </InlineStack>
+                      ))}
+                    </BlockStack>
+                  </Box>
+                </Card>
+              )}
+            </BlockStack>
+          </Layout.Section>
+
+          {/* ─── Articles Table ─── */}
           <Layout.Section>
             <Card>
               <Filters
@@ -228,9 +277,7 @@ export default function Dashboard() {
                 onClearAll={() => { setStatusFilter([]); setSearchValue(""); }}
               />
               {isLoading ? (
-                <Box padding="800" align="center">
-                  <Spinner />
-                </Box>
+                <Box padding="800" align="center"><Spinner /></Box>
               ) : posts.length === 0 ? (
                 <EmptyState
                   heading="No articles yet"
@@ -243,8 +290,6 @@ export default function Dashboard() {
                 <IndexTable
                   resourceName={{ singular: "article", plural: "articles" }}
                   itemCount={posts.length}
-                  selectedItemsCount={allResourcesSelected ? "All" : selectedResources.length}
-                  onSelectionChange={handleSelectionChange}
                   headings={[
                     { title: "Article" },
                     { title: "Status" },
@@ -252,12 +297,14 @@ export default function Dashboard() {
                     { title: "Created" },
                     { title: "Actions" },
                   ]}
+                  selectable={false}
                 >
                   {rowMarkup}
                 </IndexTable>
               )}
             </Card>
           </Layout.Section>
+
         </Layout>
       </Page>
     </Frame>

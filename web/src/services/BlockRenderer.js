@@ -43,6 +43,7 @@ export class BlockRenderer {
       case "divider":
         return this.renderDivider(block);
       case "button":
+      case "cta_button":
         return this.renderButton(block);
       case "list":
         return this.renderList(block);
@@ -78,21 +79,21 @@ export class BlockRenderer {
   }
 
   renderHeading(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const level = parseInt(s.level || "2");
-    const text = this.esc(s.text || "");
+    const text = this.esc(s.text || s.content || "");
     const align = s.align || "left";
     return `<h${level} class="blog-heading blog-heading--h${level}" style="text-align:${align}">${text}</h${level}>`;
   }
 
   renderText(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const content = s.content || s.text || "";
     return `<div class="blog-text">${content}</div>`;
   }
 
   renderImage(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const src = this.esc(s.src || s.url || "");
     const alt = this.esc(s.alt || "");
     const caption = s.caption || "";
@@ -105,7 +106,7 @@ export class BlockRenderer {
   }
 
   renderImageText(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const src = this.esc(s.src || s.image || "");
     const imagePosition = s.image_position || "left";
     const text = s.text || s.content || "";
@@ -117,14 +118,14 @@ export class BlockRenderer {
   }
 
   renderVideo(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const url = s.url || s.src || "";
     if (url.includes("youtube") || url.includes("youtu.be")) {
       const videoId = this.extractYouTubeId(url);
       if (videoId) {
         return `<div class="blog-video blog-video--youtube">
   <iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen loading="lazy"></iframe>
-</div>`;
+ </div>`;
       }
     }
     if (url.includes("vimeo")) {
@@ -137,13 +138,13 @@ export class BlockRenderer {
   }
 
   renderDivider(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const style = s.style || "solid";
     return `<hr class="blog-divider blog-divider--${style}" />`;
   }
 
   renderButton(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const text = this.esc(s.text || s.label || "Click here");
     const url = this.esc(s.url || s.href || "#");
     const style = s.style || "primary";
@@ -154,7 +155,7 @@ export class BlockRenderer {
   }
 
   renderList(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const items = s.items || [];
     const ordered = s.ordered || false;
     const tag = ordered ? "ol" : "ul";
@@ -163,7 +164,7 @@ export class BlockRenderer {
   }
 
   renderFaq(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const items = s.items || [];
     const html = items
       .map(
@@ -177,7 +178,7 @@ export class BlockRenderer {
   }
 
   renderTable(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const headers = s.headers || [];
     const rows = s.rows || [];
     const headerHtml = headers.length
@@ -192,10 +193,10 @@ export class BlockRenderer {
   }
 
   renderProduct(block) {
-    const s = block.settings || {};
-    const handle = this.esc(s.handle || "");
+    const s = block.settings || block || {};
+    const handle = this.esc(s.handle || s.shopifyProductId || "");
     const title = this.esc(s.title || "");
-    const image = this.esc(s.image || "");
+    const image = this.esc(s.image || s.src || "");
     const price = s.price ? `$${parseFloat(s.price).toFixed(2)}` : "";
     if (!handle) return "";
     return `<div class="blog-product-card" data-handle="${handle}">
@@ -209,7 +210,7 @@ export class BlockRenderer {
   }
 
   renderProductText(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const handle = this.esc(s.handle || "");
     const title = this.esc(s.title || "");
     const text = s.text || s.description || "";
@@ -227,7 +228,7 @@ export class BlockRenderer {
   }
 
   renderProductSlider(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const products = s.products || [];
     if (!products.length) return "";
     const slides = products
@@ -249,7 +250,7 @@ export class BlockRenderer {
   }
 
   renderFeaturedProduct(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const handle = this.esc(s.handle || "");
     if (!handle) return "";
     return `<div class="blog-featured-product" data-handle="${handle}">
@@ -258,7 +259,7 @@ export class BlockRenderer {
   }
 
   renderBlog(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const title = this.esc(s.title || "Related Articles");
     const count = parseInt(s.count || "3");
     return `<div class="blog-related-articles" data-count="${count}">
@@ -268,7 +269,7 @@ export class BlockRenderer {
   }
 
   renderCountdown(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const target = this.esc(s.target_date || "");
     const heading = this.esc(s.heading || "Offer ends in:");
     return `<div class="blog-countdown" data-target="${target}">
@@ -278,7 +279,7 @@ export class BlockRenderer {
   }
 
   renderReviews(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const productHandle = this.esc(s.product_handle || "");
     return `<div class="blog-reviews" data-product="${productHandle}">
   <!-- Reviews widget -->
@@ -286,7 +287,7 @@ export class BlockRenderer {
   }
 
   renderHero(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const heading = this.esc(s.heading || "");
     const subheading = this.esc(s.subheading || "");
     const image = this.esc(s.image || "");
@@ -302,7 +303,7 @@ export class BlockRenderer {
   }
 
   renderAnnouncement(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const text = this.esc(s.text || "");
     const bgColor = s.bg_color || "#000";
     const textColor = s.text_color || "#fff";
@@ -310,14 +311,14 @@ export class BlockRenderer {
   }
 
   renderSpacer(block) {
-    const s = block.settings || {};
+    const s = block.settings || block || {};
     const height = parseInt(s.height || "30");
     return `<div class="blog-spacer" style="height:${height}px"></div>`;
   }
 
   renderCustomHtml(block) {
-    const s = block.settings || {};
-    return s.html || "";
+    const s = block.settings || block || {};
+    return s.code || s.html || "";
   }
 
   extractYouTubeId(url) {

@@ -28,7 +28,10 @@ import {
   DropZone,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
+import confetti from "canvas-confetti";
 import TiptapEditor from "../../components/editor/TiptapEditor";
+import PageBuilder from "../../components/builder/PageBuilder";
+import SeoPanel from "../../components/SeoPanel";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
 
 export default function PostEditor() {
@@ -66,6 +69,9 @@ export default function PostEditor() {
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [showCongratsModal, setShowCongratsModal] = useState(false);
   const [newPostId, setNewPostId] = useState(null);
+  const [editorMode, setEditorMode] = useState("wysiwyg"); // 'wysiwyg' | 'builder'
+  const [builderBlocks, setBuilderBlocks] = useState([]);
+  const [seoData, setSeoData] = useState({ metaTitle: "", metaDescription: "", canonicalUrl: "", ogTitle: "", ogDescription: "", ogImage: "" });
 
   // Load existing post
   const loadPost = useCallback(async () => {
@@ -79,6 +85,15 @@ export default function PostEditor() {
       setFeatures(data.features || {});
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
       setSelectedProducts(data.post.products || []);
+      setEditorMode(data.post.editorMode || "wysiwyg");
+      setSeoData({
+        metaTitle: data.post.metaTitle || "",
+        metaDescription: data.post.metaDescription || "",
+        canonicalUrl: data.post.canonicalUrl || "",
+        ogTitle: data.post.ogTitle || "",
+        ogDescription: data.post.ogDescription || "",
+        ogImage: data.post.ogImage || "",
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -186,6 +201,8 @@ export default function PostEditor() {
     tags,
     blogId: shopifyBlogId || undefined,
     productSliderProducts: selectedProducts,
+    editorMode,
+    ...seoData,
   });
 
   const handleSave = async (status) => {
@@ -213,6 +230,27 @@ export default function PostEditor() {
         if (data.isFirstPost) {
           setNewPostId(data.post.id);
           setShowCongratsModal(true);
+          // 🎉 Fire confetti!
+          const duration = 3000;
+          const end = Date.now() + duration;
+          const frame = () => {
+            confetti({
+              particleCount: 5,
+              angle: 60,
+              spread: 55,
+              origin: { x: 0 },
+              colors: ["#008060", "#00a97c", "#005bd3", "#f5a623", "#e44d26"],
+            });
+            confetti({
+              particleCount: 5,
+              angle: 120,
+              spread: 55,
+              origin: { x: 1 },
+              colors: ["#008060", "#00a97c", "#005bd3", "#f5a623", "#e44d26"],
+            });
+            if (Date.now() < end) requestAnimationFrame(frame);
+          };
+          frame();
         } else {
           navigate(`/posts/${data.post.id}/edit`);
         }
@@ -334,6 +372,10 @@ export default function PostEditor() {
           onAction: () => handleSave("draft"),
         }}
         secondaryActions={[
+          ...(isEditing ? [{
+            content: "Translate Article",
+            onAction: () => navigate(`/posts/${id}/translate`),
+          }] : []),
           {
             content: isPublishing ? "Publishing..." : "Publish to Shopify",
             loading: isPublishing,
@@ -384,13 +426,61 @@ export default function PostEditor() {
 
               <Card>
                 <BlockStack gap="300">
-                  <Text variant="headingMd">Content</Text>
-                  <TiptapEditor
-                    content={contentHtml}
-                    onChange={setContentHtml}
-                    placeholder="Write your article content here..."
-                    uploadUrl="/api/posts/upload"
-                  />
+                  {/* ─── Editor Mode Toggle ─────────────────────────────── */}
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text variant="headingMd">Content</Text>
+                    <div style={{ display: "flex", border: "1px solid #e1e3e5", borderRadius: "6px", overflow: "hidden" }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditorMode("wysiwyg")}
+                        style={{
+                          padding: "6px 14px",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          border: "none",
+                          cursor: "pointer",
+                          background: editorMode === "wysiwyg" ? "#008060" : "#fff",
+                          color: editorMode === "wysiwyg" ? "#fff" : "#6d7175",
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        ✍️ WYSIWYG
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditorMode("builder")}
+                        style={{
+                          padding: "6px 14px",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          border: "none",
+                          borderLeft: "1px solid #e1e3e5",
+                          cursor: "pointer",
+                          background: editorMode === "builder" ? "#008060" : "#fff",
+                          color: editorMode === "builder" ? "#fff" : "#6d7175",
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        🧩 Page Builder
+                      </button>
+                    </div>
+                  </InlineStack>
+
+                  <Divider />
+
+                  {editorMode === "wysiwyg" ? (
+                    <TiptapEditor
+                      content={contentHtml}
+                      onChange={setContentHtml}
+                      placeholder="Write your article content here..."
+                      uploadUrl="/api/posts/upload"
+                    />
+                  ) : (
+                    <PageBuilder
+                      blocks={builderBlocks}
+                      onChange={setBuilderBlocks}
+                    />
+                  )}
                 </BlockStack>
               </Card>
 
@@ -594,6 +684,9 @@ export default function PostEditor() {
                   </BlockStack>
                 </Card>
               )}
+
+              {/* SEO Panel */}
+              <SeoPanel data={seoData} onChange={setSeoData} />
 
               {isEditing && (
                 <Card>

@@ -63,6 +63,7 @@ export default defineConfig({
       "^/(\\?.*)?$": proxyOptions,
       "^/api(/|(\\?.*)?$)": proxyOptions,
       "^/admin-api(/|(\\?.*)?$)": proxyOptions,
+      "^/chat-socket(/|(\\?.*)?$)": { ...proxyOptions, ws: true },
     },
   },
 });

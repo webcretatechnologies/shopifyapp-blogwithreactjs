@@ -994,4 +994,43 @@ router.get("/revenue/export", validateSuperAdmin, async (req, res) => {
   }
 });
 
+// ─── GET /admin-api/chats — Retrieve all active chat rooms & messages ──────────
+router.get("/chats", validateSuperAdmin, (req, res) => {
+  const chatHistory = req.app.get("chatHistory") || {};
+  res.json({ chats: chatHistory });
+});
+
+// ─── POST /admin-api/chats/:room/reply — Reply to a chat room ───────────────
+router.post("/chats/:room/reply", validateSuperAdmin, (req, res) => {
+  const { room } = req.params;
+  const { message } = req.body;
+  const chatHistory = req.app.get("chatHistory") || {};
+  const io = req.app.get("io");
+
+  if (!chatHistory[room]) {
+    chatHistory[room] = [];
+  }
+
+  const reply = {
+    room,
+    sender: "Support",
+    senderName: "Support",
+    text: message,
+    message: message,
+    timestamp: new Date().toISOString(),
+  };
+
+  chatHistory[room].push(reply);
+
+  if (chatHistory[room].length > 100) {
+    chatHistory[room] = chatHistory[room].slice(-100);
+  }
+
+  if (io) {
+    io.to(room).emit("new_message", reply);
+  }
+
+  res.json({ success: true, reply });
+});
+
 export default router;

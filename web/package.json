@@ -37,7 +37,8 @@
     "multer": "^2.1.1",
     "nodemailer": "^8.0.8",
     "prisma": "^6.19.3",
-    "serve-static": "^1.14.1"
+    "serve-static": "^1.14.1",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "nodemon": "^2.0.15",
