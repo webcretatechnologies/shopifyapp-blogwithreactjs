@@ -35,6 +35,7 @@
     "dotenv": "^17.4.2",
     "lucide-react": "^1.16.0",
     "multer": "^2.1.1",
+    "nodemailer": "^8.0.8",
     "prisma": "^6.19.3",
     "serve-static": "^1.14.1"
   },

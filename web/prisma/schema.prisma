@@ -46,6 +46,8 @@ model Shop {
   appPlans        AppPlan[]
   webhookLogs     WebhookLog[]
   settings        ShopSetting[]
+  feedbacks       Feedback[]
+  storeLogs       StoreLog[]
 }
 
 // ─── App Plans ─────────────────────────────────────────────────────────────────
@@ -274,4 +276,75 @@ model PostAnalytic {
 
   @@unique([postId, date])
   @@index([postId])
+}
+
+// ─── Feedback & Support ────────────────────────────────────────────────────────
+model Feedback {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  rating    Int?     // rating scale 1-5
+  topic     String?  @db.VarChar(120)
+  message   String   @db.Text
+  page      String?  @db.VarChar(255)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+}
+
+// ─── Store Logs (Merchant Activity Logs) ───────────────────────────────────────
+model StoreLog {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  log       String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+}
+
+// ─── Email Logs ────────────────────────────────────────────────────────────────
+model EmailLog {
+  id              Int      @id @default(autoincrement())
+  recipientEmail  String
+  recipientDomain String?
+  subject         String
+  body            String?  @db.Text
+  template        String?
+  status          String   @default("sent") // sent | failed | pending
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ─── Admin Activity Logs ────────────────────────────────────────────────────────
+model AdminActivityLog {
+  id         Int      @id @default(autoincrement())
+  action     String
+  targetType String?
+  targetId   Int?
+  meta       Json?
+  createdAt  DateTime @default(now())
+}
+
+// ─── Admin Settings ─────────────────────────────────────────────────────────────
+model AdminSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Shop Plan Overrides ────────────────────────────────────────────────────────
+model ShopPlanOverride {
+  id           Int       @id @default(autoincrement())
+  shopDomain   String    @unique
+  overridePlan String
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }

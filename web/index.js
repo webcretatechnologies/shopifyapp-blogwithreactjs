@@ -19,6 +19,7 @@ import { ArticleWebhookHandlers } from "./src/webhooks/articles.js";
 import importRoutes from "./src/routes/import.js";
 import wizardRoutes from "./src/routes/wizard.js";
 import supportRoutes from "./src/routes/support.js";
+import superAdminRoutes from "./src/routes/superAdmin.js";
 
 // Ensure uploads directory exists
 const uploadsDir = join(__dirname, "public/uploads");
@@ -176,6 +177,9 @@ app.use("/api/wizard", wizardRoutes);
 
 // Support
 app.use("/api/support", supportRoutes);
+
+// Super Admin API
+app.use("/admin-api", superAdminRoutes);
 
 // Static uploads
 app.use("/uploads", express.static(uploadsDir));

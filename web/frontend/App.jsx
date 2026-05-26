@@ -10,20 +10,24 @@ export default function App() {
   });
   const { t } = useTranslation();
 
+  const isAdminPath = window.location.pathname.startsWith("/admin");
+
   return (
     <PolarisProvider>
       <BrowserRouter>
         <QueryProvider>
-          <NavMenu>
-            <a href="/" rel="home" />
-            <a href="/posts">Articles</a>
-            <a href="/posts/new">New Article</a>
-            <a href="/posts/wizard">Wizard</a>
-            <a href="/posts/import">Import</a>
-            <a href="/plans">Plans & Billing</a>
-            <a href="/settings">Settings</a>
-            <a href="/support">Support</a>
-          </NavMenu>
+          {!isAdminPath && (
+            <NavMenu>
+              <a href="/" rel="home" />
+              <a href="/posts">Articles</a>
+              <a href="/posts/new">New Article</a>
+              <a href="/posts/wizard">Wizard</a>
+              <a href="/posts/import">Import</a>
+              <a href="/plans">Plans & Billing</a>
+              <a href="/settings">Settings</a>
+              <a href="/support">Support</a>
+            </NavMenu>
+          )}
           <Routes pages={pages} />
         </QueryProvider>
       </BrowserRouter>

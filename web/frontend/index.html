@@ -18,7 +18,13 @@
     </script>
 
     <meta name="shopify-api-key" content="%VITE_SHOPIFY_API_KEY%" />
-    <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+    <script>
+      if (!window.location.pathname.startsWith('/admin')) {
+        const script = document.createElement('script');
+        script.src = "https://cdn.shopify.com/shopifycloud/app-bridge.js";
+        document.head.appendChild(script);
+      }
+    </script>
   </head>
   <body>
     <div id="app"><!--index.jsx injects App.jsx here--></div>

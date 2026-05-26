@@ -1,7 +1,11 @@
 /**
  * PlanFeatureService
  * Port of Laravel's PlanFeature model logic — manages plan-based feature gating.
+ * Loads dynamically from database with synchronous caching.
  */
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 // Default plan feature map (mirrors Laravel's PlanFeature::mapForPlan)
 const PLAN_DEFAULTS = {
@@ -115,9 +119,79 @@ const PLAN_DEFAULTS = {
   },
 };
 
+let cachedFeatures = { ...PLAN_DEFAULTS };
+
+export async function initPlanFeatures() {
+  try {
+    const count = await prisma.planFeature.count();
+    if (count === 0) {
+      // Seed default features into MySQL
+      const dataToCreate = [];
+      for (const [plan, fMap] of Object.entries(PLAN_DEFAULTS)) {
+        for (const [featureKey, opt] of Object.entries(fMap)) {
+          dataToCreate.push({
+            plan,
+            featureKey,
+            enabled: opt.enabled,
+            limit: opt.limit,
+          });
+        }
+      }
+      await prisma.planFeature.createMany({
+        data: dataToCreate,
+      });
+    }
+
+    // Retrieve live values from database
+    const dbFeatures = await prisma.planFeature.findMany();
+    const newCache = {
+      free: {},
+      starter: {},
+      pro: {},
+      business: {},
+    };
+
+    dbFeatures.forEach((f) => {
+      const p = f.plan.toLowerCase();
+      if (!newCache[p]) newCache[p] = {};
+      newCache[p][f.featureKey] = {
+        enabled: f.enabled,
+        limit: f.limit,
+      };
+    });
+
+    // Fill in fallback defaults if database entries are missing
+    for (const [plan, fMap] of Object.entries(PLAN_DEFAULTS)) {
+      for (const [featureKey, opt] of Object.entries(fMap)) {
+        if (!newCache[plan] || !newCache[plan][featureKey]) {
+          if (!newCache[plan]) newCache[plan] = {};
+          newCache[plan][featureKey] = opt;
+        }
+      }
+    }
+
+    cachedFeatures = newCache;
+  } catch (err) {
+    console.error("Failed to initialize plan features:", err);
+  }
+}
+
+// Fire initialization on startup
+initPlanFeatures();
+
+export function refreshPlanFeaturesCache() {
+  return initPlanFeatures();
+}
+
 export function getFeaturesForPlan(planKey) {
   const plan = (planKey || "free").toLowerCase().trim();
-  return PLAN_DEFAULTS[plan] || PLAN_DEFAULTS["free"];
+  // Map "blogger starter/pro/business" strings to key categories
+  let key = "free";
+  if (plan.includes("starter")) key = "starter";
+  else if (plan.includes("pro")) key = "pro";
+  else if (plan.includes("business")) key = "business";
+  
+  return cachedFeatures[key] || cachedFeatures["free"];
 }
 
 export function isFeatureEnabled(planKey, featureKey) {
@@ -135,7 +209,12 @@ export function getArticleLimit(planKey) {
 }
 
 export function maxSectionsForPlan(planKey) {
-  // Mirrors ArticleController::maxSectionsForShop
   const limits = { free: 5, starter: 15, pro: null, business: null };
-  return limits[(planKey || "free").toLowerCase()] ?? null;
+  const plan = (planKey || "free").toLowerCase().trim();
+  let key = "free";
+  if (plan.includes("starter")) key = "starter";
+  else if (plan.includes("pro")) key = "pro";
+  else if (plan.includes("business")) key = "business";
+
+  return limits[key] ?? null;
 }
