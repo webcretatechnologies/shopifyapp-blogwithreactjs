@@ -22,6 +22,7 @@ import {
   Tabs,
   Toast,
   Frame,
+  Icon,
 } from "@shopify/polaris";
 import {
   LayoutDashboard,
@@ -33,7 +34,6 @@ import {
   Shield,
   Download,
   Send,
-  Eye,
   Trash2,
   RefreshCw,
   Info,
@@ -41,6 +41,7 @@ import {
   AlertCircle,
   MessageSquare,
 } from "lucide-react";
+import { ViewIcon, HideIcon } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 
 const DownloadIcon = (props) => <Download size={16} {...props} />;
@@ -53,6 +54,8 @@ export default function Admin() {
     localStorage.getItem("super_admin_token") || "",
   );
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
   const [error, setError] = useState(null);
   const [successToast, setSuccessToast] = useState("");
   const [loading, setLoading] = useState(false);
@@ -167,8 +170,8 @@ export default function Admin() {
   };
 
   const handleLogin = async () => {
-    if (!password) {
-      setError("Password is required");
+    if (!email || !password) {
+      setError("Email and password are required");
       return;
     }
     setLoading(true);
@@ -177,7 +180,7 @@ export default function Admin() {
       const res = await fetch("/admin-api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Login failed");
@@ -764,11 +767,27 @@ export default function Admin() {
                 </Text>
                 <FormLayout>
                   <TextField
+                    label="Email Address"
+                    type="email"
+                    value={email}
+                    onChange={setEmail}
+                    autoComplete="email"
+                  />
+                  <TextField
                     label="Supervisor Password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={setPassword}
                     autoComplete="current-password"
+                    suffix={
+                      <div 
+                        onClick={() => setShowPassword(!showPassword)}
+                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0 4px' }}
+                        title={showPassword ? "Hide password" : "Show password"}
+                      >
+                        <Icon source={showPassword ? HideIcon : ViewIcon} tone="subdued" />
+                      </div>
+                    }
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleLogin();
                     }}

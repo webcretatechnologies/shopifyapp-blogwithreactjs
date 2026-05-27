@@ -29,6 +29,7 @@
     "@tiptap/pm": "^3.23.6",
     "@tiptap/react": "^3.23.6",
     "@tiptap/starter-kit": "^3.23.6",
+    "bcrypt": "^6.0.0",
     "cheerio": "^1.2.0",
     "compression": "^1.7.4",
     "cross-env": "^7.0.3",

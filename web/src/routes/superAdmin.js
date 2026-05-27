@@ -1,6 +1,7 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcrypt";
 import EmailService from "../services/EmailService.js";
 import { refreshPlanFeaturesCache } from "../services/PlanFeatureService.js";
 
@@ -64,18 +65,28 @@ export function validateSuperAdmin(req, res, next) {
 // ─── POST /admin-api/login — Admin Authentication ────────────────────────────
 router.post("/login", async (req, res) => {
   try {
-    const { password } = req.body;
-    if (!password) {
-      return res.status(400).json({ error: "Password is required" });
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
     }
 
-    if (password !== ADMIN_PASSWORD) {
-      return res.status(401).json({ error: "Invalid password" });
+    const admin = await prisma.superAdmin.findUnique({
+      where: { email }
+    });
+
+    if (!admin) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+
+    const isValid = await bcrypt.compare(password, admin.password);
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid email or password" });
     }
 
     // Generate JWT token
-    const token = jwt.sign({ superAdmin: true }, SECRET, { expiresIn: "1d" });
-    res.json({ token, success: true });
+    const token = jwt.sign({ superAdmin: true, adminId: admin.id, email: admin.email }, SECRET, { expiresIn: "1d" });
+    res.json({ token, success: true, email: admin.email });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
