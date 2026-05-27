@@ -16,6 +16,8 @@ import {
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
+import { ArticleSyncService } from "../services/ArticleSyncService.js";
+import { ShopifyArticleParser } from "../services/ShopifyArticleParser.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
@@ -81,40 +83,6 @@ router.get("/", async (req, res) => {
     });
   } catch (err) {
     console.error("GET /api/posts error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── GET /api/posts/:id — Get single post ─────────────────────────────────────
-router.get("/:id", async (req, res) => {
-  try {
-    const shop = await getShopFromSession(res);
-    if (!shop) return res.status(401).json({ error: "Unauthorized" });
-
-    const post = await prisma.post.findFirst({
-      where: { id: parseInt(req.params.id), shopId: shop.id },
-      include: {
-        category: true,
-        tags: { include: { tag: true } },
-        products: { include: { product: true }, orderBy: { position: "asc" } },
-        shopifyArticle: true,
-        blocks: { orderBy: { orderIndex: "asc" } },
-      },
-    });
-
-    if (!post) return res.status(404).json({ error: "Post not found" });
-
-    const features = getFeaturesForPlan(shop.planKey);
-    const serialized = serializePost(post);
-
-    // Generate JSON-LD schema for the post
-    const jsonLd = req.query.include_schema !== "false"
-      ? JsonLdService.renderPostSchema(serialized, shop.domain)
-      : null;
-
-    res.json({ post: { ...serialized, jsonLd }, features });
-  } catch (err) {
-    console.error("GET /api/posts/:id error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -232,6 +200,8 @@ router.post("/", async (req, res) => {
           postId: post.id,
           shopifyBlogId: String(blogId),
           status: "draft",
+          syncState: "linked",
+          syncMode: "external_html",
         },
       });
     }
@@ -351,6 +321,8 @@ router.put("/:id", async (req, res) => {
           postId: post.id,
           shopifyBlogId: String(blogId),
           status: updated.status || "draft",
+          syncState: "linked",
+          syncMode: "external_html",
         },
         update: {
           shopifyBlogId: String(blogId),
@@ -358,79 +330,17 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    // Sync to Shopify if linked or status is published
+    // Sync to Shopify using ArticleSyncService if linked to a blog
     const shopifyRecord = await prisma.shopifyArticle.findUnique({ where: { postId: post.id } });
     const targetBlogId = blogId || shopifyRecord?.shopifyBlogId;
 
-    if (targetBlogId) {
-      const session = res.locals.shopify?.session;
-      if (session) {
-        const client = new shopify.api.clients.Rest({ session });
-        const tagNames = Array.isArray(tags) ? tags.join(", ") : "";
-        const storefrontHtml = await EditorContentCompiler.compileForStorefront(
-          reqContentHtml !== undefined ? reqContentHtml : updated.contentHtml || "",
-          session,
-          null,
-          shop.domain
-        );
-        const payload = {
-          article: {
-            title: updated.title,
-            body_html: storefrontHtml,
-            author: updated.author || "Admin",
-            published: updated.status === "published",
-            tags: tagNames,
-            ...(updated.featuredImage ? { image: { src: updated.featuredImage } } : {}),
-          }
-        };
-
-        try {
-          if (shopifyRecord?.shopifyArticleId) {
-            // Update existing article on Shopify
-            await client.put({
-              path: `blogs/${shopifyRecord.shopifyBlogId}/articles/${shopifyRecord.shopifyArticleId}`,
-              data: payload,
-              type: "application/json",
-            });
-            
-            // Sync status and syncedAt in db
-            await prisma.shopifyArticle.update({
-              where: { id: shopifyRecord.id },
-              data: {
-                status: updated.status,
-                syncedAt: new Date(),
-              }
-            });
-          } else if (updated.status === "published") {
-            // Create on Shopify because status is set to published but not yet created on Shopify
-            const result = await client.post({
-              path: `blogs/${targetBlogId}/articles`,
-              data: payload,
-              type: "application/json",
-            });
-            const newArticleId = result.body?.article?.id;
-            if (newArticleId) {
-              await prisma.shopifyArticle.upsert({
-                where: { postId: post.id },
-                create: {
-                  postId: post.id,
-                  shopifyArticleId: String(newArticleId),
-                  shopifyBlogId: String(targetBlogId),
-                  status: "published",
-                  syncedAt: new Date(),
-                },
-                update: {
-                  shopifyArticleId: String(newArticleId),
-                  shopifyBlogId: String(targetBlogId),
-                  status: "published",
-                  syncedAt: new Date(),
-                }
-              });
-            }
-          }
-        } catch (shopifyErr) {
-          console.error("Shopify sync failed during PUT:", shopifyErr);
-        }
+    if (targetBlogId && (updated.status === "published" || shopifyRecord?.shopifyArticleId)) {
+      try {
+        await ArticleSyncService.pushPostToShopify(post.id, {
+          publishMode: updated.status === "published",
+        });
+      } catch (shopifyErr) {
+        console.error("Shopify sync failed during PUT:", shopifyErr);
       }
     }
 
@@ -464,7 +374,6 @@ router.delete("/:id", async (req, res) => {
         });
       } catch (shopifyErr) {
         console.error("Failed to delete from Shopify:", shopifyErr);
-        // Continue to delete locally even if Shopify delete fails (or maybe it was already deleted on Shopify)
       }
     }
 
@@ -499,69 +408,31 @@ router.post("/:id/publish", async (req, res) => {
       return res.status(422).json({ error: "No Shopify blog selected. Please select a blog first." });
     }
 
-    // Build Shopify article payload
-    const tagNames = post.tags.map((pt) => pt.tag.name).join(",");
-    const storefrontHtml = await EditorContentCompiler.compileForStorefront(
-      post.contentHtml || "",
-      session,
-      null,
-      shop.domain
-    );
-    const payload = {
-      article: {
-        title: post.title,
-        author: post.author || "Admin",
-        body_html: storefrontHtml,
-        tags: tagNames,
-        published: true,
-        image: post.featuredImage ? { src: post.featuredImage } : undefined,
-      },
-    };
-
-    // Call Shopify REST API
-    const client = new shopify.api.clients.Rest({ session });
-    let result;
-    if (post.shopifyArticle?.shopifyArticleId) {
-      result = await client.put({
-        path: `blogs/${targetBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
-        data: payload,
-        type: "application/json",
-      });
-    } else {
-      result = await client.post({
-        path: `blogs/${targetBlogId}/articles`,
-        data: payload,
-        type: "application/json",
+    // Ensure the post is linked before push
+    if (!post.shopifyArticle) {
+      await prisma.shopifyArticle.create({
+        data: {
+          postId: post.id,
+          shopifyBlogId: String(targetBlogId),
+          status: "draft",
+          syncState: "linked",
+          syncMode: "external_html",
+        },
       });
     }
 
-    const articleId = result.body?.article?.id;
-    if (!articleId) throw new Error("Shopify did not return an article ID");
+    // Use ArticleSyncService to push with publish mode
+    const result = await ArticleSyncService.pushPostToShopify(post.id, {
+      publishMode: true,
+    });
 
-    await Promise.all([
-      prisma.shopifyArticle.upsert({
-        where: { postId: post.id },
-        create: {
-          postId: post.id,
-          shopifyArticleId: String(articleId),
-          shopifyBlogId: String(targetBlogId),
-          status: "published",
-          syncedAt: new Date(),
-        },
-        update: {
-          shopifyArticleId: String(articleId),
-          shopifyBlogId: String(targetBlogId),
-          status: "published",
-          syncedAt: new Date(),
-        },
-      }),
-      prisma.post.update({
-        where: { id: post.id },
-        data: { status: "published", publishedAt: new Date() },
-      }),
-    ]);
+    // Also update local post status to published
+    await prisma.post.update({
+      where: { id: post.id },
+      data: { status: "published", publishedAt: new Date() },
+    });
 
-    res.json({ success: true, shopify_article_id: articleId });
+    res.json({ success: true, shopify_article_id: result.articleId, syncedAt: result.syncedAt });
   } catch (err) {
     console.error("POST /api/posts/:id/publish error:", err);
     res.status(500).json({ error: err.message });
@@ -603,6 +474,8 @@ router.post("/:id/unpublish", async (req, res) => {
         where: { postId: post.id },
         data: {
           status: "draft",
+          syncState: "in_sync",
+          lastSyncDirection: "app_to_shopify",
         },
       }),
       prisma.post.update({
@@ -610,6 +483,17 @@ router.post("/:id/unpublish", async (req, res) => {
         data: { status: "draft" },
       }),
     ]);
+
+    // Log the unpublish event
+    await ArticleSyncService.logSyncEvent({
+      shopId: shop.id,
+      postId: post.id,
+      shopifyArticleId: post.shopifyArticle.shopifyArticleId,
+      direction: "app_to_shopify",
+      eventType: "unpublish",
+      status: "applied",
+      message: `Unpublished post "${post.title}" from Shopify`,
+    });
 
     res.json({ success: true });
   } catch (err) {
@@ -1182,7 +1066,6 @@ router.post("/:id/view", async (req, res) => {
     const acceptLang = req.headers["accept-language"] || "";
     let country = "";
     if (acceptLang) {
-      // Parse first locale tag (e.g. "en-US" -> "US", "fr-FR" -> "FR")
       const match = acceptLang.match(/^[a-z]{2}[-_]([a-z]{2})\b/i);
       if (match) country = match[1].toUpperCase();
     }
@@ -1192,7 +1075,6 @@ router.post("/:id/view", async (req, res) => {
     const dateStr = today.toISOString().split("T")[0];
     const visitorKey = `${postId}:${dateStr}:${rawIp}`;
     if (!req.app.locals._viewedIps) req.app.locals._viewedIps = new Map();
-    // Prune entries older than 48 hours (the Map key includes dateStr so this is efficient)
     if (req.app.locals._viewedIps.size > 100000) {
       const cutoff = Date.now() - 48 * 60 * 60 * 1000;
       for (const [k] of req.app.locals._viewedIps) {
@@ -1223,12 +1105,10 @@ router.post("/:id/view", async (req, res) => {
         deviceDesktop,
         deviceMobile,
         deviceTablet,
-        // sources and countries are excluded from create — the update block handles
-        // the first increment, avoiding a double-count race.
       },
     });
 
-    // ── Update sources JSON (increment count for this source) ──────────────
+    // ── Update sources JSON ────────────────────────────────────────────────
     const currentSources = (analytic.sources || {}) instanceof Buffer
       ? JSON.parse(analytic.sources.toString())
       : (analytic.sources || {});
@@ -1249,7 +1129,6 @@ router.post("/:id/view", async (req, res) => {
       };
     }
 
-    // If it's the initial create, sources/countries are already set; only update if modified
     if (analytic.views > 0 || source !== "direct" || country) {
       await prisma.postAnalytic.update({
         where: { id: analytic.id },
@@ -1267,7 +1146,7 @@ router.post("/:id/view", async (req, res) => {
   }
 });
 
-// ─── POST /api/posts/:id/sync — Force re-sync post to Shopify ────────────────
+// ─── POST /api/posts/:id/force-sync — Force re-sync post to Shopify ────────────
 router.post("/:id/force-sync", async (req, res) => {
   try {
     const shop = await getShopFromSession(res);
@@ -1282,66 +1161,369 @@ router.post("/:id/force-sync", async (req, res) => {
       return res.status(400).json({ error: "Post is not linked to a Shopify blog" });
     }
 
-    const session = res.locals.shopify?.session;
-    if (!session) return res.status(401).json({ error: "No Shopify session" });
-
-    const graphqlClient = new shopify.api.clients.Graphql({ session });
-    const compiledContentHtml = await EditorContentCompiler.compile(
-      post.contentHtml || "",
-      session,
-      graphqlClient
-    );
-
-    // Save the compiled HTML back to the database
-    await prisma.post.update({
-      where: { id: post.id },
-      data: { contentHtml: compiledContentHtml }
+    const result = await ArticleSyncService.pushPostToShopify(post.id, {
+      publishMode: post.status === "published",
     });
 
-    const storefrontHtml = await EditorContentCompiler.compileForStorefront(
-      compiledContentHtml || "",
-      session,
-      null,
-      shop.domain
-    );
+    res.json({ success: true, syncedAt: result.syncedAt });
+  } catch (err) {
+    console.error("POST /api/posts/:id/force-sync error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/posts/reconcile — Reconcile sync state for all linked posts ────
+router.post("/reconcile", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const linkedPosts = await prisma.post.findMany({
+      where: {
+        shopId: shop.id,
+        shopifyArticle: { isNot: null },
+      },
+      include: { shopifyArticle: true },
+      take: 50,
+    });
+
+    const results = [];
+    for (const post of linkedPosts) {
+      try {
+        const result = await ArticleSyncService.reconcilePost(post.id);
+        results.push({ postId: post.id, title: post.title, status: result.status });
+      } catch (err) {
+        results.push({ postId: post.id, title: post.title, status: "error", error: err.message });
+      }
+    }
+
+    res.json({ results });
+  } catch (err) {
+    console.error("POST /api/posts/reconcile error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/posts/conflicts — List all posts with unresolved conflicts ─────
+router.get("/conflicts", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const conflictPosts = await prisma.post.findMany({
+      where: {
+        shopId: shop.id,
+        shopifyArticle: {
+          syncState: "conflict",
+        },
+      },
+      include: {
+        shopifyArticle: true,
+        tags: { include: { tag: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    res.json({ conflicts: conflictPosts.map(serializePost) });
+  } catch (err) {
+    console.error("GET /api/posts/conflicts error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/posts/:id/conflict-diff — Fetch local vs remote diff ────────────
+router.get("/:id/conflict-diff", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const post = await prisma.post.findFirst({
+      where: { id: parseInt(req.params.id), shopId: shop.id },
+      include: {
+        shopifyArticle: true,
+        tags: { include: { tag: true } },
+      },
+    });
+    if (!post) return res.status(404).json({ error: "Post not found" });
+    if (!post.shopifyArticle) return res.status(404).json({ error: "Post not linked to Shopify" });
+
+    // Fetch remote version from Shopify
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "No session" });
 
     const client = new shopify.api.clients.Rest({ session });
-    const tagNames = post.tags ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ") : "";
-    const articleData = {
-      article: {
-        title: post.title,
-        body_html: storefrontHtml,
-        author: post.author || "",
-        published: post.status === "published",
-        tags: tagNames,
-        ...(post.featuredImage ? { image: { src: post.featuredImage } } : {}),
+    const response = await client.get({
+      path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
+    });
+
+    const remote = response.body?.article;
+    if (!remote) {
+      return res.status(404).json({ error: "Article not found on Shopify" });
+    }
+
+    const remoteTags = (remote.tags || "").split(",").map(t => t.trim()).filter(Boolean);
+    const localTags = (post.tags || []).map(pt => pt.tag?.name).filter(Boolean);
+
+    // Build diff object comparing local vs remote
+    const diff = {
+      title: {
+        local: post.title,
+        remote: remote.title,
+        changed: post.title !== remote.title,
+      },
+      status: {
+        local: post.status,
+        remote: remote.published_at ? "published" : "draft",
+        changed: (post.status === "published") !== !!remote.published_at,
+      },
+      author: {
+        local: post.author || "",
+        remote: remote.author || "",
+        changed: (post.author || "") !== (remote.author || ""),
+      },
+      tags: {
+        local: localTags,
+        remote: remoteTags,
+        changed: JSON.stringify([...localTags].sort()) !== JSON.stringify([...remoteTags].sort()),
+      },
+      featuredImage: {
+        local: post.featuredImage || null,
+        remote: remote.image?.src || null,
+        changed: (post.featuredImage || null) !== (remote.image?.src || null),
+      },
+      contentHtml: {
+        local: post.contentHtml || "",
+        remote: remote.body_html || "",
+        changed: (post.contentHtml || "") !== (remote.body_html || ""),
+        type: "html",
+      },
+      updatedAt: {
+        local: post.updatedAt,
+        remote: remote.updated_at,
       },
     };
 
-    let articleId = post.shopifyArticle.shopifyArticleId;
-    if (articleId) {
-      await client.put({
-        path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${articleId}`,
-        data: articleData,
-        type: "application/json",
-      });
-    } else {
-      const response = await client.post({
-        path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles`,
-        data: articleData,
-        type: "application/json",
-      });
-      articleId = response.body?.article?.id;
+    res.json({ diff, postId: post.id, title: post.title });
+  } catch (err) {
+    console.error("GET /api/posts/:id/conflict-diff error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/posts/:id/resolve-conflict — Resolve a sync conflict ────────────
+router.post("/:id/resolve-conflict", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const { resolution } = req.body; // "local" | "remote"
+    if (!resolution || !["local", "remote"].includes(resolution)) {
+      return res.status(422).json({ error: "resolution must be 'local' or 'remote'" });
     }
 
-    await prisma.shopifyArticle.update({
-      where: { postId: post.id },
-      data: { shopifyArticleId: String(articleId), status: post.status, syncedAt: new Date() },
+    const post = await prisma.post.findFirst({
+      where: { id: parseInt(req.params.id), shopId: shop.id },
+      include: {
+        shopifyArticle: true,
+        tags: { include: { tag: true } },
+        shop: true,
+      },
+    });
+    if (!post) return res.status(404).json({ error: "Post not found" });
+    if (!post.shopifyArticle || post.shopifyArticle.syncState !== "conflict") {
+      return res.status(400).json({ error: "Post is not in conflict state" });
+    }
+
+    if (resolution === "local") {
+      // Keep local — push current local content to Shopify
+      const result = await ArticleSyncService.pushPostToShopify(post.id, {
+        publishMode: post.status === "published",
+      });
+
+      await ArticleSyncService.logSyncEvent({
+        shopId: shop.id,
+        postId: post.id,
+        shopifyArticleId: post.shopifyArticle.shopifyArticleId,
+        direction: "app_to_shopify",
+        eventType: "resolve",
+        status: "applied",
+        message: `Conflict resolved: kept local version for "${post.title}" → pushed to Shopify`,
+      });
+
+      return res.json({
+        success: true,
+        resolution: "local",
+        message: `Kept local version of "${post.title}" and pushed to Shopify`,
+        syncedAt: result.syncedAt,
+      });
+    } else {
+      // Use remote — fetch remote version from Shopify and apply as canonical
+      const session = await shopify.config.sessionStorage.findSessionsByShop(post.shop.domain);
+      const validSession = session?.find(s => s.accessToken);
+      if (!validSession) {
+        return res.status(401).json({ error: "No active Shopify session" });
+      }
+
+      const client = new shopify.api.clients.Rest({ session: validSession });
+      const response = await client.get({
+        path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
+      });
+
+      const remote = response.body?.article;
+      if (!remote) {
+        return res.status(404).json({ error: "Article not found on Shopify" });
+      }
+
+      // Parse remote content
+      const parsed = ShopifyArticleParser.parse(remote.body_html || "");
+
+      // Update local post with remote data
+      await prisma.post.update({
+        where: { id: post.id },
+        data: {
+          title: remote.title,
+          slug: remote.handle || post.slug,
+          status: remote.published_at ? "published" : "draft",
+          author: remote.author || null,
+          featuredImage: remote.image?.src || null,
+          contentHtml: parsed.rawEditorHtml || remote.body_html || "",
+          contentJson: parsed.blocks,
+          publishedAt: remote.published_at ? new Date(remote.published_at) : null,
+        },
+      });
+
+      // Mark sync as in_sync
+      const inboundHash = ArticleSyncService.computeContentHash(remote);
+      await prisma.shopifyArticle.update({
+        where: { postId: post.id },
+        data: {
+          syncState: "in_sync",
+          lastSyncDirection: "shopify_to_app",
+          lastInboundHash: inboundHash,
+          syncedAt: new Date(),
+          lastError: null,
+          structureDegraded: parsed.structureDegraded,
+          lastRemoteUpdatedAt: remote.updated_at ? new Date(remote.updated_at) : null,
+        },
+      });
+
+      await ArticleSyncService.logSyncEvent({
+        shopId: shop.id,
+        postId: post.id,
+        shopifyArticleId: post.shopifyArticle.shopifyArticleId,
+        direction: "shopify_to_app",
+        eventType: "resolve",
+        status: "applied",
+        message: `Conflict resolved: kept remote (Shopify) version for "${post.title}"`,
+        remoteHash: inboundHash,
+      });
+
+      return res.json({
+        success: true,
+        resolution: "remote",
+        message: `Applied Shopify version of "${post.title}" to local post`,
+        structureDegraded: parsed.structureDegraded,
+      });
+    }
+  } catch (err) {
+    console.error("POST /api/posts/:id/resolve-conflict error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/posts/sync-logs — Fetch sync history for a post ────────────────
+router.get("/sync-logs", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const { postId, limit = 50 } = req.query;
+
+    const where = { shopId: shop.id };
+    if (postId) where.postId = parseInt(postId);
+
+    const logs = await prisma.articleSyncLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: parseInt(limit),
     });
 
-    res.json({ success: true, syncedAt: new Date() });
+    res.json({ logs });
   } catch (err) {
-    console.error("POST /api/posts/:id/force-sync error:", err);
+    console.error("GET /api/posts/sync-logs error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/posts/:id/sync-status — Lightweight sync state for editor polling ─
+router.get("/:id/sync-status", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(404).json({ error: "Post not found" });
+
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const shopifyArticle = await prisma.shopifyArticle.findUnique({
+      where: { postId: id },
+      select: {
+        status: true,
+        syncState: true,
+        syncMode: true,
+        lastSyncDirection: true,
+        syncedAt: true,
+        structureDegraded: true,
+        lastError: true,
+        shopifyArticleId: true,
+        shopifyBlogId: true,
+      },
+    });
+
+    if (!shopifyArticle) {
+      return res.json({ shopifyArticle: null });
+    }
+
+    res.json({ shopifyArticle });
+  } catch (err) {
+    console.error("GET /api/posts/:id/sync-status error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/posts/:id — Get single post ─────────────────────────────────────
+router.get("/:id", async (req, res) => {
+  try {
+    // Skip if :id looks like a named path segment (not a numeric ID)
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(404).json({ error: "Post not found" });
+
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const post = await prisma.post.findFirst({
+      where: { id, shopId: shop.id },
+      include: {
+        category: true,
+        tags: { include: { tag: true } },
+        products: { include: { product: true }, orderBy: { position: "asc" } },
+        shopifyArticle: true,
+        blocks: { orderBy: { orderIndex: "asc" } },
+      },
+    });
+
+    if (!post) return res.status(404).json({ error: "Post not found" });
+
+    const features = getFeaturesForPlan(shop.planKey);
+    const serialized = serializePost(post);
+
+    // Generate JSON-LD schema for the post
+    const jsonLd = req.query.include_schema !== "false"
+      ? JsonLdService.renderPostSchema(serialized, shop.domain)
+      : null;
+
+    res.json({ post: { ...serialized, jsonLd }, features });
+  } catch (err) {
+    console.error("GET /api/posts/:id error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1384,4 +1566,3 @@ router.post("/:id/translations", async (req, res) => {
 });
 
 export default router;
-

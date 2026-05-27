@@ -31,7 +31,6 @@ import PrivacyWebhookHandlers from "./privacy.js";
 import postRoutes from "./src/routes/posts.js";
 import settingsRoutes from "./src/routes/settings.js";
 import billingRoutes from "./src/routes/billing.js";
-import { ArticleWebhookHandlers } from "./src/webhooks/articles.js";
 import importRoutes from "./src/routes/import.js";
 import wizardRoutes from "./src/routes/wizard.js";
 import supportRoutes from "./src/routes/support.js";
@@ -139,7 +138,6 @@ app.post(
   shopify.processWebhooks({
     webhookHandlers: {
       ...PrivacyWebhookHandlers,
-      ...ArticleWebhookHandlers,
       APP_SUBSCRIPTIONS_UPDATE: {
         deliveryMethod: "http",
         callbackUrl: "/api/webhooks",
@@ -208,12 +206,50 @@ app.post(
 
 // ─── API Routes (Protected by Shopify session) ───────────────────────────────
 const validateSession = shopify.validateAuthenticatedSession();
-app.use("/api/*", (req, res, next) => {
-  Promise.resolve(validateSession(req, res, next)).catch((err) => {
+app.use("/api", (req, res, next) => {
+  Promise.resolve(validateSession(req, res, next)).catch(async (err) => {
     console.error("⚠️ Session validation error caught in wrapper:", err);
-    // Return a 500 error or redirect instead of crashing/hanging
+    
+    // Check if it's a 403 Forbidden, invalid token, or expired token error
+    const isForbidden = err.message?.includes("403") || 
+                        err.message?.includes("Forbidden") || 
+                        err.message?.includes("access tokens") || 
+                        err.message?.includes("token");
+
+    if (isForbidden) {
+      try {
+        // Resolve shop domain from session, query, or headers
+        const shopDomain = req.query.shop || 
+                           req.headers["x-shopify-shop-domain"] || 
+                           res.locals.shopify?.session?.shop;
+                           
+        if (shopDomain) {
+          console.log(`Deleting invalid session for shop: ${shopDomain}`);
+          await prisma.session.deleteMany({
+            where: { shop: shopDomain }
+          });
+        }
+      } catch (dbErr) {
+        console.error("Error deleting invalid session:", dbErr);
+      }
+    }
+
     if (!res.headersSent) {
-      res.status(500).json({ error: "Session validation failed", details: err.message });
+      const shopDomain = req.query.shop || 
+                         req.headers["x-shopify-shop-domain"] || 
+                         res.locals.shopify?.session?.shop || 
+                         "";
+      const redirectUrl = `/api/auth?shop=${encodeURIComponent(shopDomain)}`;
+      
+      // Set headers for Shopify App Bridge v3 auto-intercept re-authorization
+      res.setHeader("X-Shopify-API-Request-Failure-Reauthorize", "1");
+      res.setHeader("X-Shopify-API-Request-Failure-Reauthorize-Url", redirectUrl);
+      
+      res.status(403).json({
+        error: "Session validation failed",
+        details: err.message,
+        reauthorizeUrl: redirectUrl
+      });
     }
   });
 });
@@ -263,7 +299,7 @@ app.use("/uploads", express.static(uploadsDir));
 app.use(shopify.cspHeaders());
 app.use(serveStatic(STATIC_PATH, { index: false }));
 
-app.use("/*", shopify.ensureInstalledOnShop(), async (_req, res, _next) => {
+app.use(shopify.ensureInstalledOnShop(), async (_req, res, _next) => {
   return res
     .status(200)
     .set("Content-Type", "text/html")

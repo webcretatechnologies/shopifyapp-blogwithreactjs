@@ -227,20 +227,53 @@ model PostProduct {
 }
 
 model ShopifyArticle {
-  id               Int       @id @default(autoincrement())
-  postId           Int       @unique
-  shopifyArticleId String?
-  shopifyBlogId    String?
-  status           String    @default("draft")
-  syncedAt         DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  post             Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id                 Int       @id @default(autoincrement())
+  postId             Int       @unique
+  shopifyArticleId   String?
+  shopifyBlogId      String?
+  status             String    @default("draft")
+  syncedAt           DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Sync tracking
+  syncState          String    @default("linked") // linked | in_sync | pending_app_push | pending_shopify_pull | conflict | error | external_edit | remote_missing
+  syncMode           String    @default("external_html") // external_html | managed_by_app
+  lastSyncDirection  String?   // app_to_shopify | shopify_to_app
+  lastSourceHash     String?   // hash of canonical app source
+  lastOutboundHash   String?   // hash of exact payload pushed to Shopify (echo suppression)
+  lastInboundHash    String?   // hash of last webhook payload applied
+  lastRemoteUpdatedAt DateTime?
+  lastError          String?   @db.Text
+  structureDegraded  Boolean   @default(false)
+  sourceMetafieldId  String?   // ID of the Shopify metafield storing editor source data
+
+  post               Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
+  @@index([shopifyArticleId])
 }
 
-model BlogTemplate {
+model ArticleSyncLog {
+  id               Int      @id @default(autoincrement())
+  shopId           Int
+  postId           Int?
+  shopifyArticleId String?
+  direction        String   // app_to_shopify | shopify_to_app | reconcile
+  eventType        String   // create | update | delete | publish | unpublish | webhook
+  status           String   // applied | skipped_echo | skipped_duplicate | conflict | error
+  message          String?  @db.Text
+  localHash        String?
+  remoteHash       String?
+  payload          Json?
+  createdAt        DateTime  @default(now())
+
+  @@index([shopId])
+  @@index([postId])
+  @@index([createdAt])
+}
+
+model Template {
   id          Int      @id @default(autoincrement())
   key         String   @unique
   name        String

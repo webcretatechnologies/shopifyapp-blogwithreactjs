@@ -34,6 +34,8 @@ import TiptapEditor from "../../components/editor/TiptapEditor";
 import SeoPanel from "../../components/SeoPanel";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
 import ArticlePreview from "../../components/editor/ArticlePreview";
+import SyncStatusIndicator from "../../components/SyncStatusIndicator.jsx";
+
 
 const parseHtmlToBlocks = (html) => {
   if (!html || html.trim() === "" || html === "undefined") return [];
@@ -934,36 +936,12 @@ export default function PostEditor() {
                 </Card>
               )}
 
-              {/* Shopify Sync Status */}
-              {post.shopifyArticle && (
-                <Card>
-                  <BlockStack gap="200">
-                    <Text variant="headingMd">Shopify Sync</Text>
-                    <InlineStack gap="200" align="space-between">
-                      <Text tone="subdued" variant="bodySm">
-                        Status
-                      </Text>
-                      <Badge
-                        tone={
-                          post.shopifyArticle.status === "published"
-                            ? "success"
-                            : "attention"
-                        }
-                      >
-                        {post.shopifyArticle.status}
-                      </Badge>
-                    </InlineStack>
-                    {post.shopifyArticle.syncedAt && (
-                      <Text tone="subdued" variant="bodySm">
-                        Last synced:{" "}
-                        {new Date(
-                          post.shopifyArticle.syncedAt,
-                        ).toLocaleString()}
-                      </Text>
-                    )}
-                  </BlockStack>
-                </Card>
-              )}
+              {/* Shopify Sync Status — real-time indicator */}
+              <SyncStatusIndicator
+                postId={post.id}
+                postTitle={post.title}
+                initialArticle={post.shopifyArticle}
+              />
 
               {/* SEO Panel */}
               <SeoPanel data={seoData} onChange={setSeoData} />
