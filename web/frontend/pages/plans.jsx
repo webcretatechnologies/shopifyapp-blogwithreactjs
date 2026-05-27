@@ -144,6 +144,7 @@ export default function Plans() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [billingInterval, setBillingInterval] = useState("monthly");
   const [openFaq, setOpenFaq] = useState({});
+  const [error, setError] = useState("");
 
   useEffect(() => {
     fetchBillingData();
@@ -176,6 +177,7 @@ export default function Plans() {
   };
 
   const handleSubscribe = async (planName) => {
+    setError("");
     setIsSubmitting(true);
     try {
       const urlParams = new URLSearchParams(window.location.search);
@@ -192,7 +194,7 @@ export default function Plans() {
         else if (data.isFree) await fetchBillingData();
       } else {
         const err = await res.json();
-        alert(err.error || "Failed to process subscription.");
+        setError(err.error || "Failed to process subscription.");
       }
     } catch (err) {
       console.error(err);
@@ -200,6 +202,8 @@ export default function Plans() {
       setIsSubmitting(false);
     }
   };
+
+  const dismissError = () => setError("");
 
   const toggleFaq = (i) =>
     setOpenFaq((prev) => ({ ...prev, [i]: !prev[i] }));
@@ -314,7 +318,16 @@ export default function Plans() {
       <style>{CARD_STYLES}</style>
 
       <Layout>
-        {/* ── Banner ──────────────────────────────────────────────────── */}
+        {/* ── Error Banner ──────────────────────────────────────────── */}
+        {error && (
+          <Layout.Section>
+            <Banner tone="critical" onDismiss={dismissError}>
+              <p>{error}</p>
+            </Banner>
+          </Layout.Section>
+        )}
+
+        {/* ── Secure Billing Banner ──────────────────────────────────── */}
         <Layout.Section>
           <Banner title="Secure Billing" tone="info">
             <p>

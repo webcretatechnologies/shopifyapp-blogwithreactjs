@@ -41,6 +41,7 @@ import {
   AlertCircle,
   MessageSquare,
 } from "lucide-react";
+import ConfirmActionModal from "../components/ConfirmActionModal";
 
 const DownloadIcon = (props) => <Download size={16} {...props} />;
 const TrashIcon = (props) => <Trash2 size={16} {...props} />;
@@ -142,11 +143,23 @@ export default function Admin() {
   const [singleEmailModalActive, setSingleEmailModalActive] = useState(false);
   const [singleEmailSubject, setSingleEmailSubject] = useState("");
   const [singleEmailBody, setSingleEmailBody] = useState("");
+  const [singleEmailValidation, setSingleEmailValidation] = useState("");
+
+  // Confirm action modal state (replaces native confirm())
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [bulkEmailValidation, setBulkEmailValidation] = useState("");
 
   const handleLogout = () => {
     localStorage.removeItem("super_admin_token");
     setToken("");
     setError(null);
+  };
+
+  const openConfirmAction = (config) => setConfirmAction(config);
+  const closeConfirmAction = () => {
+    if (confirmLoading) return;
+    setConfirmAction(null);
   };
 
   const showToast = (message) => {
@@ -278,20 +291,14 @@ export default function Admin() {
   };
 
   // Reset plan features to default presets
-  const handleResetFeatures = async () => {
-    if (
-      !window.confirm(
-        "Are you sure you want to restore all plan feature configurations to defaults? All custom rules will be overwritten.",
-      )
-    )
-      return;
-    try {
-      await adminFetch("/admin-api/pricing/features/reset", { method: "POST" });
-      showToast("Plan features restored to system defaults");
-      loadPricingAndFeatures();
-    } catch (err) {
-      setError(err.message);
-    }
+  const handleResetFeatures = () => {
+    openConfirmAction({
+      type: "reset_features",
+      title: "Restore default feature limits?",
+      body: "All custom feature rules will be overwritten and restored to system defaults.",
+      confirmText: "Restore defaults",
+      confirmTone: "critical",
+    });
   };
 
   // Dynamic Plan Management
@@ -320,15 +327,15 @@ export default function Admin() {
     }
   };
 
-  const handleDeletePlan = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this plan? This action is irreversible.")) return;
-    try {
-      await adminFetch(`/admin-api/pricing/plans/${id}`, { method: "DELETE" });
-      showToast("Plan deleted successfully");
-      loadPricingAndFeatures();
-    } catch (err) {
-      setError(err.message);
-    }
+  const handleDeletePlan = (id) => {
+    openConfirmAction({
+      type: "delete_plan",
+      payload: { id },
+      title: "Delete this plan?",
+      body: "This action is irreversible and the plan will be permanently removed.",
+      confirmText: "Delete plan",
+      confirmTone: "critical",
+    });
   };
 
   // Load Email Templates presets
@@ -457,24 +464,53 @@ export default function Admin() {
     }
   };
 
-  // Soft Deactivate store
-  const handleSoftDeactivateStore = async (domain) => {
-    if (
-      !window.confirm(
-        `Are you sure you want to soft deactivate ${domain}? This will set uninstalledAt and send a deactivation notification email.`,
-      )
-    )
-      return;
+  // Confirm action executor — dispatches based on type
+  const handleConfirmAction = async () => {
+    if (!confirmAction) return;
+    setConfirmLoading(true);
     try {
-      await adminFetch(`/admin-api/stores/${domain}/deactivate`, {
-        method: "POST",
-      });
-      showToast(`Soft deactivated ${domain}`);
-      loadStores();
-      loadDashboard();
+      switch (confirmAction.type) {
+        case "reset_features":
+          await adminFetch("/admin-api/pricing/features/reset", { method: "POST" });
+          showToast("Plan features restored to system defaults");
+          loadPricingAndFeatures();
+          break;
+        case "delete_plan":
+          await adminFetch(`/admin-api/pricing/plans/${confirmAction.payload.id}`, { method: "DELETE" });
+          showToast("Plan deleted successfully");
+          loadPricingAndFeatures();
+          break;
+        case "soft_deactivate_store":
+          await adminFetch(`/admin-api/stores/${confirmAction.payload.domain}/deactivate`, { method: "POST" });
+          showToast(`Soft deactivated ${confirmAction.payload.domain}`);
+          loadStores();
+          loadDashboard();
+          break;
+        case "force_delete_store":
+          await adminFetch(`/admin-api/stores/${confirmAction.payload.domain}/delete`, { method: "POST" });
+          showToast(`Force deleted store ${confirmAction.payload.domain} from app database`);
+          loadStores();
+          loadDashboard();
+          break;
+      }
+      setConfirmAction(null);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setConfirmLoading(false);
     }
+  };
+
+  // Soft Deactivate store
+  const handleSoftDeactivateStore = (domain) => {
+    openConfirmAction({
+      type: "soft_deactivate_store",
+      payload: { domain },
+      title: `Deactivate ${domain}?`,
+      body: `This will set the store as uninstalled and send a deactivation notification email.`,
+      confirmText: "Deactivate store",
+      confirmTone: "warning",
+    });
   };
 
   // Reactivate store
@@ -492,23 +528,21 @@ export default function Admin() {
   };
 
   // Force cascade delete store from database
-  const handleForceDeleteStore = async (domain) => {
-    if (
-      !window.confirm(
-        `CRITICAL WARNING: Are you absolutely sure you want to permanently force delete ${domain} from the database? This cascade deletes all posts, sessions, plan entries, overrides and configurations.`,
-      )
-    )
-      return;
-    try {
-      await adminFetch(`/admin-api/stores/${domain}/delete`, {
-        method: "POST",
-      });
-      showToast(`Force deleted store ${domain} from app database`);
-      loadStores();
-      loadDashboard();
-    } catch (err) {
-      setError(err.message);
-    }
+  const handleForceDeleteStore = (domain) => {
+    openConfirmAction({
+      type: "force_delete_store",
+      payload: { domain },
+      title: `Force delete ${domain}?`,
+      body: (
+        <BlockStack gap="200">
+          <Text as="p" variant="bodyMd">This permanently removes the store from the app database.</Text>
+          <Text as="p" variant="bodyMd">It will also cascade delete all posts, sessions, plan entries, overrides, and related configurations.</Text>
+          <Text as="p" variant="bodyMd" tone="critical" fontWeight="bold">This cannot be undone.</Text>
+        </BlockStack>
+      ),
+      confirmText: "Force delete",
+      confirmTone: "critical",
+    });
   };
 
   // View detailed metrics and logs of store
@@ -525,10 +559,11 @@ export default function Admin() {
 
   // Send single custom email
   const handleSendSingleEmail = async () => {
-    if (!singleEmailSubject || !singleEmailBody) {
-      alert("Subject and body are required");
+    if (!singleEmailSubject.trim() || !singleEmailBody.trim()) {
+      setSingleEmailValidation("Subject and body are required.");
       return;
     }
+    setSingleEmailValidation("");
     try {
       await adminFetch(`/admin-api/stores/${selectedStoreDomain}/email`, {
         method: "POST",
@@ -540,6 +575,7 @@ export default function Admin() {
       setSingleEmailModalActive(false);
       setSingleEmailSubject("");
       setSingleEmailBody("");
+      setSingleEmailValidation("");
       showToast(`Email successfully sent to ${selectedStoreDomain}`);
     } catch (err) {
       setError(err.message);
@@ -548,10 +584,11 @@ export default function Admin() {
 
   // Send Bulk Email
   const handleSendBulkEmail = async () => {
-    if (!emailSubject || !emailBody) {
-      alert("Subject and body are required");
+    if (!emailSubject.trim() || !emailBody.trim()) {
+      setBulkEmailValidation("Subject and body are required.");
       return;
     }
+    setBulkEmailValidation("");
     try {
       const data = await adminFetch("/admin-api/emails/send-bulk", {
         method: "POST",
@@ -566,6 +603,7 @@ export default function Admin() {
       showToast(data.message || "Bulk email sent successfully");
       setEmailSubject("");
       setEmailBody("");
+      setBulkEmailValidation("");
       setSelectedTemplateKey("");
     } catch (err) {
       setError(err.message);
@@ -575,6 +613,7 @@ export default function Admin() {
   // Apply Email Template Preset
   const handleLoadTemplate = (key) => {
     setSelectedTemplateKey(key);
+    setBulkEmailValidation("");
     const tpl = templates[key];
     if (tpl) {
       setEmailSubject(tpl.subject);
@@ -1822,27 +1861,33 @@ export default function Admin() {
                             {recipientType === "by_plan" && (
                               <Grid.Cell
                                 columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}
-                              >
-                                <Select
-                                  label="Target Plan Level"
-                                  options={[
-                                    { label: "Free tier", value: "free" },
-                                    {
-                                      label: "Blogger Starter",
-                                      value: "starter",
-                                    },
-                                    { label: "Blogger Pro", value: "pro" },
-                                    {
-                                      label: "Blogger Business",
-                                      value: "business",
-                                    },
-                                  ]}
-                                  value={recipientPlanId}
-                                  onChange={setRecipientPlanId}
-                                />
-                              </Grid.Cell>
-                            )}
-                            <Grid.Cell
+                              >                  <Select
+                    label="Target Plan Level"
+                    options={[
+                      { label: "Free tier", value: "free" },
+                      {
+                        label: "Blogger Starter",
+                        value: "starter",
+                      },
+                      { label: "Blogger Pro", value: "pro" },
+                      {
+                        label: "Blogger Business",
+                        value: "business",
+                      },
+                    ]}
+                    value={recipientPlanId}
+                    onChange={setRecipientPlanId}
+                  />
+                </Grid.Cell>
+              )}
+              {bulkEmailValidation && (
+                <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6 }}>
+                  <Banner tone="warning" onDismiss={() => setBulkEmailValidation("")}>
+                    <p>{bulkEmailValidation}</p>
+                  </Banner>
+                </Grid.Cell>
+              )}
+              <Grid.Cell
                               columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6 }}
                             >
                               <Select
@@ -2313,8 +2358,13 @@ export default function Admin() {
           ]}
         >
           <Modal.Section>
-            <FormLayout>
-              <Select
+          <FormLayout>
+            {singleEmailValidation && (
+              <Banner tone="warning" onDismiss={() => setSingleEmailValidation("")}>
+                <p>{singleEmailValidation}</p>
+              </Banner>
+            )}
+            <Select
                 label="Target Custom Gating Plan Level"
                 options={[
                   { label: "Blogger Starter", value: "Blogger Starter" },
@@ -2550,6 +2600,20 @@ export default function Admin() {
 
         {/* Toast success notifier */}
         {toastMarkup}
+
+        {/* ─── CONFIRM ACTION MODAL (replaces native confirm()) ─── */}
+        {confirmAction && (
+          <ConfirmActionModal
+            open={!!confirmAction}
+            title={confirmAction.title}
+            body={confirmAction.body}
+            confirmText={confirmAction.confirmText || "Confirm"}
+            confirmTone={confirmAction.confirmTone || "primary"}
+            loading={confirmLoading}
+            onConfirm={handleConfirmAction}
+            onClose={closeConfirmAction}
+          />
+        )}
       </div>
     </Frame>
   );

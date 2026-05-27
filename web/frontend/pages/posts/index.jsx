@@ -32,6 +32,7 @@ import {
 } from "@shopify/polaris-icons";
 import StatsCard from "../../components/analytics/StatsCard";
 import AnalyticsChart from "../../components/analytics/AnalyticsChart";
+import ConfirmActionModal from "../../components/ConfirmActionModal";
 
 const STATUS_BADGE_MAP = {
   published: "success",
@@ -51,6 +52,11 @@ export default function Dashboard() {
   const [shopInfo, setShopInfo] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
+
+  // Delete confirmation modal state
+  const [deleteTargetPost, setDeleteTargetPost] = useState(null);
+  const [deleteFromShopifyChoice, setDeleteFromShopifyChoice] = useState(false);
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
 
   const PER_PAGE = 20;
 
@@ -99,27 +105,27 @@ export default function Dashboard() {
     fetchAnalytics();
   }, [fetchPosts]);
 
-  const handleDelete = async (post) => {
-    if (!confirm("Delete this article? This cannot be undone.")) return;
-    let deleteFromShopify = false;
-    if (
-      post.status === "published" ||
-      post.shopifyArticle?.status === "published"
-    ) {
-      deleteFromShopify = confirm(
-        "Also delete this article permanently from your live Shopify store?",
-      );
-    }
+  const handleDelete = (post) => {
+    setDeleteTargetPost(post);
+    setDeleteFromShopifyChoice(false);
+  };
+
+  const confirmDeletePost = async () => {
+    if (!deleteTargetPost) return;
+    setIsDeleteConfirming(true);
     try {
       await fetch(
-        `/api/posts/${post.id}?deleteFromShopify=${deleteFromShopify}`,
+        `/api/posts/${deleteTargetPost.id}?deleteFromShopify=${deleteFromShopifyChoice}`,
         { method: "DELETE" },
       );
       setToastMessage({ content: "Article deleted" });
+      setDeleteTargetPost(null);
       fetchPosts();
       fetchAnalytics();
     } catch {
       setToastMessage({ content: "Delete failed", error: true });
+    } finally {
+      setIsDeleteConfirming(false);
     }
   };
 
@@ -454,6 +460,38 @@ export default function Dashboard() {
           </Layout.Section>
         </Layout>
       </Page>
+
+      {/* ─── Delete Confirmation Modal ─── */}
+      <ConfirmActionModal
+        open={Boolean(deleteTargetPost)}
+        title={`Delete ${deleteTargetPost?.title || "article"}?`}
+        body={
+          <Text as="p" variant="bodyMd">
+            This article will be permanently deleted from the app.{" "}
+            <strong>This cannot be undone.</strong>
+          </Text>
+        }
+        confirmText="Delete article"
+        confirmTone="critical"
+        onConfirm={confirmDeletePost}
+        onCancel={() => {
+          setDeleteTargetPost(null);
+          setDeleteFromShopifyChoice(false);
+        }}
+        loading={isDeleteConfirming}
+        checkbox={
+          deleteTargetPost &&
+          (deleteTargetPost.status === "published" ||
+            deleteTargetPost.shopifyArticle?.status === "published")
+            ? {
+                label:
+                  "Also delete this article permanently from your live Shopify store",
+                checked: deleteFromShopifyChoice,
+                onChange: setDeleteFromShopifyChoice,
+              }
+            : undefined
+        }
+      />
     </Frame>
   );
 }

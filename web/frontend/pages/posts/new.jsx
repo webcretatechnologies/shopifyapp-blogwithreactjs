@@ -34,6 +34,7 @@ import TiptapEditor from "../../components/editor/TiptapEditor";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
 import ArticlePreview from "../../components/editor/ArticlePreview";
 import SyncStatusIndicator from "../../components/SyncStatusIndicator.jsx";
+import ConfirmActionModal from "../../components/ConfirmActionModal";
 
 
 const parseHtmlToBlocks = (html) => {
@@ -262,6 +263,7 @@ export default function PostEditor() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [isUnpublishing, setIsUnpublishing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteFromShopify, setDeleteFromShopify] = useState(false);
   const [toast, setToast] = useState(null);
   const [error, setError] = useState(null);
@@ -557,20 +559,16 @@ export default function PostEditor() {
     }
   };
 
-  const handleDelete = async () => {
-    if (
-      !confirm(
-        `Are you sure you want to delete this article?${deleteFromShopify ? " It will also be DELETED from Shopify." : ""} This cannot be undone.`,
-      )
-    )
-      return;
+  const handleDelete = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteArticle = async () => {
     setIsDeleting(true);
     try {
       const res = await fetch(
         `/api/posts/${id}?deleteFromShopify=${deleteFromShopify}`,
-        {
-          method: "DELETE",
-        },
+        { method: "DELETE" },
       );
       if (!res.ok) throw new Error("Delete failed");
       navigate("/posts");
@@ -618,6 +616,7 @@ export default function PostEditor() {
         <Toast content={toast.content} onDismiss={() => setToast(null)} />
       )}
       <Page
+        fullWidth
         title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
         titleMetadata={statusBadge}
         backAction={{ content: "Articles", onAction: () => navigate("/") }}
@@ -996,10 +995,38 @@ export default function PostEditor() {
         open={showFilePicker}
         onClose={() => setShowFilePicker(false)}
         onSelect={(url) => setPost((p) => ({ ...p, featuredImage: url }))}
+      />      {/* ─── Delete Confirmation Modal ─── */}
+      <ConfirmActionModal
+        open={showDeleteConfirm}
+        title="Delete this article?"
+        body={
+          <Text as="p" variant="bodyMd">
+            This article will be permanently deleted from the app.{" "}
+            <strong>This cannot be undone.</strong>
+          </Text>
+        }
+        confirmText="Delete article"
+        confirmTone="critical"
+        onConfirm={confirmDeleteArticle}
+        onCancel={() => {
+          setShowDeleteConfirm(false);
+          setDeleteFromShopify(false);
+        }}
+        loading={isDeleting}
+        checkbox={
+          post.status === "published" || post.shopifyArticle?.status === "published"
+            ? {
+                label:
+                  "Also delete this article permanently from my Shopify store",
+                checked: deleteFromShopify,
+                onChange: setDeleteFromShopify,
+              }
+            : undefined
+        }
       />
 
       {showPreview && (
-        <ArticlePreview 
+        <ArticlePreview  
           open={showPreview}
           onClose={() => setShowPreview(false)}
           title={post.title}
