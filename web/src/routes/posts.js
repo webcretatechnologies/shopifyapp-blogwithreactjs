@@ -704,12 +704,45 @@ router.get("/shopify/products", async (req, res) => {
       handle: node.handle,
       image: node.featuredImage?.url || null,
       price: node.priceRangeV2?.minVariantPrice?.amount || null,
+      currency: node.priceRangeV2?.minVariantPrice?.currencyCode || "USD",
       variantId: node.variants?.edges?.[0]?.node?.id || null,
       variantAvailable: node.variants?.edges?.[0]?.node?.availableForSale ?? true,
     }));
 
     res.json({ products });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/posts/shopify/store — Fetch store currency ──────────────────────
+router.get("/shopify/store", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+
+    const client = new shopify.api.clients.Graphql({ session });
+
+    const result = await client.request(`
+      query GetShopCurrency {
+        shop {
+          currencyCode
+          currencyFormats {
+            moneyFormat
+            moneyWithCurrencyFormat
+          }
+        }
+      }
+    `);
+
+    const shopData = result.data?.shop;
+    res.json({
+      currencyCode: shopData?.currencyCode || "USD",
+      moneyFormat: shopData?.currencyFormats?.moneyFormat || "${{amount}}",
+      moneyWithCurrencyFormat: shopData?.currencyFormats?.moneyWithCurrencyFormat || "${{amount}} USD",
+    });
+  } catch (err) {
+    console.error("GET /api/posts/shopify/store error:", err);
     res.status(500).json({ error: err.message });
   }
 });

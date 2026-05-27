@@ -61,7 +61,7 @@ export default class JsonLdService {
           offers: {
             "@type": "Offer",
             price: p.price,
-            priceCurrency: "USD",
+            priceCurrency: p.currency || options.currency || "USD",
           },
         }),
       }));

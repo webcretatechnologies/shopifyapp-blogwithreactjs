@@ -7,10 +7,13 @@
  * - Configurable columns (2, 3, 4)
  * - Show/hide price, vendor, "Add to Cart" button
  * - Live product data from /api/posts/shopify/products
+ * - Dynamic currency formatting based on store/product currency
  */
 import { useState } from 'react';
 import { BlockStack, TextField, Select, Text, Checkbox, Spinner, InlineStack } from '@shopify/polaris';
 import { useShopifyProducts } from '../../../../hooks/useShopifyProducts.js';
+import { useShopifyStoreCurrency } from '../../../../hooks/useShopifyProducts.js';
+import { formatPrice } from '../../../../utils/priceUtils.js';
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 
@@ -18,6 +21,7 @@ export function ProductGridBlockPreview({ block }) {
   const query = block.searchQuery || '';
   const limit = block.columns ? block.columns * 3 : 6;
   const { products, isLoading } = useShopifyProducts(query, Math.min(limit, 12));
+  const { storeCurrency } = useShopifyStoreCurrency();
 
   const displayProducts = block.manualProducts?.length > 0 ? block.manualProducts : products;
   const cols = parseInt(block.columns || '3');
@@ -70,6 +74,7 @@ export function ProductGridBlockPreview({ block }) {
             cardStyle={block.cardStyle || 'shadow'}
             buttonColor={block.buttonColor || '#008060'}
             buttonText={block.buttonText || 'Add to Cart'}
+            storeCurrency={storeCurrency}
           />
         ))}
       </div>
@@ -77,12 +82,13 @@ export function ProductGridBlockPreview({ block }) {
   );
 }
 
-function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, buttonText }) {
+function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, buttonText, storeCurrency }) {
   const styles = {
     shadow: { borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', overflow: 'hidden', background: '#fff' },
     border: { borderRadius: '8px', border: '1px solid #e1e3e5', overflow: 'hidden', background: '#fff' },
     minimal: { padding: '4px' },
   };
+  const currency = product.currency || storeCurrency;
   return (
     <div style={styles[cardStyle] || styles.shadow}>
       {product.image ? (
@@ -102,7 +108,7 @@ function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, b
         </div>
         {showPrice && product.price && (
           <div style={{ fontSize: '14px', color: '#008060', fontWeight: '700', marginBottom: '8px' }}>
-            ${parseFloat(product.price).toFixed(2)}
+            {formatPrice(product.price, currency)}
           </div>
         )}
         {showButton && (
@@ -124,6 +130,7 @@ function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, b
 export function ProductGridBlockSettings({ block, onUpdate }) {
   const [searchQuery, setSearchQuery] = useState(block.searchQuery || '');
   const { products, isLoading } = useShopifyProducts(searchQuery, 30);
+  const { storeCurrency } = useShopifyStoreCurrency();
 
   const handlePickProducts = async () => {
     if (!window.shopify?.resourcePicker) return;
@@ -136,6 +143,7 @@ export function ProductGridBlockSettings({ block, onUpdate }) {
         image: p.images?.[0]?.originalSrc || null,
         price: p.variants?.[0]?.price || null,
         variantId: p.variants?.[0]?.id || null,
+        currency: storeCurrency || 'USD', // Resource picker doesn't return currency, use store default
       }));
       onUpdate({ manualProducts: picked, searchQuery: '' });
     }

@@ -6,10 +6,13 @@
  * - Live preview of collection products
  * - Configurable layout: grid or horizontal scroll
  * - Configurable columns, max products, button text/color
+ * - Dynamic currency formatting based on store/product currency
  */
 import { useState } from 'react';
 import { BlockStack, TextField, Select, Text, Checkbox, Spinner } from '@shopify/polaris';
 import { useShopifyCollections, useCollectionProducts } from '../../../../hooks/useShopifyProducts.js';
+import { useShopifyStoreCurrency } from '../../../../hooks/useShopifyProducts.js';
+import { formatPrice } from '../../../../utils/priceUtils.js';
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 
@@ -17,6 +20,7 @@ export function CollectionBlockPreview({ block }) {
   const handle = block.collectionHandle || '';
   const limit = parseInt(block.maxProducts || '8');
   const { collection, products, isLoading } = useCollectionProducts(handle, limit);
+  const { storeCurrency } = useShopifyStoreCurrency();
 
   if (!handle) {
     return (
@@ -77,14 +81,14 @@ export function CollectionBlockPreview({ block }) {
         <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '8px' }}>
           {products.map(p => (
             <div key={p.shopifyProductId} style={{ minWidth: '180px', maxWidth: '200px', flexShrink: 0 }}>
-              <CollectionProductCard product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} />
+              <CollectionProductCard product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} storeCurrency={storeCurrency} />
             </div>
           ))}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '16px' }}>
           {products.map(p => (
-            <CollectionProductCard key={p.shopifyProductId} product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} />
+            <CollectionProductCard key={p.shopifyProductId} product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} storeCurrency={storeCurrency} />
           ))}
         </div>
       )}
@@ -98,7 +102,8 @@ export function CollectionBlockPreview({ block }) {
   );
 }
 
-function CollectionProductCard({ product, showPrice, showButton, buttonColor, buttonText }) {
+function CollectionProductCard({ product, showPrice, showButton, buttonColor, buttonText, storeCurrency }) {
+  const currency = product.currency || storeCurrency;
   return (
     <div style={{ borderRadius: '10px', border: '1px solid #e1e3e5', overflow: 'hidden', background: '#fff' }}>
       {product.image ? (
@@ -112,7 +117,7 @@ function CollectionProductCard({ product, showPrice, showButton, buttonColor, bu
         </div>
         {showPrice && product.price && (
           <div style={{ fontSize: '13px', color: '#008060', fontWeight: '700', marginBottom: '6px' }}>
-            ${parseFloat(product.price).toFixed(2)}
+            {formatPrice(product.price, currency)}
           </div>
         )}
         {showButton && (

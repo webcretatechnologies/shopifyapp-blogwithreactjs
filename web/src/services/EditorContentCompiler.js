@@ -1,6 +1,34 @@
 import * as cheerio from "cheerio";
 import { prisma } from "../../shopify.js";
+import { formatPrice } from "../utils/priceUtils.js";
 
+// In-memory cache for store currency (per compile run)
+let _storeCurrency = null;
+
+async function fetchStoreCurrency(shopifyClient) {
+  if (_storeCurrency) return _storeCurrency;
+  if (!shopifyClient) return "USD";
+  try {
+    const result = await shopifyClient.request(`
+      query GetShopCurrency {
+        shop { currencyCode }
+      }
+    `);
+    _storeCurrency = result.data?.shop?.currencyCode || "USD";
+    return _storeCurrency;
+  } catch {
+    return "USD";
+  }
+}
+
+/**
+ * Resolve the currency to use for a product.
+ * @param {Object} product - Product object (may have .currency)
+ * @param {string} defaultCurrency - Fallback store currency
+ */
+function resolveCurrency(product, defaultCurrency) {
+  return product?.currency || defaultCurrency || "USD";
+}
 
 const ATTR_MAP = {
   buttontext: 'buttonText',
@@ -87,6 +115,10 @@ export class EditorContentCompiler {
   static async compile(contentHtml, shopifySession = null, shopifyClient = null) {
     if (!contentHtml) return "";
 
+    // Reset and fetch store currency for this compile run
+    _storeCurrency = null;
+    const storeCurrency = await fetchStoreCurrency(shopifyClient);
+
     const $ = cheerio.load(contentHtml, null, false);
     const divs = $("div[data-type]");
 
@@ -117,6 +149,9 @@ export class EditorContentCompiler {
           attrs[mappedKey] = val;
         }
       }
+
+      // Pass store currency to each block
+      attrs._storeCurrency = storeCurrency;
 
       // Compile content based on block type
       let compiledHtml = "";
@@ -340,9 +375,10 @@ export class EditorContentCompiler {
       badgeHtml = `<span style="display: inline-block; padding: 2px 8px; background: #e1e3e5; color: #202223; font-size: 11px; font-weight: 600; border-radius: 4px; margin-bottom: 8px; text-transform: uppercase; font-family: sans-serif;">${badge}</span>`;
     }
 
+    const currency = resolveCurrency(product, _storeCurrency);
     let priceHtml = "";
     if (showPrice && product.price) {
-      priceHtml = `<div style="font-size: 16px; color: #008060; font-weight: 700; margin-bottom: 12px; font-family: sans-serif;">$${parseFloat(product.price).toFixed(2)}</div>`;
+      priceHtml = `<div style="font-size: 16px; color: #008060; font-weight: 700; margin-bottom: 12px; font-family: sans-serif;">${formatPrice(product.price, currency)}</div>`;
     }
 
     let descHtml = "";
@@ -489,8 +525,9 @@ export class EditorContentCompiler {
         ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
         : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
 
+      const pCurrency = p.currency || _storeCurrency || 'USD';
       const pPrice = (showPrice && p.price)
-        ? `<div style="font-size: 14px; color: #008060; font-weight: 700; margin-bottom: 8px; font-family: sans-serif;">$${parseFloat(p.price).toFixed(2)}</div>`
+        ? `<div style="font-size: 14px; color: #008060; font-weight: 700; margin-bottom: 8px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
         : "";
 
       const pBtn = showButton
@@ -623,8 +660,9 @@ export class EditorContentCompiler {
           ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
           : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
 
+        const pCurrency = p.currency || _storeCurrency || 'USD';
         const pPrice = (showPrice && p.price)
-          ? `<div style="font-size: 13px; color: #008060; font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">$${parseFloat(p.price).toFixed(2)}</div>`
+          ? `<div style="font-size: 13px; color: #008060; font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
           : "";
 
         const pBtn = showButton
@@ -667,8 +705,9 @@ export class EditorContentCompiler {
           ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
           : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
 
+        const pCurrency = p.currency || _storeCurrency || 'USD';
         const pPrice = (showPrice && p.price)
-          ? `<div style="font-size: 13px; color: #008060; font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">$${parseFloat(p.price).toFixed(2)}</div>`
+          ? `<div style="font-size: 13px; color: #008060; font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
           : "";
 
         const pBtn = showButton

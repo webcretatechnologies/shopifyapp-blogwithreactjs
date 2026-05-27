@@ -1,3 +1,5 @@
+import { formatPrice } from "../utils/priceUtils.js";
+
 /**
  * BlockRenderer Service
  * Converts JSON block data into HTML strings for the storefront.
@@ -14,6 +16,7 @@ class BlockRenderer {
       productSliderProducts: options.product_slider_products || [],
       customCss: options.custom_css || "",
       customJs: options.custom_js || "",
+      storeCurrency: options.storeCurrency || "USD",
       ...options,
     };
     this.ajaxInjected = false;
@@ -23,6 +26,11 @@ class BlockRenderer {
   static render(blocks, shopDomain = "", options = {}) {
     const renderer = new BlockRenderer(shopDomain, options);
     return renderer.renderBlocks(blocks);
+  }
+
+  /** Resolve currency for a product setting object. */
+  resolveCurrency(s) {
+    return s?.currency || this.options.storeCurrency || "USD";
   }
 
   renderBlocks(blocks) {
@@ -360,7 +368,8 @@ class BlockRenderer {
     const handle = this.esc(s.handle || s.shopifyProductId || "");
     const title = this.esc(s.title || s.product_title || "Product");
     const image = this.esc(s.image || s.src || "");
-    const price = s.price != null ? `$${parseFloat(s.price).toFixed(2)}` : "";
+    const currency = this.resolveCurrency(s);
+    const price = s.price != null ? formatPrice(s.price, currency) : "";
     const compareAt = s.compare_at_price ?? s.compareAtPrice ?? null;
     const variantId = String(s.variant_id || s.variantId || "").trim();
     const salable = BlockRenderer.variantSalable(s);
@@ -391,7 +400,7 @@ class BlockRenderer {
     let priceHtml = `<div style="display:flex;gap:8px;align-items:baseline;margin:0 0 14px;">\n`;
     if (price) priceHtml += `<span style="font-size:14px;color:#008060;font-weight:700;">${price}</span>`;
     if (compareAt != null && compareAt !== "") {
-      priceHtml += `<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">$${parseFloat(compareAt).toFixed(2)}</span>`;
+      priceHtml += `<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">${formatPrice(compareAt, currency)}</span>`;
     }
     priceHtml += `</div>`;
 
@@ -425,7 +434,8 @@ class BlockRenderer {
     const image = this.esc(s.image || s.src || "");
     const variantId = String(s.variant_id || s.variantId || "").trim();
     const salable = BlockRenderer.variantSalable(s);
-    const price = s.price != null ? `$${parseFloat(s.price).toFixed(2)}` : "";
+    const currency = this.resolveCurrency(s);
+    const price = s.price != null ? formatPrice(s.price, currency) : "";
     const compareAt = s.compare_at_price ?? s.compareAtPrice ?? null;
 
     if (!handle) return "";
@@ -450,7 +460,7 @@ class BlockRenderer {
     let priceHtml = `<div style="display:flex;gap:8px;align-items:baseline;margin:0 0 12px;">\n`;
     if (price) priceHtml += `<span style="font-size:14px;color:#008060;font-weight:700;">${price}</span>`;
     if (compareAt != null && compareAt !== "") {
-      priceHtml += `<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">$${parseFloat(compareAt).toFixed(2)}</span>`;
+      priceHtml += `<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">${formatPrice(compareAt, currency)}</span>`;
     }
     priceHtml += `</div>`;
 
@@ -480,7 +490,8 @@ class BlockRenderer {
     const title = this.esc(s.title || s.product_title || "Product");
     const image = this.esc(s.image || s.src || "");
     const text = s.text || s.description || s.content || s.data || "";
-    const price = s.price != null ? `$${parseFloat(s.price).toFixed(2)}` : "";
+    const currency = this.resolveCurrency(s);
+    const price = s.price != null ? formatPrice(s.price, currency) : "";
     const compareAt = s.compare_at_price ?? s.compareAtPrice ?? null;
     const variantId = String(s.variant_id || s.variantId || "").trim();
     const salable = BlockRenderer.variantSalable(s);
@@ -508,7 +519,7 @@ class BlockRenderer {
     let priceHtmlCompact = `<div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;margin:0 0 12px;font-family:system-ui,-apple-system,sans-serif;">\n`;
     if (price) priceHtmlCompact += `<span style="font-size:15px;color:#008060;font-weight:700;">${price}</span>`;
     if (compareAt != null && compareAt !== "") {
-      priceHtmlCompact += `<span style="font-size:13px;color:#8c9196;text-decoration:line-through;">$${parseFloat(compareAt).toFixed(2)}</span>`;
+      priceHtmlCompact += `<span style="font-size:13px;color:#8c9196;text-decoration:line-through;">${formatPrice(compareAt, currency)}</span>`;
     }
     priceHtmlCompact += `</div>`;
 
@@ -575,8 +586,9 @@ class BlockRenderer {
     const switchId = "ps_" + Math.random().toString(36).substring(2, 12);
     const blockData = this.escAttr(JSON.stringify(s));
     const baseUrlAttr = this.escAttr(baseUrl);
+    const storeCurrency = this.options.storeCurrency || "USD";
 
-    let html = `<div data-blog-app-block="product_switcher" data-blog-app-data="${blockData}" data-blog-base-url="${baseUrlAttr}" id="${switchId}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:28px;align-items:start;margin:22px 0;">\n`;
+    let html = `<div data-blog-app-block="product_switcher" data-blog-app-data="${blockData}" data-blog-base-url="${baseUrlAttr}" data-store-currency="${storeCurrency}" id="${switchId}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:28px;align-items:start;margin:22px 0;">\n`;
     html += `<div style="min-width:0;">\n`;
 
     const productData = [];
@@ -588,8 +600,9 @@ class BlockRenderer {
 
       let pointProductHtml = "";
       if (p) {
+        const pCurrency = p.currency || this.options.storeCurrency || 'USD';
         const pTitle = this.esc(p.product_title || p.title || "Product");
-        const pPrice = p.price != null ? `$${parseFloat(p.price).toFixed(2)}` : "";
+        const pPrice = p.price != null ? formatPrice(p.price, pCurrency) : "";
         const pCompare = p.compare_at_price ?? p.compareAtPrice ?? null;
         const pImage = this.esc(p.image || p.src || "");
         const pHandle = this.esc(p.handle || p.shopifyProductId || "");
@@ -628,7 +641,7 @@ class BlockRenderer {
         let pPriceHtml = `<div style="display:flex;gap:8px;align-items:baseline;margin:0 0 12px;">\n`;
         if (pPrice) pPriceHtml += `<span style="font-size:14px;color:#008060;font-weight:700;">${pPrice}</span>`;
         if (pCompare != null && pCompare !== "") {
-          pPriceHtml += `<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">$${parseFloat(pCompare).toFixed(2)}</span>`;
+          pPriceHtml += `<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">${formatPrice(pCompare, pCurrency)}</span>`;
         }
         pPriceHtml += `</div>`;
 
@@ -683,12 +696,14 @@ class BlockRenderer {
       + `var card=root.querySelector('[data-switch-card]'); if(!card) return;\n`
       + `var points=[].slice.call(root.querySelectorAll('[data-switch-point]'));\n`
       + `var activeIdx=0;\n`
+      + `var storeCurrency=root.getAttribute('data-store-currency')||'USD';\n`
+      + `function fmtPrice(amount){if(amount==null||amount==='')return'';var n=parseFloat(amount);if(isNaN(n))return'';try{return new Intl.NumberFormat('en-US',{style:'currency',currency:storeCurrency,minimumFractionDigits:2,maximumFractionDigits:2}).format(n);}catch(e){return storeCurrency+' '+n.toFixed(2);}}\n`
       + `function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}\n`
       + `function cardHtml(p){\n`
       + ` if(!p){return '<div style="padding:16px;color:#6b7280;font-size:13px;font-weight:600;">Select products for each point.</div>';}\n`
       + ` var img=p.image?('<img src="'+esc(p.image)+'" style="width:100%;height:220px;object-fit:cover;display:block;" loading="lazy"/>'):'<div style="width:100%;height:220px;background:#f1f2f4;display:flex;align-items:center;justify-content:center;"><span style="color:#999;">No Image</span></div>';\n`
       + ` var url=baseUrl+'/products/'+esc(p.handle||'')+(p.variant_id?('?variant='+esc(p.variant_id)):'');\n`
-      + ` var priceHtml=p.price?('<div style="display:flex;gap:8px;align-items:baseline;margin:0 0 14px;"><span style="font-size:14px;color:#008060;font-weight:700;">$'+esc(p.price)+'</span>'+(p.compare_at_price?'<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">$'+esc(p.compare_at_price)+'</span>':'')+'</div>'):'';\n`
+      + ` var priceHtml=p.price?('<div style="display:flex;gap:8px;align-items:baseline;margin:0 0 14px;"><span style="font-size:14px;color:#008060;font-weight:700;">'+fmtPrice(p.price)+'</span>'+(p.compare_at_price?'<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">'+fmtPrice(p.compare_at_price)+'</span>':'')+'</div>'):'';\n`
       + ` var canAdd=p.variant_id&&(p.variant_available!==false&&p.variant_available!==0&&p.variant_available!=='0'&&p.variant_available!=='false');\n`
       + ` var pt=esc(p.product_title||'Product');\n`
       + ` var btn=p.variant_id?(canAdd?'<button type="button" data-ajax-add-to-cart data-product-title="'+pt+'" data-variant-id="'+esc(p.variant_id)+'" style="display:block;width:100%;text-align:center;background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;border:none;cursor:pointer;">Add to Cart</button>':'<button type="button" disabled aria-disabled="true" style="display:block;width:100%;text-align:center;background:#9ca3af;color:#fff;padding:10px 18px;border-radius:12px;font-weight:700;font-size:14px;border:none;cursor:not-allowed;opacity:0.95;">Out of stock</button>'):'<a href="'+url+'" style="display:block;text-align:center;background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;">View product</a>';\n`
@@ -720,7 +735,8 @@ class BlockRenderer {
     const title = this.esc(s.title || s.product_title || "Product");
     const image = this.esc(s.image || s.src || "");
     const text = s.text || s.description || s.content || s.data || "";
-    const price = s.price != null ? `$${parseFloat(s.price).toFixed(2)}` : "";
+    const currency = this.resolveCurrency(s);
+    const price = s.price != null ? formatPrice(s.price, currency) : "";
     const compareAt = s.compare_at_price ?? s.compareAtPrice ?? null;
     const variantId = String(s.variant_id || s.variantId || "").trim();
     const salable = BlockRenderer.variantSalable(s);
@@ -741,7 +757,7 @@ class BlockRenderer {
     const priceRow = price
       ? `<div style="display:flex;gap:8px;align-items:baseline;margin:0 0 14px;">\n`
         + `<span style="font-size:14px;color:#202223;font-weight:800;">${price}</span>`
-        + (compareAt != null && compareAt !== "" ? `<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">$${parseFloat(compareAt).toFixed(2)}</span>` : "")
+        + (compareAt != null && compareAt !== "" ? `<span style="font-size:12px;color:#9ca3af;text-decoration:line-through;">${formatPrice(compareAt, currency)}</span>` : "")
         + `</div>`
       : "";
 
@@ -918,7 +934,8 @@ class BlockRenderer {
       for (const p of Object.values(products)) {
         const pTitle = this.esc(String(p.title || p.product_title || ""));
         const pHandle = this.esc(String(p.handle || ""));
-        const pPrice = p.price != null ? String(p.price) : "";
+        const pCurrency = p.currency || this.options.storeCurrency || 'USD';
+        const pFormattedPrice = p.price != null ? formatPrice(p.price, pCurrency) : "";
         const pImage = String(p.image || "");
         const pVariantId = String(p.variant_id || "");
         const pSalable = BlockRenderer.variantSalable(p);
@@ -943,7 +960,7 @@ class BlockRenderer {
           + pImgTag
           + `<div style="padding:10px 12px 12px;">\n`
           + `<div style="font-weight:800;font-size:14px;line-height:1.25;">${pTitle}</div>\n`
-          + (pPrice ? `<div style="margin-top:6px;font-weight:700;color:#008060;">${this.esc(pPrice)}</div>\n` : "")
+          + (pFormattedPrice ? `<div style="margin-top:6px;font-weight:700;color:#008060;">${pFormattedPrice}</div>\n` : "")
           + pBtn
           + `</div></div></div>\n`;
       }

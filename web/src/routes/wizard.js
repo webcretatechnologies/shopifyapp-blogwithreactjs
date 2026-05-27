@@ -15,6 +15,21 @@ async function getShopFromSession(res) {
   return shop;
 }
 
+async function fetchStoreCurrency(session) {
+  if (!session) return "USD";
+  try {
+    const client = new shopify.api.clients.Graphql({ session });
+    const result = await client.request(`
+      query GetShopCurrency {
+        shop { currencyCode }
+      }
+    `);
+    return result.data?.shop?.currencyCode || "USD";
+  } catch {
+    return "USD";
+  }
+}
+
 function generateSlug(title) {
   return (
     title
@@ -61,7 +76,11 @@ router.post("/create", async (req, res) => {
 
     const blocks = ArticleTemplates.blocks(template_id, { title, image1, image2 });
     
-    const contentHtml = BlockRenderer.render(blocks, shop.domain, { product_slider_position: "none" });
+    const storeCurrency = await fetchStoreCurrency(session);
+    const contentHtml = BlockRenderer.render(blocks, shop.domain, {
+      product_slider_position: "none",
+      storeCurrency,
+    });
 
     const post = await prisma.post.create({
       data: {

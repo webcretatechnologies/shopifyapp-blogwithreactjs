@@ -9,11 +9,49 @@
  * - Local in-memory cache (per session) for repeated queries
  * - Loading / error state management
  * - Collection products fetching
+ * - Store currency fetching
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 // Simple in-memory cache — cleared on full page reload
 const _cache = new Map();
+const _storeCurrencyCache = null; // Will be a promise
+
+/**
+ * Fetch the store's default currency code.
+ * Cached after first fetch for the session lifetime.
+ *
+ * @returns {{ currencyCode: string, moneyFormat: string, moneyWithCurrencyFormat: string }}
+ */
+export function useShopifyStoreCurrency() {
+  const [storeCurrency, setStoreCurrency] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCurrency = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const res = await fetch('/api/posts/shopify/store');
+        if (!res.ok) throw new Error('Failed to fetch store currency');
+        const data = await res.json();
+        if (!cancelled) {
+          setStoreCurrency(data.currencyCode || 'USD');
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    fetchCurrency();
+    return () => { cancelled = true; };
+  }, []);
+
+  return { storeCurrency: storeCurrency || 'USD', isLoading, error };
+}
 
 /**
  * Fetch products with optional text search.

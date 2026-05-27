@@ -7,8 +7,11 @@
  * - "Add to Cart" or "Buy Now" button that links to the product page
  * - Layout: horizontal (image + details) or vertical (stacked)
  * - Fully configurable colors, button text, image size
+ * - Dynamic currency formatting based on store/product currency
  */
 import { BlockStack, TextField, Select, Text, Checkbox } from '@shopify/polaris';
+import { formatPrice } from '../../../../utils/priceUtils.js';
+import { useShopifyStoreCurrency } from '../../../../hooks/useShopifyProducts.js';
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 
@@ -17,6 +20,7 @@ export function BuyButtonBlockPreview({ block }) {
   const layout = block.layout || 'horizontal';
   const btnColor = block.buttonColor || '#008060';
   const btnText = block.buttonText || 'Add to Cart';
+  const { storeCurrency } = useShopifyStoreCurrency();
 
   if (!product?.title) {
     return (
@@ -29,6 +33,8 @@ export function BuyButtonBlockPreview({ block }) {
       </div>
     );
   }
+
+  const currency = product.currency || storeCurrency;
 
   if (layout === 'vertical') {
     return (
@@ -55,7 +61,7 @@ export function BuyButtonBlockPreview({ block }) {
           )}
           {block.showPrice && product.price && (
             <div style={{ fontSize: '18px', fontWeight: '700', color: '#008060', marginBottom: '12px' }}>
-              ${parseFloat(product.price).toFixed(2)}
+              {formatPrice(product.price, currency)}
             </div>
           )}
           <a href={`/products/${product.handle}`} style={{
@@ -106,7 +112,7 @@ export function BuyButtonBlockPreview({ block }) {
         )}
         {block.showPrice && product.price && (
           <div style={{ fontSize: '18px', fontWeight: '700', color: '#008060', marginBottom: '10px' }}>
-            ${parseFloat(product.price).toFixed(2)}
+            {formatPrice(product.price, currency)}
           </div>
         )}
         <a href={`/products/${product.handle}`} style={{
@@ -123,6 +129,8 @@ export function BuyButtonBlockPreview({ block }) {
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 export function BuyButtonBlockSettings({ block, onUpdate }) {
+  const { storeCurrency } = useShopifyStoreCurrency();
+
   const handlePickProduct = async () => {
     if (!window.shopify?.resourcePicker) return;
     const selection = await window.shopify.resourcePicker({ type: 'product', multiple: false });
@@ -136,6 +144,7 @@ export function BuyButtonBlockSettings({ block, onUpdate }) {
           image: p.images?.[0]?.originalSrc || null,
           price: p.variants?.[0]?.price || null,
           variantId: p.variants?.[0]?.id || null,
+          currency: storeCurrency || 'USD', // Resource picker doesn't return currency, use store default
           description: p.descriptionHtml?.replace(/<[^>]+>/g, '').slice(0, 200) || '',
         },
       });
@@ -143,6 +152,7 @@ export function BuyButtonBlockSettings({ block, onUpdate }) {
   };
 
   const product = block.product;
+  const currency = product?.currency || storeCurrency;
 
   return (
     <BlockStack gap="300">
@@ -157,7 +167,7 @@ export function BuyButtonBlockSettings({ block, onUpdate }) {
         }}
       >
         {product ? (
-          <span>✅ <strong>{product.title}</strong> — ${parseFloat(product.price || 0).toFixed(2)}</span>
+          <span>✅ <strong>{product.title}</strong> — {formatPrice(product.price || 0, currency)}</span>
         ) : (
           <span>🛒 Pick a Product from Shopify</span>
         )}
