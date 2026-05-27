@@ -845,11 +845,12 @@ export default function Admin() {
         }}
       >
         {/* ─── SIDEBAR NAVIGATION ─── */}
-        <div
+          <div
           style={{
             width: "260px",
             backgroundColor: "#ffffff",
             borderRight: "1px solid #e1e3e5",
+            boxShadow: "2px 0 12px rgba(0, 0, 0, 0.03)",
             display: "flex",
             flexDirection: "column",
             position: "fixed",
@@ -924,12 +925,12 @@ export default function Admin() {
                       padding: "12px 14px",
                       border: "none",
                       borderRadius: "8px",
-                      backgroundColor: isActive ? "#008060" : "transparent",
-                      color: isActive ? "#ffffff" : "#4a4d50",
+                      backgroundColor: isActive ? "#f1f8f5" : "transparent",
+                      color: isActive ? "#008060" : "#4a4d50",
                       textAlign: "left",
                       cursor: "pointer",
                       fontSize: "14px",
-                      fontWeight: "500",
+                      fontWeight: isActive ? "600" : "500",
                       transition: "all 0.2s ease-in-out",
                     }}
                     onMouseEnter={(e) => {
@@ -991,6 +992,7 @@ export default function Admin() {
               height: "64px",
               backgroundColor: "#ffffff",
               borderBottom: "1px solid #e1e3e5",
+              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.02)",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
@@ -1024,7 +1026,7 @@ export default function Admin() {
                 <BlockStack gap="500">
                   {/* Cards metrics */}
                   <Grid>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3 }}>
                       <Card>
                         <Box padding="400">
                           <Text variant="headingSm" tone="subdued">
@@ -1051,7 +1053,7 @@ export default function Admin() {
                         </Box>
                       </Card>
                     </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3 }}>
                       <Card>
                         <Box padding="400">
                           <Text variant="headingSm" tone="subdued">
@@ -1078,7 +1080,7 @@ export default function Admin() {
                         </Box>
                       </Card>
                     </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3 }}>
                       <Card>
                         <Box padding="400">
                           <Text variant="headingSm" tone="subdued">
@@ -1087,7 +1089,7 @@ export default function Admin() {
                           <Box paddingBlockStart="200">
                             <Text variant="heading2xl" as="p">
                               <span
-                                style={{ color: "#ffffff", fontWeight: 700 }}
+                                style={{ color: "#202223", fontWeight: 700 }}
                               >
                                 ${metrics.mrr.toFixed(2)}
                               </span>
@@ -1105,7 +1107,7 @@ export default function Admin() {
                         </Box>
                       </Card>
                     </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3 }}>
                       <Card>
                         <Box padding="400">
                           <Text variant="headingSm" tone="subdued">
@@ -1505,8 +1507,9 @@ export default function Admin() {
                       </Grid>
 
                       {/* Main Table */}
-                      <IndexTable
-                        resourceName={{ singular: "store", plural: "stores" }}
+                      <div style={{ overflowX: "auto", width: "100%", borderTop: "1px solid #e1e3e5" }}>
+                        <IndexTable
+                          resourceName={{ singular: "store", plural: "stores" }}
                         itemCount={stores.length}
                         headings={[
                           { title: "Domain" },
@@ -1634,6 +1637,7 @@ export default function Admin() {
                           </IndexTable.Row>
                         ))}
                       </IndexTable>
+                      </div>
 
                       {/* Pagination Controls */}
                       {storesTotal > 20 && (
@@ -1979,7 +1983,8 @@ export default function Admin() {
                     <Card>
                       <Box padding="400">
                         <BlockStack gap="400">
-                          <IndexTable
+                          <div style={{ overflowX: "auto", width: "100%", borderTop: "1px solid #e1e3e5" }}>
+                            <IndexTable
                             resourceName={{
                               singular: "email",
                               plural: "emails",
@@ -2028,6 +2033,7 @@ export default function Admin() {
                               </IndexTable.Row>
                             ))}
                           </IndexTable>
+                          </div>
 
                           {/* Pagination */}
                           {emailsTotal > 20 && (
@@ -2066,7 +2072,8 @@ export default function Admin() {
                 <Card>
                   <Box padding="400">
                     <BlockStack gap="400">
-                      <IndexTable
+                      <div style={{ overflowX: "auto", width: "100%", borderTop: "1px solid #e1e3e5" }}>
+                        <IndexTable
                         resourceName={{ singular: "log", plural: "logs" }}
                         itemCount={activities.length}
                         headings={[
@@ -2099,7 +2106,8 @@ export default function Admin() {
                             </IndexTable.Cell>
                           </IndexTable.Row>
                         ))}
-                      </IndexTable>
+                        </IndexTable>
+                      </div>
 
                       {/* Pagination */}
                       {activitiesTotal > 20 && (
