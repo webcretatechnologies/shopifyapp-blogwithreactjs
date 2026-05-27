@@ -19,8 +19,12 @@ import shopify from "../../shopify.js";
 import { EditorContentCompiler } from "./EditorContentCompiler.js";
 import { ShopifyArticleParser } from "./ShopifyArticleParser.js";
 import BlockRenderer from "./BlockRenderer.js";
+import { ensureTrackingKey } from "./AnalyticsTrackingService.js";
 
 const prisma = new PrismaClient();
+
+// ─── App public URL for tracking pixel ───────────────────────────────────────
+const APP_URL = process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
 
 const MAX_WEBHOOK_DEPTH = 3;
 let _webhookDepth = 0;
@@ -562,6 +566,59 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ")
     : "";
   const published = publishMode ? true : post.status === "published";
+
+  // ── Inject tracking pixel ──────────────────────────────────────────────
+  const trackingKey = await ensureTrackingKey(post.id);
+  const appHost = process.env.SHOPIFY_APP_HOST || "localhost:3000";
+  const appUrl = process.env.APP_URL || `https://${appHost}`;
+  const shopDomain = post.shop?.domain || "";
+
+  // Replace existing analytics block or append new one
+  const analyticsBlockStart = "<!-- BLOG_ANALYTICS_START -->";
+  const analyticsBlockEnd = "<!-- BLOG_ANALYTICS_END -->";
+  const analyticsBlock = `${analyticsBlockStart}
+<img src="${appUrl}/track/view.gif?k=${trackingKey}&shop=${encodeURIComponent(shopDomain)}" alt="" width="1" height="1" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;pointer-events:none;opacity:0;" aria-hidden="true" />
+<script>
+(function(){
+  // Blog analytics bootstrap — lightweight event tracking
+  window.__BLOG_ANALYTICS__ = {
+    postKey: ${JSON.stringify(trackingKey)},
+    shop: ${JSON.stringify(shopDomain)},
+    endpoint: ${JSON.stringify(appUrl)},
+    sessionId: localStorage.getItem('blog_analytics_sid'),
+  };
+  if (!window.__BLOG_ANALYTICS__.sessionId) {
+    window.__BLOG_ANALYTICS__.sessionId = 's_' + Math.random().toString(36).substring(2, 15);
+    try { localStorage.setItem('blog_analytics_sid', window.__BLOG_ANALYTICS__.sessionId); } catch(e) {}
+  }
+  window.__blogTrackEvent = function(type, payload) {
+    var data = { k: ${JSON.stringify(trackingKey)}, event: type, shop: ${JSON.stringify(shopDomain)}, sid: window.__BLOG_ANALYTICS__.sessionId };
+    if (payload) Object.assign(data, payload);
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(${JSON.stringify(appUrl)} + '/track/event', JSON.stringify(data));
+    } else {
+      fetch(${JSON.stringify(appUrl)} + '/track/event', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' }, mode: 'no-cors' }).catch(function(){});
+    }
+  };
+})();
+</script>
+${analyticsBlockEnd}`;
+
+  if (storefrontHtml.includes(analyticsBlockStart)) {
+    // Replace existing analytics block
+    const analyticsRegex = new RegExp(
+      `${analyticsBlockStart}[\\s\\S]*?${analyticsBlockEnd}`
+    );
+    storefrontHtml = storefrontHtml.replace(analyticsRegex, analyticsBlock);
+  } else {
+    // Append analytics block before closing </body> or at end
+    const bodyEnd = storefrontHtml.lastIndexOf("</body>");
+    if (bodyEnd >= 0) {
+      storefrontHtml = storefrontHtml.slice(0, bodyEnd) + analyticsBlock + "\n" + storefrontHtml.slice(bodyEnd);
+    } else {
+      storefrontHtml += "\n" + analyticsBlock;
+    }
+  }
 
   // Compute outbound hash for echo suppression
   const outboundHash = computeContentHash({

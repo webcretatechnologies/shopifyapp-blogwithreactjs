@@ -141,6 +141,7 @@ model Post {
   ogDescription         String?           @db.Text
   ogImage               String?           @db.Text
   ogTitle               String?           @db.VarChar(120)
+  trackingKey           String?           @unique
   category              Category?         @relation(fields: [categoryId], references: [id])
   shop                  Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
   analytics             PostAnalytic[]
@@ -308,6 +309,10 @@ model PostAnalytic {
   postId          Int
   views           Int      @default(0)
   uniqueVisitors  Int      @default(0)
+  addToCart       Int      @default(0)
+  checkouts       Int      @default(0)
+  conversions     Int      @default(0)
+  revenue         Float    @default(0)
   deviceDesktop   Int      @default(0)
   deviceMobile    Int      @default(0)
   deviceTablet    Int      @default(0)

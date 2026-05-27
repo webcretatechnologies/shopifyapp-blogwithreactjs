@@ -1035,6 +1035,9 @@ class BlockRenderer {
       + `var cart=await fetch('/cart.js',{headers:{Accept:'application/json'}}).then(function(r){return r.json();});\n`
       + `await blogPublishCartChrome(cart);}\n`
 
+      + `function blogTrackEvent(type,payload){\n`
+      + `if(typeof window.__blogTrackEvent==='function'){try{window.__blogTrackEvent(type,payload)}catch(e){}}}\n`
+
       + `window.BlogAppCart={fetchCart:function(){return fetch('/cart.js',{headers:{Accept:'application/json'}}).then(function(r){return r.json();});},\n`
       + `addLine:function(variantId,quantity){quantity=quantity||1;return fetch('/cart/add.js',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({items:[{id:Number(variantId),quantity:Number(quantity)}]})}).then(function(r){return r.json().then(function(j){if(!r.ok)throw j;return j;});});},\n`
       + `updateLines:function(updates){return fetch('/cart/update.js',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({updates:updates})}).then(function(r){return r.json().then(function(j){if(!r.ok)throw j;return j;});});},\n`
@@ -1053,7 +1056,7 @@ class BlockRenderer {
       + `var productTitle=btn.getAttribute('data-product-title')||'Product';\n`
       + `btn.dataset.blogAddProcessing='1';var oldHtml=btn.innerHTML;\n`
       + `btn.disabled=true;btn.style.opacity='0.85';btn.innerHTML='Adding...';\n`
-      + `try{var data=await addToCart(id);await blogPublishCartAfterAdd(data);btn.innerHTML='Added';blogAppStorefrontToast('\\u2713 '+productTitle+' added to cart!','success');setTimeout(function(){btn.innerHTML=oldHtml;},1200);}catch(err){console.warn('[BlogApp] Add to cart failed',err);btn.innerHTML=oldHtml;blogAppStorefrontToast('Unable to add \\u2014 this product may be out of stock.','error');}finally{delete btn.dataset.blogAddProcessing;btn.disabled=false;btn.style.opacity='';}\n`
+      + `try{var data=await addToCart(id);await blogPublishCartAfterAdd(data);btn.innerHTML='Added';blogAppStorefrontToast('\\u2713 '+productTitle+' added to cart!','success');blogTrackEvent('add_to_cart',{productTitle:productTitle,variantId:id});setTimeout(function(){btn.innerHTML=oldHtml;},1200);}catch(err){console.warn('[BlogApp] Add to cart failed',err);btn.innerHTML=oldHtml;blogAppStorefrontToast('Unable to add \\u2014 this product may be out of stock.','error');}finally{delete btn.dataset.blogAddProcessing;btn.disabled=false;btn.style.opacity='';}\n`
       + `},true);})();</script>\n`;
   }
 

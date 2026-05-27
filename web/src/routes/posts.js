@@ -18,6 +18,7 @@ import {
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
 import { ArticleSyncService } from "../services/ArticleSyncService.js";
 import { ShopifyArticleParser } from "../services/ShopifyArticleParser.js";
+import { getShopAnalytics } from "../services/AnalyticsTrackingService.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
@@ -1024,111 +1025,27 @@ router.get("/analytics/summary", async (req, res) => {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
 
-    const [totalPosts, published, drafts, recentAnalytics, topPosts, allAnalytics] = await Promise.all([
-      prisma.post.count({ where: { shopId: shop.id } }),
-      prisma.post.count({ where: { shopId: shop.id, status: "published" } }),
-      prisma.post.count({ where: { shopId: shop.id, status: "draft" } }),
-      // 30-day view history aggregated by date
-      prisma.postAnalytic.findMany({
-        where: {
-          post: { shopId: shop.id },
-          date: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-        },
-        orderBy: { date: "asc" },
-        include: { post: { select: { title: true } } },
-      }),
-      // Top 5 posts by total views
-      prisma.postAnalytic.groupBy({
-        by: ["postId"],
-        where: { post: { shopId: shop.id } },
-        _sum: { views: true },
-        orderBy: { _sum: { views: "desc" } },
-        take: 5,
-      }),
-      // All-time aggregated analytics for device/source/country
-      prisma.postAnalytic.findMany({
-        where: { post: { shopId: shop.id } },
-        select: {
-          uniqueVisitors: true,
-          deviceDesktop: true,
-          deviceMobile: true,
-          deviceTablet: true,
-          sources: true,
-          countries: true,
-        },
-      }),
-    ]);
+    // Use the shared analytics service for comprehensive data
+    const analytics = await getShopAnalytics(shop.id, 30);
+    if (!analytics) {
+      return res.json({
+        stats: { totalPosts: 0, published: 0, drafts: 0, totalViews: 0, totalUniqueVisitors: 0, totalAddToCart: 0, totalCheckouts: 0, totalConversions: 0, totalRevenue: 0, addToCartRate: "0.00", checkoutRate: "0.00", conversionRate: "0.00" },
+        daily: [],
+        dailyViews: [],
+        topPosts: [],
+        deviceBreakdown: { desktop: 0, mobile: 0, tablet: 0 },
+        topSources: [],
+        topCountries: [],
+        funnel: [],
+      });
+    }
 
-    // Aggregate daily views across all posts
-    const viewsByDate = {};
-    let totalUniqueVisitors = 0;
-    const totalDevices = { desktop: 0, mobile: 0, tablet: 0 };
-    const totalSources = {};
-    const totalCountries = {};
-
-    recentAnalytics.forEach((a) => {
-      const dateKey = a.date.toISOString().split("T")[0];
-      viewsByDate[dateKey] = (viewsByDate[dateKey] || 0) + a.views;
-    });
-
-    allAnalytics.forEach((a) => {
-      totalUniqueVisitors += a.uniqueVisitors || 0;
-      totalDevices.desktop += a.deviceDesktop || 0;
-      totalDevices.mobile += a.deviceMobile || 0;
-      totalDevices.tablet += a.deviceTablet || 0;
-
-      // Merge sources JSON
-      if (a.sources) {
-        try {
-          const srcs = a.sources instanceof Buffer ? JSON.parse(a.sources.toString()) : a.sources;
-          for (const [key, val] of Object.entries(srcs)) {
-            totalSources[key] = (totalSources[key] || 0) + val;
-          }
-        } catch { /* ignore */ }
-      }
-
-      // Merge countries JSON
-      if (a.countries) {
-        try {
-          const cntrs = a.countries instanceof Buffer ? JSON.parse(a.countries.toString()) : a.countries;
-          for (const [key, val] of Object.entries(cntrs)) {
-            totalCountries[key] = (totalCountries[key] || 0) + val;
-          }
-        } catch { /* ignore */ }
-      }
-    });
-
-    const dailyViews = Object.entries(viewsByDate).map(([date, views]) => ({ date, views }));
-    const totalViews = dailyViews.reduce((s, d) => s + d.views, 0);
-
-    // Enrich top posts with title
-    const topPostIds = topPosts.map((t) => t.postId);
-    const topPostDetails = await prisma.post.findMany({
-      where: { id: { in: topPostIds }, shopId: shop.id },
-      select: { id: true, title: true, featuredImage: true, status: true },
-    });
-    const topPostsEnriched = topPosts.map((t) => {
-      const detail = topPostDetails.find((p) => p.id === t.postId) || {};
-      return { ...detail, totalViews: t._sum.views || 0 };
-    });
-
-    // Sort sources and countries by value descending, take top entries
-    const sortedSources = Object.entries(totalSources)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 10)
-      .map(([name, count]) => ({ name, count }));
-    const sortedCountries = Object.entries(totalCountries)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 10)
-      .map(([code, count]) => ({ code, count }));
+    // Keep backward-compatible dailyViews field
+    const dailyViews = (analytics.daily || []).map((d) => ({ date: d.date, views: d.views }));
 
     res.json({
-      stats: { totalPosts, published, drafts, totalViews, totalUniqueVisitors },
+      ...analytics,
       dailyViews,
-      topPosts: topPostsEnriched,
-      deviceBreakdown: totalDevices,
-      topSources: sortedSources,
-      topCountries: sortedCountries,
     });
   } catch (err) {
     console.error("GET /api/posts/analytics/summary error:", err);

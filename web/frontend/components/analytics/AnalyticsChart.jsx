@@ -13,16 +13,29 @@ export default function AnalyticsChart({
   data = [],
   title = "Views",
   color = "#008060",
+  series: seriesProp,
+  chartType = "area",
 }) {
+  // Use series if provided; otherwise build from color prop for backward compat
+  const series = seriesProp || [{ key: "views", label: "Views", color }];
   const [period, setPeriod] = useState("30");
 
   const filtered = data.slice(-parseInt(period));
 
-  const series = [{ name: "Views", data: filtered.map((d) => d.views || 0) }];
+  const chartSeries = series.map((s) => ({
+    name: s.label,
+    data: filtered.map((d) => d[s.key] || 0),
+  }));
+  const chartColors = series.map((s) => s.color);
+
+  const totals = series.map((s) => ({
+    label: s.label,
+    total: filtered.reduce((sum, d) => sum + (d[s.key] || 0), 0),
+  }));
 
   const options = {
     chart: {
-      type: "area",
+      type: chartType,
       toolbar: { show: false },
       zoom: { enabled: false },
       fontFamily:
@@ -30,7 +43,7 @@ export default function AnalyticsChart({
       sparkline: { enabled: false },
       animations: { enabled: true, speed: 600 },
     },
-    colors: [color],
+    colors: chartColors,
     fill: {
       type: "gradient",
       gradient: {
@@ -40,7 +53,7 @@ export default function AnalyticsChart({
         stops: [0, 100],
       },
     },
-    stroke: { curve: "smooth", width: 2 },
+    stroke: { curve: "smooth", width: chartSeries.length > 1 ? [2, 2, 2] : 2 },
     grid: {
       borderColor: "#e1e3e5",
       strokeDashArray: 4,
@@ -66,10 +79,11 @@ export default function AnalyticsChart({
     },
     tooltip: {
       theme: "light",
-      y: { formatter: (val) => `${val} views` },
+      y: { formatter: (val) => `${val}` },
     },
     dataLabels: { enabled: false },
-    markers: { size: 0 },
+    markers: { size: chartSeries.length > 1 ? 3 : 0 },
+    legend: chartSeries.length > 1 ? { position: "top", horizontalAlign: "right", fontSize: "12px", markers: { width: 10, height: 10 } } : { show: false },
   };
 
   return (
@@ -79,11 +93,12 @@ export default function AnalyticsChart({
           <BlockStack gap="050">
             <Text variant="headingMd">{title}</Text>
             <Text variant="bodySm" tone="subdued">
-              Total:{" "}
-              {filtered
-                .reduce((sum, d) => sum + (d.views || 0), 0)
-                .toLocaleString()}{" "}
-              views
+              {totals.map((t, i) => (
+                <span key={t.label}>
+                  {i > 0 && " · "}
+                  {t.label}: {t.total.toLocaleString()}
+                </span>
+              ))}
             </Text>
           </BlockStack>
           <Select
@@ -101,9 +116,9 @@ export default function AnalyticsChart({
         <div style={{ marginTop: "16px" }}>
           <ReactApexChart
             options={options}
-            series={series}
-            type="area"
-            height={220}
+            series={chartSeries}
+            type={chartType === "bar" ? "bar" : "area"}
+            height={260}
           />
         </div>
       </Box>

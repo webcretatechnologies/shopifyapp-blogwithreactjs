@@ -37,6 +37,7 @@ import importRoutes from "./src/routes/import.js";
 import wizardRoutes from "./src/routes/wizard.js";
 import supportRoutes from "./src/routes/support.js";
 import superAdminRoutes from "./src/routes/superAdmin.js";
+import trackingRoutes from "./src/routes/tracking.js";
 
 // Process-level event handlers to prevent crashes from unhandled network errors
 process.on("unhandledRejection", (reason, promise) => {
@@ -102,6 +103,9 @@ io.on("connection", (socket) => {
     io.to(room).emit("new_message", msg);
   });
 });
+
+// ─── Public Tracking Routes (BEFORE Shopify auth — no session needed) ──────
+app.use("/track", trackingRoutes);
 
 // ─── Shopify Auth & Webhook Routes ────────────────────────────────────────────
 app.get(shopify.config.auth.path, shopify.auth.begin());

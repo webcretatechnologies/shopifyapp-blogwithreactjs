@@ -12,12 +12,45 @@ import {
   BlockStack,
   Divider,
   Badge,
+  ProgressBar,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { RefreshIcon } from "@shopify/polaris-icons";
 import StatsCard from "../components/analytics/StatsCard";
 import AnalyticsChart from "../components/analytics/AnalyticsChart";
 
+// ─── Mini Funnel ─────────────────────────────────────────────────────────
+function MiniFunnel({ funnel = [] }) {
+  if (!funnel.length) return null;
+  const maxCount = Math.max(...funnel.map((f) => f.count), 1);
+
+  return (
+    <BlockStack gap="200">
+      {funnel.map((stage, i) => {
+        const pct = (stage.count / maxCount) * 100;
+        return (
+          <div key={stage.stage}>
+            <InlineStack align="space-between" blockAlign="center">
+              <Text variant="bodySm">{stage.stage}</Text>
+              <Text variant="bodySm" fontWeight="semibold">
+                {stage.count.toLocaleString()}
+              </Text>
+            </InlineStack>
+            <div style={{ marginTop: 4 }}>
+              <ProgressBar
+                progress={Math.round(pct)}
+                size="small"
+                tone={i === 3 ? "success" : i === 0 ? "primary" : "subdued"}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </BlockStack>
+  );
+}
+
+// ─── Main Dashboard ──────────────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate();
   const [analytics, setAnalytics] = useState(null);
@@ -65,7 +98,34 @@ export default function Dashboard() {
         }
       >
         <Layout>
-          {/* ─── Stats Cards ─── */}
+          {/* ── Quick Actions Banner ────────────────────────────────── */}
+          <Layout.Section>
+            <Card>
+              <Box padding="400">
+                <InlineStack align="space-between" blockAlign="center" wrap={false}>
+                  <InlineStack gap="400" blockAlign="center">
+                    <Text variant="headingMd" as="h2">Quick Actions</Text>
+                    <InlineStack gap="200">
+                      <Button variant="primary" onClick={() => navigate("/posts/new")}>
+                        ✍️ Write New Article
+                      </Button>
+                      <Button onClick={() => navigate("/posts")}>
+                        📋 Manage Articles
+                      </Button>
+                      <Button onClick={() => navigate("/posts/import")}>
+                        📥 Import Posts
+                      </Button>
+                    </InlineStack>
+                  </InlineStack>
+                  <Button onClick={fetchAnalytics} icon={RefreshIcon} size="slim">
+                    Refresh
+                  </Button>
+                </InlineStack>
+              </Box>
+            </Card>
+          </Layout.Section>
+
+          {/* ── Stats Cards ────────────────────────────────────────── */}
           <Layout.Section>
             {analyticsLoading ? (
               <Box padding="400" align="center">
@@ -75,7 +135,7 @@ export default function Dashboard() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(4, 1fr)",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
                   gap: "16px",
                 }}
               >
@@ -86,114 +146,106 @@ export default function Dashboard() {
                   color="#008060"
                 />
                 <StatsCard
-                  title="Published"
-                  value={stats?.published ?? 0}
-                  icon="✅"
-                  color="#00a97c"
-                />
-                <StatsCard
-                  title="Drafts"
-                  value={stats?.drafts ?? 0}
-                  icon="📋"
-                  color="#6d7175"
-                />
-                <StatsCard
-                  title="Total Views (30d)"
+                  title="Views (30d)"
                   value={(stats?.totalViews ?? 0).toLocaleString()}
                   icon="👁"
                   color="#005bd3"
+                />
+                <StatsCard
+                  title="Revenue"
+                  value={`$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  icon="💰"
+                  color="#f39c12"
+                />
+                <StatsCard
+                  title="Conversion Rate"
+                  value={`${stats?.conversionRate ?? "0.00"}%`}
+                  icon="🏆"
+                  color="#008060"
                 />
               </div>
             )}
           </Layout.Section>
 
-          {/* ─── Analytics Chart ─── */}
+          {/* ── Multi-Series Chart ─────────────────────────────────── */}
           <Layout.Section>
             <AnalyticsChart
-              data={analytics?.dailyViews || []}
-              title="Blog Views — Last 30 Days"
-              color="#008060"
+              data={analytics?.daily || []}
+              title="Blog Performance — Last 30 Days"
+              series={[
+                { key: "views", label: "Views", color: "#008060" },
+                { key: "addToCart", label: "Add to Cart", color: "#e67e22" },
+                { key: "conversions", label: "Conversions", color: "#005bd3" },
+              ]}
             />
           </Layout.Section>
 
-          {/* ─── Top Posts + Quick Actions ─── */}
-          <Layout.Section variant="oneThird">
-            <BlockStack gap="400">
-              {/* Quick Actions */}
+          {/* ── Funnel + Top Posts ──────────────────── */}
+          <Layout.Section variant="oneHalf">
+            <Card>
+              <Box padding="400">
+                <BlockStack gap="300">
+                  <Text variant="headingMd">🔄 Conversion Funnel</Text>
+                  <Divider />
+                  {analytics?.funnel?.length ? (
+                    <MiniFunnel funnel={analytics.funnel} />
+                  ) : (
+                    <Text tone="subdued" variant="bodySm">
+                      No funnel data yet.
+                    </Text>
+                  )}
+                </BlockStack>
+              </Box>
+            </Card>
+          </Layout.Section>
+
+          <Layout.Section variant="oneHalf">
+            {analytics?.topPosts?.length > 0 ? (
               <Card>
                 <Box padding="400">
                   <BlockStack gap="300">
-                    <Text variant="headingMd">Quick Actions</Text>
+                    <Text variant="headingMd">🏆 Top Posts</Text>
                     <Divider />
-                    <Button
-                      variant="primary"
-                      fullWidth
-                      onClick={() => navigate("/posts/new")}
-                    >
-                      ✍️ &nbsp; Write New Article
-                    </Button>
-                    <Button fullWidth onClick={() => navigate("/posts")}>
-                      📋 &nbsp; Manage Articles
-                    </Button>
-                    <Button fullWidth onClick={() => navigate("/posts/import")}>
-                      📥 &nbsp; Import from Shopify
-                    </Button>
-                    <Button fullWidth onClick={() => navigate("/posts/wizard")}>
-                      🧙 &nbsp; Article Setup Wizard
-                    </Button>
-                    <Button
-                      fullWidth
-                      onClick={() => {
-                        fetchAnalytics();
-                      }}
-                      icon={RefreshIcon}
-                    >
-                      Refresh Data
-                    </Button>
+                    <BlockStack gap="300">
+                      {analytics.topPosts.slice(0, 5).map((p, index) => (
+                        <div key={p.id}>
+                          <InlineStack align="space-between" blockAlign="center">
+                            <BlockStack gap="050">
+                              <Text variant="bodySm" fontWeight="semibold" truncate style={{ maxWidth: "200px" }}>
+                                {p.title || "Untitled"}
+                              </Text>
+                              <Badge tone={p.status === "published" ? "success" : "info"}>
+                                {p.status}
+                              </Badge>
+                            </BlockStack>
+                            <BlockStack gap="025" align="end">
+                              <Text variant="bodySm" tone="subdued">
+                                {(p.views || 0).toLocaleString()} views
+                              </Text>
+                              {p.conversions > 0 && (
+                                <Text variant="bodyXs" tone="success">
+                                  {p.conversions} conversions
+                                </Text>
+                              )}
+                            </BlockStack>
+                          </InlineStack>
+                        </div>
+                      ))}
+                    </BlockStack>
                   </BlockStack>
                 </Box>
               </Card>
-
-              {/* Top Posts */}
-              {analytics?.topPosts?.length > 0 && (
-                <Card>
-                  <Box padding="400">
-                    <BlockStack gap="300">
-                      <Text variant="headingMd">🏆 Top Posts</Text>
-                      <Divider />
-                      {analytics.topPosts.map((p) => (
-                        <InlineStack
-                          key={p.id}
-                          align="space-between"
-                          blockAlign="center"
-                        >
-                          <BlockStack gap="050">
-                            <Text
-                              variant="bodySm"
-                              fontWeight="semibold"
-                              truncate
-                              style={{ maxWidth: "180px" }}
-                            >
-                              {p.title || "Untitled"}
-                            </Text>
-                            <Badge
-                              tone={
-                                p.status === "published" ? "success" : "info"
-                              }
-                            >
-                              {p.status}
-                            </Badge>
-                          </BlockStack>
-                          <Text variant="bodySm" tone="subdued">
-                            {p.totalViews.toLocaleString()} views
-                          </Text>
-                        </InlineStack>
-                      ))}
-                    </BlockStack>
-                  </Box>
-                </Card>
-              )}
-            </BlockStack>
+            ) : (
+              <Card>
+                <Box padding="400">
+                  <BlockStack gap="300">
+                    <Text variant="headingMd">🏆 Top Posts</Text>
+                    <Divider />
+                    <Text tone="subdued" variant="bodySm">No performance data yet.</Text>
+                  </BlockStack>
+                </Box>
+              </Card>
+            )}
           </Layout.Section>
         </Layout>
       </Page>
