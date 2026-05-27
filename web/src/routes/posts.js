@@ -1310,15 +1310,15 @@ router.get("/:id/conflict-diff", async (req, res) => {
   }
 });
 
-// ─── POST /api/posts/:id/resolve-conflict — Resolve a sync conflict ────────────
+// ─── POST /api/posts/:id/resolve-conflict — Resolve a sync conflict (field-level) ─
 router.post("/:id/resolve-conflict", async (req, res) => {
   try {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
 
-    const { resolution } = req.body; // "local" | "remote"
-    if (!resolution || !["local", "remote"].includes(resolution)) {
-      return res.status(422).json({ error: "resolution must be 'local' or 'remote'" });
+    const { resolutions } = req.body; // { title: "local" | "remote", content: "local" | "remote", ... }
+    if (!resolutions || typeof resolutions !== "object") {
+      return res.status(422).json({ error: "resolutions must be an object with field names as keys" });
     }
 
     const post = await prisma.post.findFirst({
@@ -1334,97 +1334,130 @@ router.post("/:id/resolve-conflict", async (req, res) => {
       return res.status(400).json({ error: "Post is not in conflict state" });
     }
 
-    if (resolution === "local") {
-      // Keep local — push current local content to Shopify
-      const result = await ArticleSyncService.pushPostToShopify(post.id, {
-        publishMode: post.status === "published",
-      });
-
-      await ArticleSyncService.logSyncEvent({
-        shopId: shop.id,
-        postId: post.id,
-        shopifyArticleId: post.shopifyArticle.shopifyArticleId,
-        direction: "app_to_shopify",
-        eventType: "resolve",
-        status: "applied",
-        message: `Conflict resolved: kept local version for "${post.title}" → pushed to Shopify`,
-      });
-
-      return res.json({
-        success: true,
-        resolution: "local",
-        message: `Kept local version of "${post.title}" and pushed to Shopify`,
-        syncedAt: result.syncedAt,
-      });
-    } else {
-      // Use remote — fetch remote version from Shopify and apply as canonical
-      const session = await shopify.config.sessionStorage.findSessionsByShop(post.shop.domain);
-      const validSession = session?.find(s => s.accessToken);
-      if (!validSession) {
-        return res.status(401).json({ error: "No active Shopify session" });
+    // Validate all resolution values
+    for (const [field, choice] of Object.entries(resolutions)) {
+      if (!["local", "remote"].includes(choice)) {
+        return res.status(422).json({
+          error: `Resolution for "${field}" must be 'local' or 'remote'`,
+        });
       }
-
-      const client = new shopify.api.clients.Rest({ session: validSession });
-      const response = await client.get({
-        path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
-      });
-
-      const remote = response.body?.article;
-      if (!remote) {
-        return res.status(404).json({ error: "Article not found on Shopify" });
-      }
-
-      // Parse remote content
-      const parsed = ShopifyArticleParser.parse(remote.body_html || "");
-
-      // Update local post with remote data
-      await prisma.post.update({
-        where: { id: post.id },
-        data: {
-          title: remote.title,
-          slug: remote.handle || post.slug,
-          status: remote.published_at ? "published" : "draft",
-          author: remote.author || null,
-          featuredImage: remote.image?.src || null,
-          contentHtml: parsed.rawEditorHtml || remote.body_html || "",
-          contentJson: parsed.blocks,
-          publishedAt: remote.published_at ? new Date(remote.published_at) : null,
-        },
-      });
-
-      // Mark sync as in_sync
-      const inboundHash = ArticleSyncService.computeContentHash(remote);
-      await prisma.shopifyArticle.update({
-        where: { postId: post.id },
-        data: {
-          syncState: "in_sync",
-          lastSyncDirection: "shopify_to_app",
-          lastInboundHash: inboundHash,
-          syncedAt: new Date(),
-          lastError: null,
-          structureDegraded: parsed.structureDegraded,
-          lastRemoteUpdatedAt: remote.updated_at ? new Date(remote.updated_at) : null,
-        },
-      });
-
-      await ArticleSyncService.logSyncEvent({
-        shopId: shop.id,
-        postId: post.id,
-        shopifyArticleId: post.shopifyArticle.shopifyArticleId,
-        direction: "shopify_to_app",
-        eventType: "resolve",
-        status: "applied",
-        message: `Conflict resolved: kept remote (Shopify) version for "${post.title}"`,
-        remoteHash: inboundHash,
-      });
-
-      return res.json({
-        success: true,
-        resolution: "remote",
-        message: `Applied Shopify version of "${post.title}" to local post`,
-        structureDegraded: parsed.structureDegraded,
-      });
     }
+
+    const conflictPayload = post.shopifyArticle.conflictPayload;
+    if (!conflictPayload?.fields) {
+      return res.status(400).json({ error: "No conflict payload found for this post" });
+    }
+
+    // ── Fetch current Shopify article for remote data ────────────────
+    const session = await shopify.config.sessionStorage.findSessionsByShop(post.shop.domain);
+    const validSession = session?.find(s => s.accessToken);
+    if (!validSession) return res.status(401).json({ error: "No active Shopify session" });
+
+    const client = new shopify.api.clients.Rest({ session: validSession });
+    const response = await client.get({
+      path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
+    });
+    const remote = response.body?.article;
+    if (!remote) return res.status(404).json({ error: "Article not found on Shopify" });
+
+    // Load local tags
+    const localTags = await prisma.postTag.findMany({
+      where: { postId: post.id },
+      include: { tag: true },
+    });
+    const localTagStr = localTags.map(pt => pt.tag?.name).filter(Boolean).sort().join(",");
+
+    // ── Build resolved document ───────────────────────────────────────
+    const localState  = ArticleSyncService.normalizeLocalState(post, localTagStr);
+    const remoteState = ArticleSyncService.normalizeRemoteState(remote);
+
+    // Start with new baseline values (use local as default, override per resolution)
+    const resolvedLocal = { ...localState };
+
+    for (const field of ["title", "author", "status", "tags", "featuredImage"]) {
+      if (resolutions[field] === "remote") {
+        if (field === "tags") {
+          resolvedLocal[field] = remoteState[field];
+        } else {
+          resolvedLocal[field] = remoteState[field];
+        }
+      }
+      // else keep local
+    }
+
+    // ── Handle content resolution ─────────────────────────────────────
+    let needsContentParse = false;
+    if (resolutions.content === "remote") {
+      needsContentParse = true;
+    }
+
+    // ── Apply resolved values to post ─────────────────────────────────
+    const postUpdate = {
+      title: resolvedLocal.title,
+      status: resolvedLocal.status === "published" ? "published" : "draft",
+      author: resolvedLocal.author || null,
+      featuredImage: resolvedLocal.featuredImage || null,
+      slug: remote.handle || post.slug,
+      publishedAt: remote.published_at ? new Date(remote.published_at) : null,
+    };
+
+    if (needsContentParse) {
+      const parsed = ShopifyArticleParser.parse(remote.body_html || "");
+      postUpdate.contentHtml = parsed.rawEditorHtml || remote.body_html || "";
+      postUpdate.contentJson = parsed.blocks;
+    }
+    // Content not explicitly resolved → keep local (already the default)
+
+    await prisma.post.update({
+      where: { id: post.id },
+      data: postUpdate,
+    });
+
+    // Handle tags resolution
+    if (resolutions.tags === "remote") {
+      const remoteTagNames = (remote.tags || "").split(",").map(t => t.trim()).filter(Boolean);
+      // Remove all existing tags
+      await prisma.postTag.deleteMany({ where: { postId: post.id } });
+      // Add remote tags
+      for (const tagName of remoteTagNames) {
+        const slug = tagName.toLowerCase().replace(/\s+/g, "-");
+        const tagRec = await prisma.tag.upsert({
+          where: { shopId_slug: { shopId: shop.id, slug } },
+          create: { shopId: shop.id, name: tagName, slug },
+          update: {},
+        });
+        await prisma.postTag.upsert({
+          where: { postId_tagId: { postId: post.id, tagId: tagRec.id } },
+          create: { postId: post.id, tagId: tagRec.id },
+          update: {},
+        });
+      }
+    }
+
+    // ── Push resolved result to Shopify (always) ─────────────────────
+    const result = await ArticleSyncService.pushPostToShopify(post.id, {
+      publishMode: postUpdate.status === "published",
+    });
+
+    await ArticleSyncService.logSyncEvent({
+      shopId: shop.id,
+      postId: post.id,
+      shopifyArticleId: post.shopifyArticle.shopifyArticleId,
+      direction: "app_to_shopify",
+      eventType: "resolve",
+      status: "applied",
+      message: `Field-level conflict resolved for "${post.title}": ${Object.entries(resolutions).map(([f, c]) => `${f}=${c}`).join(", ")}`,
+    });
+
+    // After pushPostToShopify, the baseline + sync marker have been updated
+    // and syncState is set to "in_sync"
+
+    res.json({
+      success: true,
+      resolutions,
+      message: `Resolved ${Object.keys(resolutions).length} field(s) for "${post.title}"`,
+      syncedAt: result.syncedAt,
+    });
   } catch (err) {
     console.error("POST /api/posts/:id/resolve-conflict error:", err);
     res.status(500).json({ error: err.message });

@@ -1,7 +1,17 @@
 /**
  * ArticleSyncService
  * Centralized service for 2-way synchronization between app posts and Shopify articles.
- * Handles hash-based echo suppression, sync logging, and structured sync operations.
+ *
+ * Uses baseline-based field-level three-way merge:
+ *   - Base = last synced snapshot (per-field values + hashes)
+ *   - Local = current app state
+ *   - Remote = current Shopify/webhook state
+ *   - Auto-merges non-conflicting field changes
+ *   - Raises field-level conflict only when same field changed on both sides differently
+ *   - Push merged result back to Shopify when local changes need to converge
+ *
+ * For content comparison, local uses editorHtml (raw) and remote uses storefrontHtml (compiled).
+ * The baseline stores both representations so they can be compared independently.
  */
 import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
@@ -11,28 +21,38 @@ import { ShopifyArticleParser } from "./ShopifyArticleParser.js";
 
 const prisma = new PrismaClient();
 
-/**
- * Maximum depth for recursive webhook handling (ARTICLES_UPDATE → ARTICLES_CREATE fallback).
- */
 const MAX_WEBHOOK_DEPTH = 3;
-
 let _webhookDepth = 0;
 
-/**
- * Metafield namespace/key for storing editor source data on Shopify articles.
- * Used to detect app-managed articles and preserve structured content on inbound webhooks.
- */
+// Reconciliation rate limiting
+const RECONCILE_DELAY_MS = 250;
+const RECONCILE_SKIP_RECENT_MINUTES = 5;
+
 const METAFIELD_NAMESPACE = "blog_app";
 const METAFIELD_KEY = "source";
 const METAFIELD_TYPE = "json";
 
+// ─── Scalar fields we merge independently ─────────────────────────────────────
+const SCALAR_FIELDS = ["title", "author", "status", "tags", "featuredImage"];
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  HASH HELPERS
+// ══════════════════════════════════════════════════════════════════════════════
+
 /**
- * Compute a deterministic hash from article content fields.
- * Used for echo suppression: if outbound hash matches inbound hash, we know
- * the webhook is just an echo of our own push.
- *
- * The `image` parameter is normalized: if an object with `.src`, extract `src`;
- * if a plain string, use it directly; otherwise null.
+ * Compute a single-field hash for three-way merge comparison.
+ */
+function fieldHash(value) {
+  const normalized = value === null || value === undefined
+    ? "__NULL__"
+    : typeof value === "string"
+      ? value.trim()
+      : JSON.stringify(value);
+  return crypto.createHash("sha256").update(normalized).digest("hex");
+}
+
+/**
+ * Compute a composite content hash from article fields (legacy, for echo suppression).
  */
 function computeContentHash(fields) {
   const rawImage = fields.image;
@@ -54,128 +74,323 @@ function computeContentHash(fields) {
   return crypto.createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
 }
 
-/**
- * Log a sync event to the ArticleSyncLog table.
- */
-async function logSyncEvent({
-  shopId,
-  postId = null,
-  shopifyArticleId = null,
-  direction,
-  eventType,
-  status,
-  message = null,
-  localHash = null,
-  remoteHash = null,
-  payload = null,
-}) {
-  try {
-    await prisma.articleSyncLog.create({
-      data: {
-        shopId,
-        postId,
-        shopifyArticleId,
-        direction,
-        eventType,
-        status,
-        message,
-        localHash,
-        remoteHash,
-        payload: payload ? JSON.parse(JSON.stringify(payload)) : null,
-      },
-    });
-  } catch (err) {
-    console.error("Failed to log sync event:", err);
-  }
-}
+// ══════════════════════════════════════════════════════════════════════════════
+//  STATE NORMALIZATION
+// ══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Build the metafield source data payload for the editor's structured content.
+ * Normalize the current local post into field-level comparison format.
  */
-function buildSourceMetafieldPayload(post, sourceHash) {
+function normalizeLocalState(post, tagNames) {
   return {
-    metafield: {
-      namespace: METAFIELD_NAMESPACE,
-      key: METAFIELD_KEY,
-      type: METAFIELD_TYPE,
-      value: JSON.stringify({
-        version: 1,
-        sourceHash,
-        contentJson: post.contentJson || [],
-        contentHtml: post.contentHtml || "",
-        syncMode: "managed_by_app",
-        lastPushAt: new Date().toISOString(),
-      }),
+    title: post.title || "",
+    author: post.author || "",
+    status: (post.status === "published") ? "published" : "draft",
+    tags: tagNames || "",
+    featuredImage: post.featuredImage || null,
+    content: {
+      editorHtml: post.contentHtml || "",
+      contentJson: post.contentJson || [],
     },
   };
 }
 
 /**
- * Write (create or update) the source metafield on a Shopify article.
- * Stores the editor's structured content so inbound webhooks can detect
- * app-managed articles and preserve structure.
+ * Normalize a Shopify webhook / REST payload into field-level comparison format.
  */
-async function writeSourceMetafield(restClient, blogId, articleId, post, sourceHash) {
-  try {
-    const shopifyLink = await prisma.shopifyArticle.findUnique({ where: { postId: post.id } });
-    const metafieldPayload = buildSourceMetafieldPayload(post, sourceHash);
+function normalizeRemoteState(payload) {
+  const remoteTags = (payload.tags || "")
+    .split(",")
+    .map(t => t.trim())
+    .filter(Boolean)
+    .sort()
+    .join(",");
+  return {
+    title: payload.title || "",
+    author: payload.author || "",
+    status: payload.published_at ? "published" : "draft",
+    tags: remoteTags,
+    featuredImage: payload.image?.src || null,
+    content: {
+      storefrontHtml: payload.body_html || "",
+    },
+  };
+}
 
-    if (shopifyLink?.sourceMetafieldId) {
-      // Update existing metafield
+// ══════════════════════════════════════════════════════════════════════════════
+//  BASELINE SNAPSHOT
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Build a version-2 baseline snapshot from the current local state + compiled HTML.
+ * This snapshot becomes the "base" for future three-way merges.
+ */
+function buildBaselineSnapshot(localState, storefrontHtml, revision) {
+  const f = (v) => fieldHash(v);
+  return {
+    version: 2,
+    revision,
+    syncedAt: new Date().toISOString(),
+    fields: {
+      title:       { value: localState.title,       hash: f(localState.title) },
+      author:      { value: localState.author,      hash: f(localState.author) },
+      status:      { value: localState.status,      hash: f(localState.status) },
+      tags:        { value: localState.tags,        hash: f(localState.tags) },
+      featuredImage: { value: localState.featuredImage, hash: f(localState.featuredImage) },
+      content: {
+        editorHtml:      { value: localState.content.editorHtml, hash: f(localState.content.editorHtml) },
+        contentJson:      { hash: f(JSON.stringify(localState.content.contentJson)) },
+        storefrontHtml:   { value: storefrontHtml, hash: f(storefrontHtml) },
+      },
+    },
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  THREE-WAY MERGE ENGINE
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Perform a field-level three-way merge.
+ *
+ * @param {Object|null}  base   – lastSyncedSnapshot.fields (or null for legacy articles)
+ * @param {Object}       local  – normalized local state (from normalizeLocalState)
+ * @param {Object}       remote – normalized remote state (from normalizeRemoteState)
+ * @returns {{ merged: Object, conflicts: Object, needsPushBack: boolean }}
+ *
+ * merged    – { field: { value, source } }  – the resolved value per field
+ * conflicts – { field: { base, local, remote } } – fields with same-field disagreement
+ * needsPushBack – true when local-won fields need to be pushed to Shopify
+ */
+function threeWayMerge(base, local, remote) {
+  const merged = {};
+  const conflicts = {};
+
+  // ── Scalar fields ───────────────────────────────────────────────
+  for (const field of SCALAR_FIELDS) {
+    const localHash  = fieldHash(local[field]);
+    const remoteHash = fieldHash(remote[field]);
+    const baseHash   = base?.fields?.[field]?.hash;
+
+    const localChanged  = localHash !== baseHash;
+    const remoteChanged = remoteHash !== baseHash;
+
+    if (!localChanged && !remoteChanged) {
+      merged[field] = { value: local[field], source: "base" };
+    } else if (localChanged && !remoteChanged) {
+      merged[field] = { value: local[field], source: "local" };
+    } else if (!localChanged && remoteChanged) {
+      merged[field] = { value: remote[field], source: "remote" };
+    } else {
+      // Both changed
+      if (localHash === remoteHash) {
+        merged[field] = { value: local[field], source: "both" };
+      } else {
+        conflicts[field] = {
+          base:   base?.fields?.[field]?.value ?? null,
+          local:  local[field],
+          remote: remote[field],
+        };
+        merged[field] = { value: local[field], source: "conflict" };
+      }
+    }
+  }
+
+  // ── Content field (dual representation) ─────────────────────────
+  const localContentHash   = fieldHash(local.content.editorHtml);
+  const remoteContentHash  = fieldHash(remote.content.storefrontHtml);
+  const baseEditorHash     = base?.fields?.content?.editorHtml?.hash;
+  const baseStorefrontHash = base?.fields?.content?.storefrontHtml?.hash;
+
+  const localContentChanged  = localContentHash !== baseEditorHash;
+  const remoteContentChanged = remoteContentHash !== baseStorefrontHash;
+
+  if (!localContentChanged && !remoteContentChanged) {
+    merged.content = { value: local.content, source: "base" };
+  } else if (localContentChanged && !remoteContentChanged) {
+    merged.content = { value: local.content, source: "local" };
+  } else if (!localContentChanged && remoteContentChanged) {
+    // Remote content changed but local didn't — accept remote, mark as needing parse
+    merged.content = { value: null, source: "remote", needsParse: true };
+  } else {
+    // Both changed
+    if (localContentHash === fieldHash(remote.content.storefrontHtml)) {
+      // Same change (converged) — keep local
+      merged.content = { value: local.content, source: "both" };
+    } else {
+      conflicts.content = {
+        base: {
+          editorHtml:    base?.fields?.content?.editorHtml?.value ?? null,
+          storefrontHtml: base?.fields?.content?.storefrontHtml?.value ?? null,
+        },
+        local:  local.content,
+        remote: { storefrontHtml: remote.content.storefrontHtml },
+      };
+      merged.content = { value: local.content, source: "conflict" };
+    }
+  }
+
+  // ── Determine if push back is needed ────────────────────────────
+  // Push back if any field won "local" (local changed but remote didn't)
+  const needsPushBack = Object.values(merged).some(m => m.source === "local");
+
+  return { merged, conflicts, needsPushBack };
+}
+
+/**
+ * Apply merge results to produce final post update data.
+ * For remote-only content: parses the storefront HTML into editor blocks.
+ */
+function applyMergedResult(merged, conflicts, post, remotePayload) {
+  const hasConflicts = Object.keys(conflicts).length > 0;
+  const syncState = hasConflicts ? "conflict" : "in_sync";
+
+  // Build post update
+  const postUpdate = {
+    title: merged.title.value,
+    status: merged.status.value,
+    author: merged.author.value || null,
+    featuredImage: merged.featuredImage.value,
+    publishedAt: merged.status.source === "remote"
+      ? (remotePayload?.published_at ? new Date(remotePayload.published_at) : (merged.status.value === "published" ? new Date() : null))
+      : (post.publishedAt || (merged.status.value === "published" ? new Date() : null)),
+  };
+
+  // Derive slug — when title won "remote", use remote handle; otherwise keep local slug / regenerate
+  if (merged.title.source === "remote") {
+    postUpdate.slug = remotePayload?.handle || post.slug;
+  } else {
+    // Keep existing slug (slug regeneration on title change is handled at UI level)
+    postUpdate.slug = post.slug;
+  }
+
+  // Determine if remote tags should be applied
+  const applyRemoteTags = merged.tags.source === "remote";
+  const remoteTagNames = applyRemoteTags
+    ? remotePayload?.tags
+      ? remotePayload.tags.split(",").map(t => t.trim()).filter(Boolean)
+      : []
+    : null;
+
+  // Handle content
+  let newContentHtml = post.contentHtml;
+  let newContentJson = post.contentJson;
+  let structureDegraded = false;
+
+  if (merged.content.source === "remote") {
+    const htmlToParse = merged.content.needsParse
+      ? remotePayload?.body_html || ""
+      : merged.content.value?.storefrontHtml || "";
+    const parsed = ShopifyArticleParser.parse(htmlToParse);
+    newContentHtml = parsed.rawEditorHtml || htmlToParse;
+    newContentJson = parsed.blocks;
+    structureDegraded = parsed.structureDegraded;
+  } else if (merged.content.source === "local" || merged.content.source === "base" || merged.content.source === "both") {
+    newContentHtml = merged.content.value?.editorHtml ?? newContentHtml;
+    newContentJson = merged.content.value?.contentJson ?? newContentJson;
+  }
+
+  // Only overwrite content if not in conflict
+  if (!hasConflicts) {
+    postUpdate.contentHtml = newContentHtml;
+    postUpdate.contentJson = newContentJson;
+  }
+
+  return { postUpdate, syncState, hasConflicts, structureDegraded, remoteTagNames, applyRemoteTags };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  METAFIELD / SYNC MARKER
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Write a lightweight v2 sync marker metafield on a Shopify article.
+ * Contains only hashes + revision — NOT full content (that lives in our DB).
+ *
+ * @param {Object} restClient - Shopify REST client
+ * @param {string} blogId - Shopify blog ID
+ * @param {string} articleId - Shopify article ID
+ * @param {Object} baseline - The baseline snapshot object
+ * @param {number} postId - Local app post ID (for DB lookup)
+ */
+async function writeSyncMarker(restClient, blogId, articleId, baseline, postId) {
+  try {
+    const shopifyLink = await prisma.shopifyArticle.findUnique({
+      where: { postId },
+    });
+    if (!shopifyLink) return;
+
+    const markerPayload = {
+      metafield: {
+        namespace: METAFIELD_NAMESPACE,
+        key: METAFIELD_KEY,
+        type: METAFIELD_TYPE,
+        value: JSON.stringify({
+          version: 2,
+          managedBy: "blog_app",
+          mode: "baseline_sync",
+          revision: baseline.revision,
+          lastSyncedAt: baseline.syncedAt,
+          hashes: {
+            title:          baseline.fields.title.hash,
+            author:         baseline.fields.author.hash,
+            status:         baseline.fields.status.hash,
+            tags:           baseline.fields.tags.hash,
+            featuredImage:  baseline.fields.featuredImage.hash,
+            editorHtml:     baseline.fields.content.editorHtml.hash,
+            contentJson:    baseline.fields.content.contentJson.hash,
+            storefrontHtml: baseline.fields.content.storefrontHtml.hash,
+          },
+          capabilities: { fieldLevelMerge: true, structuredSourceAvailable: true },
+        }),
+      },
+    };
+
+    if (shopifyLink.sourceMetafieldId) {
       const result = await restClient.put({
         path: `blogs/${blogId}/articles/${articleId}/metafields/${shopifyLink.sourceMetafieldId}`,
-        data: metafieldPayload,
+        data: markerPayload,
         type: "application/json",
       });
-
       if (result.body?.metafield?.id) {
         await prisma.shopifyArticle.update({
-          where: { postId: post.id },
+          where: { id: shopifyLink.id },
           data: { sourceMetafieldId: String(result.body.metafield.id) },
         });
       }
     } else {
-      // Create new metafield
       const result = await restClient.post({
         path: `blogs/${blogId}/articles/${articleId}/metafields`,
-        data: metafieldPayload,
+        data: markerPayload,
         type: "application/json",
       });
-
       if (result.body?.metafield?.id) {
         await prisma.shopifyArticle.update({
-          where: { postId: post.id },
+          where: { id: shopifyLink.id },
           data: { sourceMetafieldId: String(result.body.metafield.id) },
         });
       }
     }
   } catch (err) {
-    // Metafield write failure is non-fatal — log and continue
-    console.warn(`[ArticleSyncService] Failed to write source metafield for post ${post.id}:`, err.message);
+    console.warn(`[ArticleSyncService] Failed to write sync marker for article ${articleId}:`, err.message);
   }
 }
 
 /**
- * Read the source metafield from a Shopify article.
- * Returns null if no metafield exists (article was created externally).
+ * Read the sync marker metafield from a Shopify article.
+ * Returns null if no metafield exists (article is external).
  */
-async function readSourceMetafield(restClient, blogId, articleId) {
+async function readSyncMarker(restClient, blogId, articleId) {
   try {
-    // First, list metafields to find ours
     const listResult = await restClient.get({
       path: `blogs/${blogId}/articles/${articleId}/metafields`,
     });
-
     const metafields = listResult.body?.metafields || [];
     const sourceMetafield = metafields.find(
       (m) => m.namespace === METAFIELD_NAMESPACE && m.key === METAFIELD_KEY
     );
+    if (!sourceMetafield) return null;
 
-    if (!sourceMetafield) {
-      return null;
-    }
-
-    // Parse the JSON value
     let parsed;
     try {
       parsed = typeof sourceMetafield.value === "string"
@@ -190,14 +405,40 @@ async function readSourceMetafield(restClient, blogId, articleId) {
       ...parsed,
     };
   } catch (err) {
-    console.warn(`[ArticleSyncService] Failed to read source metafield for article ${articleId}:`, err.message);
+    console.warn(`[ArticleSyncService] Failed to read sync marker for article ${articleId}:`, err.message);
     return null;
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  LOGGING
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function logSyncEvent({
+  shopId, postId = null, shopifyArticleId = null,
+  direction, eventType, status, message = null,
+  localHash = null, remoteHash = null, payload = null,
+}) {
+  try {
+    await prisma.articleSyncLog.create({
+      data: {
+        shopId, postId, shopifyArticleId, direction, eventType, status,
+        message, localHash, remoteHash,
+        payload: payload ? JSON.parse(JSON.stringify(payload)) : null,
+      },
+    });
+  } catch (err) {
+    console.error("Failed to log sync event:", err);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  PUSH (APP → SHOPIFY)
+// ══════════════════════════════════════════════════════════════════════════════
+
 /**
  * Push a post from the app to Shopify.
- * Handles create vs update, writes metafield source, tracks hashes for echo suppression.
+ * After success, writes a baseline snapshot + v2 sync marker metafield.
  */
 async function pushPostToShopify(postId, { publishMode = false } = {}) {
   const post = await prisma.post.findUnique({
@@ -209,39 +450,40 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     },
   });
 
-  if (!post) {
-    throw new Error(`Post ${postId} not found`);
-  }
-
+  if (!post) throw new Error(`Post ${postId} not found`);
   const shopifyLink = post.shopifyArticle;
-  if (!shopifyLink?.shopifyBlogId) {
-    throw new Error("Post is not linked to a Shopify blog");
-  }
+  if (!shopifyLink?.shopifyBlogId) throw new Error("Post is not linked to a Shopify blog");
 
-  // Find a valid session for this shop
   const session = await shopify.config.sessionStorage.findSessionsByShop(post.shop.domain);
   const validSession = session?.find(s => s.accessToken);
-  if (!validSession) {
-    throw new Error(`No active Shopify session for ${post.shop.domain}`);
-  }
+  if (!validSession) throw new Error(`No active Shopify session for ${post.shop.domain}`);
 
   const graphqlClient = new shopify.api.clients.Graphql({ session: validSession });
   const restClient = new shopify.api.clients.Rest({ session: validSession });
 
   // Compile content for storefront
   const storefrontHtml = await EditorContentCompiler.compileForStorefront(
-    post.contentHtml || "",
-    validSession,
-    graphqlClient,
-    post.shop.domain
+    post.contentHtml || "", validSession, graphqlClient, post.shop.domain
   );
 
-  // Build tag string
+  // Tag string
   const tagNames = post.tags
     ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ")
     : "";
-
   const published = publishMode ? true : post.status === "published";
+
+  // Compute outbound hash for echo suppression
+  const outboundHash = computeContentHash({
+    title: post.title,
+    body_html: storefrontHtml,
+    author: post.author || "Admin",
+    published,
+    tags: tagNames,
+    image: post.featuredImage,
+  });
+
+  let articleId = shopifyLink.shopifyArticleId;
+  let remoteUpdatedAt = null;
 
   const articleData = {
     article: {
@@ -254,31 +496,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     },
   };
 
-  // Compute outbound hash for echo suppression
-  const outboundHash = computeContentHash({
-    title: post.title,
-    body_html: storefrontHtml,
-    author: post.author || "Admin",
-    published,
-    tags: tagNames,
-    image: post.featuredImage,
-  });
-
-  // Compute source hash (what the app considers canonical)
-  const sourceHash = computeContentHash({
-    title: post.title,
-    body_html: post.contentHtml || "",
-    author: post.author || "",
-    published,
-    tags: tagNames,
-    image: post.featuredImage,
-  });
-
-  let articleId = shopifyLink.shopifyArticleId;
-  let remoteUpdatedAt = null;
-
   if (articleId) {
-    // Update existing article on Shopify
     const result = await restClient.put({
       path: `blogs/${shopifyLink.shopifyBlogId}/articles/${articleId}`,
       data: articleData,
@@ -286,7 +504,6 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     });
     remoteUpdatedAt = result.body?.article?.updated_at || null;
   } else {
-    // Create new article on Shopify
     const result = await restClient.post({
       path: `blogs/${shopifyLink.shopifyBlogId}/articles`,
       data: articleData,
@@ -294,12 +511,17 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     });
     articleId = String(result.body?.article?.id);
     remoteUpdatedAt = result.body?.article?.updated_at || null;
-    if (!articleId) {
-      throw new Error("Shopify did not return an article ID");
-    }
+    if (!articleId) throw new Error("Shopify did not return an article ID");
   }
 
-  // Update sync tracking metadata first (before metafield write)
+  // Compute next revision
+  const nextRevision = (shopifyLink.syncRevision || 0) + 1;
+
+  // Build normalized local state + baseline snapshot
+  const localState = normalizeLocalState(post, tagNames);
+  const baseline = buildBaselineSnapshot(localState, storefrontHtml, nextRevision);
+
+  // Update sync tracking with baseline
   await prisma.shopifyArticle.upsert({
     where: { postId: post.id },
     create: {
@@ -311,10 +533,11 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
       syncState: "in_sync",
       syncMode: "managed_by_app",
       lastSyncDirection: "app_to_shopify",
-      lastSourceHash: sourceHash,
       lastOutboundHash: outboundHash,
       lastRemoteUpdatedAt: remoteUpdatedAt ? new Date(remoteUpdatedAt) : null,
       lastError: null,
+      syncRevision: nextRevision,
+      lastSyncedSnapshot: baseline,
     },
     update: {
       shopifyArticleId: String(articleId),
@@ -323,18 +546,17 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
       syncState: "in_sync",
       syncMode: "managed_by_app",
       lastSyncDirection: "app_to_shopify",
-      lastSourceHash: sourceHash,
       lastOutboundHash: outboundHash,
       lastRemoteUpdatedAt: remoteUpdatedAt ? new Date(remoteUpdatedAt) : null,
       lastError: null,
+      syncRevision: nextRevision,
+      lastSyncedSnapshot: baseline,
     },
   });
 
-  // Write source metafield to preserve structured content
-  // (runs after upsert so writeSourceMetafield can update sourceMetafieldId without being overwritten)
-  await writeSourceMetafield(restClient, shopifyLink.shopifyBlogId, articleId, post, sourceHash);
+  // Write lightweight v2 sync marker metafield
+  await writeSyncMarker(restClient, shopifyLink.shopifyBlogId, articleId, baseline, post.id);
 
-  // Log the sync event
   await logSyncEvent({
     shopId: post.shopId,
     postId: post.id,
@@ -342,19 +564,16 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     direction: "app_to_shopify",
     eventType: shopifyLink.shopifyArticleId ? "update" : "create",
     status: "applied",
-    message: `Successfully synced post "${post.title}" to Shopify`,
-    localHash: sourceHash,
-    remoteHash: outboundHash,
+    message: `Successfully synced post "${post.title}" to Shopify (rev ${nextRevision})`,
   });
 
-  return { success: true, articleId, syncedAt: new Date() };
+  return { success: true, articleId, syncedAt: new Date(), revision: nextRevision };
 }
 
-/**
- * Handle an inbound webhook event from Shopify.
- * Uses hash-based echo suppression to avoid infinite loops.
- * Parses Shopify HTML into structured blocks when possible.
- */
+// ══════════════════════════════════════════════════════════════════════════════
+//  WEBHOOK HANDLING
+// ══════════════════════════════════════════════════════════════════════════════
+
 async function handleArticleWebhook(topic, shopDomain, body) {
   if (_webhookDepth >= MAX_WEBHOOK_DEPTH) {
     console.error(`[ArticleSyncService] Max webhook recursion depth reached for ${topic} on ${shopDomain}`);
@@ -380,30 +599,23 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
   const shopifyArticleId = String(payload.id);
 
   switch (topic) {
+    // ─── ARTICLES_CREATE ───────────────────────────────────────────
     case "ARTICLES_CREATE": {
-      // Dedup check
       const existingLink = await prisma.shopifyArticle.findFirst({
         where: { shopifyArticleId },
       });
       if (existingLink) {
         await logSyncEvent({
-          shopId: shop.id,
-          shopifyArticleId,
-          direction: "shopify_to_app",
-          eventType: "webhook",
+          shopId: shop.id, shopifyArticleId,
+          direction: "shopify_to_app", eventType: "webhook",
           status: "skipped_duplicate",
           message: "ARTICLES_CREATE skipped: article already linked",
         });
         return;
       }
 
-      // Compute inbound hash
-      const inboundHash = computeContentHash(payload);
-
-      // Parse Shopify HTML into blocks
       const parsed = ShopifyArticleParser.parse(payload.body_html || "");
 
-      // Create local post
       const post = await prisma.post.create({
         data: {
           shopId: shop.id,
@@ -418,7 +630,16 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
         },
       });
 
-      // Link and create sync metadata
+      // Build tag string for baseline
+      const tagsSorted = (payload.tags || "")
+        .split(",").map(t => t.trim()).filter(Boolean).sort().join(",");
+
+      // Build initial baseline from remote state
+      const remoteState = normalizeRemoteState(payload);
+      remoteState.content.editorHtml = parsed.rawEditorHtml || payload.body_html || "";
+      remoteState.content.contentJson = parsed.blocks;
+      const initialBaseline = buildBaselineSnapshot(remoteState, payload.body_html || "", 1);
+
       await prisma.shopifyArticle.create({
         data: {
           postId: post.id,
@@ -429,9 +650,11 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
           syncState: "in_sync",
           syncMode: "external_html",
           lastSyncDirection: "shopify_to_app",
-          lastInboundHash: inboundHash,
+          lastInboundHash: computeContentHash(payload),
           lastRemoteUpdatedAt: payload.updated_at ? new Date(payload.updated_at) : null,
           structureDegraded: parsed.structureDegraded,
+          syncRevision: 1,
+          lastSyncedSnapshot: initialBaseline,
         },
       });
 
@@ -454,228 +677,189 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
       }
 
       await logSyncEvent({
-        shopId: shop.id,
-        postId: post.id,
-        shopifyArticleId,
-        direction: "shopify_to_app",
-        eventType: "webhook",
+        shopId: shop.id, postId: post.id, shopifyArticleId,
+        direction: "shopify_to_app", eventType: "webhook",
         status: "applied",
         message: `ARTICLES_CREATE: Created local post "${post.title}" from Shopify article`,
-        remoteHash: inboundHash,
       });
       break;
     }
 
+    // ─── ARTICLES_UPDATE ───────────────────────────────────────────
     case "ARTICLES_UPDATE": {
       const link = await prisma.shopifyArticle.findFirst({
         where: { shopifyArticleId },
         include: { post: true },
       });
       if (!link) {
-        // Article not linked — auto-create a local post for true 2-way sync
         await logSyncEvent({
-          shopId: shop.id,
-          shopifyArticleId,
-          direction: "shopify_to_app",
-          eventType: "webhook",
+          shopId: shop.id, shopifyArticleId,
+          direction: "shopify_to_app", eventType: "webhook",
           status: "error",
           message: "ARTICLES_UPDATE: No local link found, auto-creating...",
         });
-        // Treat as create
         return handleArticleWebhook("ARTICLES_CREATE", shopDomain, body);
       }
 
-      // Echo suppression: compute inbound hash and compare
+      // ── Echo suppression ────────────────────────────────────────
       const inboundHash = computeContentHash(payload);
-
       if (inboundHash === link.lastOutboundHash) {
-        // This is an echo from our own push — skip
         await logSyncEvent({
-          shopId: shop.id,
-          postId: link.postId,
-          shopifyArticleId,
-          direction: "shopify_to_app",
-          eventType: "webhook",
+          shopId: shop.id, postId: link.postId, shopifyArticleId,
+          direction: "shopify_to_app", eventType: "webhook",
           status: "skipped_echo",
           message: "ARTICLES_UPDATE skipped: inbound hash matches last outbound hash (echo)",
-          localHash: link.lastOutboundHash,
-          remoteHash: inboundHash,
         });
         return;
       }
 
+      // ── Duplicate suppression ───────────────────────────────────
       if (inboundHash === link.lastInboundHash) {
-        // Duplicate webhook delivery — skip
         await logSyncEvent({
-          shopId: shop.id,
-          postId: link.postId,
-          shopifyArticleId,
-          direction: "shopify_to_app",
-          eventType: "webhook",
+          shopId: shop.id, postId: link.postId, shopifyArticleId,
+          direction: "shopify_to_app", eventType: "webhook",
           status: "skipped_duplicate",
           message: "ARTICLES_UPDATE skipped: duplicate inbound hash",
-          localHash: link.lastInboundHash,
-          remoteHash: inboundHash,
         });
         return;
       }
 
-      // ── Read source metafield to detect app-managed articles ────────────
-      // If the metafield exists, the article was created by this app and we
-      // can reconstruct structured content from it.
-      let sourceMetafieldData = null;
-      let sessionForMetafield = null;
-
+      // ── Read sync marker from Shopify ───────────────────────────
+      let syncMarker = null;
       try {
         const sessions = await shopify.config.sessionStorage.findSessionsByShop(shop.domain);
-        sessionForMetafield = sessions?.find(s => s.accessToken);
-        if (sessionForMetafield && link.shopifyArticleId && link.shopifyBlogId) {
-          const restClient = new shopify.api.clients.Rest({ session: sessionForMetafield });
-          sourceMetafieldData = await readSourceMetafield(
-            restClient,
-            link.shopifyBlogId,
-            link.shopifyArticleId
-          );
+        const sessionForMarker = sessions?.find(s => s.accessToken);
+        if (sessionForMarker && link.shopifyArticleId && link.shopifyBlogId) {
+          const restClient = new shopify.api.clients.Rest({ session: sessionForMarker });
+          syncMarker = await readSyncMarker(restClient, link.shopifyBlogId, link.shopifyArticleId);
 
-          // Store the metafield ID locally if found
-          if (sourceMetafieldData?.metafieldId) {
+          if (syncMarker?.metafieldId) {
             await prisma.shopifyArticle.update({
               where: { id: link.id },
-              data: { sourceMetafieldId: String(sourceMetafieldData.metafieldId) },
+              data: { sourceMetafieldId: String(syncMarker.metafieldId) },
             });
           }
         }
       } catch (err) {
-        console.warn(`[ArticleSyncService] Failed to read metafield for ${shopifyArticleId}:`, err.message);
+        console.warn(`[ArticleSyncService] Failed to read sync marker for ${shopifyArticleId}:`, err.message);
       }
 
-      // Determine syncMode based on whether metafield exists
-      const hasSourceMetafield = !!sourceMetafieldData;
-      const syncMode = hasSourceMetafield ? "managed_by_app" : "external_html";
+      const hasSyncMarker = !!syncMarker;
+      const syncMode = hasSyncMarker ? "managed_by_app" : "external_html";
 
-      // If the metafield exists, the article is app-managed — use the metafield's
-      // structured content (contentJson/contentHtml) as the canonical source.
-      // This preserves editor blocks even if Shopify modifies the compiled HTML.
-      const contentPreservedByMetafield = hasSourceMetafield;
-
-      // Attempt to preserve structure by checking if local source is unchanged
-      const currentSourceHash = computeContentHash({
-        title: link.post.title,
-        body_html: link.post.contentHtml || "",
-        author: link.post.author || "",
-        published: link.post.status === "published",
-        tags: link.post.tags?.map(pt => pt.tag?.name).join(",") || "",
-        image: link.post.featuredImage || null,
+      // ── Load tag names from local post ──────────────────────────
+      const localTags = await prisma.postTag.findMany({
+        where: { postId: link.postId },
+        include: { tag: true },
       });
+      const localTagStr = localTags.map(pt => pt.tag?.name).filter(Boolean).sort().join(",");
 
-      // Check for conflict: both sides changed since last sync
-      const localChanged = currentSourceHash !== link.lastSourceHash;
-      const remoteChanged = inboundHash !== link.lastInboundHash;
+      // ── Normalize states ────────────────────────────────────────
+      const localState = normalizeLocalState(link.post, localTagStr);
+      const remoteState = normalizeRemoteState(payload);
 
-      // Parse Shopify HTML into blocks (only used if metafield doesn't preserve structure)
-      const parsed = ShopifyArticleParser.parse(payload.body_html || "");
+      // ── Three-way merge ─────────────────────────────────────────
+      const baseFields = link.lastSyncedSnapshot?.fields || null;
+      const { merged, conflicts, needsPushBack } = threeWayMerge(baseFields, localState, remoteState);
 
-      let newContentHtml = parsed.rawEditorHtml || payload.body_html || "";
-      let newContentJson = parsed.blocks;
-      let newStatus = payload.published_at ? "published" : "draft";
-      let structureDegraded = parsed.structureDegraded;
-      let syncState = "in_sync";
-
-      // If metafield preserved content, use the canonical source data
-      if (contentPreservedByMetafield) {
-        newContentHtml = sourceMetafieldData.contentHtml || newContentHtml;
-        newContentJson = sourceMetafieldData.contentJson || newContentJson;
-        structureDegraded = false;
-      }
-
-      // Determine which version wins — if both sides changed, raise conflict for manual resolution
-      if (localChanged && remoteChanged && inboundHash !== link.lastOutboundHash) {
-        // Both changed — set conflict state for manual resolution
-        syncState = "conflict";
-        // Keep local content in place (don't overwrite with Shopify version)
-        newContentHtml = link.post.contentHtml || "";
-        newContentJson = link.post.contentJson || [];
-        structureDegraded = link.structureDegraded;
-        await logSyncEvent({
-          shopId: shop.id,
-          postId: link.postId,
-          shopifyArticleId,
-          direction: "shopify_to_app",
-          eventType: "webhook",
-          status: "conflict",
-          message: `Conflict detected for "${link.post.title}": both local and Shopify changed since last sync. Needs manual resolution.`,
-          localHash: currentSourceHash,
-          remoteHash: inboundHash,
-        });
-      }
+      // ── Apply merge result ──────────────────────────────────────
+      const { postUpdate, syncState, hasConflicts, structureDegraded, remoteTagNames, applyRemoteTags } =
+        applyMergedResult(merged, conflicts, link.post, payload);
 
       // Update local post
-      const updateData = {
-        title: payload.title,
-        slug: payload.handle || link.post.slug,
-        status: newStatus,
-        author: payload.author || null,
-        featuredImage: payload.image?.src || null,
-        publishedAt: payload.published_at ? new Date(payload.published_at) : null,
-      };
-
-      // Only overwrite content if not in conflict or pending_app_push
-      if (syncState !== "pending_app_push" && syncState !== "conflict") {
-        updateData.contentHtml = newContentHtml;
-        updateData.contentJson = newContentJson;
-      }
-
       await prisma.post.update({
         where: { id: link.postId },
-        data: updateData,
+        data: postUpdate,
       });
 
-      // Update sync tracking
+      // ── Apply tags if remote won ─────────────────────────────────
+      if (applyRemoteTags && remoteTagNames && remoteTagNames.length > 0) {
+        // Remove existing tags and add remote tags
+        await prisma.postTag.deleteMany({ where: { postId: link.postId } });
+        for (const tagName of remoteTagNames) {
+          const slug = tagName.toLowerCase().replace(/\s+/g, "-");
+          const tagRec = await prisma.tag.upsert({
+            where: { shopId_slug: { shopId: shop.id, slug } },
+            create: { shopId: shop.id, name: tagName, slug },
+            update: {},
+          });
+          await prisma.postTag.upsert({
+            where: { postId_tagId: { postId: link.postId, tagId: tagRec.id } },
+            create: { postId: link.postId, tagId: tagRec.id },
+            update: {},
+          });
+        }
+      }
+
+      // ── Build conflict payload if needed ────────────────────────
+      let conflictPayload = null;
+      if (hasConflicts) {
+        conflictPayload = {
+          version: 1,
+          revision: link.syncRevision || 0,
+          createdAt: new Date().toISOString(),
+          fields: conflicts,
+        };
+      }
+
+      // ── Update sync tracking ────────────────────────────────────
       const syncUpdateData = {
-        status: newStatus,
+        status: postUpdate.status,
         syncedAt: new Date(),
         syncState,
         syncMode,
-        lastSyncDirection: (syncState === "pending_app_push" || syncState === "conflict") ? "app_to_shopify" : "shopify_to_app",
+        lastSyncDirection: syncState === "conflict" ? "app_to_shopify" : "shopify_to_app",
         lastInboundHash: inboundHash,
         lastRemoteUpdatedAt: payload.updated_at ? new Date(payload.updated_at) : null,
         structureDegraded,
-        sourceMetafieldId: sourceMetafieldData?.metafieldId
-          ? String(sourceMetafieldData.metafieldId)
-          : undefined,
-        lastError: syncState === "conflict"
-          ? `Conflict: both local and Shopify changed. Remote hash: ${inboundHash.substring(0, 12)}… Local hash: ${currentSourceHash.substring(0, 12)}…`
-          : syncState === "pending_app_push"
-            ? "Local changes preserved over Shopify changes"
-            : null,
+        conflictPayload,
+        lastError: hasConflicts
+          ? `Conflict on: ${Object.keys(conflicts).join(", ")}`
+          : null,
       };
-
-      // Remove undefined fields to avoid overwriting with null
-      Object.keys(syncUpdateData).forEach((k) => syncUpdateData[k] === undefined && delete syncUpdateData[k]);
 
       await prisma.shopifyArticle.update({
         where: { id: link.id },
         data: syncUpdateData,
       });
 
-      if (syncState === "in_sync" && !remoteChanged) {
-        // Nothing changed — skip logging
-      } else if (syncState !== "pending_app_push" && syncState !== "conflict") {
+      // ── Log the event ───────────────────────────────────────────
+      if (hasConflicts) {
         await logSyncEvent({
-          shopId: shop.id,
-          postId: link.postId,
-          shopifyArticleId,
-          direction: "shopify_to_app",
-          eventType: "webhook",
+          shopId: shop.id, postId: link.postId, shopifyArticleId,
+          direction: "shopify_to_app", eventType: "webhook",
+          status: "conflict",
+          message: `Field-level conflict for "${link.post.title}": ${Object.keys(conflicts).join(", ")}`,
+          payload: conflictPayload,
+        });
+      } else {
+        await logSyncEvent({
+          shopId: shop.id, postId: link.postId, shopifyArticleId,
+          direction: "shopify_to_app", eventType: "webhook",
           status: "applied",
-          message: `ARTICLES_UPDATE: Applied Shopify changes to post "${link.post.title}"`,
-          localHash: currentSourceHash,
-          remoteHash: inboundHash,
+          message: needsPushBack
+            ? `ARTICLES_UPDATE: Merged remote changes, pushing local back to Shopify for "${link.post.title}"`
+            : `ARTICLES_UPDATE: Applied remote changes to "${link.post.title}"`,
         });
       }
+
+      // ── Push merged result back if needed ───────────────────────
+      // Push back immediately so the baseline snapshot is updated before responding.
+      // The echo suppression (lastOutboundHash comparison) prevents infinite loops.
+      if (needsPushBack && !hasConflicts) {
+        try {
+          await pushPostToShopify(link.postId, {
+            publishMode: postUpdate.status === "published",
+          });
+        } catch (err) {
+          console.warn(`[ArticleSyncService] Post-merge push back failed for ${link.postId}:`, err.message);
+        }
+      }
+
       break;
     }
 
+    // ─── ARTICLES_DELETE ───────────────────────────────────────────
     case "ARTICLES_DELETE": {
       const link = await prisma.shopifyArticle.findFirst({
         where: { shopifyArticleId },
@@ -683,10 +867,8 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
       });
       if (!link) {
         await logSyncEvent({
-          shopId: shop.id,
-          shopifyArticleId,
-          direction: "shopify_to_app",
-          eventType: "webhook",
+          shopId: shop.id, shopifyArticleId,
+          direction: "shopify_to_app", eventType: "webhook",
           status: "skipped_duplicate",
           message: "ARTICLES_DELETE skipped: no local link found",
         });
@@ -694,16 +876,11 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
       }
 
       const postTitle = link.post?.title || "Unknown";
-
-      // Delete local post (cascades to ShopifyArticle)
       await prisma.post.delete({ where: { id: link.postId } });
 
       await logSyncEvent({
-        shopId: shop.id,
-        postId: link.postId,
-        shopifyArticleId,
-        direction: "shopify_to_app",
-        eventType: "webhook",
+        shopId: shop.id, postId: link.postId, shopifyArticleId,
+        direction: "shopify_to_app", eventType: "webhook",
         status: "applied",
         message: `ARTICLES_DELETE: Deleted local post "${postTitle}"`,
       });
@@ -715,9 +892,20 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  RECONCILE
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Helper: wait for a given number of milliseconds (rate limiting).
+ */
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 /**
  * Reconcile a single post — fetch current state from Shopify and compare with local.
- * This is a lightweight reconciliation used by the periodic job or manual button.
+ * Uses the webhook handler to field-level merge.
  */
 async function reconcilePost(postId) {
   const post = await prisma.post.findUnique({
@@ -735,9 +923,7 @@ async function reconcilePost(postId) {
 
   const session = await shopify.config.sessionStorage.findSessionsByShop(post.shop.domain);
   const validSession = session?.find(s => s.accessToken);
-  if (!validSession) {
-    return { status: "no_session" };
-  }
+  if (!validSession) return { status: "no_session" };
 
   try {
     const client = new shopify.api.clients.Rest({ session: validSession });
@@ -747,7 +933,6 @@ async function reconcilePost(postId) {
 
     const remote = response.body?.article;
     if (!remote) {
-      // Article missing on Shopify
       await prisma.shopifyArticle.update({
         where: { postId: post.id },
         data: { syncState: "remote_missing" },
@@ -759,15 +944,12 @@ async function reconcilePost(postId) {
     const link = post.shopifyArticle;
 
     if (inboundHash === link.lastOutboundHash && inboundHash === link.lastInboundHash) {
-      // Already in sync
       return { status: "in_sync" };
     }
 
     if (inboundHash !== link.lastInboundHash && inboundHash !== link.lastOutboundHash) {
-      // Remote has changes we haven't seen — pull them in
       await handleArticleWebhook("ARTICLES_UPDATE", post.shop.domain, JSON.stringify(remote));
 
-      // Check if the webhook set the post to conflict state
       const updatedLink = await prisma.shopifyArticle.findUnique({
         where: { postId: post.id },
         select: { syncState: true },
@@ -776,7 +958,6 @@ async function reconcilePost(postId) {
       if (updatedLink?.syncState === "conflict") {
         return { status: "conflict" };
       }
-
       return { status: "reconciled" };
     }
 
@@ -787,10 +968,121 @@ async function reconcilePost(postId) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  BACKGROUND RECONCILIATION SCHEDULER
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Reconcile all linked posts for a given shop.
+ * Fetches each Shopify article and compares with local state.
+ */
+async function reconcileAllLinkedPosts(shopDomain) {
+  try {
+    const shop = await prisma.shop.findUnique({ where: { domain: shopDomain } });
+    if (!shop) return { status: "shop_not_found" };
+
+    const linkedPosts = await prisma.post.findMany({
+      where: {
+        shopId: shop.id,
+        shopifyArticle: { isNot: null },
+      },
+      include: { shopifyArticle: true },
+      take: 100,
+    });
+
+    const results = [];
+    const recentCutoff = new Date(Date.now() - RECONCILE_SKIP_RECENT_MINUTES * 60 * 1000);
+    for (const post of linkedPosts) {
+      if (post.updatedAt && post.updatedAt > recentCutoff) {
+        results.push({ postId: post.id, title: post.title, status: "skipped_recently_edited" });
+        continue;
+      }
+      try {
+        const result = await reconcilePost(post.id);
+        results.push({ postId: post.id, title: post.title, status: result.status });
+      } catch (err) {
+        results.push({ postId: post.id, title: post.title, status: "error", error: err.message });
+      }
+      await delay(RECONCILE_DELAY_MS);
+    }
+    return results;
+  } catch (err) {
+    console.error(`[Reconciliation] Failed for shop ${shopDomain}:`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Reconcile all shops that have linked posts.
+ * Called periodically by the scheduler.
+ */
+async function reconcileAllShops() {
+  try {
+    const shops = await prisma.shop.findMany({
+      where: {
+        uninstalledAt: null,
+        posts: {
+          some: {
+            shopifyArticle: { isNot: null },
+          },
+        },
+      },
+      select: { domain: true },
+    });
+
+    console.log(`[Reconciliation] Starting reconciliation for ${shops.length} shops`);
+    for (const shop of shops) {
+      try {
+        await reconcileAllLinkedPosts(shop.domain);
+      } catch (err) {
+        console.error(`[Reconciliation] Error for shop ${shop.domain}:`, err.message);
+      }
+      await delay(RECONCILE_DELAY_MS);
+    }
+    console.log(`[Reconciliation] Completed for ${shops.length} shops`);
+  } catch (err) {
+    console.error(`[Reconciliation] Error:`, err.message);
+  }
+}
+
+/**
+ * Start the background reconciliation scheduler.
+ * Runs reconciliation every N minutes.
+ * @param {number} intervalMinutes - How often to run (default 5)
+ */
+function startReconciliationScheduler(intervalMinutes = 5) {
+  const intervalMs = intervalMinutes * 60 * 1000;
+  console.log(`[Reconciliation] Scheduler started, running every ${intervalMinutes} minutes`);
+
+  // Run once immediately on startup
+  reconcileAllShops().catch(err => {
+    console.error(`[Reconciliation] Initial run failed:`, err.message);
+  });
+
+  // Then run on the interval
+  setInterval(() => {
+    reconcileAllShops().catch(err => {
+      console.error(`[Reconciliation] Scheduled run failed:`, err.message);
+    });
+  }, intervalMs);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  EXPORTS
+// ══════════════════════════════════════════════════════════════════════════════
+
 export const ArticleSyncService = {
   pushPostToShopify,
   handleArticleWebhook,
   reconcilePost,
+  reconcileAllShops,
+  reconcileAllLinkedPosts,
+  startReconciliationScheduler,
   computeContentHash,
   logSyncEvent,
+  threeWayMerge,
+  normalizeLocalState,
+  normalizeRemoteState,
+  buildBaselineSnapshot,
+  fieldHash,
 };

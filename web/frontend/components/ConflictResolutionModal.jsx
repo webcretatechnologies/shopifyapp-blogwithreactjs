@@ -1,6 +1,6 @@
 /**
- * ConflictResolutionModal — Side-by-side diff view for sync conflicts.
- * Shows local vs remote (Shopify) content and lets the user choose which to keep.
+ * ConflictResolutionModal — Field-level diff view and resolution for sync conflicts.
+ * Shows which specific fields have conflicts and lets the user resolve each field independently.
  */
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -14,9 +14,8 @@ import {
   Box,
   Banner,
   Spinner,
-  Divider,
-  Tabs,
   Scrollable,
+  RadioButton,
 } from "@shopify/polaris";
 
 /**
@@ -32,154 +31,184 @@ function escapeHtml(str) {
 }
 
 /**
- * Simple word-diff: split by space, compare arrays, mark changed segments.
- * Returns HTML-safe string with <ins>/<del> markers.
+ * Format a label for the field name (capitalize, add spaces).
  */
-function wordDiffHtml(local, remote) {
-  const localWords = (local || "").split(/\s+/);
-  const remoteWords = (remote || "").split(/\s+/);
-  const maxLen = Math.max(localWords.length, remoteWords.length);
-  const result = [];
-
-  for (let i = 0; i < maxLen; i++) {
-    const lw = localWords[i] || "";
-    const rw = remoteWords[i] || "";
-    if (lw !== rw) {
-      if (lw) result.push(`<del class="diff-removed">${escapeHtml(lw)}</del>`);
-      if (rw) result.push(`<ins class="diff-added">${escapeHtml(rw)}</ins>`);
-    } else {
-      result.push(escapeHtml(lw));
-    }
-  }
-
-  return result.join(" ");
+function formatFieldName(field) {
+  const map = {
+    title: "Title",
+    author: "Author",
+    status: "Status",
+    tags: "Tags",
+    featuredImage: "Featured Image",
+    content: "Content",
+  };
+  return map[field] || field.charAt(0).toUpperCase() + field.slice(1);
 }
 
 /**
- * Field-level diff row: label, local value, remote value, and change indicator.
+ * Format a value for display in the diff view.
  */
-function DiffRow({ label, localVal, remoteVal, changed, type = "text" }) {
-  const displayLocal = type === "html" ? null : String(localVal ?? "—");
-  const displayRemote = type === "html" ? null : String(remoteVal ?? "—");
+function formatValue(field, value) {
+  if (value === null || value === undefined) return "—";
+  if (field === "status") return value === "published" ? "Published" : "Draft";
+  if (field === "featuredImage") return value || "None";
+  if (field === "tags" && Array.isArray(value)) return value.join(", ") || "None";
+  if (field === "tags" && typeof value === "string") return value || "None";
+  if (field === "content" && typeof value === "object") {
+    if (value.storefrontHtml) return `${value.storefrontHtml.substring(0, 200)}...`;
+    if (value.editorHtml) return `${value.editorHtml.substring(0, 200)}...`;
+    return "[Structured content]";
+  }
+  return String(value);
+}
+
+/**
+ * Single-field resolution row — shows local vs remote with radio buttons to choose.
+ */
+function FieldResolutionRow({ field, conflict, resolution, onChange }) {
+  const localLabel = conflict.local === null || conflict.local === undefined ? "—" : String(conflict.local).substring(0, 500);
+  const remoteLabel = conflict.remote === null || conflict.remote === undefined ? "—" : String(
+    field === "content"
+      ? (conflict.remote?.storefrontHtml || "[Structured content from Shopify]")
+      : conflict.remote
+  ).substring(0, 500);
 
   return (
     <Box
       padding="300"
       borderWidth="1"
-      borderColor={changed ? "border-warning" : "border"}
+      borderColor="border-warning"
       borderRadius="100"
-      background={changed ? "bg-warning-subdued" : "bg-surface"}
+      background="bg-warning-subdued"
     >
       <BlockStack gap="200">
         <InlineStack gap="200" blockAlign="center">
           <Text variant="headingSm" fontWeight="semibold">
-            {label}
+            {formatFieldName(field)}
           </Text>
-          {changed && (
-            <Badge tone="critical" size="small">
-              Changed
-            </Badge>
-          )}
+          <Badge tone="critical" size="small">Conflict</Badge>
         </InlineStack>
-        <InlineStack gap="400" wrap={false}>
-          <Box
-            padding="200"
-            borderRadius="075"
-            background="bg-surface"
-            minWidth="200"
-            overflowX="auto"
-          >
-            {type === "html" ? (
-              <BlockStack gap="100">
-                <Text variant="bodyXs" tone="subdued" as="span">
-                  Local ({localVal?.length || 0} chars)
-                </Text>
-                <Box
-                  as="pre"
-                  padding="200"
-                  background="bg-surface-secondary"
-                  borderRadius="075"
-                  overflowX="auto"
-                  style={{ fontSize: "11px", lineHeight: "1.4", maxHeight: "200px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                >
-                  {escapeHtml((localVal || "").substring(0, 1000))}
-                </Box>
-              </BlockStack>
-            ) : (
-              <BlockStack gap="100">
-                <Text variant="bodyXs" tone="subdued" as="span">
-                  Local
-                </Text>
-                <Text variant="bodyMd">{displayLocal}</Text>
-              </BlockStack>
-            )}
+
+        <InlineStack gap="400" wrap={false} align="space-between">
+          {/* Local option */}
+          <Box padding="200" borderRadius="075" background="bg-surface" minWidth="200">
+            <BlockStack gap="100">
+              <InlineStack gap="100" blockAlign="center">
+                <RadioButton
+                  label=""
+                  name={`field-${field}`}
+                  checked={resolution === "local"}
+                  onChange={() => onChange(field, "local")}
+                  id={`${field}-local`}
+                />
+                <Text variant="bodyXs" tone="subdued" as="span">Local</Text>
+              </InlineStack>
+              <Box
+                as="pre"
+                padding="150"
+                background="bg-surface-secondary"
+                borderRadius="075"
+                style={{ fontSize: "12px", lineHeight: "1.4", maxHeight: "120px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+              >
+                {escapeHtml(localLabel)}
+              </Box>
+            </BlockStack>
           </Box>
-          {changed && (
-            <Box
-              padding="200"
-              borderRadius="075"
-              background="bg-surface"
-              minWidth="200"
-              overflowX="auto"
-            >
-              {type === "html" ? (
-                <BlockStack gap="100">
-                  <Text variant="bodyXs" tone="subdued" as="span">
-                    Shopify ({remoteVal?.length || 0} chars)
-                  </Text>
-                  <Box
-                    as="pre"
-                    padding="200"
-                    background="bg-surface-secondary"
-                    borderRadius="075"
-                    overflowX="auto"
-                    style={{ fontSize: "11px", lineHeight: "1.4", maxHeight: "200px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                  >
-                    {escapeHtml((remoteVal || "").substring(0, 1000))}
-                  </Box>
-                </BlockStack>
-              ) : (
-                <BlockStack gap="100">
-                  <Text variant="bodyXs" tone="subdued" as="span">
-                    Shopify
-                  </Text>
-                  <Text variant="bodyMd">{displayRemote}</Text>
-                </BlockStack>
-              )}
-            </Box>
-          )}
+
+          {/* Remote option */}
+          <Box padding="200" borderRadius="075" background="bg-surface" minWidth="200">
+            <BlockStack gap="100">
+              <InlineStack gap="100" blockAlign="center">
+                <RadioButton
+                  label=""
+                  name={`field-${field}`}
+                  checked={resolution === "remote"}
+                  onChange={() => onChange(field, "remote")}
+                  id={`${field}-remote`}
+                />
+                <Text variant="bodyXs" tone="subdued" as="span">Shopify</Text>
+              </InlineStack>
+              <Box
+                as="pre"
+                padding="150"
+                background="bg-surface-secondary"
+                borderRadius="075"
+                style={{ fontSize: "12px", lineHeight: "1.4", maxHeight: "120px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+              >
+                {escapeHtml(remoteLabel)}
+              </Box>
+            </BlockStack>
+          </Box>
         </InlineStack>
-        {type === "text" && changed && (
-          <Text variant="bodyXs" tone="subdued" as="p">
-            <span dangerouslySetInnerHTML={{
-              __html: `Diff: ${wordDiffHtml(String(localVal ?? ""), String(remoteVal ?? ""))}`,
-            }} />
-          </Text>
-        )}
       </BlockStack>
     </Box>
   );
 }
 
 export default function ConflictResolutionModal({ open, postId, postTitle, onClose, onResolved }) {
+  const [conflictPayload, setConflictPayload] = useState(null);
   const [diff, setDiff] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [resolving, setResolving] = useState(null); // "local" | "remote" | null
-  const [selectedTab, setSelectedTab] = useState(0);
+  const [resolving, setResolving] = useState(false);
+  const [resolutions, setResolutions] = useState({});
 
-  const fetchDiff = useCallback(async () => {
+  const fetchConflictData = useCallback(async () => {
     if (!postId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/posts/${postId}/conflict-diff`);
-      if (!res.ok) {
-        const data = await res.json();
+      // Fetch the full diff
+      const diffRes = await fetch(`/api/posts/${postId}/conflict-diff`);
+      if (!diffRes.ok) {
+        const data = await diffRes.json();
         throw new Error(data.error || "Failed to fetch diff");
       }
-      const data = await res.json();
-      setDiff(data.diff);
+      const diffData = await diffRes.json();
+      setDiff(diffData.diff);
+
+      // Try to fetch the conflict payload (stored in DB via sync-status)
+      const statusRes = await fetch(`/api/posts/${postId}/sync-status`);
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        // We need the post to get conflictPayload — load post
+        const postRes = await fetch(`/api/posts/${postId}`);
+        if (postRes.ok) {
+          const postData = await postRes.json();
+          const cp = postData.post?.shopifyArticle?.conflictPayload;
+          if (cp?.fields) {
+            setConflictPayload(cp);
+
+            // Initialize resolutions from conflict fields — default all to "local"
+            const initialResolutions = {};
+            for (const field of Object.keys(cp.fields)) {
+              initialResolutions[field] = "local";
+            }
+            setResolutions(initialResolutions);
+            return;
+          }
+        }
+      }
+
+      // Fallback: build conflict fields from diff
+      const changedFields = {};
+      for (const [field, data] of Object.entries(diffData.diff)) {
+        if (data.changed && field !== "updatedAt") {
+          changedFields[field] = {
+            base: null,
+            local: data.local,
+            remote: data.remote,
+          };
+        }
+      }
+      if (Object.keys(changedFields).length > 0) {
+        setConflictPayload({ fields: changedFields });
+        const initial = {};
+        for (const field of Object.keys(changedFields)) {
+          initial[field] = "local";
+        }
+        setResolutions(initial);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -189,53 +218,76 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
 
   useEffect(() => {
     if (open && postId) {
-      fetchDiff();
+      fetchConflictData();
     } else {
+      setConflictPayload(null);
       setDiff(null);
       setError(null);
-      setResolving(null);
+      setResolving(false);
+      setResolutions({});
     }
-  }, [open, postId, fetchDiff]);
+  }, [open, postId, fetchConflictData]);
 
-  const handleResolve = async (resolution) => {
-    setResolving(resolution);
+  const handleFieldResolution = useCallback((field, choice) => {
+    setResolutions((prev) => ({ ...prev, [field]: choice }));
+  }, []);
+
+  const handleResolveAll = useCallback(async (choice) => {
+    // Set all fields to the same choice
+    if (!conflictPayload?.fields) return;
+    const allSame = {};
+    for (const field of Object.keys(conflictPayload.fields)) {
+      allSame[field] = choice;
+    }
+    setResolutions(allSame);
+
+    // Submit resolution
+    setResolving(true);
     try {
       const res = await fetch(`/api/posts/${postId}/resolve-conflict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resolution }),
+        body: JSON.stringify({ resolutions: allSame }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Resolution failed");
       onResolved?.({
-        resolution,
+        resolution: choice,
         message: data.message,
-        structureDegraded: data.structureDegraded,
+        resolutions: allSame,
       });
     } catch (err) {
       setError(`Failed to resolve: ${err.message}`);
     } finally {
-      setResolving(null);
+      setResolving(false);
     }
-  };
+  }, [postId, conflictPayload, onResolved]);
 
-  const tabs = [
-    { id: "overview", content: "Overview" },
-    { id: "content", content: "Content Diff" },
-  ];
+  const handleResolveSelected = useCallback(async () => {
+    setResolving(true);
+    try {
+      const res = await fetch(`/api/posts/${postId}/resolve-conflict`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolutions }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Resolution failed");
+      onResolved?.({
+        resolution: "selected",
+        message: data.message,
+        resolutions,
+      });
+    } catch (err) {
+      setError(`Failed to resolve: ${err.message}`);
+    } finally {
+      setResolving(false);
+    }
+  }, [postId, resolutions, onResolved]);
 
-  const changedFields = diff
-    ? [
-        { key: "title", label: "Title", changed: diff.title.changed },
-        { key: "status", label: "Status", changed: diff.status.changed },
-        { key: "author", label: "Author", changed: diff.author.changed },
-        { key: "tags", label: "Tags", changed: diff.tags.changed },
-        { key: "featuredImage", label: "Featured Image", changed: diff.featuredImage.changed },
-        { key: "contentHtml", label: "Content", changed: diff.contentHtml.changed },
-      ].filter((f) => f.changed)
-    : [];
-
-  const numChanges = changedFields.length;
+  const conflictFields = conflictPayload?.fields ? Object.keys(conflictPayload.fields) : [];
+  const allLocal = conflictFields.every((f) => resolutions[f] === "local");
+  const allRemote = conflictFields.every((f) => resolutions[f] === "remote");
 
   return (
     <Modal
@@ -244,8 +296,8 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
       title={
         <InlineStack gap="200" blockAlign="center">
           <Text variant="headingLg">⚠️ Conflict: {postTitle || "Loading..."}</Text>
-          {diff && (
-            <Badge tone="critical">{numChanges} field{numChanges !== 1 ? "s" : ""} changed</Badge>
+          {conflictFields.length > 0 && (
+            <Badge tone="critical">{conflictFields.length} field{conflictFields.length !== 1 ? "s" : ""}</Badge>
           )}
         </InlineStack>
       }
@@ -255,19 +307,11 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
         <ButtonGroup>
           <Button
             tone="critical"
-            loading={resolving === "local"}
-            disabled={!!resolving}
-            onClick={() => handleResolve("local")}
+            loading={resolving}
+            disabled={resolving || conflictFields.length === 0}
+            onClick={handleResolveSelected}
           >
-            Keep Local
-          </Button>
-          <Button
-            variant="primary"
-            loading={resolving === "remote"}
-            disabled={!!resolving}
-            onClick={() => handleResolve("remote")}
-          >
-            Use Shopify Version
+            Apply Selected ({conflictFields.filter((f) => resolutions[f] === "local").length} local, {conflictFields.filter((f) => resolutions[f] === "remote").length} remote)
           </Button>
         </ButtonGroup>
       }
@@ -275,7 +319,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
         {
           content: "Cancel",
           onAction: onClose,
-          disabled: !!resolving,
+          disabled: resolving,
         },
       ]}
     >
@@ -285,140 +329,80 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
             <Spinner />
             <Box padding="200">
               <Text variant="bodyMd" tone="subdued" as="p">
-                Fetching diff from Shopify...
+                Loading conflict details...
               </Text>
             </Box>
           </Box>
         ) : error ? (
           <Banner tone="critical">
             <p>{error}</p>
-            <Button onClick={fetchDiff}>Retry</Button>
+            <Button onClick={fetchConflictData}>Retry</Button>
           </Banner>
-        ) : !diff ? (
+        ) : conflictFields.length === 0 ? (
           <Text variant="bodyMd" tone="subdued" as="p">
-            No diff data available.
+            No conflicts detected. This post may have been resolved already.
           </Text>
         ) : (
           <BlockStack gap="400">
             <Banner tone="warning">
               <BlockStack gap="200">
                 <Text variant="bodyMd" fontWeight="semibold" as="p">
-                  Both the app and Shopify have changes since the last sync
+                  Per-field conflict resolution
                 </Text>
                 <Text variant="bodySm" as="p">
-                  Review the differences below and choose which version to keep.
-                  <br />
-                  <strong>Keep Local</strong> — preserves your app edits and pushes them to Shopify.
-                  <br />
-                  <strong>Use Shopify Version</strong> — overwrites local content with what's on Shopify.
+                  For each field below, choose whether to keep the <strong>Local</strong> (app) version
+                  or the <strong>Shopify</strong> (remote) version. Fields not in conflict will be auto-merged.
+                  After resolving, the final result will be pushed to Shopify.
                 </Text>
               </BlockStack>
             </Banner>
 
-            <Tabs
-              tabs={tabs}
-              selected={selectedTab}
-              onSelect={setSelectedTab}
-            />
-
-            {selectedTab === 0 ? (
-              /* Overview tab — metadata fields */
-              <Scrollable style={{ maxHeight: "400px" }}>
-                <BlockStack gap="300">
-                  <DiffRow
-                    label="Title"
-                    localVal={diff.title.local}
-                    remoteVal={diff.title.remote}
-                    changed={diff.title.changed}
-                  />
-                  <DiffRow
-                    label="Status"
-                    localVal={diff.status.local}
-                    remoteVal={diff.status.remote}
-                    changed={diff.status.changed}
-                  />
-                  <DiffRow
-                    label="Author"
-                    localVal={diff.author.local}
-                    remoteVal={diff.author.remote}
-                    changed={diff.author.changed}
-                  />
-                  <DiffRow
-                    label="Tags"
-                    localVal={(diff.tags.local || []).join(", ")}
-                    remoteVal={(diff.tags.remote || []).join(", ")}
-                    changed={diff.tags.changed}
-                  />
-                  <DiffRow
-                    label="Featured Image"
-                    localVal={diff.featuredImage.local || "None"}
-                    remoteVal={diff.featuredImage.remote || "None"}
-                    changed={diff.featuredImage.changed}
-                  />
-                </BlockStack>
-              </Scrollable>
-            ) : (
-              /* Content tab — HTML diff */
-              <BlockStack gap="300">
-                <Box
-                  padding="300"
-                  background="bg-surface-secondary"
-                  borderRadius="100"
+            {/* Quick actions */}
+            <Box padding="200" background="bg-surface-secondary" borderRadius="100">
+              <InlineStack gap="200" blockAlign="center" wrap={false}>
+                <Text variant="bodySm" tone="subdued" as="span">Quick apply to all:</Text>
+                <Button
+                  size="slim"
+                  variant={allLocal ? "primary" : "tertiary"}
+                  onClick={() => {
+                    const all = {};
+                    conflictFields.forEach((f) => { all[f] = "local"; });
+                    setResolutions(all);
+                  }}
                 >
-                  <InlineStack gap="200" blockAlign="center">
-                    <Badge>Local</Badge>
-                    <Text variant="bodyXs" tone="subdued" as="span">
-                      {(diff.contentHtml.local || "").length} characters
-                    </Text>
-                    <Badge tone="critical">Shopify</Badge>
-                    <Text variant="bodyXs" tone="subdued" as="span">
-                      {(diff.contentHtml.remote || "").length} characters
-                    </Text>
-                  </InlineStack>
-                </Box>
-                <Scrollable style={{ maxHeight: "500px" }}>
-                  <Box
-                    padding="400"
-                    background="bg-surface"
-                    borderRadius="100"
-                    borderWidth="1"
-                    borderColor="border"
-                  >
-                    <Box
-                      as="pre"
-                      style={{
-                        fontSize: "12px",
-                        lineHeight: "1.5",
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word",
-                        fontFamily: "monospace",
-                      }}
-                      dangerouslySetInnerHTML={{
-                        __html: wordDiffHtml(
-                          diff.contentHtml.local || "",
-                          diff.contentHtml.remote || ""
-                        ),
-                      }}
+                  All Local
+                </Button>
+                <Button
+                  size="slim"
+                  variant={allRemote ? "primary" : "tertiary"}
+                  onClick={() => {
+                    const all = {};
+                    conflictFields.forEach((f) => { all[f] = "remote"; });
+                    setResolutions(all);
+                  }}
+                >
+                  All Shopify
+                </Button>
+              </InlineStack>
+            </Box>
+
+            {/* Per-field resolution rows */}
+            <Scrollable style={{ maxHeight: "500px" }}>
+              <BlockStack gap="300">
+                {conflictFields.map((field) => {
+                  const fieldConflict = conflictPayload.fields[field];
+                  return (
+                    <FieldResolutionRow
+                      key={field}
+                      field={field}
+                      conflict={fieldConflict}
+                      resolution={resolutions[field] || "local"}
+                      onChange={handleFieldResolution}
                     />
-                  </Box>
-                </Scrollable>
-                <style>{`
-                  .diff-removed {
-                    background: rgba(239, 68, 68, 0.15);
-                    color: #b91c1c;
-                    text-decoration: line-through;
-                    border-radius: 3px;
-                    padding: 1px 2px;
-                  }
-                  .diff-added {
-                    background: rgba(34, 197, 94, 0.15);
-                    color: #15803d;
-                    border-radius: 3px;
-                    padding: 1px 2px;
-                  }
-                `}</style>
+                  );
+                })}
               </BlockStack>
-            )}
+            </Scrollable>
           </BlockStack>
         )}
       </Modal.Section>

@@ -28,6 +28,8 @@ import serveStatic from "serve-static";
 
 import shopify, { prisma } from "./shopify.js";
 import PrivacyWebhookHandlers from "./privacy.js";
+import { ArticleWebhookHandlers } from "./src/webhooks/articles.js";
+import { ArticleSyncService } from "./src/services/ArticleSyncService.js";
 import postRoutes from "./src/routes/posts.js";
 import settingsRoutes from "./src/routes/settings.js";
 import billingRoutes from "./src/routes/billing.js";
@@ -124,6 +126,14 @@ app.get(
             uninstalledAt: null,
           },
         });
+
+        // Register article webhooks for this shop
+        try {
+          const restClient = new shopify.api.clients.Rest({ session });
+          await registerShopifyArticleWebhooks(session.shop, restClient);
+        } catch (whErr) {
+          console.error("Article webhook registration error:", whErr);
+        }
       }
     } catch (err) {
       console.error("Shop registration error:", err);
@@ -133,15 +143,54 @@ app.get(
   shopify.redirectToShopifyOrAppRoot()
 );
 
+/**
+ * Register ARTICLES_* webhooks with Shopify for a given shop.
+ * Uses the REST API to create webhook subscriptions.
+ */
+async function registerShopifyArticleWebhooks(shopDomain, restClient) {
+  const webhookHost = process.env.HOST; if (!webhookHost) { console.warn('[WebhookRegister] HOST env var not set — webhooks will not work'); return; }
+  const callbackUrl = webhookHost + '/api/webhooks';
+
+  const webhookTopics = [
+    "ARTICLES_CREATE",
+    "ARTICLES_UPDATE",
+    "ARTICLES_DELETE",
+  ];
+
+  for (const topic of webhookTopics) {
+    try {
+      await restClient.post({
+        path: "webhooks",
+        type: "application/json",
+        data: {
+          webhook: {
+            topic,
+            address: callbackUrl,
+            format: "json",
+          },
+        },
+      });
+      console.log(`[WebhookRegister] Registered ${topic} for ${shopDomain}`);
+    } catch (err) {
+      // Webhook may already exist — that's fine
+      if (err.message?.includes("already been taken") || err.message?.includes("already exists")) {
+        console.log(`[WebhookRegister] ${topic} already registered for ${shopDomain}`);
+      } else {
+        console.warn(`[WebhookRegister] Failed to register ${topic} for ${shopDomain}:`, err.message);
+      }
+    }
+  }
+}
+
 app.post(
   shopify.config.webhooks.path,
-  shopify.processWebhooks({
-    webhookHandlers: {
-      ...PrivacyWebhookHandlers,
-      APP_SUBSCRIPTIONS_UPDATE: {
-        deliveryMethod: "http",
-        callbackUrl: "/api/webhooks",
-        callback: async (topic, shop, body, webhookId) => {
+  shopify.processWebhooks({ webhookHandlers: {
+          ...PrivacyWebhookHandlers,
+          ...ArticleWebhookHandlers,
+          APP_SUBSCRIPTIONS_UPDATE: {
+            deliveryMethod: "http",
+            callbackUrl: "/api/webhooks",
+            callback: async (topic, shop, body, webhookId) => {
           try {
             const payload = JSON.parse(body);
             const planName = payload?.app_subscription?.name;
@@ -321,7 +370,34 @@ app.use((err, req, res, next) => {
   });
 });
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, async () => {
   console.log(`🚀 Shopify Blog App backend running on port ${PORT}`);
   console.log(`💬 WebSocket chat server active on path /chat-socket`);
+
+  // Register article webhooks for existing shops that already have the app installed.
+  // New shops get webhooks registered during OAuth callback.
+  try {
+    const existingShops = await prisma.shop.findMany({
+      where: { uninstalledAt: null },
+      select: { domain: true },
+    });
+    for (const shop of existingShops) {
+      try {
+        const sessions = await shopify.config.sessionStorage.findSessionsByShop(shop.domain);
+        const validSession = sessions?.find(s => s.accessToken);
+        if (validSession) {
+          const restClient = new shopify.api.clients.Rest({ session: validSession });
+          await registerShopifyArticleWebhooks(shop.domain, restClient);
+        }
+      } catch (shopErr) {
+        console.warn(`[Startup] Failed to register webhooks for ${shop.domain}:`, shopErr.message);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to register webhooks for existing shops:", err.message);
+  }
+
+  // Start background reconciliation to periodically detect Shopify changes missed by webhooks
+  // Runs every 5 minutes by default
+  ArticleSyncService.startReconciliationScheduler(5);
 });

@@ -248,6 +248,11 @@ model ShopifyArticle {
   structureDegraded  Boolean   @default(false)
   sourceMetafieldId  String?   // ID of the Shopify metafield storing editor source data
 
+  // Baseline-based 2-way sync (field-level three-way merge)
+  syncRevision        Int       @default(0)
+  lastSyncedSnapshot  Json?     // Baseline snapshot with per-field values + hashes for 3-way merge
+  conflictPayload     Json?     // Per-field conflict data when only some fields conflict
+
   post               Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])

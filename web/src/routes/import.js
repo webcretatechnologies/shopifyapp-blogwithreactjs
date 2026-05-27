@@ -3,6 +3,8 @@ import { PrismaClient } from "@prisma/client";
 import shopify from "../../shopify.js";
 import * as cheerio from "cheerio";
 import { getArticleLimit } from "../services/PlanFeatureService.js";
+import { ArticleSyncService } from "../services/ArticleSyncService.js";
+import { ShopifyArticleParser } from "../services/ShopifyArticleParser.js";
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -239,7 +241,21 @@ router.post("/execute", async (req, res) => {
        }
     }
 
-    // Link to ShopifyArticle
+    // Parse the body HTML into editor blocks using the ShopifyArticleParser
+    const parsed = ShopifyArticleParser.parse(shopifyArticle.body_html || "");
+
+    // Build normalized remote state and initial baseline for proper 2-way sync
+    const remoteState = ArticleSyncService.normalizeRemoteState(shopifyArticle);
+    remoteState.content.editorHtml = parsed.rawEditorHtml || shopifyArticle.body_html || "";
+    remoteState.content.contentJson = parsed.blocks;
+
+    const initialBaseline = ArticleSyncService.buildBaselineSnapshot(
+      remoteState,
+      shopifyArticle.body_html || "",
+      1
+    );
+
+    // Link to ShopifyArticle with proper sync tracking
     await prisma.shopifyArticle.create({
       data: {
         postId: post.id,
@@ -247,7 +263,25 @@ router.post("/execute", async (req, res) => {
         shopifyBlogId: String(blog_id),
         status: post.status,
         syncedAt: new Date(),
+        syncState: "in_sync",
+        syncMode: "external_html",
+        lastSyncDirection: "shopify_to_app",
+        lastInboundHash: ArticleSyncService.computeContentHash(shopifyArticle),
+        lastRemoteUpdatedAt: shopifyArticle.updated_at ? new Date(shopifyArticle.updated_at) : null,
+        structureDegraded: parsed.structureDegraded,
+        syncRevision: 1,
+        lastSyncedSnapshot: initialBaseline,
       }
+    });
+
+    await ArticleSyncService.logSyncEvent({
+      shopId: shop.id,
+      postId: post.id,
+      shopifyArticleId: String(shopifyArticle.id),
+      direction: "shopify_to_app",
+      eventType: "import",
+      status: "applied",
+      message: `Imported article "${shopifyArticle.title}" from Shopify blog ${blog_id}`,
     });
 
     res.json({ success: true, post_id: post.id });
