@@ -269,6 +269,8 @@ export default function PostEditor() {
   const [showCongratsModal, setShowCongratsModal] = useState(false);
   const [newPostId, setNewPostId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [seoData, setSeoData] = useState({
     metaTitle: "",
     metaDescription: "",
@@ -478,6 +480,29 @@ export default function PostEditor() {
     }
   };
 
+  const handlePreviewClick = async () => {
+    setIsPreviewLoading(true);
+    try {
+      const res = await fetch("/api/posts/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentHtml }),
+      });
+      const data = await res.json();
+      if (data.contentHtml) {
+        setPreviewHtml(data.contentHtml);
+        setShowPreview(true);
+      } else {
+        setToast({ content: "Failed to generate preview" });
+      }
+    } catch (e) {
+      console.error("Preview failed:", e);
+      setToast({ content: "Error generating preview" });
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
   const handlePublish = async () => {
     if (!shopifyBlogId) {
       setError("Please select a Shopify blog to publish to.");
@@ -612,7 +637,8 @@ export default function PostEditor() {
           {
             content: "Preview",
             icon: ViewIcon,
-            onAction: () => setShowPreview(true),
+            loading: isPreviewLoading,
+            onAction: handlePreviewClick,
           },
           ...(post.status === "published"
             ? [
@@ -985,7 +1011,7 @@ export default function PostEditor() {
           title={post.title}
           author={post.author}
           featuredImage={post.featuredImage}
-          contentHtml={contentHtml}
+          contentHtml={previewHtml || contentHtml}
         />
       )}
 

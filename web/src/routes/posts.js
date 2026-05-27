@@ -15,6 +15,7 @@ import {
   maxSectionsForPlan,
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
+import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
@@ -118,6 +119,23 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+// ─── POST /api/posts/preview — Compile editor content for preview ──────────────
+router.post("/preview", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    let client = null;
+    if (session) {
+      client = new shopify.api.clients.Graphql({ session });
+    }
+    const { contentHtml } = req.body;
+    const compiled = await EditorContentCompiler.compile(contentHtml || "", session, client);
+    res.json({ contentHtml: compiled });
+  } catch (err) {
+    console.error("POST /api/posts/preview error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/posts — Create post ────────────────────────────────────────────
 router.post("/", async (req, res) => {
   try {
@@ -163,7 +181,18 @@ router.post("/", async (req, res) => {
     if (!title) return res.status(422).json({ error: "Title is required" });
 
     const blocks = Array.isArray(contentJson) ? contentJson : [];
-    let finalContentHtml = reqContentHtml || "";
+    
+    // Compile content html
+    const session = res.locals.shopify?.session;
+    let client = null;
+    if (session) {
+      client = new shopify.api.clients.Graphql({ session });
+    }
+    const finalContentHtml = await EditorContentCompiler.compile(
+      reqContentHtml || "",
+      session,
+      client
+    );
 
     const post = await prisma.post.create({
       data: {
@@ -266,7 +295,19 @@ router.put("/:id", async (req, res) => {
     }
 
     const finalEditorMode = "wysiwyg";
-    let finalContentHtml = reqContentHtml !== undefined ? reqContentHtml : post.contentHtml;
+    let finalContentHtml = post.contentHtml;
+    if (reqContentHtml !== undefined) {
+      const session = res.locals.shopify?.session;
+      let client = null;
+      if (session) {
+        client = new shopify.api.clients.Graphql({ session });
+      }
+      finalContentHtml = await EditorContentCompiler.compile(
+        reqContentHtml,
+        session,
+        client
+      );
+    }
 
     const updated = await prisma.post.update({
       where: { id: post.id },
@@ -1232,12 +1273,25 @@ router.post("/:id/force-sync", async (req, res) => {
     const session = res.locals.shopify?.session;
     if (!session) return res.status(401).json({ error: "No Shopify session" });
 
+    const graphqlClient = new shopify.api.clients.Graphql({ session });
+    const compiledContentHtml = await EditorContentCompiler.compile(
+      post.contentHtml || "",
+      session,
+      graphqlClient
+    );
+
+    // Save the compiled HTML back to the database
+    await prisma.post.update({
+      where: { id: post.id },
+      data: { contentHtml: compiledContentHtml }
+    });
+
     const client = new shopify.api.clients.Rest({ session });
     const tagNames = post.tags ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ") : "";
     const articleData = {
       article: {
         title: post.title,
-        body_html: post.contentHtml || "",
+        body_html: compiledContentHtml || "",
         author: post.author || "",
         published: post.status === "published",
         tags: tagNames,
