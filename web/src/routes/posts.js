@@ -128,7 +128,7 @@ router.post("/preview", async (req, res) => {
       client = new shopify.api.clients.Graphql({ session });
     }
     const { contentHtml } = req.body;
-    const compiled = await EditorContentCompiler.compile(contentHtml || "", session, client);
+    const compiled = await EditorContentCompiler.compileForStorefront(contentHtml || "", session, client);
     res.json({ contentHtml: compiled });
   } catch (err) {
     console.error("POST /api/posts/preview error:", err);
@@ -367,10 +367,16 @@ router.put("/:id", async (req, res) => {
       if (session) {
         const client = new shopify.api.clients.Rest({ session });
         const tagNames = Array.isArray(tags) ? tags.join(", ") : "";
+        const storefrontHtml = await EditorContentCompiler.compileForStorefront(
+          reqContentHtml !== undefined ? reqContentHtml : updated.contentHtml || "",
+          session,
+          null,
+          shop.domain
+        );
         const payload = {
           article: {
             title: updated.title,
-            body_html: finalContentHtml || "",
+            body_html: storefrontHtml,
             author: updated.author || "Admin",
             published: updated.status === "published",
             tags: tagNames,
@@ -495,11 +501,17 @@ router.post("/:id/publish", async (req, res) => {
 
     // Build Shopify article payload
     const tagNames = post.tags.map((pt) => pt.tag.name).join(",");
+    const storefrontHtml = await EditorContentCompiler.compileForStorefront(
+      post.contentHtml || "",
+      session,
+      null,
+      shop.domain
+    );
     const payload = {
       article: {
         title: post.title,
         author: post.author || "Admin",
-        body_html: post.contentHtml || "",
+        body_html: storefrontHtml,
         tags: tagNames,
         published: true,
         image: post.featuredImage ? { src: post.featuredImage } : undefined,
@@ -1286,12 +1298,19 @@ router.post("/:id/force-sync", async (req, res) => {
       data: { contentHtml: compiledContentHtml }
     });
 
+    const storefrontHtml = await EditorContentCompiler.compileForStorefront(
+      compiledContentHtml || "",
+      session,
+      null,
+      shop.domain
+    );
+
     const client = new shopify.api.clients.Rest({ session });
     const tagNames = post.tags ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ") : "";
     const articleData = {
       article: {
         title: post.title,
-        body_html: compiledContentHtml || "",
+        body_html: storefrontHtml,
         author: post.author || "",
         published: post.status === "published",
         tags: tagNames,

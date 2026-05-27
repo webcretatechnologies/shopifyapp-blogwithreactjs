@@ -135,7 +135,8 @@ const parseHtmlToBlocks = (html) => {
           src: 'src',
           alt: 'alt',
           width: 'width',
-          linkurl: 'linkUrl'
+          linkurl: 'linkUrl',
+          titlealign: 'titleAlign'
         };
 
         const block = {

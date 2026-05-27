@@ -8,6 +8,20 @@ import dotenv from "dotenv";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "../.env") });
 
+import fs from "fs";
+const logStream = fs.createWriteStream(join(__dirname, "debug.log"), { flags: "a" });
+const originalLog = console.log;
+const originalError = console.error;
+console.log = (...args) => {
+  logStream.write(`[LOG ${new Date().toISOString()}] ${args.map(x => typeof x === 'object' ? (x instanceof Error ? x.stack : JSON.stringify(x)) : String(x)).join(" ")}\n`);
+  originalLog.apply(console, args);
+};
+console.error = (...args) => {
+  logStream.write(`[ERROR ${new Date().toISOString()}] ${args.map(x => typeof x === 'object' ? (x instanceof Error ? x.stack : JSON.stringify(x)) : String(x)).join(" ")}\n`);
+  originalError.apply(console, args);
+};
+
+
 import express from "express";
 import { Server as SocketIOServer } from "socket.io";
 import serveStatic from "serve-static";
@@ -22,6 +36,16 @@ import importRoutes from "./src/routes/import.js";
 import wizardRoutes from "./src/routes/wizard.js";
 import supportRoutes from "./src/routes/support.js";
 import superAdminRoutes from "./src/routes/superAdmin.js";
+
+// Process-level event handlers to prevent crashes from unhandled network errors
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("⚠️ Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("⚠️ Uncaught Exception thrown:", err);
+});
+
 
 // Ensure uploads directory exists
 const uploadsDir = join(__dirname, "public/uploads");
@@ -183,7 +207,16 @@ app.post(
 );
 
 // ─── API Routes (Protected by Shopify session) ───────────────────────────────
-app.use("/api/*", shopify.validateAuthenticatedSession());
+const validateSession = shopify.validateAuthenticatedSession();
+app.use("/api/*", (req, res, next) => {
+  Promise.resolve(validateSession(req, res, next)).catch((err) => {
+    console.error("⚠️ Session validation error caught in wrapper:", err);
+    // Return a 500 error or redirect instead of crashing/hanging
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Session validation failed", details: err.message });
+    }
+  });
+});
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -239,6 +272,17 @@ app.use("/*", shopify.ensureInstalledOnShop(), async (_req, res, _next) => {
         .toString()
         .replace("%VITE_SHOPIFY_API_KEY%", process.env.SHOPIFY_API_KEY || "")
     );
+});
+
+// Global Express error handler
+app.use((err, req, res, next) => {
+  console.error("⚠️ Express Error Handler caught:", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.status || 500).json({
+    error: err.message || "Internal Server Error",
+  });
 });
 
 httpServer.listen(PORT, () => {

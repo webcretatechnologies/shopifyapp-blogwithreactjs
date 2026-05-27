@@ -1,4 +1,6 @@
 import * as cheerio from "cheerio";
+import { prisma } from "../../shopify.js";
+
 
 const ATTR_MAP = {
   buttontext: 'buttonText',
@@ -45,7 +47,10 @@ const ATTR_MAP = {
   caption: 'caption',
   collectionhandle: 'collectionHandle',
   showtitle: 'showTitle',
-  showviewall: 'showViewAll'
+  showviewall: 'showViewAll',
+  linkurl: 'linkUrl',
+  minheight: 'minHeight',
+  titlealign: 'titleAlign'
 };
 
 function hexToRgba(hex, opacity) {
@@ -133,13 +138,21 @@ export class EditorContentCompiler {
             compiledHtml = this.renderCtaButton(attrs);
             break;
           case "buyButton":
+          case "product":
+          case "product_sidebar":
+          case "featured_product":
             compiledHtml = this.renderBuyButton(attrs);
             break;
           case "productGrid":
+          case "product_switcher":
+          case "product_slider":
             compiledHtml = await this.renderProductGrid(attrs, shopifySession, shopifyClient);
             break;
           case "collection":
             compiledHtml = await this.renderCollection(attrs, shopifySession, shopifyClient);
+            break;
+          case "imageBlock":
+            compiledHtml = this.renderImage(attrs);
             break;
           default:
             // Keep unchanged if unsupported
@@ -339,7 +352,8 @@ export class EditorContentCompiler {
 
     let imgHtml = "";
     if (product.image) {
-      imgHtml = `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${product.image}" alt="${product.title}" style="width: 100%; height: 100%; object-fit: cover; display: block;" /></a>`;
+      const escapedTitle = (product.title || "").replace(/"/g, '&quot;');
+      imgHtml = `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${product.image}" alt="${escapedTitle}" style="width: 100%; height: 100%; object-fit: cover; display: block;" /></a>`;
     } else {
       imgHtml = `<div style="width: 100%; height: 100%; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
     }
@@ -470,8 +484,9 @@ export class EditorContentCompiler {
       const numericVId = vIdRaw.match(/\d+$/)?.[0] || vIdRaw;
       const pLink = p.handle ? `/products/${p.handle}` : "#";
 
+      const escapedTitle = (p.title || "").replace(/"/g, '&quot;');
       const pImg = p.image
-        ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${p.title}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
+        ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
         : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
 
       const pPrice = (showPrice && p.price)
@@ -603,8 +618,9 @@ export class EditorContentCompiler {
         const numericVId = vIdRaw.match(/\d+$/)?.[0] || vIdRaw;
         const pLink = p.handle ? `/products/${p.handle}` : "#";
 
+        const escapedTitle = (p.title || "").replace(/"/g, '&quot;');
         const pImg = p.image
-          ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${p.title}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
+          ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
           : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
 
         const pPrice = (showPrice && p.price)
@@ -646,8 +662,9 @@ export class EditorContentCompiler {
         const numericVId = vIdRaw.match(/\d+$/)?.[0] || vIdRaw;
         const pLink = p.handle ? `/products/${p.handle}` : "#";
 
+        const escapedTitle = (p.title || "").replace(/"/g, '&quot;');
         const pImg = p.image
-          ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${p.title}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
+          ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
           : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
 
         const pPrice = (showPrice && p.price)
@@ -686,5 +703,143 @@ export class EditorContentCompiler {
         ${contentHtml}
       </div>
     `;
+  }
+
+  static renderImage(attrs) {
+    const src = attrs.src || "";
+    const alt = attrs.alt || "";
+    const caption = attrs.caption || "";
+    const width = attrs.width || "100%";
+    const align = attrs.align || "center";
+    const borderRadius = attrs.borderRadius || "0px";
+    const linkUrl = attrs.linkUrl || "";
+
+    if (!src) {
+      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">Image not selected</div>`;
+    }
+
+    const escapedAlt = (alt || "").replace(/"/g, '&quot;');
+    let imgHtml = `<img src="${src}" alt="${escapedAlt}" style="width: 100%; max-width: 100%; height: auto; display: block; border-radius: ${borderRadius};" />`;
+    if (linkUrl) {
+      imgHtml = `<a href="${linkUrl}" style="display: block; text-decoration: none;">${imgHtml}</a>`;
+    }
+
+    const containerStyle = `display: flex; flex-direction: column; align-items: ${
+      align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center"
+    }; width: 100%; margin: 20px 0;`;
+
+    const imgWrapperStyle = `width: ${width}; max-width: 100%;`;
+
+    return `
+      <div style="${containerStyle}">
+        <div style="${imgWrapperStyle}">
+          ${imgHtml}
+        </div>
+        ${caption ? `<div style="text-align: center; font-size: 14px; color: #6d7175; margin-top: 8px; font-family: sans-serif;">${caption}</div>` : ""}
+      </div>
+    `;
+  }
+
+  static generateStyles(settings) {
+    return `
+<style id="blogger-custom-styles">
+  :root {
+    --blogger-primary-color: ${settings.primaryColor || "#008060"};
+    --blogger-secondary-color: ${settings.secondaryColor || "#005bd3"};
+    --blogger-font-family: ${settings.fontFamily || "system-ui"};
+    --blogger-layout-width: ${settings.blogLayout === "centered" ? "800px" : settings.blogLayout === "narrow" ? "640px" : "100%"};
+  }
+
+  .blogger-article-container {
+    max-width: var(--blogger-layout-width) !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    font-family: var(--blogger-font-family) !important;
+    padding-bottom: 80px !important;
+    margin-bottom: 80px !important;
+  }
+
+  /* Ensure template article and blog pages have bottom space */
+  body.template-article,
+  body.template-blog,
+  .shopify-section-blog-posts,
+  .shopify-section-article {
+    padding-bottom: 80px !important;
+    margin-bottom: 80px !important;
+  }
+
+  .blogger-primary-btn {
+    background-color: var(--blogger-primary-color) !important;
+    border-color: var(--blogger-primary-color) !important;
+    color: white !important;
+    text-decoration: none !important;
+    padding: 10px 20px !important;
+    border-radius: 4px !important;
+    display: inline-block !important;
+    text-align: center !important;
+  }
+
+  .blogger-secondary-btn {
+    background-color: var(--blogger-secondary-color) !important;
+    border-color: var(--blogger-secondary-color) !important;
+    color: white !important;
+    text-decoration: none !important;
+    padding: 10px 20px !important;
+    border-radius: 4px !important;
+    display: inline-block !important;
+    text-align: center !important;
+  }
+
+  .blogger-reading-time {
+    display: ${settings.showReadingTime === false || settings.showReadingTime === "false" ? "none !important" : "inline-block"};
+  }
+
+  .blogger-author {
+    display: ${settings.showAuthor === false || settings.showAuthor === "false" ? "none !important" : "inline-block"};
+  }
+
+  .blogger-published-date {
+    display: ${settings.showPublishedDate === false || settings.showPublishedDate === "false" ? "none !important" : "inline-block"};
+  }
+
+  .blogger-related-posts {
+    display: ${settings.showRelatedPosts === false || settings.showRelatedPosts === "false" ? "none !important" : "block"};
+  }
+
+  .blogger-toc {
+    display: ${settings.showToc === false || settings.showToc === "false" ? "none !important" : "block"};
+    float: ${settings.tocPosition === "left" ? "left" : settings.tocPosition === "right" ? "right" : "none"};
+  }
+</style>
+`;
+  }
+
+  static async compileForStorefront(contentHtml, session = null, shopifyClient = null, shopDomain = null) {
+    const compiled = await this.compile(contentHtml, session, shopifyClient);
+    
+    const domain = shopDomain || session?.shop;
+    let settings = {};
+    if (domain) {
+      try {
+        const shop = await prisma.shop.findUnique({
+          where: { domain },
+          include: { settings: true }
+        });
+        if (shop && shop.settings) {
+          settings = shop.settings.reduce((acc, setting) => {
+            let val = setting.value;
+            if (val === "true") val = true;
+            else if (val === "false") val = false;
+            acc[setting.key] = val;
+            return acc;
+          }, {});
+        }
+      } catch (err) {
+        console.error("compileForStorefront: Error loading settings:", err);
+      }
+    }
+    
+    const styles = this.generateStyles(settings);
+    return `${styles}\n<div class="blogger-article-container">\n${compiled}\n</div>`;
   }
 }

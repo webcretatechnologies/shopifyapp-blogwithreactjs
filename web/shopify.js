@@ -16,7 +16,7 @@ const prisma = new PrismaClient();
 
 const shopify = shopifyApp({
   api: {
-    apiVersion: LATEST_API_VERSION,
+    apiVersion: "2024-10",
     restResources,
     future: {
       customerAddressDefaultFix: true,
