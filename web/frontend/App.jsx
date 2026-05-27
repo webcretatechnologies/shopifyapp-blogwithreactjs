@@ -19,15 +19,14 @@ export default function App() {
         <QueryProvider>
           {!isAdminPath && (
             <NavMenu>
-              <a href="/" rel="home" />
-              <a href="/posts">Dashboard</a>
-              <a href="/posts/new">New Article</a>
+              <a href="/dashboard" rel="home" />
+              <a href="/posts">Articles</a>
               <a href="/analytics">Analytics</a>
+              <a href="/plans">Plans &amp; Billing</a>
+              <a href="/settings">Settings</a>
               <a href="/sync">Sync Status</a>
               <a href="/posts/import">Import</a>
               <a href="/posts/wizard">Wizard</a>
-              <a href="/plans">Plans &amp; Billing</a>
-              <a href="/settings">Settings</a>
               <a href="/support">Support</a>
             </NavMenu>
           )}
