@@ -104,8 +104,13 @@ io.on("connection", (socket) => {
   });
 });
 
+import proxyRoutes from "./src/routes/proxy.js";
+
 // ─── Public Tracking Routes (BEFORE Shopify auth — no session needed) ──────
 app.use("/track", trackingRoutes);
+
+// ─── App Proxy Routes (Validated via Shopify Signature) ──────────────────────
+app.use("/api/proxy", proxyRoutes);
 
 // ─── Shopify Auth & Webhook Routes ────────────────────────────────────────────
 app.get(shopify.config.auth.path, shopify.auth.begin());
@@ -335,6 +340,52 @@ app.get("/api/shop", async (_req, res) => {
     if (!shop) return res.status(404).json({ error: "Shop not found" });
     res.json({ shop });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Extension Status (Super Human verification via Theme API)
+app.get("/api/shop/extension-status", async (_req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    const client = new shopify.api.clients.Rest({ session });
+
+    // 1. Get the main published theme
+    const themesReq = await client.get({ path: "themes" });
+    const mainTheme = themesReq.body.themes.find((t) => t.role === "main");
+    
+    if (!mainTheme) return res.json({ active: false });
+
+    // 2. Get settings_data.json
+    try {
+      const assetReq = await client.get({
+        path: `themes/${mainTheme.id}/assets`,
+        query: { "asset[key]": "config/settings_data.json" }
+      });
+      
+      const settingsData = JSON.parse(assetReq.body.asset.value);
+      const blocks = settingsData.current?.blocks || {};
+      
+      let isActive = false;
+      for (const key in blocks) {
+        const block = blocks[key];
+        if (block.type && block.type.includes("app-embed") && block.disabled !== true) {
+          // Check if it belongs to our app (matches common slugs)
+          const typeLower = block.type.toLowerCase();
+          if (typeLower.includes("blogger") || typeLower.includes("analytics") || typeLower.includes("react")) {
+            isActive = true;
+            break;
+          }
+        }
+      }
+      
+      res.json({ active: isActive });
+    } catch (e) {
+      console.error("[ThemeAPI] Failed to read theme asset:", e.message);
+      res.json({ active: false });
+    }
+  } catch (err) {
+    console.error("[ThemeAPI] Extension status error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

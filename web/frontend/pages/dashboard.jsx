@@ -18,6 +18,7 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { RefreshIcon } from "@shopify/polaris-icons";
 import StatsCard from "../components/analytics/StatsCard";
 import AnalyticsChart from "../components/analytics/AnalyticsChart";
+import SetupGuide from "../components/SetupGuide";
 
 // ─── Mini Funnel ─────────────────────────────────────────────────────────
 function MiniFunnel({ funnel = [] }) {
@@ -40,7 +41,7 @@ function MiniFunnel({ funnel = [] }) {
               <ProgressBar
                 progress={Math.round(pct)}
                 size="small"
-                tone={i === 3 ? "success" : i === 0 ? "primary" : "subdued"}
+                tone={i === 3 ? "success" : i === 0 ? "primary" : "highlight"}
               />
             </div>
           </div>
@@ -56,6 +57,8 @@ export default function Dashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [shopInfo, setShopInfo] = useState(null);
+  const [extensionActive, setExtensionActive] = useState(false);
+  const [extensionLoading, setExtensionLoading] = useState(true);
 
   const fetchAnalytics = async () => {
     setAnalyticsLoading(true);
@@ -79,9 +82,21 @@ export default function Dashboard() {
     } catch {}
   };
 
+  const fetchExtensionStatus = async () => {
+    setExtensionLoading(true);
+    try {
+      const res = await fetch("/api/shop/extension-status");
+      const data = await res.json();
+      setExtensionActive(data.active);
+    } catch {} finally {
+      setExtensionLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchAnalytics();
     fetchShop();
+    fetchExtensionStatus();
   }, []);
 
   const stats = analytics?.stats;
@@ -98,6 +113,17 @@ export default function Dashboard() {
         }
       >
         <Layout>
+          {/* ── Setup Guide ─────────────────────────────────────────── */}
+          {!analyticsLoading && !extensionLoading && (
+            <Layout.Section>
+              <SetupGuide 
+                shop={shopInfo?.domain} 
+                isExtensionActive={extensionActive} 
+                hasPosts={stats?.totalPosts > 0} 
+              />
+            </Layout.Section>
+          )}
+
           {/* ── Quick Actions Banner ────────────────────────────────── */}
           <Layout.Section>
             <Card>

@@ -83,7 +83,7 @@ function FunnelChart({ funnel = [] }) {
                     <ProgressBar
                       progress={Math.round(pct)}
                       size="small"
-                      tone={i === 3 ? "success" : i === 0 ? "primary" : "subdued"}
+                      tone={i === 3 ? "success" : i === 0 ? "primary" : "highlight"}
                     />
                   </div>
                 </div>
@@ -200,193 +200,203 @@ export default function Analytics() {
           <Spinner />
         </Box>
       ) : (
-        <Layout>
-          {/* ── Stats Cards Row ────────────────────────────────────── */}
-          <Layout.Section>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                gap: "16px",
-              }}
-            >
-              <StatsCard
-                title="Total Views"
-                value={(stats?.totalViews ?? 0).toLocaleString()}
-                icon="👁"
-                color="#005bd3"
-              />
-              <StatsCard
-                title="Unique Visitors"
-                value={(stats?.totalUniqueVisitors ?? 0).toLocaleString()}
-                icon="👤"
-                color="#9c27b0"
-              />
-              <StatsCard
-                title="Revenue"
-                value={`$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                icon="💰"
-                color="#f39c12"
-              />
-              <StatsCard
-                title="Overall Conv. Rate"
-                value={`${stats?.conversionRate ?? "0.00"}%`}
-                icon="🏆"
-                color="#008060"
-              />
-            </div>
-          </Layout.Section>
+        <BlockStack gap="500">
+          <Layout>
+            {/* ── Stats Cards Row ────────────────────────────────────── */}
+            <Layout.Section>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                  gap: "16px",
+                }}
+              >
+                <StatsCard
+                  title="Total Views"
+                  value={(stats?.totalViews ?? 0).toLocaleString()}
+                  icon="👁"
+                  color="#005bd3"
+                />
+                <StatsCard
+                  title="Unique Visitors"
+                  value={(stats?.totalUniqueVisitors ?? 0).toLocaleString()}
+                  icon="👤"
+                  color="#9c27b0"
+                />
+                <StatsCard
+                  title="Revenue"
+                  value={`$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  icon="💰"
+                  color="#f39c12"
+                />
+                <StatsCard
+                  title="Overall Conv. Rate"
+                  value={`${stats?.conversionRate ?? "0.00"}%`}
+                  icon="🏆"
+                  color="#008060"
+                />
+              </div>
+            </Layout.Section>
+          </Layout>
 
-          {/* ── Conversion Comparison Table ────────────────────────── */}
-          <Layout.Section>
-            <Card>
-              <Box padding="400">
-                <BlockStack gap="300">
-                  <Text variant="headingMd">Conversion Metrics Comparison</Text>
-                  <Divider />
-                  <IndexTable
-                    resourceName={{ singular: "metric", plural: "metrics" }}
-                    itemCount={3}
-                    selectable={false}
-                    headings={[
-                      { title: "Funnel Stage" },
-                      { title: "Total Count" },
-                      { title: "Conversion Rate" },
-                    ]}
-                  >
-                    <IndexTable.Row id="add-to-cart" position={0}>
-                      <IndexTable.Cell><Text fontWeight="bold" as="span">Add to Cart</Text></IndexTable.Cell>
-                      <IndexTable.Cell>{(stats?.totalAddToCart ?? 0).toLocaleString()}</IndexTable.Cell>
-                      <IndexTable.Cell>{stats?.addToCartRate ?? "0.00"}%</IndexTable.Cell>
-                    </IndexTable.Row>
-                    <IndexTable.Row id="checkouts" position={1}>
-                      <IndexTable.Cell><Text fontWeight="bold" as="span">Checkouts</Text></IndexTable.Cell>
-                      <IndexTable.Cell>{(stats?.totalCheckouts ?? 0).toLocaleString()}</IndexTable.Cell>
-                      <IndexTable.Cell>{stats?.checkoutRate ?? "0.00"}%</IndexTable.Cell>
-                    </IndexTable.Row>
-                    <IndexTable.Row id="conversions" position={2}>
-                      <IndexTable.Cell><Text fontWeight="bold" as="span">Successful Conversions</Text></IndexTable.Cell>
-                      <IndexTable.Cell>{(stats?.totalConversions ?? 0).toLocaleString()}</IndexTable.Cell>
-                      <IndexTable.Cell>{stats?.conversionRate ?? "0.00"}%</IndexTable.Cell>
-                    </IndexTable.Row>
-                  </IndexTable>
-                </BlockStack>
-              </Box>
-            </Card>
-          </Layout.Section>
+          <Layout>
+            {/* ── Conversion Comparison Table ────────────────────────── */}
+            <Layout.Section>
+              <Card>
+                <Box padding="400">
+                  <BlockStack gap="300">
+                    <Text variant="headingMd">Conversion Metrics Comparison</Text>
+                    <Divider />
+                    <IndexTable
+                      resourceName={{ singular: "metric", plural: "metrics" }}
+                      itemCount={3}
+                      selectable={false}
+                      headings={[
+                        { title: "Funnel Stage" },
+                        { title: "Total Count" },
+                        { title: "Conversion Rate" },
+                      ]}
+                    >
+                      <IndexTable.Row id="add-to-cart" position={0}>
+                        <IndexTable.Cell><Text fontWeight="bold" as="span">Add to Cart</Text></IndexTable.Cell>
+                        <IndexTable.Cell>{(stats?.totalAddToCart ?? 0).toLocaleString()}</IndexTable.Cell>
+                        <IndexTable.Cell>{stats?.addToCartRate ?? "0.00"}%</IndexTable.Cell>
+                      </IndexTable.Row>
+                      <IndexTable.Row id="checkouts" position={1}>
+                        <IndexTable.Cell><Text fontWeight="bold" as="span">Checkouts</Text></IndexTable.Cell>
+                        <IndexTable.Cell>{(stats?.totalCheckouts ?? 0).toLocaleString()}</IndexTable.Cell>
+                        <IndexTable.Cell>{stats?.checkoutRate ?? "0.00"}%</IndexTable.Cell>
+                      </IndexTable.Row>
+                      <IndexTable.Row id="conversions" position={2}>
+                        <IndexTable.Cell><Text fontWeight="bold" as="span">Successful Conversions</Text></IndexTable.Cell>
+                        <IndexTable.Cell>{(stats?.totalConversions ?? 0).toLocaleString()}</IndexTable.Cell>
+                        <IndexTable.Cell>{stats?.conversionRate ?? "0.00"}%</IndexTable.Cell>
+                      </IndexTable.Row>
+                    </IndexTable>
+                  </BlockStack>
+                </Box>
+              </Card>
+            </Layout.Section>
+          </Layout>
 
-          {/* ── Multi-Series Chart (Views + Add to Cart + Conversions) ─── */}
-          <Layout.Section>
-            <AnalyticsChart
-              data={analytics?.daily || []}
-              title="Daily Performance — Views, Add to Cart & Conversions"
-              series={[
-                { key: "views", label: "Views", color: "#008060" },
-                { key: "addToCart", label: "Add to Cart", color: "#e67e22" },
-                { key: "conversions", label: "Conversions", color: "#005bd3" },
-              ]}
-            />
-          </Layout.Section>
+          <Layout>
+            {/* ── Multi-Series Chart (Views + Add to Cart + Conversions) ─── */}
+            <Layout.Section>
+              <AnalyticsChart
+                data={analytics?.daily || []}
+                title="Daily Performance — Views, Add to Cart & Conversions"
+                series={[
+                  { key: "views", label: "Views", color: "#008060" },
+                  { key: "addToCart", label: "Add to Cart", color: "#e67e22" },
+                  { key: "conversions", label: "Conversions", color: "#005bd3" },
+                ]}
+              />
+            </Layout.Section>
+          </Layout>
 
-          {/* ── Funnel + Device + Sources ────────────────────────────── */}
-          <Layout.Section variant="oneThird">
-            <FunnelChart funnel={analytics?.funnel || []} />
-          </Layout.Section>
-          <Layout.Section variant="oneThird">
-            <DeviceChart breakdown={analytics?.deviceBreakdown} />
-          </Layout.Section>
-          <Layout.Section variant="oneThird">
-            <TopSources sources={analytics?.topSources || []} />
-          </Layout.Section>
+          <Layout>
+            {/* ── Funnel + Device + Sources ────────────────────────────── */}
+            <Layout.Section variant="oneThird">
+              <FunnelChart funnel={analytics?.funnel || []} />
+            </Layout.Section>
+            <Layout.Section variant="oneThird">
+              <DeviceChart breakdown={analytics?.deviceBreakdown} />
+            </Layout.Section>
+            <Layout.Section variant="oneThird">
+              <TopSources sources={analytics?.topSources || []} />
+            </Layout.Section>
+          </Layout>
 
-          {/* ── Top Posts & Countries ─────────────────────────────────────────────── */}
-          <Layout.Section variant="oneHalf">
-            <Card>
-              <Box padding="400">
-                <BlockStack gap="300">
-                  <Text variant="headingMd">🏆 Top Performing Posts</Text>
-                  <Divider />
-                  {(!analytics?.topPosts || analytics.topPosts.length === 0) && (
-                    <Text tone="subdued" variant="bodySm">
-                      No data yet. Views & events are tracked from the
-                      storefront automatically.
-                    </Text>
-                  )}
-                  {analytics?.topPosts?.map((p, i) => (
-                    <div key={p.id}>
-                      <InlineStack align="space-between" blockAlign="center">
-                        <InlineStack gap="200" blockAlign="center">
-                          <div
-                            style={{
-                              width: 24,
-                              height: 24,
-                              borderRadius: "50%",
-                              background: i === 0 ? "#f5a623" : "#e1e3e5",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: "11px",
-                              fontWeight: "700",
-                              color: i === 0 ? "#fff" : "#6d7175",
-                              flexShrink: 0,
-                            }}
-                          >
-                            {i + 1}
-                          </div>
-                          <BlockStack gap="025">
-                            <Text variant="bodySm" fontWeight="semibold">
-                              {p.title?.substring(0, 35) || "Untitled"}
-                              {p.title?.length > 35 ? "…" : ""}
-                            </Text>
-                            <Badge tone={p.status === "published" ? "success" : "info"}>
-                              {p.status}
-                            </Badge>
-                          </BlockStack>
-                        </InlineStack>
-                        <Text variant="bodySm" tone="subdued">
-                          {(p.views || 0).toLocaleString()} views
-                        </Text>
-                      </InlineStack>
-                      {p.addToCart > 0 && (
-                        <div style={{ marginTop: 6, paddingLeft: 34 }}>
-                          <InlineStack gap="300">
-                            <Text variant="bodyXs" tone="subdued">
-                              🛒 {p.addToCart} cart
-                            </Text>
-                            {p.conversions > 0 && (
-                              <Text variant="bodyXs" tone="success">
-                                ✅ {p.conversions} conv
+          <Layout>
+            {/* ── Top Posts & Countries ─────────────────────────────────────────────── */}
+            <Layout.Section variant="oneHalf">
+              <Card>
+                <Box padding="400">
+                  <BlockStack gap="300">
+                    <Text variant="headingMd">🏆 Top Performing Posts</Text>
+                    <Divider />
+                    {(!analytics?.topPosts || analytics.topPosts.length === 0) && (
+                      <Text tone="subdued" variant="bodySm">
+                        No data yet. Views & events are tracked from the
+                        storefront automatically.
+                      </Text>
+                    )}
+                    {analytics?.topPosts?.map((p, i) => (
+                      <div key={p.id}>
+                        <InlineStack align="space-between" blockAlign="center">
+                          <InlineStack gap="200" blockAlign="center">
+                            <div
+                              style={{
+                                width: 24,
+                                height: 24,
+                                borderRadius: "50%",
+                                background: i === 0 ? "#f5a623" : "#e1e3e5",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "11px",
+                                fontWeight: "700",
+                                color: i === 0 ? "#fff" : "#6d7175",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {i + 1}
+                            </div>
+                            <BlockStack gap="025">
+                              <Text variant="bodySm" fontWeight="semibold">
+                                {p.title?.substring(0, 35) || "Untitled"}
+                                {p.title?.length > 35 ? "…" : ""}
                               </Text>
-                            )}
-                            {p.addToCartRate !== "0.00" && (
-                              <Text variant="bodyXs" tone="subdued">
-                                {p.addToCartRate}% cart rate
-                              </Text>
-                            )}
-                            {p.revenue > 0 && (
-                              <Text variant="bodyXs" tone="subdued">
-                                💰 ${Number(p.revenue).toFixed(2)}
-                              </Text>
-                            )}
+                              <Badge tone={p.status === "published" ? "success" : "info"}>
+                                {p.status}
+                              </Badge>
+                            </BlockStack>
                           </InlineStack>
-                        </div>
-                      )}
-                      {i < analytics.topPosts.length - 1 && (
-                        <div style={{ margin: "8px 0" }}>
-                          <Divider />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </BlockStack>
-              </Box>
-            </Card>
-          </Layout.Section>
+                          <Text variant="bodySm" tone="subdued">
+                            {(p.views || 0).toLocaleString()} views
+                          </Text>
+                        </InlineStack>
+                        {p.addToCart > 0 && (
+                          <div style={{ marginTop: 6, paddingLeft: 34 }}>
+                            <InlineStack gap="300">
+                              <Text variant="bodyXs" tone="subdued">
+                                🛒 {p.addToCart} cart
+                              </Text>
+                              {p.conversions > 0 && (
+                                <Text variant="bodyXs" tone="success">
+                                  ✅ {p.conversions} conv
+                                </Text>
+                              )}
+                              {p.addToCartRate !== "0.00" && (
+                                <Text variant="bodyXs" tone="subdued">
+                                  {p.addToCartRate}% cart rate
+                                </Text>
+                              )}
+                              {p.revenue > 0 && (
+                                <Text variant="bodyXs" tone="subdued">
+                                  💰 ${Number(p.revenue).toFixed(2)}
+                                </Text>
+                              )}
+                            </InlineStack>
+                          </div>
+                        )}
+                        {i < analytics.topPosts.length - 1 && (
+                          <div style={{ margin: "8px 0" }}>
+                            <Divider />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </BlockStack>
+                </Box>
+              </Card>
+            </Layout.Section>
 
-          <Layout.Section variant="oneHalf">
-            <CountryBreakdown countries={analytics?.topCountries || []} />
-          </Layout.Section>
-        </Layout>
+            <Layout.Section variant="oneHalf">
+              <CountryBreakdown countries={analytics?.topCountries || []} />
+            </Layout.Section>
+          </Layout>
+        </BlockStack>
       )}
     </Page>
   );

@@ -1,0 +1,22 @@
+{% schema %}
+{
+  "name": "Blog Analytics Tracker",
+  "target": "body",
+  "javascript": "tracker.js",
+  "settings": []
+}
+{% endschema %}
+
+<script>
+  window.BloggerAnalytics = window.BloggerAnalytics || {};
+  window.BloggerAnalytics.shop = "{{ shop.permanent_domain }}";
+  window.BloggerAnalytics.template = "{{ template.name }}";
+  
+  {% if article %}
+    window.BloggerAnalytics.articleId = "{{ article.id }}";
+  {% endif %}
+  
+  {% if product %}
+    window.BloggerAnalytics.productId = "{{ product.id }}";
+  {% endif %}
+</script>
