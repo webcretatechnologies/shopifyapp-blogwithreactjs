@@ -31,7 +31,6 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { ViewIcon } from "@shopify/polaris-icons";
 import confetti from "canvas-confetti";
 import TiptapEditor from "../../components/editor/TiptapEditor";
-import SeoPanel from "../../components/SeoPanel";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
 import ArticlePreview from "../../components/editor/ArticlePreview";
 import SyncStatusIndicator from "../../components/SyncStatusIndicator.jsx";
@@ -619,7 +618,6 @@ export default function PostEditor() {
         <Toast content={toast.content} onDismiss={() => setToast(null)} />
       )}
       <Page
-        fullWidth
         title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
         titleMetadata={statusBadge}
         backAction={{ content: "Articles", onAction: () => navigate("/") }}
@@ -675,34 +673,65 @@ export default function PostEditor() {
           {/* ─── Main Content ───────────────────────────────────── */}
           <Layout.Section>
             <BlockStack gap="400">
+              {/* Article Details */}
               <Card>
-                <BlockStack gap="300">
-                  <Text variant="headingMd">Content</Text>
-                  <Divider />
-                  <TiptapEditor
-                    content={contentHtml}
-                    onChange={setContentHtml}
-                    placeholder="Write your article content here..."
-                    uploadUrl="/api/posts/upload"
-                  />
-                </BlockStack>
+                <Box padding="500">
+                  <BlockStack gap="400">
+                    <Text variant="headingMd" as="h3">Article Details</Text>
+                    <Divider />
+                    <TextField
+                      label="Article Title"
+                      value={post.title}
+                      onChange={handleTitleChange}
+                      placeholder="Enter article title..."
+                      autoComplete="off"
+                    />
+                    <TextField
+                      label="URL Slug"
+                      value={post.slug}
+                      onChange={handleField("slug")}
+                      prefix="/"
+                      helpText="Auto-generated from title"
+                      autoComplete="off"
+                    />
+                  </BlockStack>
+                </Box>
               </Card>
+
+              {/* Content Card */}
+              <Card>
+                <Box padding="500">
+                  <BlockStack gap="300">
+                    <Text variant="headingMd">Content</Text>
+                    <Divider />
+                    <TiptapEditor
+                      content={contentHtml}
+                      onChange={setContentHtml}
+                      placeholder="Write your article content here..."
+                      uploadUrl="/api/posts/upload"
+                    />
+                  </BlockStack>
+                </Box>
+              </Card>
+
 
               {/* Custom CSS (plan-gated) */}
               {features.custom_css?.enabled && (
                 <Card>
-                  <BlockStack gap="300">
-                    <Text variant="headingMd">Custom CSS</Text>
-                    <TextField
-                      label=""
-                      value={post.customCss || ""}
-                      onChange={handleField("customCss")}
-                      multiline={6}
-                      placeholder="/* Add custom styles for this article */"
-                      monospaced
-                      autoComplete="off"
-                    />
-                  </BlockStack>
+                  <Box padding="500">
+                    <BlockStack gap="300">
+                      <Text variant="headingMd">Custom CSS</Text>
+                      <TextField
+                        label=""
+                        value={post.customCss || ""}
+                        onChange={handleField("customCss")}
+                        multiline={6}
+                        placeholder="/* Add custom styles for this article */"
+                        monospaced
+                        autoComplete="off"
+                      />
+                    </BlockStack>
+                  </Box>
                 </Card>
               )}
             </BlockStack>
@@ -712,61 +741,35 @@ export default function PostEditor() {
           <Layout.Section variant="oneThird">
             <BlockStack gap="400">
               
-              <Card>
-                <BlockStack gap="400">
-                  <TextField
-                    label="Article Title"
-                    value={post.title}
-                    onChange={handleTitleChange}
-                    placeholder="Enter article title..."
-                    autoComplete="off"
-                  />
-                  <TextField
-                    label="URL Slug"
-                    value={post.slug}
-                    onChange={handleField("slug")}
-                    prefix="/"
-                    helpText="Auto-generated from title"
-                    autoComplete="off"
-                  />
-                  <TextField
-                    label="Excerpt / Meta Description"
-                    value={post.excerpt || ""}
-                    onChange={handleField("excerpt")}
-                    multiline={3}
-                    placeholder="Brief description for SEO..."
-                    autoComplete="off"
-                  />
-                </BlockStack>
-              </Card>
-
               {/* Publishing */}
               <Card>
-                <BlockStack gap="300">
-                  <Text variant="headingMd">Publishing</Text>
-                  <Select
-                    label="Status"
-                    options={[
-                      { label: "Draft", value: "draft" },
-                      { label: "Published", value: "published" },
-                    ]}
-                    value={post.status}
-                    onChange={handleField("status")}
-                  />
-                  <Select
-                    label="Publish to Shopify Blog"
-                    options={blogOptions}
-                    value={shopifyBlogId}
-                    onChange={setShopifyBlogId}
-                    helpText="Select which Shopify blog to push this article to"
-                  />
-                  <ButtonGroup fullWidth>
+                <Box padding="500">
+                  <BlockStack gap="300">
+                    <Text variant="headingMd">Publishing</Text>
+                    <Divider />
+                    <Select
+                      label="Status"
+                      options={[
+                        { label: "Draft", value: "draft" },
+                        { label: "Published", value: "published" },
+                      ]}
+                      value={post.status}
+                      onChange={handleField("status")}
+                    />
+                    <Select
+                      label="Publish to Shopify Blog"
+                      options={blogOptions}
+                      value={shopifyBlogId}
+                      onChange={setShopifyBlogId}
+                      helpText="Select which Shopify blog to push this article to"
+                    />
                     {post.status === "published" ? (
-                      <>
+                      <BlockStack gap="200">
                         <Button
                           variant="primary"
                           onClick={() => handleSave("published")}
                           loading={isSaving}
+                          fullWidth
                         >
                           Save & Sync
                         </Button>
@@ -774,15 +777,17 @@ export default function PostEditor() {
                           tone="critical"
                           onClick={handleUnpublish}
                           loading={isUnpublishing}
+                          fullWidth
                         >
                           Unpublish
                         </Button>
-                      </>
+                      </BlockStack>
                     ) : (
-                      <>
+                      <BlockStack gap="200">
                         <Button
                           onClick={() => handleSave("draft")}
                           loading={isSaving}
+                          fullWidth
                         >
                           Save Draft
                         </Button>
@@ -792,147 +797,155 @@ export default function PostEditor() {
                           onClick={handlePublish}
                           loading={isPublishing}
                           disabled={!shopifyBlogId}
+                          fullWidth
                         >
                           Publish
                         </Button>
-                      </>
-                    )}
-                  </ButtonGroup>
-                </BlockStack>
-              </Card>
-
-              {/* Article Settings */}
-              <Card>
-                <BlockStack gap="300">
-                  <Text variant="headingMd">Article Settings</Text>
-                  <TextField
-                    label="Author"
-                    value={post.author || ""}
-                    onChange={handleField("author")}
-                    autoComplete="off"
-                  />
-                  <BlockStack gap="200">
-                    <Text variant="bodyMd">Featured Image</Text>
-                    <DropZone
-                      onDrop={handleDropZoneDrop}
-                      allowMultiple={false}
-                      accept="image/*"
-                    >
-                      {isUploadingImage ? (
-                        <Box padding="400" align="center">
-                          <Spinner size="small" />
-                        </Box>
-                      ) : (
-                        <DropZone.FileUpload />
-                      )}
-                    </DropZone>
-                    <Button fullWidth onClick={() => setShowFilePicker(true)}>
-                      Browse Shopify Images
-                    </Button>
-                    {post.featuredImage && (
-                      <div style={{ position: "relative", marginTop: "8px" }}>
-                        <img
-                          src={post.featuredImage}
-                          alt="Featured"
-                          style={{
-                            width: "100%",
-                            borderRadius: 8,
-                            maxHeight: 150,
-                            objectFit: "cover",
-                          }}
-                        />
-                        <div style={{ position: "absolute", top: 8, right: 8 }}>
-                          <Button
-                            size="micro"
-                            onClick={() => handleField("featuredImage")("")}
-                            tone="critical"
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      </div>
+                      </BlockStack>
                     )}
                   </BlockStack>
-                </BlockStack>
+                </Box>
               </Card>
 
-              {/* Tags */}
+              {/* Organization & Settings */}
               <Card>
-                <BlockStack gap="300">
-                  <Text variant="headingMd">Tags</Text>
-                  <InlineStack gap="200">
-                    {tags.map((tag) => (
-                      <Tag key={tag} onRemove={() => removeTag(tag)}>
-                        {tag}
-                      </Tag>
-                    ))}
-                  </InlineStack>
-                  <InlineStack gap="200">
-                    <div style={{ flex: 1 }}>
-                      <TextField
-                        label=""
-                        labelHidden
-                        value={tagInput}
-                        onChange={setTagInput}
-                        placeholder="Add tag..."
-                        onKeyPress={(e) => e.key === "Enter" && addTag()}
-                        autoComplete="off"
-                      />
-                    </div>
-                    <Button onClick={addTag}>Add</Button>
-                  </InlineStack>
-                </BlockStack>
+                <Box padding="500">
+                  <BlockStack gap="400">
+                    <Text variant="headingMd">Organization & settings</Text>
+                    <Divider />
+                    
+                    <TextField
+                      label="Author"
+                      value={post.author || ""}
+                      onChange={handleField("author")}
+                      autoComplete="off"
+                    />
+
+                    <BlockStack gap="200">
+                      <Text variant="bodyMd" fontWeight="semibold">Featured Image</Text>
+                      <DropZone
+                        onDrop={handleDropZoneDrop}
+                        allowMultiple={false}
+                        accept="image/*"
+                      >
+                        {isUploadingImage ? (
+                          <Box padding="400" align="center">
+                            <Spinner size="small" />
+                          </Box>
+                        ) : (
+                          <DropZone.FileUpload />
+                        )}
+                      </DropZone>
+                      <Button fullWidth onClick={() => setShowFilePicker(true)}>
+                        Browse Shopify Images
+                      </Button>
+                      {post.featuredImage && (
+                        <div style={{ position: "relative", marginTop: "8px" }}>
+                          <img
+                            src={post.featuredImage}
+                            alt="Featured"
+                            style={{
+                              width: "100%",
+                              borderRadius: 8,
+                              maxHeight: 150,
+                              objectFit: "cover",
+                            }}
+                          />
+                          <div style={{ position: "absolute", top: 8, right: 8 }}>
+                            <Button
+                              size="micro"
+                              onClick={() => handleField("featuredImage")("")}
+                              tone="critical"
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </BlockStack>
+
+                    <BlockStack gap="200">
+                      <Text variant="bodyMd" fontWeight="semibold">Tags</Text>
+                      {tags.length > 0 && (
+                        <InlineStack gap="200">
+                          {tags.map((tag) => (
+                            <Tag key={tag} onRemove={() => removeTag(tag)}>
+                              {tag}
+                            </Tag>
+                          ))}
+                        </InlineStack>
+                      )}
+                      <InlineStack gap="200">
+                        <div style={{ flex: 1 }}>
+                          <TextField
+                            label=""
+                            labelHidden
+                            value={tagInput}
+                            onChange={setTagInput}
+                            placeholder="Add tag..."
+                            onKeyPress={(e) => e.key === "Enter" && addTag()}
+                            autoComplete="off"
+                          />
+                        </div>
+                        <Button onClick={addTag}>Add</Button>
+                      </InlineStack>
+                    </BlockStack>
+                  </BlockStack>
+                </Box>
               </Card>
 
               {/* Product Slider (plan-gated) */}
               {features.product_slider?.enabled && (
                 <Card>
-                  <BlockStack gap="300">
-                    <Text variant="headingMd">Product Slider</Text>
-                    <Select
-                      label="Slider Position"
-                      options={sliderPositionOptions}
-                      value={post.productSliderPosition}
-                      onChange={handleField("productSliderPosition")}
-                    />
-                    {post.productSliderPosition !== "none" && (
-                      <>
-                        <Text tone="subdued" variant="bodySm">
-                          {selectedProducts.length} products selected
-                        </Text>
-                        <Button onClick={handleOpenPicker} fullWidth>
-                          {selectedProducts.length
-                            ? "Change Products"
-                            : "Select Products"}
-                        </Button>
-                        {selectedProducts.length > 0 && (
-                          <BlockStack gap="200">
-                            {selectedProducts.slice(0, 3).map((p) => (
-                              <InlineStack
-                                key={p.shopifyProductId || p.id}
-                                gap="200"
-                                blockAlign="center"
-                              >
-                                {p.image && (
-                                  <Thumbnail
-                                    source={p.image}
-                                    size="small"
-                                    alt={p.title}
-                                  />
-                                )}
-                                <Text variant="bodySm">{p.title}</Text>
-                              </InlineStack>
-                            ))}
-                            {selectedProducts.length > 3 && (
-                              <Text tone="subdued" variant="bodySm">
-                                +{selectedProducts.length - 3} more
-                              </Text>
-                            )}
-                          </BlockStack>
-                        )}
-                      </>
-                    )}
-                  </BlockStack>
+                  <Box padding="500">
+                    <BlockStack gap="300">
+                      <Text variant="headingMd">Product Slider</Text>
+                      <Divider />
+                      <Select
+                        label="Slider Position"
+                        options={sliderPositionOptions}
+                        value={post.productSliderPosition}
+                        onChange={handleField("productSliderPosition")}
+                      />
+                      {post.productSliderPosition !== "none" && (
+                        <>
+                          <Text tone="subdued" variant="bodySm">
+                            {selectedProducts.length} products selected
+                          </Text>
+                          <Button onClick={handleOpenPicker} fullWidth>
+                            {selectedProducts.length
+                              ? "Change Products"
+                              : "Select Products"}
+                          </Button>
+                          {selectedProducts.length > 0 && (
+                            <BlockStack gap="200">
+                              {selectedProducts.slice(0, 3).map((p) => (
+                                <InlineStack
+                                  key={p.shopifyProductId || p.id}
+                                  gap="200"
+                                  blockAlign="center"
+                                >
+                                  {p.image && (
+                                    <Thumbnail
+                                      source={p.image}
+                                      size="small"
+                                      alt={p.title}
+                                    />
+                                  )}
+                                  <Text variant="bodySm">{p.title}</Text>
+                                </InlineStack>
+                              ))}
+                              {selectedProducts.length > 3 && (
+                                <Text tone="subdued" variant="bodySm">
+                                  +{selectedProducts.length - 3} more
+                                </Text>
+                              )}
+                            </BlockStack>
+                          )}
+                        </>
+                      )}
+                    </BlockStack>
+                  </Box>
                 </Card>
               )}
 
@@ -943,11 +956,13 @@ export default function PostEditor() {
                 initialArticle={post.shopifyArticle}
               />
 
-              {/* SEO Panel */}
-              <SeoPanel data={seoData} onChange={setSeoData} />
-
               {isEditing && (
-                <Card>
+                <div style={{
+                  border: "1px solid var(--p-color-border-critical, #fd8888)",
+                  backgroundColor: "var(--p-color-bg-surface-critical-subdued, #fff5f5)",
+                  borderRadius: "8px",
+                  padding: "16px"
+                }}>
                   <BlockStack gap="200">
                     <Text variant="headingMd" tone="critical">
                       Danger Zone
@@ -970,7 +985,7 @@ export default function PostEditor() {
                       Delete Article
                     </Button>
                   </BlockStack>
-                </Card>
+                </div>
               )}
             </BlockStack>
           </Layout.Section>

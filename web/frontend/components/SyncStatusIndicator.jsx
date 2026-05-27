@@ -12,6 +12,7 @@ import {
   BlockStack,
   Spinner,
   Banner,
+  Box,
 } from "@shopify/polaris";
 
 const POLL_INTERVAL_MS = 10_000; // 10 seconds
@@ -86,12 +87,14 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
   if (!article) {
     return (
       <Card>
-        <BlockStack gap="200">
-          <Text variant="headingMd" as="h3">Shopify Sync</Text>
-          <Text variant="bodySm" tone="subdued" as="p">
-            Not linked to a Shopify blog yet. Select a blog in Publishing to connect.
-          </Text>
-        </BlockStack>
+        <Box padding="500">
+          <BlockStack gap="200">
+            <Text variant="headingMd" as="h3">Shopify Sync</Text>
+            <Text variant="bodySm" tone="subdued" as="p">
+              Not linked to a Shopify blog yet. Select a blog in Publishing to connect.
+            </Text>
+          </BlockStack>
+        </Box>
       </Card>
     );
   }
@@ -103,6 +106,7 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
 
   return (
     <Card>
+      <Box padding="500">
         <BlockStack gap="250">
           {/* Header row */}
           <InlineStack gap="200" blockAlign="center" align="space-between">
@@ -116,10 +120,10 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
 
             {/* Sync mode badge */}
             {article.syncMode && (
-            <Badge tone={article.syncMode === "managed_by_app" ? "success" : "info"} size="small">
-              {article.syncMode === "managed_by_app" ? "Managed" : "External"}
-            </Badge>
-          )}
+              <Badge tone={article.syncMode === "managed_by_app" ? "success" : "info"} size="small">
+                {article.syncMode === "managed_by_app" ? "Managed" : "External"}
+              </Badge>
+            )}
           </InlineStack>
 
           {/* Shopify status */}
@@ -170,6 +174,7 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
             </InlineStack>
           )}
         </BlockStack>
+      </Box>
     </Card>
   );
 }
