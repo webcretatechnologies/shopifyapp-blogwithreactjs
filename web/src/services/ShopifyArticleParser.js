@@ -24,6 +24,8 @@ export class ShopifyArticleParser {
 
     // Strip any app-generated wrapper noise using cheerio
     this._stripAppWrapper($);
+    // Fallback raw HTML after stripping wrappers (used when block→html reconstruction is empty)
+    const cleanedHtml = ($("body").html() || "").trim() || $.html();
     const blocks = [];
     let structureDegraded = false;
     let lastTextBlock = null;

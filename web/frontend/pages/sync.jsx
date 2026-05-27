@@ -1,5 +1,5 @@
 /**
- * Sync Dashboard — View sync status for all posts, force re-sync, reconcile, resolve conflicts, and see sync logs.
+ * Sync Dashboard — View sync status for all posts, force re-sync, reconcile, and see sync logs.
  */
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
@@ -22,15 +22,13 @@ import {
   Divider,
   Tabs,
 } from "@shopify/polaris";
-import { RefreshIcon, AlertTriangleIcon } from "@shopify/polaris-icons";
-import ConflictResolutionModal from "../components/ConflictResolutionModal.jsx";
+import { RefreshIcon } from "@shopify/polaris-icons";
 
 const SYNC_STATE_MAP = {
   in_sync: { label: "In Sync", tone: "success" },
   linked: { label: "Linked", tone: "info" },
   pending_app_push: { label: "Pending App Push", tone: "warning" },
   pending_shopify_pull: { label: "Pending Shopify Pull", tone: "warning" },
-  conflict: { label: "Conflict", tone: "critical" },
   error: { label: "Error", tone: "critical" },
   external_edit: { label: "External Edit", tone: "warning" },
   remote_missing: { label: "Remote Missing", tone: "critical" },
@@ -52,10 +50,6 @@ export default function SyncDashboard() {
   const [syncLogs, setSyncLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
-  // Conflict resolution state
-  const [conflictModal, setConflictModal] = useState({ open: false, postId: null, postTitle: "" });
-  const [conflictCount, setConflictCount] = useState(0);
-
   const tabs = [
     { id: "posts", content: "Posts" },
     { id: "logs", content: "Sync Logs" },
@@ -73,11 +67,6 @@ export default function SyncDashboard() {
       const res = await fetch("/api/posts?per_page=50");
       const data = await res.json();
       setPosts(data.posts || []);
-      // Count conflicts
-      const count = (data.posts || []).filter(
-        (p) => p.shopifyArticle?.syncState === "conflict"
-      ).length;
-      setConflictCount(count);
     } catch {
     } finally {
       setLoading(false);
@@ -133,10 +122,15 @@ export default function SyncDashboard() {
       const syncedCount = (data.results || []).filter(
         (r) => r.status === "reconciled" || r.status === "in_sync"
       ).length;
-      const errors = (data.results || []).filter((r) => r.status === "error").length;
+      const errorRows = (data.results || []).filter((r) => r.status === "error");
+      const errors = errorRows.length;
       showToast(
         `✅ Reconciliation complete: ${syncedCount} checked${errors ? `, ${errors} errors` : ""}`
       );
+      if (errors) {
+        const first = errorRows[0];
+        showToast(`❌ Reconcile error: ${first?.title || first?.postId} — ${first?.error || "Unknown error"}`, true);
+      }
       fetchPosts();
     } catch (err) {
       showToast(`❌ Reconciliation failed: ${err.message}`, true);
@@ -144,27 +138,6 @@ export default function SyncDashboard() {
       setReconciling(false);
     }
   }, [showToast, fetchPosts]);
-
-  const openConflictModal = useCallback((post) => {
-    setConflictModal({
-      open: true,
-      postId: post.id,
-      postTitle: post.title,
-    });
-  }, []);
-
-  const closeConflictModal = useCallback(() => {
-    setConflictModal({ open: false, postId: null, postTitle: "" });
-  }, []);
-
-  const handleConflictResolved = useCallback(
-    ({ resolution, message }) => {
-      showToast(`✅ ${message}`);
-      closeConflictModal();
-      fetchPosts();
-    },
-    [showToast, closeConflictModal, fetchPosts]
-  );
 
   const getSyncStateBadge = (post) => {
     const article = post.shopifyArticle;
@@ -191,14 +164,12 @@ export default function SyncDashboard() {
     const isDegraded = post.shopifyArticle?.structureDegraded;
     const hasError = post.shopifyArticle?.lastError;
     const isSyncing = syncing[post.id];
-    const isConflict = post.shopifyArticle?.syncState === "conflict";
 
     return (
       <IndexTable.Row
         id={String(post.id)}
         key={post.id}
         position={index}
-        tone={isConflict ? "critical" : undefined}
       >
         <IndexTable.Cell>
           <Text variant="bodySm" fontWeight="semibold">
@@ -215,18 +186,7 @@ export default function SyncDashboard() {
         </IndexTable.Cell>
         <IndexTable.Cell>
           <InlineStack gap="100">
-            {isConflict ? (
-              <Button
-                variant="plain"
-                tone="critical"
-                icon={AlertTriangleIcon}
-                onClick={() => openConflictModal(post)}
-              >
-                {syncState.label}
-              </Button>
-            ) : (
-              <Badge tone={syncState.tone}>{syncState.label}</Badge>
-            )}
+            <Badge tone={syncState.tone}>{syncState.label}</Badge>
             {post.shopifyArticle?.syncMode && (
               <Badge tone={SYNC_MODE_MAP[post.shopifyArticle.syncMode]?.tone || "info"}>
                 {SYNC_MODE_MAP[post.shopifyArticle.syncMode]?.label || post.shopifyArticle.syncMode}
@@ -250,31 +210,20 @@ export default function SyncDashboard() {
         </IndexTable.Cell>
         <IndexTable.Cell>
           <ButtonGroup>
-            {isConflict ? (
-              <Button
-                size="slim"
-                tone="critical"
-                icon={AlertTriangleIcon}
-                onClick={() => openConflictModal(post)}
-              >
-                Resolve
-              </Button>
-            ) : (
-              <Button
-                size="slim"
-                icon={RefreshIcon}
-                loading={isSyncing}
-                disabled={!post.shopifyArticle?.shopifyBlogId}
-                onClick={() => forceSync(post)}
-                title={
-                  !post.shopifyArticle?.shopifyBlogId
-                    ? "Post is not linked to a Shopify blog"
-                    : "Force sync to Shopify"
-                }
-              >
-                Sync
-              </Button>
-            )}
+            <Button
+              size="slim"
+              icon={RefreshIcon}
+              loading={isSyncing}
+              disabled={!post.shopifyArticle?.shopifyBlogId}
+              onClick={() => forceSync(post)}
+              title={
+                !post.shopifyArticle?.shopifyBlogId
+                  ? "Post is not linked to a Shopify blog"
+                  : "Force sync to Shopify"
+              }
+            >
+              Sync
+            </Button>
             <Button
               size="slim"
               onClick={() => navigate(`/posts/${post.id}/edit`)}
@@ -320,9 +269,7 @@ export default function SyncDashboard() {
         </IndexTable.Cell>
       </IndexTable.Row>
     );
-  });
-
-  return (
+  });    return (
     <Frame>
       {toast && (
         <Toast
@@ -331,13 +278,6 @@ export default function SyncDashboard() {
           onDismiss={dismissToast}
         />
       )}
-      <ConflictResolutionModal
-        open={conflictModal.open}
-        postId={conflictModal.postId}
-        postTitle={conflictModal.postTitle}
-        onClose={closeConflictModal}
-        onResolved={handleConflictResolved}
-      />
       <Page
         title="Sync Status"
         subtitle="Manage the 2-way synchronization between your app and Shopify"
@@ -364,29 +304,15 @@ export default function SyncDashboard() {
       >
         <Layout>
           <Layout.Section>
-            {conflictCount > 0 ? (
-              <Banner tone="critical" icon={AlertTriangleIcon}>
-                <BlockStack gap="200">
-                  <Text variant="bodyMd" fontWeight="semibold" as="p">
-                    🚨 {conflictCount} post{conflictCount !== 1 ? "s" : ""} need conflict resolution
-                  </Text>
-                  <Text variant="bodySm" as="p">
-                    Both the app and Shopify have made changes to the same posts.
-                    Click the <strong>Conflict</strong> badge or <strong>Resolve</strong> button
-                    to review differences and choose which version to keep.
-                  </Text>
-                </BlockStack>
-              </Banner>
-            ) : (
-              <Banner>
-                <p>
-                  Posts linked to a Shopify blog are synchronized in both directions.
-                  Use <strong>Force Sync</strong> to push app content to Shopify,
-                  or <strong>Reconcile All</strong> to check each post against Shopify
-                  and resolve any differences.
-                </p>
-              </Banner>
-            )}
+            <Banner>
+              <p>
+                Posts linked to a Shopify blog are synchronized in both directions.
+                Use <strong>Force Sync</strong> to push app content to Shopify,
+                or <strong>Reconcile All</strong> to check each post against Shopify
+                and catch any changes.
+                The sync uses baseline field-level merge and surfaces only true same-field conflicts.
+              </p>
+            </Banner>
           </Layout.Section>
 
           <Layout.Section>
@@ -467,11 +393,6 @@ export default function SyncDashboard() {
                       label: "Pending Shopify Pull",
                       desc: "Shopify has newer changes to pull into the app",
                       tone: "warning",
-                    },
-                    {
-                      label: "Conflict ⚡",
-                      desc: "Both sides changed — click to review differences and resolve",
-                      tone: "critical",
                     },
                     {
                       label: "External Edit",

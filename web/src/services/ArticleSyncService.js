@@ -24,9 +24,13 @@ const prisma = new PrismaClient();
 const MAX_WEBHOOK_DEPTH = 3;
 let _webhookDepth = 0;
 
-// Reconciliation rate limiting
+// Reconciliation rate limiting (Shopify has no ARTICLES_* webhooks — polling is primary)
 const RECONCILE_DELAY_MS = 250;
-const RECONCILE_SKIP_RECENT_MINUTES = 5;
+const RECONCILE_SKIP_RECENT_MINUTES = 1;
+const RECONCILE_INTERVAL_MINUTES = 1;
+const POLL_RECONCILE_COOLDOWN_MS = 12_000;
+
+const _pollReconcileLastRun = new Map();
 
 const METAFIELD_NAMESPACE = "blog_app";
 const METAFIELD_KEY = "source";
@@ -34,6 +38,28 @@ const METAFIELD_TYPE = "json";
 
 // ─── Scalar fields we merge independently ─────────────────────────────────────
 const SCALAR_FIELDS = ["title", "author", "status", "tags", "featuredImage"];
+
+/** True when a field hash differs from the last-synced baseline. */
+function changedFromBase(currentHash, baseHash) {
+  if (!baseHash) return false;
+  return currentHash !== baseHash;
+}
+
+function parseRemoteUpdatedAt(payload) {
+  if (!payload?.updated_at) return null;
+  const d = new Date(payload.updated_at);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isRemoteNewerThanLastSync(remoteUpdatedAt, link) {
+  if (!remoteUpdatedAt || !link?.lastRemoteUpdatedAt) return !!remoteUpdatedAt;
+  return remoteUpdatedAt.getTime() > link.lastRemoteUpdatedAt.getTime();
+}
+
+function localEditedSinceLastSync(post, link) {
+  if (!post?.updatedAt || !link?.syncedAt) return true;
+  return post.updatedAt.getTime() > link.syncedAt.getTime() + 1000;
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  HASH HELPERS
@@ -162,9 +188,38 @@ function buildBaselineSnapshot(localState, storefrontHtml, revision) {
  * conflicts – { field: { base, local, remote } } – fields with same-field disagreement
  * needsPushBack – true when local-won fields need to be pushed to Shopify
  */
-function threeWayMerge(base, local, remote) {
+function threeWayMerge(base, local, remote, { localEditedSinceSync = false } = {}) {
   const merged = {};
   const conflicts = {};
+
+  // Legacy articles without a baseline: compare local vs remote directly.
+  if (!base?.fields) {
+    for (const field of SCALAR_FIELDS) {
+      const localHash = fieldHash(local[field]);
+      const remoteHash = fieldHash(remote[field]);
+      if (localHash === remoteHash) {
+        merged[field] = { value: local[field], source: "both" };
+      } else if (localEditedSinceSync) {
+        merged[field] = { value: local[field], source: "local" };
+      } else {
+        merged[field] = { value: remote[field], source: "remote" };
+      }
+    }
+
+    const localContentHash = fieldHash(local.content.editorHtml);
+    const remoteContentHash = fieldHash(remote.content.storefrontHtml);
+    if (localContentHash === remoteContentHash) {
+      merged.content = { value: local.content, source: "both" };
+    } else if (localEditedSinceSync) {
+      merged.content = { value: local.content, source: "local" };
+    } else {
+      merged.content = { value: null, source: "remote", needsParse: true };
+    }
+
+    const needsPushBack = localEditedSinceSync
+      && Object.values(merged).some(m => m.source === "local");
+    return { merged, conflicts, needsPushBack };
+  }
 
   // ── Scalar fields ───────────────────────────────────────────────
   for (const field of SCALAR_FIELDS) {
@@ -172,8 +227,8 @@ function threeWayMerge(base, local, remote) {
     const remoteHash = fieldHash(remote[field]);
     const baseHash   = base?.fields?.[field]?.hash;
 
-    const localChanged  = localHash !== baseHash;
-    const remoteChanged = remoteHash !== baseHash;
+    const localChanged  = changedFromBase(localHash, baseHash);
+    const remoteChanged = changedFromBase(remoteHash, baseHash);
 
     if (!localChanged && !remoteChanged) {
       merged[field] = { value: local[field], source: "base" };
@@ -202,8 +257,8 @@ function threeWayMerge(base, local, remote) {
   const baseEditorHash     = base?.fields?.content?.editorHtml?.hash;
   const baseStorefrontHash = base?.fields?.content?.storefrontHtml?.hash;
 
-  const localContentChanged  = localContentHash !== baseEditorHash;
-  const remoteContentChanged = remoteContentHash !== baseStorefrontHash;
+  const localContentChanged  = changedFromBase(localContentHash, baseEditorHash);
+  const remoteContentChanged = changedFromBase(remoteContentHash, baseStorefrontHash);
 
   if (!localContentChanged && !remoteContentChanged) {
     merged.content = { value: local.content, source: "base" };
@@ -230,9 +285,9 @@ function threeWayMerge(base, local, remote) {
     }
   }
 
-  // ── Determine if push back is needed ────────────────────────────
-  // Push back if any field won "local" (local changed but remote didn't)
-  const needsPushBack = Object.values(merged).some(m => m.source === "local");
+  // Push back only when the app was edited since last sync and local-only fields won.
+  const needsPushBack = localEditedSinceSync
+    && Object.values(merged).some(m => m.source === "local");
 
   return { merged, conflicts, needsPushBack };
 }
@@ -570,6 +625,138 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   return { success: true, articleId, syncedAt: new Date(), revision: nextRevision };
 }
 
+/**
+ * After the user saves in the app, merge with the latest Shopify state then push.
+ * Prevents overwriting Shopify-only edits when both sides changed different fields.
+ */
+async function syncAfterLocalEdit(postId, { publishMode = false } = {}) {
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+    include: {
+      shopifyArticle: true,
+      tags: { include: { tag: true } },
+      shop: true,
+    },
+  });
+
+  if (!post?.shopifyArticle?.shopifyBlogId) {
+    throw new Error("Post is not linked to a Shopify blog");
+  }
+
+  const session = await shopify.config.sessionStorage.findSessionsByShop(post.shop.domain);
+  const validSession = session?.find(s => s.accessToken);
+  if (!validSession) throw new Error(`No active Shopify session for ${post.shop.domain}`);
+
+  const client = new shopify.api.clients.Rest({ session: validSession });
+  let remote = null;
+
+  if (post.shopifyArticle.shopifyArticleId) {
+    try {
+      const response = await client.get({
+        path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
+      });
+      remote = response.body?.article || null;
+    } catch (err) {
+      console.warn(`[ArticleSyncService] Could not fetch remote article for post ${postId}:`, err.message);
+    }
+  }
+
+  if (!remote) {
+    return pushPostToShopify(postId, { publishMode });
+  }
+
+  const localTagStr = post.tags
+    ? post.tags.map(pt => pt.tag?.name).filter(Boolean).sort().join(",")
+    : "";
+  const localState = normalizeLocalState(post, localTagStr);
+  const remoteState = normalizeRemoteState(remote);
+  const baseFields = post.shopifyArticle.lastSyncedSnapshot?.fields || null;
+  const { merged, conflicts } = threeWayMerge(
+    baseFields,
+    localState,
+    remoteState,
+    { localEditedSinceSync: true }
+  );
+
+  if (Object.keys(conflicts).length > 0) {
+    const conflictPayload = {
+      version: 1,
+      revision: post.shopifyArticle.syncRevision || 0,
+      createdAt: new Date().toISOString(),
+      fields: conflicts,
+    };
+
+    await prisma.shopifyArticle.update({
+      where: { postId: post.id },
+      data: {
+        syncState: "conflict",
+        conflictPayload,
+        lastError: `Conflict on: ${Object.keys(conflicts).join(", ")}`,
+      },
+    });
+
+    await logSyncEvent({
+      shopId: post.shopId,
+      postId: post.id,
+      shopifyArticleId: post.shopifyArticle.shopifyArticleId,
+      direction: "app_to_shopify",
+      eventType: "update",
+      status: "conflict",
+      message: `Save blocked by field conflict: ${Object.keys(conflicts).join(", ")}`,
+      payload: conflictPayload,
+    });
+
+    return { success: false, status: "conflict", conflicts: Object.keys(conflicts) };
+  }
+
+  const { postUpdate, structureDegraded, remoteTagNames, applyRemoteTags } =
+    applyMergedResult(merged, {}, post, remote);
+
+  await prisma.post.update({
+    where: { id: post.id },
+    data: postUpdate,
+  });
+
+  if (applyRemoteTags && remoteTagNames?.length > 0) {
+    await prisma.postTag.deleteMany({ where: { postId: post.id } });
+    for (const tagName of remoteTagNames) {
+      const slug = tagName.toLowerCase().replace(/\s+/g, "-");
+      const tagRec = await prisma.tag.upsert({
+        where: { shopId_slug: { shopId: post.shopId, slug } },
+        create: { shopId: post.shopId, name: tagName, slug },
+        update: {},
+      });
+      await prisma.postTag.upsert({
+        where: { postId_tagId: { postId: post.id, tagId: tagRec.id } },
+        create: { postId: post.id, tagId: tagRec.id },
+        update: {},
+      });
+    }
+  }
+
+  if (structureDegraded) {
+    await prisma.shopifyArticle.update({
+      where: { postId: post.id },
+      data: { structureDegraded: true },
+    });
+  }
+
+  return pushPostToShopify(postId, { publishMode });
+}
+
+/**
+ * Poll-driven reconcile for a single post (throttled). Used by the editor sync indicator.
+ */
+async function pollReconcilePost(postId) {
+  const now = Date.now();
+  const lastRun = _pollReconcileLastRun.get(postId) || 0;
+  if (now - lastRun < POLL_RECONCILE_COOLDOWN_MS) {
+    return { status: "throttled" };
+  }
+  _pollReconcileLastRun.set(postId, now);
+  return reconcilePost(postId);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 //  WEBHOOK HANDLING
 // ══════════════════════════════════════════════════════════════════════════════
@@ -703,7 +890,10 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
 
       // ── Echo suppression ────────────────────────────────────────
       const inboundHash = computeContentHash(payload);
-      if (inboundHash === link.lastOutboundHash) {
+      const remoteUpdatedAt = parseRemoteUpdatedAt(payload);
+      const remoteIsNewer = isRemoteNewerThanLastSync(remoteUpdatedAt, link);
+
+      if (inboundHash === link.lastOutboundHash && !remoteIsNewer) {
         await logSyncEvent({
           shopId: shop.id, postId: link.postId, shopifyArticleId,
           direction: "shopify_to_app", eventType: "webhook",
@@ -760,7 +950,13 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
 
       // ── Three-way merge ─────────────────────────────────────────
       const baseFields = link.lastSyncedSnapshot?.fields || null;
-      const { merged, conflicts, needsPushBack } = threeWayMerge(baseFields, localState, remoteState);
+      const localWasEdited = localEditedSinceLastSync(link.post, link);
+      const { merged, conflicts, needsPushBack } = threeWayMerge(
+        baseFields,
+        localState,
+        remoteState,
+        { localEditedSinceSync: localWasEdited }
+      );
 
       // ── Apply merge result ──────────────────────────────────────
       const { postUpdate, syncState, hasConflicts, structureDegraded, remoteTagNames, applyRemoteTags } =
@@ -942,12 +1138,16 @@ async function reconcilePost(postId) {
 
     const inboundHash = computeContentHash(remote);
     const link = post.shopifyArticle;
+    const remoteUpdatedAt = parseRemoteUpdatedAt(remote);
+    const remoteIsNewer = isRemoteNewerThanLastSync(remoteUpdatedAt, link);
 
-    if (inboundHash === link.lastOutboundHash && inboundHash === link.lastInboundHash) {
-      return { status: "in_sync" };
+    if (!remoteIsNewer) {
+      if (inboundHash === link.lastOutboundHash || inboundHash === link.lastInboundHash) {
+        return { status: "in_sync" };
+      }
     }
 
-    if (inboundHash !== link.lastInboundHash && inboundHash !== link.lastOutboundHash) {
+    if (remoteIsNewer || (inboundHash !== link.lastInboundHash && inboundHash !== link.lastOutboundHash)) {
       await handleArticleWebhook("ARTICLES_UPDATE", post.shop.domain, JSON.stringify(remote));
 
       const updatedLink = await prisma.shopifyArticle.findUnique({
@@ -1050,7 +1250,7 @@ async function reconcileAllShops() {
  * Runs reconciliation every N minutes.
  * @param {number} intervalMinutes - How often to run (default 5)
  */
-function startReconciliationScheduler(intervalMinutes = 5) {
+function startReconciliationScheduler(intervalMinutes = RECONCILE_INTERVAL_MINUTES) {
   const intervalMs = intervalMinutes * 60 * 1000;
   console.log(`[Reconciliation] Scheduler started, running every ${intervalMinutes} minutes`);
 
@@ -1073,8 +1273,10 @@ function startReconciliationScheduler(intervalMinutes = 5) {
 
 export const ArticleSyncService = {
   pushPostToShopify,
+  syncAfterLocalEdit,
   handleArticleWebhook,
   reconcilePost,
+  pollReconcilePost,
   reconcileAllShops,
   reconcileAllLinkedPosts,
   startReconciliationScheduler,

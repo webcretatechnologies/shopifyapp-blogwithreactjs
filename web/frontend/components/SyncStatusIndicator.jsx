@@ -1,33 +1,30 @@
 /**
  * SyncStatusIndicator — Real-time sync status indicator for the post editor.
- * Polls the backend, shows sync state badge, last synced time, and offers
- * inline conflict resolution without leaving the editor.
+ * Polls the backend and shows sync state badge and last synced time.
+ * Uses baseline field-level merge with conflict detection.
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
   Badge,
-  Button,
   Text,
   InlineStack,
   BlockStack,
   Spinner,
   Banner,
 } from "@shopify/polaris";
-import { AlertTriangleIcon } from "@shopify/polaris-icons";
-import ConflictResolutionModal from "./ConflictResolutionModal.jsx";
 
-const POLL_INTERVAL_MS = 15_000; // 15 seconds
+const POLL_INTERVAL_MS = 10_000; // 10 seconds
 
 const SYNC_STATE_CONFIG = {
-  in_sync:              { label: "In Sync",           tone: "success", icon: null },
-  linked:               { label: "Linked",            tone: "info",    icon: null },
-  pending_app_push:     { label: "Pending App Push",  tone: "warning", icon: null },
-  pending_shopify_pull: { label: "Pending Pull",      tone: "warning", icon: null },
-  conflict:             { label: "Conflict",          tone: "critical",icon: AlertTriangleIcon },
-  error:                { label: "Error",             tone: "critical", icon: null },
-  external_edit:        { label: "External Edit",     tone: "warning", icon: null },
-  remote_missing:       { label: "Missing on Shopify",tone: "critical", icon: null },
+  in_sync:              { label: "In Sync",           tone: "success" },
+  linked:               { label: "Linked",            tone: "info" },
+  pending_app_push:     { label: "Pending App Push",  tone: "warning" },
+  pending_shopify_pull: { label: "Pending Pull",      tone: "warning" },
+  conflict:             { label: "Conflict",          tone: "critical" },
+  error:                { label: "Error",             tone: "critical" },
+  external_edit:        { label: "External Edit",     tone: "warning" },
+  remote_missing:       { label: "Missing on Shopify",tone: "critical" },
 };
 
 function formatRelativeTime(dateStr) {
@@ -49,10 +46,6 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
   const [loading, setLoading] = useState(false);
   const [lastPollTime, setLastPollTime] = useState(null);
   const intervalRef = useRef(null);
-
-  // ── Conflict modal state ──────────────────────────────────────────────
-  const [conflictModalOpen, setConflictModalOpen] = useState(false);
-  const [modalPostTitle, setModalPostTitle] = useState("");
 
   // ── Poll sync status ────────────────────────────────────────────────────
   const poll = useCallback(async () => {
@@ -87,12 +80,7 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
     if (initialArticle) setArticle(initialArticle);
   }, [initialArticle]);
 
-  // ── Conflict resolution handler ─────────────────────────────────────────
-  const handleConflictResolved = useCallback(({ resolution, message }) => {
-    setConflictModalOpen(false);
-    // Re-poll to fetch updated state
-    setTimeout(poll, 500);
-  }, [poll]);
+
 
   // ── Determine display state ─────────────────────────────────────────────
   if (!article) {
@@ -110,20 +98,11 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
 
   const syncState = article.syncState || "linked";
   const stateConfig = SYNC_STATE_CONFIG[syncState] || { label: syncState, tone: "info", icon: null };
-  const isConflict = syncState === "conflict";
   const isDegraded = article.structureDegraded;
   const hasError = article.lastError;
 
   return (
-    <>
-      <ConflictResolutionModal
-        open={conflictModalOpen}
-        postId={postId}
-        postTitle={modalPostTitle}
-        onClose={() => setConflictModalOpen(false)}
-        onResolved={handleConflictResolved}
-      />
-      <Card>
+    <Card>
         <BlockStack gap="250">
           {/* Header row */}
           <InlineStack gap="200" blockAlign="center" align="space-between">
@@ -133,28 +112,14 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
 
           {/* Sync state badge */}
           <InlineStack gap="200" blockAlign="center">
-            {isConflict ? (
-              <Button
-                variant="plain"
-                tone="critical"
-                icon={AlertTriangleIcon}
-                onClick={() => {
-                  setModalPostTitle(postTitle);
-                  setConflictModalOpen(true);
-                }}
-              >
-                {stateConfig.label}
-              </Button>
-            ) : (
-              <Badge tone={stateConfig.tone}>{stateConfig.label}</Badge>
-            )}
+            <Badge tone={stateConfig.tone}>{stateConfig.label}</Badge>
 
             {/* Sync mode badge */}
             {article.syncMode && (
-              <Badge tone={article.syncMode === "managed_by_app" ? "success" : "info"} size="small">
-                {article.syncMode === "managed_by_app" ? "Managed" : "External"}
-              </Badge>
-            )}
+            <Badge tone={article.syncMode === "managed_by_app" ? "success" : "info"} size="small">
+              {article.syncMode === "managed_by_app" ? "Managed" : "External"}
+            </Badge>
+          )}
           </InlineStack>
 
           {/* Shopify status */}
@@ -187,29 +152,14 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
           )}
 
           {/* Error */}
-          {hasError && !isConflict && (
+          {hasError && (
             <Text variant="bodySm" tone="critical" as="p">
               {hasError}
             </Text>
           )}
 
-          {/* Conflict resolution CTA */}
-          {isConflict && (
-            <Button
-              tone="critical"
-              icon={AlertTriangleIcon}
-              fullWidth
-              onClick={() => {
-                setModalPostTitle(postTitle);
-                setConflictModalOpen(true);
-              }}
-            >
-              Resolve Conflict Now
-            </Button>
-          )}
-
           {/* Sync direction indicator */}
-          {article.lastSyncDirection && !isConflict && (
+          {article.lastSyncDirection && (
             <InlineStack gap="100" blockAlign="center">
               <Text variant="bodyXs" tone="subdued" as="span">
                 Last sync:
@@ -220,7 +170,6 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
             </InlineStack>
           )}
         </BlockStack>
-      </Card>
-    </>
+    </Card>
   );
 }

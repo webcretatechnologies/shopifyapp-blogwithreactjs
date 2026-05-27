@@ -28,8 +28,8 @@ import serveStatic from "serve-static";
 
 import shopify, { prisma } from "./shopify.js";
 import PrivacyWebhookHandlers from "./privacy.js";
-import { ArticleWebhookHandlers } from "./src/webhooks/articles.js";
 import { ArticleSyncService } from "./src/services/ArticleSyncService.js";
+import crypto from "crypto";
 import postRoutes from "./src/routes/posts.js";
 import settingsRoutes from "./src/routes/settings.js";
 import billingRoutes from "./src/routes/billing.js";
@@ -144,49 +144,64 @@ app.get(
 );
 
 /**
- * Register ARTICLES_* webhooks with Shopify for a given shop.
- * Uses the REST API to create webhook subscriptions.
+ * Shopify no longer accepts ARTICLES_* webhook subscriptions (422).
+ * Keep function for compatibility but skip registration and rely on reconcile polling.
  */
 async function registerShopifyArticleWebhooks(shopDomain, restClient) {
-  const webhookHost = process.env.HOST; if (!webhookHost) { console.warn('[WebhookRegister] HOST env var not set — webhooks will not work'); return; }
-  const callbackUrl = webhookHost + '/api/webhooks';
+  void restClient;
+  console.log(`[WebhookRegister] Skipping article webhook registration for ${shopDomain}; using polling reconciliation`);
+}
 
-  const webhookTopics = [
-    "ARTICLES_CREATE",
-    "ARTICLES_UPDATE",
-    "ARTICLES_DELETE",
-  ];
+// ─── Legacy manual article webhook endpoint (kept for compatibility) ───────────
+// Current production sync uses polling reconciliation, because Shopify rejects
+// ARTICLES_* subscriptions with 422.
+app.post(
+  "/api/webhooks/articles",
+  express.text({ type: "*/*" }),
+  async (req, res) => {
+    const hmac = req.headers["x-shopify-hmac-sha256"];
+    const topic = req.headers["x-shopify-topic"];
+    const shopDomain = req.headers["x-shopify-shop-domain"];
 
-  for (const topic of webhookTopics) {
+    if (!hmac || !topic || !shopDomain) {
+      console.warn("[ArticleWebhook] Missing required webhook headers");
+      return res.status(400).send("Missing webhook headers");
+    }
+
+    const apiSecret = process.env.SHOPIFY_API_SECRET;
+    if (!apiSecret) {
+      console.error("[ArticleWebhook] SHOPIFY_API_SECRET not configured — cannot validate webhooks");
+      return res.status(500).send("Server misconfigured");
+    }
+
+    // Validate HMAC signature
+    const computedHash = crypto
+      .createHmac("sha256", apiSecret)
+      .update(req.body, "utf8")
+      .digest("base64");
+
+    if (computedHash !== hmac) {
+      console.error("[ArticleWebhook] Invalid HMAC for " + topic + " from " + shopDomain);
+      return res.status(401).send("HMAC validation failed");
+    }
+
     try {
-      await restClient.post({
-        path: "webhooks",
-        type: "application/json",
-        data: {
-          webhook: {
-            topic,
-            address: callbackUrl,
-            format: "json",
-          },
-        },
-      });
-      console.log(`[WebhookRegister] Registered ${topic} for ${shopDomain}`);
+      await ArticleSyncService.handleArticleWebhook(topic, shopDomain, req.body);
+      res.status(200).send("OK");
     } catch (err) {
-      // Webhook may already exist — that's fine
-      if (err.message?.includes("already been taken") || err.message?.includes("already exists")) {
-        console.log(`[WebhookRegister] ${topic} already registered for ${shopDomain}`);
-      } else {
-        console.warn(`[WebhookRegister] Failed to register ${topic} for ${shopDomain}:`, err.message);
-      }
+      console.error("[ArticleWebhook] Error processing " + topic + " from " + shopDomain + ":", err);
+      // Always return 200 so Shopify doesn't retry
+      res.status(200).send("Accepted");
     }
   }
-}
+);
+
+
 
 app.post(
   shopify.config.webhooks.path,
   shopify.processWebhooks({ webhookHandlers: {
           ...PrivacyWebhookHandlers,
-          ...ArticleWebhookHandlers,
           APP_SUBSCRIPTIONS_UPDATE: {
             deliveryMethod: "http",
             callbackUrl: "/api/webhooks",
@@ -341,6 +356,19 @@ app.use("/api/support", supportRoutes);
 // Super Admin API
 app.use("/admin-api", superAdminRoutes);
 
+// ─── Manual webhook re-registration endpoint ──────────────────────
+app.post("/api/articles/re-register-webhooks", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+    const restClient = new shopify.api.clients.Rest({ session });
+    await registerShopifyArticleWebhooks(session.shop, restClient);
+    res.json({ success: true, message: "Article webhooks re-registered successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Static uploads
 app.use("/uploads", express.static(uploadsDir));
 
@@ -397,7 +425,6 @@ httpServer.listen(PORT, async () => {
     console.error("Failed to register webhooks for existing shops:", err.message);
   }
 
-  // Start background reconciliation to periodically detect Shopify changes missed by webhooks
-  // Runs every 5 minutes by default
-  ArticleSyncService.startReconciliationScheduler(5);
+  // Start background reconciliation for near real-time 2-way sync.
+  ArticleSyncService.startReconciliationScheduler(1);
 });
