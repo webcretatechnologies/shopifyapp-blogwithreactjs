@@ -50,14 +50,31 @@ export function createBlockExtension({
             open={isEditing}
             onClose={() => setIsEditing(false)}
             title={title}
+            large
           >
             <Modal.Section>
-              <SettingsComponent 
-                block={attrs} 
-                onUpdate={(updates) => {
-                  updateAttributes(updates);
-                }} 
-              />
+              <div style={{ display: "grid", gap: "16px" }}>
+                <div
+                  style={{
+                    border: "1px solid #e1e3e5",
+                    borderRadius: "10px",
+                    padding: "12px",
+                    background: "#f6f6f7",
+                  }}
+                >
+                  <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "8px", color: "#616161" }}>
+                    Live preview
+                  </div>
+                  <PreviewComponent block={attrs} isSelected={true} onUpdate={updateAttributes} />
+                </div>
+
+                <SettingsComponent
+                  block={attrs}
+                  onUpdate={(updates) => {
+                    updateAttributes(updates);
+                  }}
+                />
+              </div>
             </Modal.Section>
           </Modal>
         )}
