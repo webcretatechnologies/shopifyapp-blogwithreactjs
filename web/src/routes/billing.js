@@ -21,6 +21,18 @@ router.get("/check", async (req, res) => {
   try {
     const session = res.locals.shopify.session;
     
+    // Fetch shop details from DB first to get post count
+    const shop = await prisma.shop.findUnique({
+      where: { domain: session.shop }
+    });
+
+    let postCount = 0;
+    if (shop) {
+      postCount = await prisma.post.count({
+        where: { shopId: shop.id }
+      });
+    }
+
     const client = new shopify.api.clients.Graphql({ session });
     
     const response = await client.request(`
@@ -42,24 +54,44 @@ router.get("/check", async (req, res) => {
 
     if (activeSub) {
       activePlan = activeSub.name;
+      // Sync shop planKey in database if it differs
+      if (shop && shop.planKey !== activePlan) {
+        await prisma.shop.update({
+          where: { id: shop.id },
+          data: { planKey: activePlan }
+        });
+      }
     } else {
       // Fallback to check DB
       const dbPlan = await prisma.appPlan.findFirst({
-        where: { shop: { domain: session.shop }, isActive: true },
+        where: { shopId: shop?.id, isActive: true },
         orderBy: { createdAt: 'desc' }
       });
       if (dbPlan) {
         activePlan = dbPlan.planKey;
       } else {
         // Ensure DB reflects it's on free tier
-        await prisma.shop.update({
-          where: { domain: session.shop },
-          data: { planKey: "free" }
-        });
+        if (shop && shop.planKey !== "free") {
+          await prisma.shop.update({
+            where: { id: shop.id },
+            data: { planKey: "free" }
+          });
+        }
       }
     }
 
-    res.status(200).json({ activePlan });
+    // Determine post limits based on plan
+    let postLimit = 10;
+    const lowerPlan = activePlan.toLowerCase();
+    if (lowerPlan === "free") {
+      postLimit = 10;
+    } else if (lowerPlan.includes("starter")) {
+      postLimit = 50;
+    } else if (lowerPlan.includes("pro") || lowerPlan.includes("business")) {
+      postLimit = null; // Unlimited
+    }
+
+    res.status(200).json({ activePlan, postCount, postLimit });
   } catch (error) {
     console.error("Failed to check billing:", error);
     res.status(500).json({ error: "Failed to check billing status" });
@@ -69,8 +101,8 @@ router.get("/check", async (req, res) => {
 // Request a new subscription using GraphQL
 router.post("/request", async (req, res) => {
   try {
-    const session = res.locals.shopify.session;
-    const { plan } = req.body;
+        const session = res.locals.shopify.session;
+    const { plan, host } = req.body;
 
     if (plan === "free") {
       return res.status(200).json({ confirmationUrl: null, isFree: true });
@@ -91,7 +123,10 @@ router.post("/request", async (req, res) => {
     });
     const isTestMode = testModeSetting ? testModeSetting.value === "true" : true;
 
-    const returnUrl = `https://${shopify.api.config.hostName}/?shop=${session.shop}`;
+    let returnUrl = `https://${shopify.api.config.hostName}/?shop=${session.shop}`;
+    if (host) {
+      returnUrl += `&host=${encodeURIComponent(host)}`;
+    }
     const client = new shopify.api.clients.Graphql({ session });
 
     // Use EVERY_30_DAYS or ANNUAL
