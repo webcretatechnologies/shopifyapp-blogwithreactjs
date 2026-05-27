@@ -267,7 +267,6 @@ export default function PostEditor() {
   const [deleteFromShopify, setDeleteFromShopify] = useState(false);
   const [toast, setToast] = useState(null);
   const [error, setError] = useState(null);
-  const [selectedProducts, setSelectedProducts] = useState([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [showCongratsModal, setShowCongratsModal] = useState(false);
@@ -295,7 +294,6 @@ export default function PostEditor() {
       setTags(data.post.tags || []);
       setFeatures(data.features || {});
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
-      setSelectedProducts(data.post.products || []);
 
 
       setSeoData({
@@ -349,26 +347,7 @@ export default function PostEditor() {
 
 
 
-  const handleOpenPicker = async () => {
-    if (!window.shopify?.resourcePicker) return;
-    const selection = await window.shopify.resourcePicker({
-      type: "product",
-      multiple: true,
-      selectionIds: selectedProducts.map((p) => ({ id: p.shopifyProductId })),
-    });
 
-    if (selection) {
-      const products = selection.map((p) => ({
-        shopifyProductId: p.id,
-        title: p.title,
-        handle: p.handle,
-        image: p.images?.[0]?.originalSrc || null,
-        price: p.variants?.[0]?.price || null,
-        variantId: p.variants?.[0]?.id || null,
-      }));
-      setSelectedProducts(products);
-    }
-  };
 
   const addTag = () => {
     const t = tagInput.trim();
@@ -417,7 +396,7 @@ export default function PostEditor() {
       contentJson: parseHtmlToBlocks(contentHtml),
       tags,
       blogId: shopifyBlogId || undefined,
-      productSliderProducts: selectedProducts,
+      productSliderProducts: [],
       editorMode: "wysiwyg",
       ...seoData,
     };
@@ -474,8 +453,10 @@ export default function PostEditor() {
         }
       } else if (!isEditing) {
          navigate(`/posts/${data.post.id}/edit`);
+      } else {
+         loadPost();
       }
-      return data.post.id;
+      return data.post?.id || id;
     } catch (err) {
       setError(err.message);
       return null;
@@ -583,12 +564,7 @@ export default function PostEditor() {
     ...shopifyBlogs.map((b) => ({ label: b.title, value: String(b.id) })),
   ];
 
-  const sliderPositionOptions = [
-    { label: "None", value: "none" },
-    { label: "Top of article", value: "top" },
-    { label: "Bottom of article", value: "bottom" },
-    { label: "Both", value: "both" },
-  ];
+
 
   if (isLoading) {
     return (
@@ -893,60 +869,7 @@ export default function PostEditor() {
                 </Box>
               </Card>
 
-              {/* Product Slider (plan-gated) */}
-              {features.product_slider?.enabled && (
-                <Card>
-                  <Box padding="500">
-                    <BlockStack gap="300">
-                      <Text variant="headingMd">Product Slider</Text>
-                      <Divider />
-                      <Select
-                        label="Slider Position"
-                        options={sliderPositionOptions}
-                        value={post.productSliderPosition}
-                        onChange={handleField("productSliderPosition")}
-                      />
-                      {post.productSliderPosition !== "none" && (
-                        <>
-                          <Text tone="subdued" variant="bodySm">
-                            {selectedProducts.length} products selected
-                          </Text>
-                          <Button onClick={handleOpenPicker} fullWidth>
-                            {selectedProducts.length
-                              ? "Change Products"
-                              : "Select Products"}
-                          </Button>
-                          {selectedProducts.length > 0 && (
-                            <BlockStack gap="200">
-                              {selectedProducts.slice(0, 3).map((p) => (
-                                <InlineStack
-                                  key={p.shopifyProductId || p.id}
-                                  gap="200"
-                                  blockAlign="center"
-                                >
-                                  {p.image && (
-                                    <Thumbnail
-                                      source={p.image}
-                                      size="small"
-                                      alt={p.title}
-                                    />
-                                  )}
-                                  <Text variant="bodySm">{p.title}</Text>
-                                </InlineStack>
-                              ))}
-                              {selectedProducts.length > 3 && (
-                                <Text tone="subdued" variant="bodySm">
-                                  +{selectedProducts.length - 3} more
-                                </Text>
-                              )}
-                            </BlockStack>
-                          )}
-                        </>
-                      )}
-                    </BlockStack>
-                  </Box>
-                </Card>
-              )}
+
 
               {/* Shopify Sync Status — real-time indicator */}
               <SyncStatusIndicator

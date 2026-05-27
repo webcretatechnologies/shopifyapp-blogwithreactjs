@@ -18,6 +18,7 @@ import crypto from "crypto";
 import shopify from "../../shopify.js";
 import { EditorContentCompiler } from "./EditorContentCompiler.js";
 import { ShopifyArticleParser } from "./ShopifyArticleParser.js";
+import BlockRenderer from "./BlockRenderer.js";
 
 const prisma = new PrismaClient();
 
@@ -502,6 +503,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
       shopifyArticle: true,
       tags: { include: { tag: true } },
       shop: true,
+      products: { include: { product: true }, orderBy: { position: "asc" } },
     },
   });
 
@@ -517,9 +519,46 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   const restClient = new shopify.api.clients.Rest({ session: validSession });
 
   // Compile content for storefront
-  const storefrontHtml = await EditorContentCompiler.compileForStorefront(
+  let storefrontHtml = await EditorContentCompiler.compileForStorefront(
     post.contentHtml || "", validSession, graphqlClient, post.shop.domain
   );
+
+  let storeCurrency = "USD";
+  try {
+    const currencyRes = await graphqlClient.request(`
+      query GetShopCurrency {
+        shop { currencyCode }
+      }
+    `);
+    storeCurrency = currencyRes.data?.shop?.currencyCode || "USD";
+  } catch (cErr) {
+    console.warn("[ArticleSyncService] Could not resolve store currency:", cErr.message);
+  }
+
+  const postProducts = post.products ? post.products.map(pp => ({
+    id: pp.product.id,
+    shopifyProductId: pp.product.shopifyProductId,
+    title: pp.product.title,
+    handle: pp.product.handle,
+    image: pp.product.image,
+    price: pp.product.price,
+    compareAtPrice: pp.product.compareAtPrice,
+    variantId: pp.product.variantId,
+    variantAvailable: pp.product.variantAvailable,
+  })) : [];
+
+  const renderer = new BlockRenderer(post.shop.domain, {
+    productSliderPosition: post.productSliderPosition || "none",
+    productSliderSource: post.productSliderSource || "recommendations",
+    productSliderConfig: post.productSliderConfig || {},
+    productSliderProducts: postProducts,
+    storeCurrency: storeCurrency,
+  });
+
+  storefrontHtml = renderer.appendProductSliderWrappers(storefrontHtml, post.contentJson);
+  if (renderer.sliderScriptInjected) {
+    storefrontHtml += "\n" + BlockRenderer.relatedProductSliderScriptBlock();
+  }
 
   // Tag string
   const tagNames = post.tags

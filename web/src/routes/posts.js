@@ -134,6 +134,9 @@ router.post("/", async (req, res) => {
       customCss,
       customJs,
       productSliderPosition = "none",
+      productSliderSource = "recommendations",
+      productSliderConfig,
+      productSliderProducts = [],
       categoryId,
       tags = [],
       blogId,
@@ -177,6 +180,8 @@ router.post("/", async (req, res) => {
         customCss: customCss || null,
         customJs: customJs || null,
         productSliderPosition,
+        productSliderSource,
+        productSliderConfig: productSliderConfig || null,
         categoryId: categoryId ? parseInt(categoryId) : null,
         editorMode: "wysiwyg",
         metaTitle: metaTitle || null,
@@ -191,6 +196,11 @@ router.post("/", async (req, res) => {
     // Sync tags
     if (tags.length) {
       await syncTags(shop.id, post.id, tags);
+    }
+
+    // Sync products
+    if (Array.isArray(productSliderProducts)) {
+      await syncProducts(shop.id, post.id, productSliderProducts);
     }
 
     // Create ShopifyArticle record if blogId provided
@@ -242,6 +252,7 @@ router.put("/:id", async (req, res) => {
       productSliderPosition,
       productSliderSource,
       productSliderConfig,
+      productSliderProducts,
       categoryId,
       tags,
       publishedAt,
@@ -311,6 +322,10 @@ router.put("/:id", async (req, res) => {
 
     if (Array.isArray(tags)) {
       await syncTags(shop.id, post.id, tags);
+    }
+
+    if (Array.isArray(productSliderProducts)) {
+      await syncProducts(shop.id, post.id, productSliderProducts);
     }
 
     // Create or update ShopifyArticle relation locally if blogId was provided
@@ -895,6 +910,73 @@ async function syncTags(shopId, postId, tags) {
     data: tagRecords.map((tag) => ({ postId, tagId: tag.id })),
     skipDuplicates: true,
   });
+}
+
+async function syncProducts(shopId, postId, products) {
+  if (!Array.isArray(products)) return;
+
+  const productData = products.map((p) => {
+    const rawId = p.shopifyProductId || p.id;
+    const shopifyProductId = rawId ? String(rawId) : "";
+    const priceRaw = p.price;
+    const priceVal = priceRaw !== null && priceRaw !== undefined ? parseFloat(priceRaw) : null;
+    const compareAtPriceRaw = p.compareAtPrice;
+    const compareAtPriceVal = compareAtPriceRaw !== null && compareAtPriceRaw !== undefined ? parseFloat(compareAtPriceRaw) : null;
+
+    return {
+      shopifyProductId,
+      title: String(p.title || ""),
+      handle: String(p.handle || ""),
+      image: p.image || null,
+      price: priceVal,
+      compareAtPrice: compareAtPriceVal,
+      variantId: p.variantId ? String(p.variantId) : null,
+      variantAvailable: p.variantAvailable ?? true,
+    };
+  }).filter((p) => p.shopifyProductId);
+
+  // Upsert products in the Product table
+  const productRecords = await Promise.all(
+    productData.map(async (p) => {
+      return prisma.product.upsert({
+        where: { shopifyProductId: p.shopifyProductId },
+        create: {
+          shopId,
+          shopifyProductId: p.shopifyProductId,
+          title: p.title,
+          handle: p.handle,
+          image: p.image,
+          price: p.price,
+          compareAtPrice: p.compareAtPrice,
+          variantId: p.variantId,
+          variantAvailable: p.variantAvailable,
+        },
+        update: {
+          title: p.title,
+          handle: p.handle,
+          image: p.image,
+          price: p.price,
+          compareAtPrice: p.compareAtPrice,
+          variantId: p.variantId,
+          variantAvailable: p.variantAvailable,
+        },
+      });
+    })
+  );
+
+  // Remove old PostProduct rows and re-insert with positions
+  await prisma.postProduct.deleteMany({ where: { postId } });
+  
+  if (productRecords.length > 0) {
+    await prisma.postProduct.createMany({
+      data: productRecords.map((prod, index) => ({
+        postId,
+        productId: prod.id,
+        position: index,
+      })),
+      skipDuplicates: true,
+    });
+  }
 }
 
 function serializePost(post) {

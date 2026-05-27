@@ -17,7 +17,8 @@ import { ProductGridExtension } from "./extensions/ProductGridExtension";
 import { CollectionExtension } from "./extensions/CollectionExtension";
 import { BuyButtonExtension } from "./extensions/BuyButtonExtension";
 import { LegacyProductCardExtension, LegacyStickyProductExtension, LegacyFeaturedProductExtension } from "./extensions/LegacyBuyButtonExtensions";
-import { LegacyProductSwitcherExtension, LegacyProductSliderExtension } from "./extensions/LegacyProductGridExtensions";
+import { LegacyProductSwitcherExtension } from "./extensions/LegacyProductGridExtensions";
+import { ProductSliderExtension } from "./extensions/ProductSliderExtension";
 import { CTAButtonExtension } from "./extensions/CTAButtonExtension";
 import { HeroExtension } from "./extensions/HeroExtension";
 import { VideoExtension } from "./extensions/VideoExtension";
@@ -79,7 +80,7 @@ export default function TiptapEditor({
       LegacyStickyProductExtension,
       LegacyFeaturedProductExtension,
       LegacyProductSwitcherExtension,
-      LegacyProductSliderExtension,
+      ProductSliderExtension,
       CTAButtonExtension,
       HeroExtension,
       VideoExtension,

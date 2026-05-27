@@ -180,8 +180,10 @@ export class EditorContentCompiler {
             break;
           case "productGrid":
           case "product_switcher":
-          case "product_slider":
             compiledHtml = await this.renderProductGrid(attrs, shopifySession, shopifyClient);
+            break;
+          case "product_slider":
+            compiledHtml = await this.renderProductSlider(attrs, shopifySession, shopifyClient);
             break;
           case "collection":
             compiledHtml = await this.renderCollection(attrs, shopifySession, shopifyClient);
@@ -560,6 +562,143 @@ export class EditorContentCompiler {
         <div style="${gridStyle}">
           ${cardsHtml}
         </div>
+      </div>
+    `;
+  }
+
+  static async renderProductSlider(attrs, shopifySession, shopifyClient) {
+    const title = attrs.title || "";
+    const titleAlign = attrs.titleAlign || "left";
+    const searchQuery = attrs.searchQuery || "";
+    const manualProducts = attrs.manualProducts || [];
+    const maxProducts = attrs.maxProducts || "12";
+    const cardStyle = attrs.cardStyle || "shadow";
+    const gap = attrs.gap || "16px";
+    const showPrice = attrs.showPrice !== false;
+    const showButton = attrs.showButton !== false;
+    const buttonText = attrs.buttonText || "Add to Cart";
+    const buttonColor = attrs.buttonColor || "#008060";
+
+    let list = [];
+    if (manualProducts && manualProducts.length > 0) {
+      list = manualProducts;
+    } else if (searchQuery && shopifySession && shopifyClient) {
+      try {
+        const result = await shopifyClient.request(`
+          query SearchProducts($query: String!, $first: Int!) {
+            products(query: $query, first: $first) {
+              edges {
+                node {
+                  id
+                  title
+                  handle
+                  featuredImage { url }
+                  priceRangeV2 { minVariantPrice { amount } }
+                  variants(first: 1) {
+                    edges { node { id } }
+                  }
+                }
+              }
+            }
+          }
+        `, { variables: { query: searchQuery, first: parseInt(maxProducts) } });
+        list = (result.data?.products?.edges || []).map(({ node }) => ({
+          shopifyProductId: node.id,
+          title: node.title,
+          handle: node.handle,
+          image: node.featuredImage?.url || null,
+          price: node.priceRangeV2?.minVariantPrice?.amount || null,
+          variantId: node.variants?.edges?.[0]?.node?.id || null,
+        }));
+      } catch (e) {
+        console.error("Failed to fetch products for search query in EditorContentCompiler slider:", searchQuery, e);
+      }
+    }
+
+    if (list.length === 0) {
+      return `<div style="padding: 32px 16px; text-align: center; border: 2px dashed #e1e3e5; border-radius: 8px; color: #6d7175; font-family: sans-serif;">` +
+        `<div style="font-size: 32px; margin-bottom: 8px;">🎠</div>` +
+        `<div style="font-size: 14px;">No products to display</div>` +
+        `</div>`;
+    }
+
+    const cardStyles = {
+      shadow: "border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; background: #fff;",
+      border: "border-radius: 8px; border: 1px solid #e1e3e5; overflow: hidden; background: #fff;",
+      minimal: "padding: 4px;"
+    };
+    const activeStyle = cardStyles[cardStyle] || cardStyles.shadow;
+
+    let headerHtml = "";
+    if (title) {
+      headerHtml = `<h3 style="margin: 0 0 16px; font-size: 20px; font-weight: 700; color: #202223; text-align: ${titleAlign}; font-family: sans-serif;">${title}</h3>`;
+    }
+
+    let cardsHtml = "";
+    list.slice(0, parseInt(maxProducts)).forEach(p => {
+      const vIdRaw = p.variantId || "";
+      const numericVId = vIdRaw.match(/\d+$/)?.[0] || vIdRaw;
+      const pLink = p.handle ? `/products/${p.handle}` : "#";
+
+      const escapedTitle = (p.title || "").replace(/"/g, '&quot;');
+      const pImg = p.image
+        ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
+        : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+
+      const pCurrency = p.currency || _storeCurrency || 'USD';
+      const pPrice = (showPrice && p.price)
+        ? `<div style="font-size: 14px; color: #008060; font-weight: 700; margin-bottom: 8px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
+        : "";
+
+      const pBtn = showButton
+        ? `<form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
+            <input type="hidden" name="id" value="${numericVId}" />
+            <button type="submit" style="display: block; width: 100%; padding: 8px 12px; background: ${buttonColor}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+              ${buttonText}
+            </button>
+          </form>`
+        : "";
+
+      cardsHtml += `
+        <div style="flex: 0 0 220px; scroll-snap-align: start; box-sizing: border-box;">
+          <div style="${activeStyle}">
+            ${pImg}
+            <div style="padding: 12px;">
+              <div style="font-size: 14px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3; font-family: sans-serif; height: 36px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+                <a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title}</a>
+              </div>
+              ${pPrice}
+              ${pBtn}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    return `
+      <div class="shopify-blog-slider-container" style="position: relative; margin: 24px 0; font-family: sans-serif; box-sizing: border-box; width: 100%;">
+        ${headerHtml}
+        <div style="position: relative; display: flex; align-items: center; width: 100%;">
+          <button type="button" 
+                  onclick="const container = this.nextElementSibling; container.scrollBy({ left: -container.clientWidth * 0.75, behavior: 'smooth' });"
+                  style="position: absolute; left: -15px; top: 50%; transform: translateY(-50%); z-index: 5; width: 36px; height: 36px; border-radius: 50%; border: 1px solid #e1e3e5; background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); font-size: 20px; font-weight: bold; color: #202223; transition: all 0.2s ease;">
+            &lsaquo;
+          </button>
+          <div style="display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: ${gap}; width: 100%; scroll-behavior: smooth; padding: 10px 4px 20px; -ms-overflow-style: none; scrollbar-width: none;"
+               class="shopify-blog-product-slider">
+            ${cardsHtml}
+          </div>
+          <button type="button" 
+                  onclick="const container = this.previousElementSibling; container.scrollBy({ left: container.clientWidth * 0.75, behavior: 'smooth' });"
+                  style="position: absolute; right: -15px; top: 50%; transform: translateY(-50%); z-index: 5; width: 36px; height: 36px; border-radius: 50%; border: 1px solid #e1e3e5; background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); font-size: 20px; font-weight: bold; color: #202223; transition: all 0.2s ease;">
+            &rsaquo;
+          </button>
+        </div>
+        <style>
+          .shopify-blog-product-slider::-webkit-scrollbar {
+            display: none !important;
+          }
+        </style>
       </div>
     `;
   }
