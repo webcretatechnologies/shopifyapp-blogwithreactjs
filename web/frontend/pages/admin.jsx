@@ -2638,7 +2638,7 @@ export default function Admin() {
             confirmTone={confirmAction.confirmTone || "primary"}
             loading={confirmLoading}
             onConfirm={handleConfirmAction}
-            onClose={closeConfirmAction}
+            onCancel={closeConfirmAction}
           />
         )}
       </div>
