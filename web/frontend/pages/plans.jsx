@@ -422,7 +422,7 @@ export default function Plans() {
                     {postLimit !== null ? (
                       <BlockStack gap="100">
                         <div style={{ width: "100%" }}>
-                          <ProgressBar value={usagePct} tone={usageTone} size="small" />
+                          <ProgressBar progress={usagePct} tone={usageTone} size="small" />
                         </div>
                         {usagePct >= 90 && (
                           <Text variant="bodyXs" tone="critical">
