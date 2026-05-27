@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   Page,
   Layout,
@@ -99,13 +100,14 @@ export default function Dashboard() {
     fetchExtensionStatus();
   }, []);
 
+  const { t } = useTranslation();
   const stats = analytics?.stats;
 
   return (
     <>
-      <TitleBar title="Dashboard" />
+      <TitleBar title={t("Navigation.dashboard")} />
       <Page
-        title="Dashboard"
+        title={t("Navigation.dashboard")}
         subtitle={
           shopInfo
             ? `${shopInfo.domain} · Plan: ${shopInfo.planKey?.toUpperCase() || "FREE"}`

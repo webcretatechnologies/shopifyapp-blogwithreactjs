@@ -10,6 +10,33 @@
   "NavigationMenu": {
     "pageName": "Page name"
   },
+  "Navigation": {
+    "dashboard": "Dashboard",
+    "managePosts": "Manage Posts",
+    "createPost": "Create Post",
+    "pricingPlans": "Pricing Plans",
+    "settings": "Settings",
+    "superAdmin": "Super Admin"
+  },
+  "Dashboard": {
+    "welcome": "Welcome back!",
+    "overview": "Here's your blog overview.",
+    "setupGuide": "Setup Guide",
+    "setupDesc": "Complete these steps to fully integrate Blogger into your storefront.",
+    "embedApp": "Embed App Block",
+    "embedDesc": "Enable the app embed block in your theme editor.",
+    "writePost": "Write First Post",
+    "writeDesc": "Publish your very first blog article to your Shopify store.",
+    "dismiss": "Dismiss Guide",
+    "recentPosts": "Recent Posts",
+    "viewAll": "View all",
+    "noPosts": "No recent posts available",
+    "createFirst": "Create your first post",
+    "storage": "Storage Usage",
+    "planInfo": "Plan Information",
+    "manageBilling": "Manage billing",
+    "articles": "Articles"
+  },
   "NotFound": {
     "description": "Check the URL and try again, or use the search bar to find what you need.",
     "heading": "There is no page at this address"

@@ -20,10 +20,10 @@ export default function App() {
           {!isAdminPath && (
             <NavMenu>
               <a href="/dashboard" rel="home" />
-              <a href="/posts">Articles</a>
+              <a href="/posts">{t("Navigation.managePosts")}</a>
               <a href="/analytics">Analytics</a>
-              <a href="/plans">Plans &amp; Billing</a>
-              <a href="/settings">Settings</a>
+              <a href="/plans">{t("Navigation.pricingPlans")}</a>
+              <a href="/settings">{t("Navigation.settings")}</a>
               <a href="/sync">Sync Status</a>
               <a href="/posts/import">Import</a>
               <a href="/posts/wizard">Wizard</a>

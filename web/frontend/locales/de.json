@@ -10,6 +10,33 @@
   "NavigationMenu": {
     "pageName": "Seitenname"
   },
+  "Navigation": {
+    "dashboard": "Dashboard",
+    "managePosts": "Beiträge verwalten",
+    "createPost": "Beitrag erstellen",
+    "pricingPlans": "Preismodelle",
+    "settings": "Einstellungen",
+    "superAdmin": "Super-Administrator"
+  },
+  "Dashboard": {
+    "welcome": "Willkommen zurück!",
+    "overview": "Hier ist deine Blog-Übersicht.",
+    "setupGuide": "Einrichtungsleitfaden",
+    "setupDesc": "Schließe diese Schritte ab, um Blogger vollständig in dein Storefront zu integrieren.",
+    "embedApp": "App-Block einbetten",
+    "embedDesc": "Aktiviere den App-Einbettungsblock in deinem Theme-Editor.",
+    "writePost": "Ersten Beitrag schreiben",
+    "writeDesc": "Veröffentliche deinen allerersten Blogartikel in deinem Shopify-Store.",
+    "dismiss": "Leitfaden ausblenden",
+    "recentPosts": "Aktuelle Beiträge",
+    "viewAll": "Alle ansehen",
+    "noPosts": "Keine aktuellen Beiträge verfügbar",
+    "createFirst": "Erstelle deinen ersten Beitrag",
+    "storage": "Speichernutzung",
+    "planInfo": "Planinformationen",
+    "manageBilling": "Abrechnung verwalten",
+    "articles": "Artikel"
+  },
   "NotFound": {
     "description": "Überprüfe die URL und versuche es erneut. Alternativ kannst du die Suchleiste verwenden, um zu finden, was du suchst.",
     "heading": "Unter dieser Adresse gibt es keine Seite"
