@@ -38,7 +38,7 @@ const METAFIELD_KEY = "source";
 const METAFIELD_TYPE = "json";
 
 // ─── Scalar fields we merge independently ─────────────────────────────────────
-const SCALAR_FIELDS = ["title", "author", "status", "tags", "featuredImage"];
+const SCALAR_FIELDS = ["title", "author", "status", "tags", "featuredImage", "slug"];
 
 /** True when a field hash differs from the last-synced baseline. */
 function changedFromBase(currentHash, baseHash) {
@@ -97,6 +97,7 @@ function computeContentHash(fields) {
     published_at: fields.published_at || null,
     tags: (Array.isArray(fields.tags) ? fields.tags.sort() : (fields.tags || "").split(",").map(t => t.trim()).filter(Boolean).sort()).join(","),
     image: imageSrc,
+    handle: (fields.handle || fields.slug || "").trim(),
   };
   return crypto.createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
 }
@@ -115,6 +116,7 @@ function normalizeLocalState(post, tagNames) {
     status: (post.status === "published") ? "published" : "draft",
     tags: tagNames || "",
     featuredImage: post.featuredImage || null,
+    slug: post.slug || "",
     content: {
       editorHtml: post.contentHtml || "",
       contentJson: post.contentJson || [],
@@ -138,6 +140,7 @@ function normalizeRemoteState(payload) {
     status: payload.published_at ? "published" : "draft",
     tags: remoteTags,
     featuredImage: payload.image?.src || null,
+    slug: payload.handle || "",
     content: {
       storefrontHtml: payload.body_html || "",
     },
@@ -312,13 +315,7 @@ function applyMergedResult(merged, conflicts, post, remotePayload) {
       : (post.publishedAt || (merged.status.value === "published" ? new Date() : null)),
   };
 
-  // Derive slug — when title won "remote", use remote handle; otherwise keep local slug / regenerate
-  if (merged.title.source === "remote") {
-    postUpdate.slug = remotePayload?.handle || post.slug;
-  } else {
-    // Keep existing slug (slug regeneration on title change is handled at UI level)
-    postUpdate.slug = post.slug;
-  }
+  postUpdate.slug = merged.slug.value;
 
   // Determine if remote tags should be applied
   const applyRemoteTags = merged.tags.source === "remote";
@@ -574,6 +571,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     published,
     tags: tagNames,
     image: post.featuredImage,
+    handle: post.slug,
   });
 
   let articleId = shopifyLink.shopifyArticleId;
@@ -586,6 +584,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
       author: post.author || "Admin",
       published,
       tags: tagNames,
+      handle: post.slug,
       ...(post.featuredImage ? { image: { src: post.featuredImage } } : {}),
     },
   };
