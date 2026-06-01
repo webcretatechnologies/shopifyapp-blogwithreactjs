@@ -88,10 +88,11 @@ router.post("/view", express.json(), verifyProxySignature, async (req, res) => {
 // ─── POST /api/proxy/event — Track Funnel Events ──────────────────────────
 router.post("/event", express.json(), verifyProxySignature, async (req, res) => {
   try {
-    const { postId, eventType, productId, value, currency } = req.body;
-    
-    if (!postId || !eventType) {
-      return res.status(400).json({ error: "Missing required fields" });
+    const { postId: rawPostId, eventType, productId, value, currency } = req.body;
+    const postId = parseInt(rawPostId, 10);
+
+    if (!postId || isNaN(postId) || !eventType) {
+      return res.status(400).json({ error: "Missing or invalid required fields" });
     }
 
     const ua = req.headers["user-agent"] || "";
@@ -104,7 +105,7 @@ router.post("/event", express.json(), verifyProxySignature, async (req, res) => 
       userAgent: ua,
       referer,
       ip,
-      productId,
+      productId: productId ? parseInt(productId, 10) : null,
       value,
       currency
     });

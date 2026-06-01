@@ -166,32 +166,71 @@ export async function trackView({
 
   // Deduplicate unique visitors in-memory (per process)
   const dateStr = today.toISOString().split("T")[0];
-  const dedupKey = `${postId}:${dateStr}:${visitorHash}`;
-  const isNewVisitor = !global.__trackedVisitors?.has(dedupKey);
-  if (!global.__trackedVisitors) global.__trackedVisitors = new Map();
-  if (global.__trackedVisitors.size > 50000) global.__trackedVisitors = new Map();
+  const visitorId = visitorHash || hashVisitor(ip, userAgent);
+  const dedupKey = `${postId}:${dateStr}:${visitorId}`;
+  
+  if (!global.__trackedVisitors) {
+    global.__trackedVisitors = new Map();
+    global.__trackedVisitorDate = dateStr;
+  }
+  if (global.__trackedVisitorDate !== dateStr) {
+    global.__trackedVisitors.clear();
+    global.__trackedVisitorDate = dateStr;
+  }
+  
+  const isNewVisitor = !global.__trackedVisitors.has(dedupKey);
   global.__trackedVisitors.set(dedupKey, Date.now());
 
-  // Upsert daily analytic record
-  const analytic = await prisma.postAnalytic.upsert({
+  // Atomic write: find → create → catch(P2002 race) → update
+  // Prisma's upsert generates a fresh INSERT on every retry under MySQL concurrency,
+  // causing P2002 to repeat indefinitely. This pattern is race-condition safe.
+  let analytic = await prisma.postAnalytic.findUnique({
     where: { postId_date: { postId, date: today } },
-    update: {
-      views: { increment: 1 },
-      ...(isNewVisitor ? { uniqueVisitors: { increment: 1 } } : {}),
-      deviceDesktop: { increment: device.desktop },
-      deviceMobile: { increment: device.mobile },
-      deviceTablet: { increment: device.tablet },
-    },
-    create: {
-      postId,
-      date: today,
-      views: 1,
-      uniqueVisitors: 1,
-      deviceDesktop: device.desktop,
-      deviceMobile: device.mobile,
-      deviceTablet: device.tablet,
-    },
   });
+
+  if (analytic) {
+    analytic = await prisma.postAnalytic.update({
+      where: { id: analytic.id },
+      data: {
+        views: { increment: 1 },
+        ...(isNewVisitor ? { uniqueVisitors: { increment: 1 } } : {}),
+        deviceDesktop: { increment: device.desktop },
+        deviceMobile: { increment: device.mobile },
+        deviceTablet: { increment: device.tablet },
+      },
+    });
+  } else {
+    try {
+      analytic = await prisma.postAnalytic.create({
+        data: {
+          postId,
+          date: today,
+          views: 1,
+          uniqueVisitors: isNewVisitor ? 1 : 0,
+          deviceDesktop: device.desktop,
+          deviceMobile: device.mobile,
+          deviceTablet: device.tablet,
+        },
+      });
+    } catch (createError) {
+      if (createError.code === "P2002") {
+        // Race condition: a concurrent request created the row between our findUnique and create — update it now
+        console.warn("[Proxy] View create race condition (P2002) — falling through to update");
+        analytic = await prisma.postAnalytic.update({
+          where: { postId_date: { postId, date: today } },
+          data: {
+            views: { increment: 1 },
+            ...(isNewVisitor ? { uniqueVisitors: { increment: 1 } } : {}),
+            deviceDesktop: { increment: device.desktop },
+            deviceMobile: { increment: device.mobile },
+            deviceTablet: { increment: device.tablet },
+          },
+        });
+      } else {
+        throw createError;
+      }
+    }
+  }
 
   // Update sources JSON
   const currentSources = parseJsonField(analytic.sources);
@@ -244,20 +283,45 @@ export async function trackEvent({
 
   const incrementField = fieldMap[eventType];
 
-  // Upsert daily analytic record (create if doesn't exist for this post/date)
-  const analytic = await prisma.postAnalytic.upsert({
+  // Atomic write: find → create → catch(P2002 race) → update
+  let analytic = await prisma.postAnalytic.findUnique({
     where: { postId_date: { postId, date: today } },
-    update: {
-      ...(incrementField ? { [incrementField]: { increment: 1 } } : {}),
-      ...(eventType === "conversion" && value != null ? { revenue: { increment: parseFloat(value) || 0 } } : {}),
-    },
-    create: {
-      postId,
-      date: today,
-      ...(incrementField ? { [incrementField]: 1 } : {}),
-      ...(eventType === "conversion" && value != null ? { revenue: parseFloat(value) || 0 } : {}),
-    },
   });
+
+  if (analytic) {
+    analytic = await prisma.postAnalytic.update({
+      where: { id: analytic.id },
+      data: {
+        ...(incrementField ? { [incrementField]: { increment: 1 } } : {}),
+        ...(eventType === "conversion" && value != null ? { revenue: { increment: parseFloat(value) || 0 } } : {}),
+      },
+    });
+  } else {
+    try {
+      analytic = await prisma.postAnalytic.create({
+        data: {
+          postId,
+          date: today,
+          ...(incrementField ? { [incrementField]: 1 } : {}),
+          ...(eventType === "conversion" && value != null ? { revenue: parseFloat(value) || 0 } : {}),
+        },
+      });
+    } catch (createError) {
+      if (createError.code === "P2002") {
+        // Race condition: a concurrent request created the row — update it now
+        console.warn("[Proxy] Event create race condition (P2002) — falling through to update");
+        analytic = await prisma.postAnalytic.update({
+          where: { postId_date: { postId, date: today } },
+          data: {
+            ...(incrementField ? { [incrementField]: { increment: 1 } } : {}),
+            ...(eventType === "conversion" && value != null ? { revenue: { increment: parseFloat(value) || 0 } } : {}),
+          },
+        });
+      } else {
+        throw createError;
+      }
+    }
+  }
 
   // Update sources JSON with event context
   const source = detectSource(referer);
@@ -291,17 +355,23 @@ export async function getShopAnalytics(shopId, days = 30) {
       orderBy: { date: "asc" },
       include: { post: { select: { title: true, slug: true, featuredImage: true } } },
     }),
-    // Top posts by total views (all time)
+    // Top posts by views (selected timeframe)
     prisma.postAnalytic.groupBy({
       by: ["postId"],
-      where: { post: { shopId } },
+      where: {
+        post: { shopId },
+        date: { gte: since },
+      },
       _sum: { views: true, addToCart: true, checkouts: true, conversions: true, revenue: true },
       orderBy: { _sum: { views: "desc" } },
       take: 10,
     }),
-    // All-time aggregates for device/source/country
+    // Aggregates for device/source/country (selected timeframe)
     prisma.postAnalytic.findMany({
-      where: { post: { shopId } },
+      where: {
+        post: { shopId },
+        date: { gte: since },
+      },
       select: {
         uniqueVisitors: true,
         deviceDesktop: true,
