@@ -773,8 +773,13 @@ export default function PostEditor() {
         {post.status === "published" && (
           <button
             onClick={() => {
-              const shopUrl = `https://${window.shopify?.config?.shop || ""}`;
-              window.open(`${shopUrl}/blogs/news/${post.handle}`, "_blank");
+              const shopDomain = window.shopify?.config?.shop || "";
+              const blog = shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId));
+              const blogHandle = blog?.handle || "news";
+              const articleSlug = post.slug || "";
+              if (shopDomain && blogHandle && articleSlug) {
+                window.open(`https://${shopDomain}/blogs/${blogHandle}/${articleSlug}`, "_blank");
+              }
             }}
           >
             View on Storefront
