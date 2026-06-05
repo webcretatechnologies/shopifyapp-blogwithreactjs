@@ -27,6 +27,7 @@ import { DividerExtension } from "./extensions/DividerExtension";
 import { ImageBlockExtension } from "./extensions/ImageBlockExtension";
 import ShopifyFilePicker from "../ShopifyFilePicker";
 import { useState, useEffect } from "react";
+import { Modal, TextField, FormLayout } from "@shopify/polaris";
 import "./TiptapEditor.css";
 
 const Btn = ({ onClick, active, title, children, style = {} }) => (
@@ -56,6 +57,8 @@ export default function TiptapEditor({
   const [showYoutubeModal, setShowYoutubeModal] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [showHtml, setShowHtml] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
 
   const editor = useEditor({
     extensions: [
@@ -105,10 +108,19 @@ export default function TiptapEditor({
   // Removed broken local upload logic in favor of ShopifyFilePicker
 
   const handleLinkInsert = () => {
-    const url = window.prompt("Enter URL:");
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run();
+    const previousUrl = editor.getAttributes("link").href || "";
+    setLinkUrl(previousUrl);
+    setShowLinkModal(true);
+  };
+
+  const handleLinkConfirm = () => {
+    if (linkUrl) {
+      editor.chain().focus().extendMarkRange("link").setLink({ href: linkUrl }).run();
+    } else {
+      editor.chain().focus().unsetLink().run();
     }
+    setLinkUrl("");
+    setShowLinkModal(false);
   };
 
   const handleYoutubeEmbed = () => {
@@ -527,80 +539,80 @@ export default function TiptapEditor({
         <EditorContent editor={editor} className="tiptap-content" />
       )}
 
+      {/* Link Insertion Modal */}
+      {showLinkModal && (
+        <Modal
+          open={showLinkModal}
+          onClose={() => {
+            setShowLinkModal(false);
+            setLinkUrl("");
+          }}
+          title="Insert Link"
+          primaryAction={{
+            content: "Insert",
+            onAction: handleLinkConfirm,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => {
+                setShowLinkModal(false);
+                setLinkUrl("");
+              },
+            },
+          ]}
+        >
+          <Modal.Section>
+            <FormLayout>
+              <TextField
+                label="URL"
+                value={linkUrl}
+                onChange={setLinkUrl}
+                placeholder="https://example.com"
+                autoComplete="off"
+                autoFocus
+              />
+            </FormLayout>
+          </Modal.Section>
+        </Modal>
+      )}
+
       {/* YouTube/Video embed modal */}
       {showYoutubeModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            zIndex: 9999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+        <Modal
+          open={showYoutubeModal}
+          onClose={() => {
+            setShowYoutubeModal(false);
+            setYoutubeUrl("");
           }}
+          title="Embed Video"
+          primaryAction={{
+            content: "Embed",
+            onAction: handleYoutubeEmbed,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => {
+                setShowYoutubeModal(false);
+                setYoutubeUrl("");
+              },
+            },
+          ]}
         >
-          <div
-            style={{
-              background: "#fff",
-              padding: "24px",
-              borderRadius: "12px",
-              width: "420px",
-              boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
-            }}
-          >
-            <p
-              style={{
-                fontWeight: "700",
-                fontSize: "16px",
-                marginBottom: "12px",
-              }}
-            >
-              Embed Video
-            </p>
-            <input
-              type="url"
-              value={youtubeUrl}
-              onChange={(e) => setYoutubeUrl(e.target.value)}
-              placeholder="YouTube or Vimeo URL..."
-              autoFocus
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                border: "1px solid #c9cccf",
-                borderRadius: "6px",
-                fontSize: "14px",
-                boxSizing: "border-box",
-              }}
-            />
-            <div
-              style={{
-                display: "flex",
-                gap: "8px",
-                marginTop: "12px",
-                justifyContent: "flex-end",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setShowYoutubeModal(false);
-                  setYoutubeUrl("");
-                }}
-                style={cancelBtnStyle}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleYoutubeEmbed}
-                style={primaryBtnStyle}
-              >
-                Embed
-              </button>
-            </div>
-          </div>
-        </div>
+          <Modal.Section>
+            <FormLayout>
+              <TextField
+                label="Video URL (YouTube or Vimeo)"
+                value={youtubeUrl}
+                onChange={setYoutubeUrl}
+                placeholder="https://www.youtube.com/watch?v=..."
+                autoComplete="off"
+                autoFocus
+              />
+            </FormLayout>
+          </Modal.Section>
+        </Modal>
       )}
 
       <ShopifyFilePicker
@@ -611,21 +623,3 @@ export default function TiptapEditor({
     </div>
   );
 }
-
-const primaryBtnStyle = {
-  padding: "8px 20px",
-  background: "#008060",
-  color: "#fff",
-  border: "none",
-  borderRadius: "6px",
-  cursor: "pointer",
-  fontWeight: "600",
-};
-const cancelBtnStyle = {
-  padding: "8px 20px",
-  background: "#f1f2f3",
-  color: "#202223",
-  border: "1px solid #c9cccf",
-  borderRadius: "6px",
-  cursor: "pointer",
-};
