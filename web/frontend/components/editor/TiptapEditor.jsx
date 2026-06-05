@@ -11,8 +11,7 @@ import { Highlight } from "@tiptap/extension-highlight";
 import { Youtube } from "@tiptap/extension-youtube";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
-import { TableHeader } from "@tiptap/extension-table-header";
-import { TableCell } from "@tiptap/extension-table-cell";
+import { CustomTableHeader, CustomTableCell } from "./extensions/tableExtensions";
 import { ProductGridExtension } from "./extensions/ProductGridExtension";
 import { CollectionExtension } from "./extensions/CollectionExtension";
 import { BuyButtonExtension } from "./extensions/BuyButtonExtension";
@@ -26,18 +25,20 @@ import { SpacerExtension } from "./extensions/SpacerExtension";
 import { DividerExtension } from "./extensions/DividerExtension";
 import { ImageBlockExtension } from "./extensions/ImageBlockExtension";
 import ShopifyFilePicker from "../ShopifyFilePicker";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Modal, TextField, FormLayout } from "@shopify/polaris";
 import "./TiptapEditor.css";
 
-const Btn = ({ onClick, active, title, children, style = {} }) => (
+const Btn = ({ onClick, active, disabled = false, title, children, style = {} }) => (
   <button
     type="button"
+    disabled={disabled}
+    aria-pressed={active}
     onMouseDown={(e) => {
       e.preventDefault();
-      onClick();
+      if (!disabled) onClick();
     }}
-    className={`tiptap-btn${active ? " tiptap-btn--active" : ""}`}
+    className={`tiptap-btn${active ? " tiptap-btn--active" : ""}${disabled ? " tiptap-btn--disabled" : ""}`}
     title={title}
     style={style}
   >
@@ -59,10 +60,45 @@ export default function TiptapEditor({
   const [showHtml, setShowHtml] = useState(false);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  const [showTablePicker, setShowTablePicker] = useState(false);
+  const [tablePickerHover, setTablePickerHover] = useState({ row: 0, col: 0 });
+  const tablePickerRef = useRef(null);
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
+  // Stable refs to avoid render-phase updates
+  const onChangeRef = useRef(onChange);
+  const lastEmittedHtmlRef = useRef(content || "");
+  const frameRef = useRef(null);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    };
+  }, []);
+
+  // Close table grid picker on outside click
+  useEffect(() => {
+    if (!showTablePicker) return;
+    const handleOutsideClick = (e) => {
+      if (tablePickerRef.current && !tablePickerRef.current.contains(e.target)) {
+        setShowTablePicker(false);
+        setTablePickerHover({ row: 0, col: 0 });
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick, true);
+    return () => document.removeEventListener("mousedown", handleOutsideClick, true);
+  }, [showTablePicker]);
+
+  const extensions = useMemo(
+    () => [
+      StarterKit.configure({
+        // StarterKit v3 includes Link + Underline; disable to avoid duplicates
+        link: false,
+        underline: false,
+      }),
       Underline,
       ResizableImage.configure({ inline: false }),
       Link.configure({ openOnClick: false }),
@@ -74,8 +110,8 @@ export default function TiptapEditor({
       Youtube.configure({ width: "100%", height: 400 }),
       Table.configure({ resizable: true }),
       TableRow,
-      TableHeader,
-      TableCell,
+      CustomTableHeader,
+      CustomTableCell,
       ProductGridExtension,
       CollectionExtension,
       BuyButtonExtension,
@@ -91,21 +127,56 @@ export default function TiptapEditor({
       DividerExtension,
       ImageBlockExtension,
     ],
+    []
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // placeholder is a prop that rarely changes; re-memoizing would recreate all extensions
+
+  );
+
+  const editor = useEditor({
+    extensions,
     content,
-    onUpdate: ({ editor }) => {
-      onChange?.(editor.getHTML());
+    onUpdate: ({ editor: ed }) => {
+      const html = ed.getHTML();
+      if (html === lastEmittedHtmlRef.current) return;
+
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      frameRef.current = requestAnimationFrame(() => {
+        lastEmittedHtmlRef.current = html;
+        onChangeRef.current?.(html);
+      });
     },
   });
 
+  // Sync external content without triggering feedback loops
   useEffect(() => {
-    if (editor && !editor.isFocused && content !== editor.getHTML()) {
-      editor.commands.setContent(content || "");
+    if (!editor || editor.isDestroyed) return;
+    const nextContent = content || "";
+    const currentContent = editor.getHTML();
+    if (!editor.isFocused && nextContent !== currentContent) {
+      lastEmittedHtmlRef.current = nextContent;
+      editor.commands.setContent(nextContent, false);
     }
   }, [content, editor]);
 
   if (!editor) return null;
 
-  // Removed broken local upload logic in favor of ShopifyFilePicker
+  // ── Table state helpers ──────────────────────────────────────────────────
+  const isInTable = editor.isActive("table");
+  const canUndo = editor.can().undo();
+  const canRedo = editor.can().redo();
+  const canAddColBefore = editor.can().addColumnBefore();
+  const canAddColAfter = editor.can().addColumnAfter();
+  const canDeleteCol = editor.can().deleteColumn();
+  const canAddRowBefore = editor.can().addRowBefore();
+  const canAddRowAfter = editor.can().addRowAfter();
+  const canDeleteRow = editor.can().deleteRow();
+  const canMergeCells = editor.can().mergeCells();
+  const canSplitCell = editor.can().splitCell();
+  const canToggleHeaderRow = editor.can().toggleHeaderRow();
+  const canToggleHeaderColumn = editor.can().toggleHeaderColumn();
+  const canToggleHeaderCell = editor.can().toggleHeaderCell();
+  const canDeleteTable = editor.can().deleteTable();
 
   const handleLinkInsert = () => {
     const previousUrl = editor.getAttributes("link").href || "";
@@ -131,13 +202,18 @@ export default function TiptapEditor({
     }
   };
 
-  const handleTableInsert = () => {
+  const handleTableInsert = (rows = 3, cols = 3) => {
     editor
       .chain()
       .focus()
-      .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+      .insertTable({ rows, cols, withHeaderRow: true })
       .run();
+    setShowTablePicker(false);
+    setTablePickerHover({ row: 0, col: 0 });
   };
+
+  const GRID_ROWS = 8;
+  const GRID_COLS = 10;
 
   return (
     <div className="tiptap-editor-container">
@@ -303,7 +379,7 @@ export default function TiptapEditor({
             active={editor.isActive("code")}
             title="Inline Code"
           >
-            {"`"}
+            {`"`}
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
@@ -451,33 +527,154 @@ export default function TiptapEditor({
         <Sep />
 
         {/* ── Table ── */}
-        <div className="tiptap-toolbar__group">
+        <div className="tiptap-toolbar__group" style={{ flexWrap: "wrap", position: "relative" }} ref={tablePickerRef}>
           <Btn
-            onClick={handleTableInsert}
-            active={editor.isActive("table")}
-            title="Insert Table 3×3"
+            onClick={() => {
+              setShowTablePicker((prev) => !prev);
+              setTablePickerHover({ row: 0, col: 0 });
+            }}
+            active={isInTable || showTablePicker}
+            title="Insert Table"
           >
             ⊞
           </Btn>
-          {editor.isActive("table") && (
+          {showTablePicker && (
+            <div className="tiptap-table-grid-picker" onMouseLeave={() => { setTablePickerHover({ row: 0, col: 0 }); setShowTablePicker(false); }}>
+              <div className="tiptap-table-grid-picker__label">
+                {tablePickerHover.row > 0 && tablePickerHover.col > 0
+                  ? `${tablePickerHover.row}×${tablePickerHover.col} Table`
+                  : "Select table size"}
+              </div>
+              <div className="tiptap-table-grid-picker__grid">
+                {Array.from({ length: GRID_ROWS }, (_, r) => (
+                  <div key={r} className="tiptap-table-grid-picker__row">
+                    {Array.from({ length: GRID_COLS }, (_, c) => (
+                      <div
+                        key={c}
+                        className={`tiptap-table-grid-picker__cell${
+                          r < tablePickerHover.row && c < tablePickerHover.col
+                            ? " tiptap-table-grid-picker__cell--active"
+                            : ""
+                        }`}
+                        onMouseEnter={() => setTablePickerHover({ row: r + 1, col: c + 1 })}
+                        onClick={() => handleTableInsert(r + 1, c + 1)}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {isInTable && (
             <>
+              <Sep />
+              <Btn
+                onClick={() => editor.chain().focus().addColumnBefore().run()}
+                disabled={!canAddColBefore}
+                title="Add Column Before"
+              >
+                ◀+Col
+              </Btn>
               <Btn
                 onClick={() => editor.chain().focus().addColumnAfter().run()}
-                active={false}
-                title="Add Column"
+                disabled={!canAddColAfter}
+                title="Add Column After"
               >
-                +Col
+                +Col▶
+              </Btn>
+              <Btn
+                onClick={() => editor.chain().focus().deleteColumn().run()}
+                disabled={!canDeleteCol}
+                title="Delete Column"
+                style={{ color: "#d82c0d" }}
+              >
+                ✕Col
+              </Btn>
+              <Sep />
+              <Btn
+                onClick={() => editor.chain().focus().addRowBefore().run()}
+                disabled={!canAddRowBefore}
+                title="Add Row Above"
+              >
+                ▲+Row
               </Btn>
               <Btn
                 onClick={() => editor.chain().focus().addRowAfter().run()}
-                active={false}
-                title="Add Row"
+                disabled={!canAddRowAfter}
+                title="Add Row Below"
               >
-                +Row
+                +Row▼
               </Btn>
               <Btn
+                onClick={() => editor.chain().focus().deleteRow().run()}
+                disabled={!canDeleteRow}
+                title="Delete Row"
+                style={{ color: "#d82c0d" }}
+              >
+                ✕Row
+              </Btn>
+              <Sep />
+              <Btn
+                onClick={() => editor.chain().focus().mergeCells().run()}
+                disabled={!canMergeCells}
+                title="Merge Selected Cells"
+              >
+                Merge
+              </Btn>
+              <Btn
+                onClick={() => editor.chain().focus().splitCell().run()}
+                disabled={!canSplitCell}
+                title="Split Cell"
+              >
+                Split
+              </Btn>
+              <Sep />
+              <Btn
+                onClick={() => editor.chain().focus().toggleHeaderRow().run()}
+                disabled={!canToggleHeaderRow}
+                title="Toggle Header Row"
+              >
+                HRow
+              </Btn>
+              <Btn
+                onClick={() => editor.chain().focus().toggleHeaderColumn().run()}
+                disabled={!canToggleHeaderColumn}
+                title="Toggle Header Column"
+              >
+                HCol
+              </Btn>
+              <Btn
+                onClick={() => editor.chain().focus().toggleHeaderCell().run()}
+                disabled={!canToggleHeaderCell}
+                title="Toggle Header Cell"
+              >
+                HCel
+              </Btn>
+              <Sep />
+              <label
+                title="Cell Background Color"
+                style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}
+                className="tiptap-btn"
+              >
+                <span>🎨</span>
+                <input
+                  type="color"
+                  style={{ width: 0, height: 0, opacity: 0, position: "absolute" }}
+                  onChange={(e) =>
+                    editor.chain().focus().setCellAttribute("backgroundColor", e.target.value).run()
+                  }
+                />
+              </label>
+              <Btn
+                onClick={() => editor.chain().focus().setCellAttribute("backgroundColor", null).run()}
+                title="Clear Cell Background"
+              >
+                ✕🎨
+              </Btn>
+              <Sep />
+              <Btn
                 onClick={() => editor.chain().focus().deleteTable().run()}
-                active={false}
+                disabled={!canDeleteTable}
                 title="Delete Table"
                 style={{ color: "#d82c0d" }}
               >
@@ -489,21 +686,20 @@ export default function TiptapEditor({
         <Sep />
 
         {/* ── Undo/Redo ── */}
-        <div className="tiptap-toolbar__group">
-          <Btn
-            onClick={() => editor.chain().focus().undo().run()}
-            active={false}
-            title="Undo"
-          >
-            ↩
-          </Btn>
-          <Btn
-            onClick={() => editor.chain().focus().redo().run()}
-            active={false}
-            title="Redo"
-          >
-            ↪
-          </Btn>
+        <div className="tiptap-toolbar__group">              <Btn
+                onClick={() => editor.chain().focus().undo().run()}
+                disabled={!canUndo}
+                title="Undo"
+              >
+                ↩
+              </Btn>
+              <Btn
+                onClick={() => editor.chain().focus().redo().run()}
+                disabled={!canRedo}
+                title="Redo"
+              >
+                ↪
+              </Btn>
         </div>
         <Sep />
         <div className="tiptap-toolbar__group" style={{ marginLeft: "auto" }}>

@@ -988,6 +988,37 @@ export class EditorContentCompiler {
     display: ${settings.showToc === false || settings.showToc === "false" ? "none !important" : "block"};
     float: ${settings.tocPosition === "left" ? "left" : settings.tocPosition === "right" ? "right" : "none"};
   }
+
+  /* Table styling for Tiptap native tables */
+  .blogger-article-container table {
+    width: 100%;
+    min-width: 480px;
+    border-collapse: collapse;
+    border: 1px solid #e1e3e5;
+    border-radius: 8px;
+    background: #fff;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+
+  .blogger-article-container th,
+  .blogger-article-container td {
+    border: 1px solid #e1e3e5;
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+    color: #202223;
+  }
+
+  .blogger-article-container th {
+    background: #f6f6f7;
+    font-weight: 700;
+  }
+
+  .blogger-article-container tr:nth-child(even) td {
+    background: #fafbfc;
+  }
+
 </style>
 `;
   }
