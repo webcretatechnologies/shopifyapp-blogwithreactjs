@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Page,
@@ -252,7 +252,11 @@ export default function PostEditor() {
     customCss: "",
     productSliderPosition: "none",
   });
+  const [originalPost, setOriginalPost] = useState(null);
   const [contentHtml, setContentHtml] = useState("");
+  const [originalContentHtml, setOriginalContentHtml] = useState("");
+  const contentHtmlSyncedRef = useRef(false);
+  const isFirstRender = useRef(true);
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
   const [shopifyBlogId, setShopifyBlogId] = useState("");
@@ -260,6 +264,9 @@ export default function PostEditor() {
   const [features, setFeatures] = useState({});
   const [isLoading, setIsLoading] = useState(isEditing);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingHeader, setIsSavingHeader] = useState(false);
+  const [isSavingSidebar, setIsSavingSidebar] = useState(false);
+  const [isSavingSaveBar, setIsSavingSaveBar] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isUnpublishing, setIsUnpublishing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -290,7 +297,10 @@ export default function PostEditor() {
       if (!res.ok) throw new Error("Post not found");
       const data = await res.json();
       setPost(data.post);
+      setOriginalPost(data.post);
       setContentHtml(data.post.contentHtml || "");
+      setOriginalContentHtml(data.post.contentHtml || "");
+      contentHtmlSyncedRef.current = false;
       setTags(data.post.tags || []);
       setFeatures(data.features || {});
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
@@ -330,6 +340,83 @@ export default function PostEditor() {
     if (isEditing) loadPost();
   }, [isEditing, loadPost]);
 
+  const isFieldDirty = (val1, val2) => {
+    const clean1 = val1 === null || val1 === undefined ? "" : val1;
+    const clean2 = val2 === null || val2 === undefined ? "" : val2;
+    return clean1 !== clean2;
+  };
+
+  const isDirty = useMemo(() => {
+    if (!isEditing) {
+      return (
+        isFieldDirty(post.title, "") ||
+        isFieldDirty(post.slug, "") ||
+        isFieldDirty(post.excerpt, "") ||
+        isFieldDirty(post.author, "") ||
+        isFieldDirty(post.featuredImage, "") ||
+        isFieldDirty(post.customCss, "") ||
+        isFieldDirty(contentHtml, "") ||
+        tags.length > 0 ||
+        isFieldDirty(shopifyBlogId, "") ||
+        isFieldDirty(seoData.metaTitle, "") ||
+        isFieldDirty(seoData.metaDescription, "") ||
+        isFieldDirty(seoData.canonicalUrl, "") ||
+        isFieldDirty(seoData.ogTitle, "") ||
+        isFieldDirty(seoData.ogDescription, "") ||
+        isFieldDirty(seoData.ogImage, "")
+      );
+    }
+    if (!originalPost) return false;
+    const o = originalPost;
+    const isPostDirty =
+      isFieldDirty(post.title, o.title) ||
+      isFieldDirty(post.slug, o.slug) ||
+      isFieldDirty(post.excerpt, o.excerpt) ||
+      isFieldDirty(post.author, o.author) ||
+      isFieldDirty(post.featuredImage, o.featuredImage) ||
+      isFieldDirty(post.customCss, o.customCss) ||
+      isFieldDirty(contentHtml, originalContentHtml) ||
+      isFieldDirty(shopifyBlogId, o.shopifyArticle?.shopifyBlogId) ||
+      isFieldDirty(seoData.metaTitle, o.metaTitle) ||
+      isFieldDirty(seoData.metaDescription, o.metaDescription) ||
+      isFieldDirty(seoData.canonicalUrl, o.canonicalUrl) ||
+      isFieldDirty(seoData.ogTitle, o.ogTitle) ||
+      isFieldDirty(seoData.ogDescription, o.ogDescription) ||
+      isFieldDirty(seoData.ogImage, o.ogImage);
+
+    const originalTags = o.tags || [];
+    const isTagsDirty =
+      tags.length !== originalTags.length ||
+      !tags.every((t) => originalTags.includes(t));
+
+    return isPostDirty || isTagsDirty;
+  }, [post, contentHtml, originalContentHtml, tags, shopifyBlogId, originalPost, isEditing, seoData]);
+
+  const saveBarId = "post-editor-save-bar";
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    if (window.shopify?.saveBar) {
+      if (isDirty) {
+        window.shopify.saveBar.show(saveBarId).catch((e) => console.log("SaveBar show error:", e.message));
+      } else {
+        window.shopify.saveBar.hide(saveBarId).catch((e) => console.log("SaveBar hide error:", e.message));
+      }
+    }
+  }, [isDirty]);
+
+  useEffect(() => {
+    return () => {
+      if (window.shopify?.saveBar) {
+        window.shopify.saveBar.hide(saveBarId).catch((e) => console.log("SaveBar clean-up hide error:", e.message));
+      }
+    };
+  }, []);
+
   const handleField = (field) => (value) =>
     setPost((p) => ({ ...p, [field]: value }));
 
@@ -344,6 +431,14 @@ export default function PostEditor() {
   const handleTitleChange = (value) => {
     setPost((p) => ({ ...p, title: value, slug: generateSlug(value) }));
   };
+
+  const handleContentChange = useCallback((newHtml) => {
+    setContentHtml(newHtml);
+    if (!contentHtmlSyncedRef.current) {
+      setOriginalContentHtml(newHtml);
+      contentHtmlSyncedRef.current = true;
+    }
+  }, []);
 
 
 
@@ -402,11 +497,15 @@ export default function PostEditor() {
     };
   };
 
-  const handleSave = async (status) => {
+  const handleSave = async (status, source = "general") => {
     if (!post.title) {
       setError("Article title is required.");
       return;
     }
+    if (source === "header") setIsSavingHeader(true);
+    else if (source === "sidebar") setIsSavingSidebar(true);
+    else if (source === "savebar") setIsSavingSaveBar(true);
+
     setIsSaving(true);
     setError(null);
     try {
@@ -462,6 +561,52 @@ export default function PostEditor() {
       return null;
     } finally {
       setIsSaving(false);
+      setIsSavingHeader(false);
+      setIsSavingSidebar(false);
+      setIsSavingSaveBar(false);
+    }
+  };
+
+  const handleDiscard = () => {
+    contentHtmlSyncedRef.current = false;
+    if (isEditing && originalPost) {
+      setPost(originalPost);
+      setContentHtml(originalPost.contentHtml || "");
+      setOriginalContentHtml(originalPost.contentHtml || "");
+      setTags(originalPost.tags || []);
+      setShopifyBlogId(originalPost.shopifyArticle?.shopifyBlogId || "");
+      setSeoData({
+        metaTitle: originalPost.metaTitle || "",
+        metaDescription: originalPost.metaDescription || "",
+        canonicalUrl: originalPost.canonicalUrl || "",
+        ogTitle: originalPost.ogTitle || "",
+        ogDescription: originalPost.ogDescription || "",
+        ogImage: originalPost.ogImage || "",
+      });
+    } else {
+      setPost({
+        title: "",
+        slug: "",
+        excerpt: "",
+        status: "draft",
+        author: "",
+        featuredImage: "",
+        contentJson: [],
+        customCss: "",
+        productSliderPosition: "none",
+      });
+      setContentHtml("");
+      setOriginalContentHtml("");
+      setTags([]);
+      setShopifyBlogId("");
+      setSeoData({
+        metaTitle: "",
+        metaDescription: "",
+        canonicalUrl: "",
+        ogTitle: "",
+        ogDescription: "",
+        ogImage: "",
+      });
     }
   };
 
@@ -587,7 +732,55 @@ export default function PostEditor() {
 
   return (
     <Frame>
-      <TitleBar title={isEditing ? "Edit Article" : "New Article"} />
+      <ui-save-bar id={saveBarId}>
+        <button
+          variant="primary"
+          onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}
+          loading={isSavingSaveBar ? "" : undefined}
+        >
+          Save
+        </button>
+        <button onClick={handleDiscard}>Discard</button>
+      </ui-save-bar>
+      <TitleBar title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}>
+        <button variant="breadcrumb" onClick={() => navigate("/")}>
+          Articles
+        </button>
+        <button
+          variant="primary"
+          onClick={() => handleSave(post.status === "published" ? "published" : "draft", "header")}
+          disabled={isSaving}
+        >
+          {isSavingHeader ? "Saving..." : (post.status === "published" ? "Save & Sync" : "Save Draft")}
+        </button>
+        {isEditing && (
+          <button onClick={() => navigate(`/posts/${id}/translate`)}>
+            Translate Article
+          </button>
+        )}
+        <button onClick={handlePreviewClick} disabled={isPreviewLoading}>
+          {isPreviewLoading ? "Loading Preview..." : "Preview"}
+        </button>
+        {post.status === "published" ? (
+          <button onClick={handleUnpublish} disabled={isUnpublishing}>
+            {isUnpublishing ? "Unpublishing..." : "Unpublish"}
+          </button>
+        ) : (
+          <button onClick={handlePublish} disabled={isPublishing || !shopifyBlogId}>
+            {isPublishing ? "Publishing..." : "Publish to Shopify"}
+          </button>
+        )}
+        {post.status === "published" && (
+          <button
+            onClick={() => {
+              const shopUrl = `https://${window.shopify?.config?.shop || ""}`;
+              window.open(`${shopUrl}/blogs/news/${post.handle}`, "_blank");
+            }}
+          >
+            View on Storefront
+          </button>
+        )}
+      </TitleBar>
       {toast && (
         <Toast content={toast.content} onDismiss={() => setToast(null)} />
       )}
@@ -595,46 +788,6 @@ export default function PostEditor() {
         fullWidth
         title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
         titleMetadata={statusBadge}
-        backAction={{ content: "Articles", onAction: () => navigate("/") }}
-        primaryAction={{
-          content: isSaving ? "Saving..." : (post.status === "published" ? "Save & Sync" : "Save Draft"),
-          loading: isSaving,
-          onAction: () => handleSave(post.status === "published" ? "published" : "draft"),
-        }}
-        secondaryActions={[
-          ...(isEditing
-            ? [
-                {
-                  content: "Translate Article",
-                  onAction: () => navigate(`/posts/${id}/translate`),
-                },
-              ]
-            : []),
-          {
-            content: "Preview",
-            icon: ViewIcon,
-            loading: isPreviewLoading,
-            onAction: handlePreviewClick,
-          },
-          ...(post.status === "published"
-            ? [
-                {
-                  content: isUnpublishing ? "Unpublishing..." : "Unpublish",
-                  loading: isUnpublishing,
-                  onAction: handleUnpublish,
-                  destructive: true,
-                },
-              ]
-            : [
-                {
-                  content: isPublishing ? "Publishing..." : "Publish to Shopify",
-                  loading: isPublishing,
-                  onAction: handlePublish,
-                  disabled: !shopifyBlogId,
-                  tone: "success",
-                },
-              ]),
-        ]}
       >
         <Layout>
           {error && (
@@ -681,7 +834,7 @@ export default function PostEditor() {
                     <Divider />
                     <TiptapEditor
                       content={contentHtml}
-                      onChange={setContentHtml}
+                      onChange={handleContentChange}
                       placeholder="Write your article content here..."
                       uploadUrl="/api/posts/upload"
                     />
@@ -742,8 +895,9 @@ export default function PostEditor() {
                       <BlockStack gap="200">
                         <Button
                           variant="primary"
-                          onClick={() => handleSave("published")}
-                          loading={isSaving}
+                          onClick={() => handleSave("published", "sidebar")}
+                          loading={isSavingSidebar}
+                          disabled={isSaving && !isSavingSidebar}
                           fullWidth
                         >
                           Save & Sync
@@ -752,6 +906,7 @@ export default function PostEditor() {
                           tone="critical"
                           onClick={handleUnpublish}
                           loading={isUnpublishing}
+                          disabled={isSaving || isUnpublishing}
                           fullWidth
                         >
                           Unpublish
@@ -760,8 +915,9 @@ export default function PostEditor() {
                     ) : (
                       <BlockStack gap="200">
                         <Button
-                          onClick={() => handleSave("draft")}
-                          loading={isSaving}
+                          onClick={() => handleSave("draft", "sidebar")}
+                          loading={isSavingSidebar}
+                          disabled={isSaving && !isSavingSidebar}
                           fullWidth
                         >
                           Save Draft
@@ -771,7 +927,7 @@ export default function PostEditor() {
                           tone="success"
                           onClick={handlePublish}
                           loading={isPublishing}
-                          disabled={!shopifyBlogId}
+                          disabled={isSaving || isPublishing || !shopifyBlogId}
                           fullWidth
                         >
                           Publish

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
+  Modal,
   Grid,
   Spinner,
   Banner,
@@ -97,7 +98,6 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
       if (!res.ok) throw new Error(data.error || "Upload failed");
       
       // Immediately select the newly uploaded file and close the modal.
-      // This works gracefully even if the upload fell back to local storage.
       if (data.url) {
         onSelect(data.url);
         onClose();
@@ -112,169 +112,123 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
     }
   };
 
-  useEffect(() => {
-    if (!open) return undefined;
-    const onEsc = (e) => {
-      if (e.key === "Escape") onClose?.();
-    };
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 12000,
-        background: "rgba(0, 0, 0, 0.45)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "16px",
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose?.();
-      }}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Select an image from Shopify"
+      size="large"
+      secondaryActions={[
+        {
+          content: "Close",
+          onAction: onClose,
+        },
+      ]}
     >
-      <div
-        style={{
-          width: "min(980px, 100%)",
-          maxHeight: "90vh",
-          overflow: "auto",
-          background: "#fff",
-          borderRadius: "12px",
-          boxShadow: "0 24px 60px rgba(0,0,0,0.25)",
-          border: "1px solid #e1e3e5",
-        }}
-      >
-        <div
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 1,
-            background: "#fff",
-            borderBottom: "1px solid #e1e3e5",
-            padding: "12px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
-          }}
-        >
-          <Text variant="headingMd" as="h2">Select an image from Shopify</Text>
-          <Button onClick={onClose}>Close</Button>
-        </div>
+      <Modal.Section>
+        <BlockStack gap="400">
+          {error && (
+            <Banner tone="critical" onDismiss={() => setError(null)}>
+              {error}
+            </Banner>
+          )}
 
-        <div style={{ padding: "16px" }}>
-          <BlockStack gap="400">
-            {error && (
-              <Banner tone="critical" onDismiss={() => setError(null)}>
-                {error}
-              </Banner>
-            )}
-
-            <InlineStack gap="200" align="space-between">
-              <div style={{ flex: 1 }}>
-                <TextField
-                  value={query}
-                  onChange={handleSearch}
-                  placeholder="Search files..."
-                  autoComplete="off"
-                  clearButton
-                  onClearButtonClick={() => {
-                    setQuery("");
-                    setTimeout(() => loadInitial(), 0);
-                  }}
-                  onKeyPress={(e) => {
-                    if (e.key === "Enter") handleSearchSubmit();
-                  }}
-                />
-              </div>
-              <Button onClick={handleSearchSubmit}>Search</Button>
-
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                style={{ display: "none" }}
-                onChange={handleUpload}
+          <InlineStack gap="200" align="space-between">
+            <div style={{ flex: 1 }}>
+              <TextField
+                value={query}
+                onChange={handleSearch}
+                placeholder="Search files..."
+                autoComplete="off"
+                clearButton
+                onClearButtonClick={() => {
+                  setQuery("");
+                  setTimeout(() => loadInitial(), 0);
+                }}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter") handleSearchSubmit();
+                }}
               />
-              <Button
-                primary
-                onClick={() => fileInputRef.current?.click()}
-                loading={uploading}
-              >
-                Add media
-              </Button>
-            </InlineStack>
+            </div>
+            <Button onClick={handleSearchSubmit}>Search</Button>
 
-            {loading ? (
-              <div style={{ textAlign: "center", padding: "2rem" }}>
-                <Spinner />
-              </div>
-            ) : files.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "2rem" }}>
-                <Text tone="subdued">No images found.</Text>
-              </div>
-            ) : (
-              <Grid>
-                {files.map((file) => (
-                  <Grid.Cell
-                    key={file.id}
-                    columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleUpload}
+            />
+            <Button
+              variant="primary"
+              onClick={() => fileInputRef.current?.click()}
+              loading={uploading}
+            >
+              Add media
+            </Button>
+          </InlineStack>
+
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "2rem" }}>
+              <Spinner />
+            </div>
+          ) : files.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "2rem" }}>
+              <Text tone="subdued">No images found.</Text>
+            </div>
+          ) : (
+            <Grid>
+              {files.map((file) => (
+                <Grid.Cell
+                  key={file.id}
+                  columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}
+                >
+                  <div
+                    style={{
+                      cursor: "pointer",
+                      border: "1px solid #dfe3e8",
+                      borderRadius: "8px",
+                      overflow: "hidden",
+                    }}
+                    onClick={() => {
+                      onSelect(file.url);
+                      onClose();
+                    }}
                   >
                     <div
                       style={{
-                        cursor: "pointer",
-                        border: "1px solid #dfe3e8",
-                        borderRadius: "8px",
-                        overflow: "hidden",
-                      }}
-                      onClick={() => {
-                        onSelect(file.url);
-                        onClose();
+                        height: "120px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "#f4f6f8",
                       }}
                     >
-                      <div
+                      <img
+                        src={file.url}
+                        alt={file.alt}
                         style={{
-                          height: "120px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background: "#f4f6f8",
+                          maxWidth: "100%",
+                          maxHeight: "100%",
+                          objectFit: "contain",
                         }}
-                      >
-                        <img
-                          src={file.url}
-                          alt={file.alt}
-                          style={{
-                            maxWidth: "100%",
-                            maxHeight: "100%",
-                            objectFit: "contain",
-                          }}
-                        />
-                      </div>
+                      />
                     </div>
-                  </Grid.Cell>
-                ))}
-              </Grid>
-            )}
+                  </div>
+                </Grid.Cell>
+              ))}
+            </Grid>
+          )}
 
-            {hasNextPage && (
-              <div style={{ textAlign: "center", marginTop: "1rem" }}>
-                <Button onClick={loadMore} loading={fetchingMore}>
-                  Load More
-                </Button>
-              </div>
-            )}
-          </BlockStack>
-        </div>
-      </div>
-    </div>
+          {hasNextPage && (
+            <div style={{ textAlign: "center", marginTop: "1rem" }}>
+              <Button onClick={loadMore} loading={fetchingMore}>
+                Load More
+              </Button>
+            </div>
+          )}
+        </BlockStack>
+      </Modal.Section>
+    </Modal>
   );
 }
