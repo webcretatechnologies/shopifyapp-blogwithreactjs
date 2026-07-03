@@ -12,18 +12,19 @@ import { Youtube } from "@tiptap/extension-youtube";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { CustomTableHeader, CustomTableCell } from "./extensions/tableExtensions";
-import { ProductGridExtension } from "./extensions/ProductGridExtension";
-import { CollectionExtension } from "./extensions/CollectionExtension";
-import { BuyButtonExtension } from "./extensions/BuyButtonExtension";
-import { LegacyProductCardExtension, LegacyStickyProductExtension, LegacyFeaturedProductExtension } from "./extensions/LegacyBuyButtonExtensions";
-import { LegacyProductSwitcherExtension } from "./extensions/LegacyProductGridExtensions";
-import { ProductSliderExtension } from "./extensions/ProductSliderExtension";
-import { CTAButtonExtension } from "./extensions/CTAButtonExtension";
-import { HeroExtension } from "./extensions/HeroExtension";
-import { VideoExtension } from "./extensions/VideoExtension";
-import { SpacerExtension } from "./extensions/SpacerExtension";
-import { DividerExtension } from "./extensions/DividerExtension";
-import { ImageBlockExtension } from "./extensions/ImageBlockExtension";
+import { ColumnLayout } from "./nodes/ColumnLayout/ColumnLayout";
+import { Column } from "./nodes/ColumnLayout/Column";
+import { ProductCard } from "./nodes/ProductCard/ProductCard";
+import { ImageBlock } from "./nodes/ImageBlock/ImageBlock";
+import { DividerBlock } from "./nodes/DividerBlock/DividerBlock";
+import { CalloutBlock } from "./nodes/CalloutBlock/CalloutBlock";
+import { VideoEmbedBlock } from "./nodes/VideoEmbedBlock/VideoEmbedBlock";
+import { ButtonBlock } from "./nodes/ButtonBlock/ButtonBlock";
+import { HtmlBlock } from "./nodes/HtmlBlock/HtmlBlock";
+import DragHandle from "@tiptap/extension-drag-handle-react";
+import NodeRange from "@tiptap/extension-node-range";
+import Dropcursor from "@tiptap/extension-dropcursor";
+import Gapcursor from "@tiptap/extension-gapcursor";
 import ShopifyFilePicker from "../ShopifyFilePicker";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Modal, TextField, FormLayout } from "@shopify/polaris";
@@ -112,20 +113,18 @@ export default function TiptapEditor({
       TableRow,
       CustomTableHeader,
       CustomTableCell,
-      ProductGridExtension,
-      CollectionExtension,
-      BuyButtonExtension,
-      LegacyProductCardExtension,
-      LegacyStickyProductExtension,
-      LegacyFeaturedProductExtension,
-      LegacyProductSwitcherExtension,
-      ProductSliderExtension,
-      CTAButtonExtension,
-      HeroExtension,
-      VideoExtension,
-      SpacerExtension,
-      DividerExtension,
-      ImageBlockExtension,
+      ColumnLayout,
+      Column,
+      ProductCard,
+      ImageBlock,
+      DividerBlock,
+      CalloutBlock,
+      VideoEmbedBlock,
+      ButtonBlock,
+      HtmlBlock,
+      NodeRange.configure({ keymap: { 'Alt-ArrowUp': 'nodeRangeUp', 'Alt-ArrowDown': 'nodeRangeDown' } }),
+      Dropcursor,
+      Gapcursor,
     ],
     []
     // eslint-disable-next-line react-hooks/exhaustive-deps
