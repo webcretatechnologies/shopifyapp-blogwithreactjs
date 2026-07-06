@@ -10,6 +10,22 @@ export default function ProductCardView({ node, updateAttributes, deleteNode }) 
     updateAttributes({ [key]: value });
   };
 
+  const pickProduct = async () => {
+    if (!window.shopify?.resourcePicker) return;
+    const selection = await window.shopify.resourcePicker({ type: 'product', multiple: false });
+    const product = selection?.[0];
+    if (!product) return;
+    const variant = product.variants?.[0];
+    updateAttributes({
+      productId: product.id || '',
+      title: product.title || '',
+      handle: product.handle || '',
+      imageUrl: product.images?.[0]?.originalSrc || product.images?.[0]?.src || '',
+      price: variant?.price ? `$${variant.price}` : '',
+      compareAtPrice: variant?.compareAtPrice ? `$${variant.compareAtPrice}` : '',
+    });
+  };
+
   const layoutOptions = [
     { label: 'Vertical', value: 'vertical' },
     { label: 'Horizontal', value: 'horizontal' },
@@ -17,8 +33,8 @@ export default function ProductCardView({ node, updateAttributes, deleteNode }) 
   ];
 
   return (
-    <NodeViewWrapper 
-      className="tiptap-product-card" 
+    <NodeViewWrapper
+      className="tiptap-product-card tiptap-block"
       style={{
         position: 'relative',
         margin: '1rem 0',
@@ -32,40 +48,32 @@ export default function ProductCardView({ node, updateAttributes, deleteNode }) 
         padding: attrs.layout === 'compact' ? '12px' : '0'
       }}
     >
-      <div 
-        className="product-card-overlay" 
+      <div
+        className="product-card-toolbar tiptap-block-toolbar"
         contentEditable={false}
         style={{
           position: 'absolute',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.05)',
-          opacity: 0,
-          transition: 'opacity 0.2s',
+          top: '8px',
+          right: '8px',
           display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'flex-start',
-          padding: '8px',
+          gap: '4px',
           zIndex: 10
         }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
       >
-        <div style={{ display: 'flex', gap: '4px' }}>
-          <button 
-            type="button" 
-            onClick={() => setIsEditing(true)} 
-            style={{ padding: '4px 8px', background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer' }}
-          >
-            ✎ Edit
-          </button>
-          <button 
-            type="button" 
-            onClick={() => deleteNode()} 
-            style={{ padding: '4px 8px', background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', color: 'red' }}
-          >
-            ×
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setIsEditing(true)}
+          style={{ padding: '4px 8px', background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          ✎ Edit
+        </button>
+        <button
+          type="button"
+          onClick={() => deleteNode()}
+          style={{ padding: '4px 8px', background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', color: 'red' }}
+        >
+          ×
+        </button>
       </div>
 
       {attrs.showImage && attrs.layout !== 'compact' && (
@@ -133,15 +141,15 @@ export default function ProductCardView({ node, updateAttributes, deleteNode }) 
         >
           <Modal.Section>
             <FormLayout>
-              {/* Product selection would go here (requires Shopify App Bridge resource picker) */}
               <div style={{ border: '1px solid #ddd', padding: '12px', borderRadius: '4px', background: '#f9f9f9' }}>
-                <p><strong>Note:</strong> Product selection usually opens Shopify Resource Picker.</p>
-                <Button onClick={() => {
-                  // Mock product selection
-                  handleUpdate('title', 'Example Product');
-                  handleUpdate('price', '$19.99');
-                  handleUpdate('imageUrl', 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png');
-                }}>Select Mock Product</Button>
+                <p style={{ marginTop: 0 }}>
+                  {attrs.title
+                    ? <>Selected product: <strong>{attrs.title}</strong></>
+                    : 'No product selected yet.'}
+                </p>
+                <Button onClick={pickProduct}>
+                  {attrs.title ? 'Change Product' : 'Select Product'}
+                </Button>
               </div>
 
               <Select

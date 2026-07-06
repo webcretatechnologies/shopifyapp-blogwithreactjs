@@ -16,7 +16,7 @@ export default function CalloutBlockView({ node, updateAttributes, deleteNode })
 
   return (
     <NodeViewWrapper 
-      className="tiptap-callout-block"
+      className="tiptap-callout-block tiptap-block"
       style={{
         backgroundColor: attrs.backgroundColor,
         borderLeft: `4px solid ${attrs.borderColor}`,
@@ -30,7 +30,7 @@ export default function CalloutBlockView({ node, updateAttributes, deleteNode })
       }}
     >
       <div 
-        className="callout-block-toolbar" 
+        className="callout-block-toolbar tiptap-block-toolbar" 
         contentEditable={false}
         style={{
           display: 'flex',
@@ -44,12 +44,8 @@ export default function CalloutBlockView({ node, updateAttributes, deleteNode })
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10,
-          opacity: 0,
-          transition: 'opacity 0.2s',
           alignItems: 'center'
         }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
       >
         <button type="button" onClick={() => setType('info', 'ℹ️', '#f0f9ff', '#0ea5e9')} className="tiptap-btn">ℹ️ Info</button>
         <button type="button" onClick={() => setType('warning', '⚠️', '#fffbeb', '#f59e0b')} className="tiptap-btn">⚠️ Warning</button>

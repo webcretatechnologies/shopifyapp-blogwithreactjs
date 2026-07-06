@@ -1,9 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
+
+/**
+ * Best-effort neutralization for the ADMIN preview only: strips script tags,
+ * inline event handlers and javascript: URLs so pasted markup can't run in
+ * the admin session. The stored value and the storefront output are untouched
+ * (embedding raw HTML/Liquid is this block's purpose).
+ */
+function sanitizeForPreview(html) {
+  return (html || '')
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'>\s]*\2/gi, '$1="#"');
+}
 
 export default function HtmlBlockView({ node, updateAttributes, deleteNode }) {
   const [isPreview, setIsPreview] = useState(false);
   const attrs = node.attrs;
+  const previewHtml = useMemo(() => sanitizeForPreview(attrs.html), [attrs.html]);
 
   return (
     <NodeViewWrapper 
@@ -52,7 +66,7 @@ export default function HtmlBlockView({ node, updateAttributes, deleteNode }) {
           className="html-block-preview" 
           contentEditable={false}
           style={{ padding: '16px', background: '#fff', minHeight: '100px' }}
-          dangerouslySetInnerHTML={{ __html: attrs.html || '<p style="color:#6d7175; text-align:center;">No HTML content</p>' }}
+          dangerouslySetInnerHTML={{ __html: previewHtml || '<p style="color:#6d7175; text-align:center;">No HTML content</p>' }}
         />
       ) : (
         <div style={{ background: '#202223', padding: '0' }}>

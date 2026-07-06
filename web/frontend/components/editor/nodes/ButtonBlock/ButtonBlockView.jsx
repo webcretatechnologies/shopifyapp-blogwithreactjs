@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { Modal, FormLayout, TextField, Select, Checkbox } from '@shopify/polaris';
+import { getButtonStyles } from './ButtonBlock';
 
 export default function ButtonBlockView({ node, updateAttributes, deleteNode }) {
   const [showSettings, setShowSettings] = useState(false);
@@ -10,14 +11,7 @@ export default function ButtonBlockView({ node, updateAttributes, deleteNode }) 
     updateAttributes({ [key]: value });
   };
 
-  let padding = "8px 16px";
-  let fontSize = "14px";
-  if (attrs.size === "small") { padding = "4px 8px"; fontSize = "12px"; }
-  else if (attrs.size === "large") { padding = "12px 24px"; fontSize = "16px"; }
-
-  let bg = attrs.style === "filled" ? attrs.color : "transparent";
-  let border = attrs.style === "ghost" ? "none" : `1px solid ${attrs.color}`;
-  let color = attrs.style === "filled" ? attrs.textColor : attrs.color;
+  const { padding, fontSize, bg, border, color } = getButtonStyles(attrs);
 
   const styleOptions = [
     { label: 'Filled', value: 'filled' },
@@ -33,7 +27,7 @@ export default function ButtonBlockView({ node, updateAttributes, deleteNode }) 
 
   return (
     <NodeViewWrapper 
-      className="tiptap-button-block"
+      className="tiptap-button-block tiptap-block"
       style={{
         textAlign: attrs.alignment,
         margin: '1.5rem 0',
@@ -41,7 +35,7 @@ export default function ButtonBlockView({ node, updateAttributes, deleteNode }) 
       }}
     >
       <div 
-        className="button-block-toolbar" 
+        className="button-block-toolbar tiptap-block-toolbar" 
         contentEditable={false}
         style={{
           display: 'flex',
@@ -55,12 +49,8 @@ export default function ButtonBlockView({ node, updateAttributes, deleteNode }) 
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10,
-          opacity: 0,
-          transition: 'opacity 0.2s',
           alignItems: 'center'
         }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
       >
         <button type="button" onClick={() => handleUpdate('alignment', 'left')} className={`tiptap-btn ${attrs.alignment === 'left' ? 'tiptap-btn--active' : ''}`}>← L</button>
         <button type="button" onClick={() => handleUpdate('alignment', 'center')} className={`tiptap-btn ${attrs.alignment === 'center' ? 'tiptap-btn--active' : ''}`}>C</button>
@@ -117,8 +107,8 @@ export default function ButtonBlockView({ node, updateAttributes, deleteNode }) 
                 <Select
                   label="Style"
                   options={styleOptions}
-                  value={attrs.style}
-                  onChange={(val) => handleUpdate('style', val)}
+                  value={attrs.variant}
+                  onChange={(val) => handleUpdate('variant', val)}
                 />
                 <Select
                   label="Size"
@@ -135,7 +125,7 @@ export default function ButtonBlockView({ node, updateAttributes, deleteNode }) 
                   onChange={(val) => handleUpdate('color', val)}
                   autoComplete="off"
                 />
-                {attrs.style === 'filled' && (
+                {attrs.variant === 'filled' && (
                   <TextField
                     label="Text Color"
                     type="color"

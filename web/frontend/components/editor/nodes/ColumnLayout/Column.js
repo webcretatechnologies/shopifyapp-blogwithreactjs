@@ -1,16 +1,15 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import ColumnView from "./ColumnView";
+import { numAttr } from "../attrHelpers";
 
 export const Column = Node.create({
   name: "column",
   content: "block+",
-  
+
   addAttributes() {
     return {
-      width: {
-        default: 50,
-      },
+      width: numAttr("width", 50),
     };
   },
 
@@ -22,8 +21,10 @@ export const Column = Node.create({
     ];
   },
 
-  renderHTML({ HTMLAttributes }) {
-    return ["div", mergeAttributes(HTMLAttributes, { "data-type": "column", class: "tiptap-column", style: `width: ${HTMLAttributes.width}%` }), 0];
+  renderHTML({ node, HTMLAttributes }) {
+    // flex-grow proportional to width keeps totals valid regardless of gap
+    const width = node.attrs.width || 50;
+    return ["div", mergeAttributes(HTMLAttributes, { "data-type": "column", class: "tiptap-column", style: `flex: ${width} ${width} 0%; min-width: 0;` }), 0];
   },
 
   addNodeView() {

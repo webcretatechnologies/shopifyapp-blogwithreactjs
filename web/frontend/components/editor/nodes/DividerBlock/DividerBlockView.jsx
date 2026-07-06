@@ -10,14 +10,14 @@ export default function DividerBlockView({ node, updateAttributes, deleteNode })
 
   return (
     <NodeViewWrapper 
-      className="tiptap-divider-block"
+      className="tiptap-divider-block tiptap-block"
       style={{
         position: 'relative',
         padding: `${attrs.spacing / 2}px 0`
       }}
     >
       <div 
-        className="divider-block-toolbar" 
+        className="divider-block-toolbar tiptap-block-toolbar" 
         contentEditable={false}
         style={{
           display: 'flex',
@@ -31,16 +31,12 @@ export default function DividerBlockView({ node, updateAttributes, deleteNode })
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10,
-          opacity: 0,
-          transition: 'opacity 0.2s',
           alignItems: 'center'
         }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
       >
-        <button type="button" onClick={() => handleUpdate('style', 'solid')} className={`tiptap-btn ${attrs.style === 'solid' ? 'tiptap-btn--active' : ''}`}>Solid</button>
-        <button type="button" onClick={() => handleUpdate('style', 'dashed')} className={`tiptap-btn ${attrs.style === 'dashed' ? 'tiptap-btn--active' : ''}`}>Dashed</button>
-        <button type="button" onClick={() => handleUpdate('style', 'dotted')} className={`tiptap-btn ${attrs.style === 'dotted' ? 'tiptap-btn--active' : ''}`}>Dotted</button>
+        <button type="button" onClick={() => handleUpdate('lineStyle', 'solid')} className={`tiptap-btn ${attrs.lineStyle === 'solid' ? 'tiptap-btn--active' : ''}`}>Solid</button>
+        <button type="button" onClick={() => handleUpdate('lineStyle', 'dashed')} className={`tiptap-btn ${attrs.lineStyle === 'dashed' ? 'tiptap-btn--active' : ''}`}>Dashed</button>
+        <button type="button" onClick={() => handleUpdate('lineStyle', 'dotted')} className={`tiptap-btn ${attrs.lineStyle === 'dotted' ? 'tiptap-btn--active' : ''}`}>Dotted</button>
         
         <div style={{ width: '1px', background: '#ccc', margin: '0 4px', height: '16px' }} />
         
@@ -69,7 +65,7 @@ export default function DividerBlockView({ node, updateAttributes, deleteNode })
 
       <hr 
         style={{
-          borderTop: `${attrs.thickness}px ${attrs.style} ${attrs.color}`,
+          borderTop: `${attrs.thickness}px ${attrs.lineStyle} ${attrs.color}`,
           borderLeft: 0,
           borderRight: 0,
           borderBottom: 0,

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { NodeViewWrapper, NodeViewContent } from '@tiptap/react';
-import { Modal, FormLayout, TextField } from '@shopify/polaris';
+import { Modal, FormLayout, TextField, Button } from '@shopify/polaris';
+import ShopifyFilePicker from '../../../ShopifyFilePicker';
 
 export default function ImageBlockView({ node, updateAttributes, deleteNode }) {
   const [showSettings, setShowSettings] = useState(false);
+  const [showFilePicker, setShowFilePicker] = useState(false);
   const attrs = node.attrs;
 
   const handleUpdate = (key, value) => {
@@ -18,7 +20,7 @@ export default function ImageBlockView({ node, updateAttributes, deleteNode }) {
 
   return (
     <NodeViewWrapper 
-      className="tiptap-image-block"
+      className="tiptap-image-block tiptap-block"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -28,7 +30,7 @@ export default function ImageBlockView({ node, updateAttributes, deleteNode }) {
       }}
     >
       <div 
-        className="image-block-toolbar" 
+        className="image-block-toolbar tiptap-block-toolbar" 
         contentEditable={false}
         style={{
           display: 'flex',
@@ -40,11 +42,7 @@ export default function ImageBlockView({ node, updateAttributes, deleteNode }) {
           position: 'absolute',
           top: '-36px',
           zIndex: 10,
-          opacity: 0,
-          transition: 'opacity 0.2s'
         }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
       >
         <button type="button" onClick={() => handleUpdate('alignment', 'left')} className="tiptap-btn">← Left</button>
         <button type="button" onClick={() => handleUpdate('alignment', 'center')} className="tiptap-btn">Center</button>
@@ -80,10 +78,10 @@ export default function ImageBlockView({ node, updateAttributes, deleteNode }) {
               border: '1px dashed #c9cccf',
               cursor: 'pointer'
             }}
-            onClick={() => setShowSettings(true)}
+            onClick={() => setShowFilePicker(true)}
             contentEditable={false}
           >
-            Click to add image
+            Click to select or upload an image
           </div>
         )}
       </div>
@@ -112,6 +110,9 @@ export default function ImageBlockView({ node, updateAttributes, deleteNode }) {
         >
           <Modal.Section>
             <FormLayout>
+              <Button onClick={() => { setShowSettings(false); setShowFilePicker(true); }}>
+                Browse Shopify Files
+              </Button>
               <TextField
                 label="Image URL"
                 value={attrs.src}
@@ -141,6 +142,15 @@ export default function ImageBlockView({ node, updateAttributes, deleteNode }) {
           </Modal.Section>
         </Modal>
       )}
+
+      <ShopifyFilePicker
+        open={showFilePicker}
+        onClose={() => setShowFilePicker(false)}
+        onSelect={(url) => {
+          handleUpdate('src', url);
+          setShowFilePicker(false);
+        }}
+      />
     </NodeViewWrapper>
   );
 }

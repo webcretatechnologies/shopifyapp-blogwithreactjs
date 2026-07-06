@@ -4,87 +4,82 @@ import { NodeViewWrapper, NodeViewContent } from '@tiptap/react';
 export default function ColumnLayoutView({ node, editor, getPos, deleteNode }) {
   const colCount = node.childCount;
 
-  const addColumn = useCallback(() => {
-    if (colCount >= 4) return;
-    const pos = getPos();
-    if (pos === undefined) return;
-    
-    // Find the current node and add a column to it
-    editor.chain().focus().insertContentAt(pos + node.nodeSize - 1, {
-      type: 'column',
-      attrs: { width: 100 / (colCount + 1) }
-    }).run();
-    
-    // rebalance
-    rebalanceColumns(colCount + 1);
-  }, [colCount, editor, getPos, node]);
-
+  /**
+   * Sets the column count in a single transaction (one undo step):
+   * - increasing appends empty columns
+   * - decreasing merges the content of removed columns into the last kept one
+   * - all widths are rebalanced to equal shares
+   */
   const setColumns = useCallback((count) => {
-    if (count === colCount) return;
+    if (count === colCount || count < 1 || count > 4) return;
     const pos = getPos();
     if (pos === undefined) return;
 
-    if (count < colCount) {
-      // Need to delete columns and move content... complex. 
-      // For simplicity, just replace the whole node if it's empty, or don't allow reducing easily without a full command.
-      // We will just rebalance for now.
-      alert("Reducing column count currently not fully supported without deleting content.");
-    } else {
-      // Add missing columns
-      let tr = editor.state.tr;
-      for(let i = colCount; i < count; i++) {
-        tr = tr.insert(pos + node.nodeSize - 1, editor.schema.nodes.column.create({ width: 100/count }));
-      }
-      editor.view.dispatch(tr);
-    }
-  }, [colCount, editor, getPos, node]);
+    const { schema, tr } = editor.state;
+    const columnType = schema.nodes.column;
+    const width = Math.round((100 / count) * 100) / 100;
 
-  const rebalanceColumns = (newColCount) => {
-    // Equal widths
-    const width = 100 / newColCount;
-    // We would need to update attrs of all children. 
-    // TipTap makes this slightly complex from the NodeView. 
-    // We can just rely on flex-1 for equal widths if widths are equal.
-  };
+    const newColumns = [];
+    for (let i = 0; i < count; i++) {
+      if (i < colCount) {
+        let content = node.child(i).content;
+        if (i === count - 1 && count < colCount) {
+          // last kept column absorbs the content of all removed columns
+          for (let j = count; j < colCount; j++) {
+            content = content.append(node.child(j).content);
+          }
+        }
+        newColumns.push(columnType.create({ width }, content));
+      } else {
+        newColumns.push(columnType.createAndFill({ width }));
+      }
+    }
+
+    const newLayout = node.type.create({ ...node.attrs, columns: count }, newColumns);
+    editor.view.dispatch(tr.replaceWith(pos, pos + node.nodeSize, newLayout));
+  }, [colCount, editor, getPos, node]);
 
   return (
-    <NodeViewWrapper className="column-layout-wrapper" style={{ position: 'relative', margin: '1.5rem 0' }}>
-      <div 
-        className="column-layout-toolbar" 
-        contentEditable={false} 
-        style={{ 
-          display: 'flex', 
-          gap: '8px', 
-          padding: '4px', 
-          background: '#f4f6f8', 
-          border: '1px solid #dfe3e8', 
-          borderRadius: '4px', 
-          position: 'absolute', 
-          top: '-36px', 
-          left: '50%', 
+    <NodeViewWrapper className="column-layout-wrapper tiptap-block" style={{ position: 'relative', margin: '1.5rem 0' }}>
+      <div
+        className="column-layout-toolbar tiptap-block-toolbar"
+        contentEditable={false}
+        style={{
+          display: 'flex',
+          gap: '8px',
+          padding: '4px',
+          background: '#f4f6f8',
+          border: '1px solid #dfe3e8',
+          borderRadius: '4px',
+          position: 'absolute',
+          top: '-36px',
+          left: '50%',
           transform: 'translateX(-50%)',
-          zIndex: 10, 
-          opacity: 0, 
-          transition: 'opacity 0.2s' 
+          zIndex: 10,
         }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
       >
-        <button type="button" onClick={addColumn} className="tiptap-btn" disabled={colCount >= 4}>+ Add Column</button>
-        <button type="button" onClick={() => setColumns(2)} className="tiptap-btn">2 cols</button>
-        <button type="button" onClick={() => setColumns(3)} className="tiptap-btn">3 cols</button>
-        <button type="button" onClick={() => setColumns(4)} className="tiptap-btn">4 cols</button>
-        <button type="button" onClick={() => deleteNode()} className="tiptap-btn" style={{color: '#d82c0d'}}>🗑</button>
+        {[2, 3, 4].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setColumns(n)}
+            className={`tiptap-btn ${colCount === n ? 'tiptap-btn--active' : ''}`}
+            title={n < colCount ? `${n} columns (content of removed columns is kept)` : `${n} columns`}
+          >
+            {n} cols
+          </button>
+        ))}
+        <button type="button" onClick={() => deleteNode()} className="tiptap-btn" style={{ color: '#d82c0d' }}>🗑</button>
       </div>
-      
-      <NodeViewContent 
-        className="column-layout-content" 
-        style={{ 
-          display: 'flex', 
-          gap: '16px', 
+
+      <NodeViewContent
+        className="column-layout-content"
+        style={{
+          display: 'flex',
+          gap: '16px',
           flexWrap: 'nowrap',
           width: '100%'
-        }} 
+        }}
       />
     </NodeViewWrapper>
   );

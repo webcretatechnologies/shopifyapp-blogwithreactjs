@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { Modal, FormLayout, TextField } from '@shopify/polaris';
+import { getVideoEmbedUrl, getVideoProvider } from '../../utils/videoEmbed';
 
 export default function VideoEmbedBlockView({ node, updateAttributes, deleteNode }) {
   const [showSettings, setShowSettings] = useState(false);
@@ -8,13 +9,8 @@ export default function VideoEmbedBlockView({ node, updateAttributes, deleteNode
   const attrs = node.attrs;
 
   const handleUpdate = (key, value) => {
-    let provider = attrs.provider;
     if (key === 'url') {
-      if (value.includes('youtube') || value.includes('youtu.be')) provider = 'youtube';
-      else if (value.includes('vimeo')) provider = 'vimeo';
-      else if (value.includes('loom')) provider = 'loom';
-      else provider = 'generic';
-      updateAttributes({ [key]: value, provider });
+      updateAttributes({ url: value, provider: getVideoProvider(value) });
     } else {
       updateAttributes({ [key]: value });
     }
@@ -24,18 +20,11 @@ export default function VideoEmbedBlockView({ node, updateAttributes, deleteNode
     handleUpdate('url', tempUrl);
   };
 
-  let iframeSrc = attrs.url;
-  if (attrs.provider === 'youtube' && !iframeSrc.includes('embed')) {
-    const videoId = iframeSrc.split('v=')[1]?.split('&')[0] || iframeSrc.split('youtu.be/')[1];
-    if (videoId) iframeSrc = `https://www.youtube.com/embed/${videoId}`;
-  } else if (attrs.provider === 'vimeo' && !iframeSrc.includes('player.vimeo')) {
-    const videoId = iframeSrc.split('vimeo.com/')[1];
-    if (videoId) iframeSrc = `https://player.vimeo.com/video/${videoId}`;
-  }
+  const iframeSrc = getVideoEmbedUrl(attrs.url);
 
   return (
     <NodeViewWrapper 
-      className="tiptap-video-embed-block"
+      className="tiptap-video-embed-block tiptap-block"
       style={{
         width: attrs.width,
         margin: '1.5rem auto',
@@ -43,7 +32,7 @@ export default function VideoEmbedBlockView({ node, updateAttributes, deleteNode
       }}
     >
       <div 
-        className="video-embed-toolbar" 
+        className="video-embed-toolbar tiptap-block-toolbar" 
         contentEditable={false}
         style={{
           display: 'flex',
@@ -57,12 +46,8 @@ export default function VideoEmbedBlockView({ node, updateAttributes, deleteNode
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10,
-          opacity: 0,
-          transition: 'opacity 0.2s',
           alignItems: 'center'
         }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
       >
         <button type="button" onClick={() => setShowSettings(true)} className="tiptap-btn">Edit URL</button>
         <div style={{ width: '1px', background: '#ccc', margin: '0 4px', height: '16px' }} />

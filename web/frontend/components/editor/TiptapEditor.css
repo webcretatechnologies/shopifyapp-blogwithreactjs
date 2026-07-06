@@ -326,3 +326,45 @@
   background: #d4e4fc;
   border-color: #2c6ecb;
 }
+
+/* ── Drag handle ─────────────────────────────────────────────────────────── */
+.tiptap-drag-handle-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  background: #ffffff;
+  border: 1px solid #e1e3e5;
+  border-radius: 4px;
+  color: #8c9196;
+  font-size: 13px;
+  cursor: grab;
+  user-select: none;
+}
+
+.tiptap-drag-handle-grip:hover {
+  background: #f6f6f7;
+  color: #202223;
+}
+
+.tiptap-drag-handle-grip:active {
+  cursor: grabbing;
+}
+
+/* ── Block hover toolbars ────────────────────────────────────────────────────
+   Hidden by default and click-transparent; shown when the block is hovered
+   or selected. Replaces the old JS onMouseEnter pattern where invisible
+   toolbars intercepted clicks on the line above. */
+.tiptap-content .tiptap-block-toolbar {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.tiptap-content .tiptap-block:hover > .tiptap-block-toolbar,
+.tiptap-content .tiptap-block.ProseMirror-selectednode > .tiptap-block-toolbar,
+.tiptap-content .tiptap-block:focus-within > .tiptap-block-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}

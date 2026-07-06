@@ -9,23 +9,32 @@ export const HtmlBlock = Node.create({
 
   addAttributes() {
     return {
-      html: { default: "" }
+      // rendered: false — serialized only via the encoded data-html attribute
+      html: { default: "", rendered: false }
     };
   },
 
   parseHTML() {
     return [
-      { 
+      {
         tag: 'div[data-type="htmlBlock"]',
-        getAttrs: (node) => ({
-          html: node.getAttribute('data-html') ? decodeURIComponent(node.getAttribute('data-html')) : ''
-        })
+        getAttrs: (node) => {
+          const raw = node.getAttribute('data-html') || '';
+          let html = '';
+          try {
+            html = decodeURIComponent(raw);
+          } catch (e) {
+            // malformed escape sequence (hand-edited HTML) — keep raw value
+            html = raw;
+          }
+          return { html };
+        }
       }
     ];
   },
 
-  renderHTML({ HTMLAttributes }) {
-    return ["div", mergeAttributes(HTMLAttributes, { "data-type": "htmlBlock", "data-html": encodeURIComponent(HTMLAttributes.html) })];
+  renderHTML({ node, HTMLAttributes }) {
+    return ["div", mergeAttributes(HTMLAttributes, { "data-type": "htmlBlock", "data-html": encodeURIComponent(node.attrs.html || "") })];
   },
 
   addNodeView() {

@@ -21,6 +21,20 @@ import { CalloutBlock } from "./nodes/CalloutBlock/CalloutBlock";
 import { VideoEmbedBlock } from "./nodes/VideoEmbedBlock/VideoEmbedBlock";
 import { ButtonBlock } from "./nodes/ButtonBlock/ButtonBlock";
 import { HtmlBlock } from "./nodes/HtmlBlock/HtmlBlock";
+import { BuyButtonExtension } from "./extensions/BuyButtonExtension";
+import { ProductGridExtension } from "./extensions/ProductGridExtension";
+import { CollectionExtension } from "./extensions/CollectionExtension";
+import { CTAButtonExtension } from "./extensions/CTAButtonExtension";
+import { HeroExtension } from "./extensions/HeroExtension";
+import { VideoExtension } from "./extensions/VideoExtension";
+import { SpacerExtension } from "./extensions/SpacerExtension";
+import { ProductSliderExtension } from "./extensions/ProductSliderExtension";
+import {
+  LegacyProductCardExtension,
+  LegacyStickyProductExtension,
+  LegacyFeaturedProductExtension,
+} from "./extensions/LegacyBuyButtonExtensions";
+import { LegacyProductSwitcherExtension } from "./extensions/LegacyProductGridExtensions";
 import DragHandle from "@tiptap/extension-drag-handle-react";
 import NodeRange from "@tiptap/extension-node-range";
 import Dropcursor from "@tiptap/extension-dropcursor";
@@ -122,6 +136,21 @@ export default function TiptapEditor({
       VideoEmbedBlock,
       ButtonBlock,
       HtmlBlock,
+      // Legacy blocks: the toolbar inserts these types and existing articles
+      // contain them. New imageBlock/dividerBlock nodes replace the legacy
+      // extensions of the same names (compat parse rules handle old markup).
+      BuyButtonExtension,
+      ProductGridExtension,
+      CollectionExtension,
+      CTAButtonExtension,
+      HeroExtension,
+      VideoExtension,
+      SpacerExtension,
+      ProductSliderExtension,
+      LegacyProductCardExtension,
+      LegacyStickyProductExtension,
+      LegacyFeaturedProductExtension,
+      LegacyProductSwitcherExtension,
       NodeRange.configure({ keymap: { 'Alt-ArrowUp': 'nodeRangeUp', 'Alt-ArrowDown': 'nodeRangeDown' } }),
       Dropcursor,
       Gapcursor,
@@ -154,7 +183,7 @@ export default function TiptapEditor({
     const currentContent = editor.getHTML();
     if (!editor.isFocused && nextContent !== currentContent) {
       lastEmittedHtmlRef.current = nextContent;
-      editor.commands.setContent(nextContent, false);
+      editor.commands.setContent(nextContent, { emitUpdate: false });
     }
   }, [content, editor]);
 
@@ -482,6 +511,57 @@ export default function TiptapEditor({
           >
             🖼️
           </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'calloutBlock' }).run()}
+            active={editor.isActive("calloutBlock")}
+            title="Insert Callout (Info/Warning/Tip)"
+          >
+            💡
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'buttonBlock' }).run()}
+            active={editor.isActive("buttonBlock")}
+            title="Insert Custom Button"
+          >
+            ⏺
+          </Btn>
+          <Btn
+            onClick={() =>
+              editor.chain().focus().insertContent({
+                type: 'columnLayout',
+                attrs: { columns: 2 },
+                content: [
+                  { type: 'column', attrs: { width: 50 }, content: [{ type: 'paragraph' }] },
+                  { type: 'column', attrs: { width: 50 }, content: [{ type: 'paragraph' }] },
+                ],
+              }).run()
+            }
+            active={editor.isActive("columnLayout")}
+            title="Insert 2-Column Layout"
+          >
+            ▥
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'videoEmbedBlock' }).run()}
+            active={editor.isActive("videoEmbedBlock")}
+            title="Insert Video Embed Block (YouTube/Vimeo/Loom)"
+          >
+            📹
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'htmlBlock' }).run()}
+            active={editor.isActive("htmlBlock")}
+            title="Insert HTML/Liquid Block"
+          >
+            ⌗
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'productCard' }).run()}
+            active={editor.isActive("productCard")}
+            title="Insert Product Card"
+          >
+            🛍
+          </Btn>
         </div>
         <Sep />
 
@@ -731,7 +811,14 @@ export default function TiptapEditor({
           placeholder="<p>Write your HTML here...</p>"
         />
       ) : (
-        <EditorContent editor={editor} className="tiptap-content" />
+        <>
+          <DragHandle editor={editor}>
+            <div className="tiptap-drag-handle-grip" title="Drag to move block">
+              ⠿
+            </div>
+          </DragHandle>
+          <EditorContent editor={editor} className="tiptap-content" />
+        </>
       )}
 
       {/* Link Insertion Modal */}

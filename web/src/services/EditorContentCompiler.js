@@ -92,7 +92,7 @@ function hexToRgba(hex, opacity) {
 
 function getEmbedUrl(url) {
   if (!url) return "";
-  let match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+  let match = url.match(/(?:youtube\.com\/(?:shorts\/|[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
   if (match && match[1]) {
     return `https://www.youtube.com/embed/${match[1]}`;
   }
@@ -100,7 +100,19 @@ function getEmbedUrl(url) {
   if (match && match[3]) {
     return `https://player.vimeo.com/video/${match[3]}`;
   }
+  match = url.match(/loom\.com\/(?:share|embed)\/([a-f0-9]{32})/i);
+  if (match && match[1]) {
+    return `https://www.loom.com/embed/${match[1]}`;
+  }
   return url;
+}
+
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export class EditorContentCompiler {
@@ -132,7 +144,11 @@ export class EditorContentCompiler {
       for (const [attrName, attrVal] of Object.entries(el.attribs)) {
         if (attrName.startsWith("data-") && attrName !== "data-type") {
           const nameWithoutData = attrName.slice(5);
-          const mappedKey = ATTR_MAP[nameWithoutData] || nameWithoutData;
+          // Legacy blocks use flat lowercase names (ATTR_MAP); new nodes use
+          // kebab-case (data-full-width -> fullWidth)
+          const mappedKey =
+            ATTR_MAP[nameWithoutData] ||
+            nameWithoutData.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 
           let val = attrVal;
           if (val === "true") {
@@ -153,8 +169,10 @@ export class EditorContentCompiler {
       // Pass store currency to each block
       attrs._storeCurrency = storeCurrency;
 
-      // Compile content based on block type
-      let compiledHtml = "";
+      // Compile content based on block type. null = leave element untouched;
+      // rewriting unhandled containers ($el.html($el.html())) would re-parse
+      // their children and detach any nested block still waiting in `divs`.
+      let compiledHtml = null;
       try {
         switch (type) {
           case "dividerBlock":
@@ -191,9 +209,18 @@ export class EditorContentCompiler {
           case "imageBlock":
             compiledHtml = this.renderImage(attrs);
             break;
+          case "productCard":
+            compiledHtml = this.renderProductCard(attrs);
+            break;
+          case "htmlBlock":
+            compiledHtml = this.renderHtmlBlock(attrs);
+            break;
+          case "videoEmbedBlock":
+            compiledHtml = this.renderVideoEmbed(attrs);
+            break;
           default:
-            // Keep unchanged if unsupported
-            compiledHtml = $el.html() || "";
+            // Unsupported/container types (columnLayout, column, calloutBlock,
+            // buttonBlock, ...) already carry inline-styled markup — keep as-is
             break;
         }
       } catch (err) {
@@ -202,7 +229,9 @@ export class EditorContentCompiler {
       }
 
       // Replace the inner HTML of the wrapper div
-      $el.html(compiledHtml);
+      if (compiledHtml !== null) {
+        $el.html(compiledHtml);
+      }
     }
 
     return $.html();
@@ -918,6 +947,79 @@ export class EditorContentCompiler {
     `;
   }
 
+  static renderProductCard(attrs) {
+    const title = attrs.title || "";
+    const price = attrs.price || "";
+    const compareAtPrice = attrs.compareAtPrice || "";
+    const imageUrl = attrs.imageUrl || "";
+    const handle = attrs.handle || "";
+    const buttonText = attrs.buttonText || "Add to Cart";
+    const buttonColor = attrs.buttonColor || "#2d6a4f";
+    const showImage = attrs.showImage !== false;
+    const showPrice = attrs.showPrice !== false;
+    const showButton = attrs.showButton !== false;
+    const layout = attrs.layout || "vertical";
+    const borderRadius = parseInt(attrs.borderRadius) || 8;
+    const borderColor = attrs.borderColor || "#e0e0e0";
+    const backgroundColor = attrs.backgroundColor || "#ffffff";
+
+    if (!title) {
+      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">Product not selected</div>`;
+    }
+
+    const productUrl = handle ? `/products/${encodeURIComponent(handle)}` : "#";
+    const isHorizontal = layout === "horizontal";
+    const isCompact = layout === "compact";
+
+    const imageHtml = showImage && !isCompact && imageUrl
+      ? `<a href="${productUrl}" style="display: block; ${isHorizontal ? "width: 30%; flex-shrink: 0;" : "width: 100%;"}"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" style="width: 100%; height: 100%; min-height: 150px; object-fit: cover; display: block;" /></a>`
+      : "";
+
+    const priceHtml = showPrice
+      ? `<div style="margin: 0 0 12px 0;"><span style="font-weight: bold;">${escapeHtml(price)}</span>${compareAtPrice ? `<span style="text-decoration: line-through; color: #6d7175; margin-left: 8px; font-size: 14px;">${escapeHtml(compareAtPrice)}</span>` : ""}</div>`
+      : "";
+
+    const buttonHtml = showButton
+      ? `<a href="${productUrl}" style="display: ${layout === "vertical" ? "block" : "inline-block"}; background: ${buttonColor}; color: #ffffff; text-decoration: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center;">${escapeHtml(buttonText)}</a>`
+      : "";
+
+    return `
+      <div style="display: flex; flex-direction: ${isHorizontal ? "row" : "column"}; ${isCompact ? "align-items: center;" : ""} border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; background: ${backgroundColor}; overflow: hidden; margin: 16px 0; font-family: sans-serif;">
+        ${imageHtml}
+        <div style="flex: 1; padding: 16px; ${isCompact ? "display: flex; align-items: center; justify-content: space-between; gap: 16px;" : ""}">
+          <div>
+            <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;"><a href="${productUrl}" style="color: inherit; text-decoration: none;">${escapeHtml(title)}</a></h3>
+            ${priceHtml}
+          </div>
+          ${buttonHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  static renderHtmlBlock(attrs) {
+    const raw = attrs.html || "";
+    if (!raw) return "";
+    try {
+      return decodeURIComponent(raw);
+    } catch (e) {
+      // Malformed escape sequence — treat the stored value as literal HTML
+      return raw;
+    }
+  }
+
+  static renderVideoEmbed(attrs) {
+    const url = attrs.url || "";
+    if (!url) {
+      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">Video URL not provided</div>`;
+    }
+    const embedUrl = getEmbedUrl(url);
+    const paddingBottom = attrs.aspectRatio === "4:3" ? "75%" : "56.25%";
+    return `<div style="position: relative; padding-bottom: ${paddingBottom}; height: 0; overflow: hidden; border-radius: 4px; background: #000;">` +
+      `<iframe src="${escapeHtml(embedUrl)}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin"></iframe>` +
+      `</div>`;
+  }
+
   static generateStyles(settings) {
     return `
 <style id="blogger-custom-styles">
@@ -1017,6 +1119,26 @@ export class EditorContentCompiler {
 
   .blogger-article-container tr:nth-child(even) td {
     background: #fafbfc;
+  }
+
+  /* Column layout blocks (inline flex styles are the primary mechanism;
+     these rules add a fallback and responsive stacking) */
+  .blogger-article-container .tiptap-column-layout {
+    display: flex;
+    gap: 16px;
+  }
+
+  .blogger-article-container .tiptap-column {
+    min-width: 0;
+  }
+
+  @media (max-width: 640px) {
+    .blogger-article-container .tiptap-column-layout {
+      flex-wrap: wrap !important;
+    }
+    .blogger-article-container .tiptap-column {
+      flex: 1 1 100% !important;
+    }
   }
 
 </style>
