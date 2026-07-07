@@ -1201,6 +1201,8 @@ export class EditorContentCompiler {
     }
     
     const styles = this.generateStyles(settings);
-    return `${styles}\n<div class="blogger-article-container">\n${compiled}\n</div>`;
+    const headerCode = settings.customHeaderCode ? `\n${settings.customHeaderCode}\n` : "";
+    const footerCode = settings.customFooterCode ? `\n${settings.customFooterCode}\n` : "";
+    return `${styles}${headerCode}\n<div class="blogger-article-container">\n${compiled}\n</div>${footerCode}`;
   }
 }

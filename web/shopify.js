@@ -8,14 +8,14 @@ dotenv.config({ path: join(__dirname, "../.env") });
 
 import { shopifyApp } from "@shopify/shopify-app-express";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
-import { restResources } from "@shopify/shopify-api/rest/admin/2024-10";
+import { restResources } from "@shopify/shopify-api/rest/admin/2025-10";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 const shopify = shopifyApp({
   api: {
-    apiVersion: "2024-10",
+    apiVersion: "2025-10",
     restResources,
     future: {
       customerAddressDefaultFix: true,

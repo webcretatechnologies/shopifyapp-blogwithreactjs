@@ -457,9 +457,9 @@ export default function Settings() {
                     value={settings.customHeaderCode}
                     onChange={set("customHeaderCode")}
                     multiline={4}
-                    placeholder="<!-- Paste custom CSS or JavaScript for the <head> section -->"
+                    placeholder="<!-- Paste custom CSS or JavaScript to show above every article -->"
                     autoComplete="off"
-                    helpText="Injected into the <head> of every blog article"
+                    helpText="Added at the top of every blog article's content. Note: this is part of the article body, not your theme's <head> — apps aren't permitted to edit theme files directly."
                     monospaced
                   />
                   <TextField
@@ -467,9 +467,9 @@ export default function Settings() {
                     value={settings.customFooterCode}
                     onChange={set("customFooterCode")}
                     multiline={4}
-                    placeholder="<!-- Paste custom scripts for the end of <body> -->"
+                    placeholder="<!-- Paste custom scripts to show below every article -->"
                     autoComplete="off"
-                    helpText="Injected before </body> on every blog article"
+                    helpText="Added at the end of every blog article's content."
                     monospaced
                   />
                 </BlockStack>

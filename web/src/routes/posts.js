@@ -384,10 +384,20 @@ router.delete("/:id", async (req, res) => {
 
     if (deleteFromShopify === "true" && post.shopifyArticle?.shopifyArticleId && post.shopifyArticle?.shopifyBlogId) {
       try {
-        const client = new shopify.api.clients.Rest({ session });
-        await client.delete({
-          path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
-        });
+        const client = new shopify.api.clients.Graphql({ session });
+        const result = await client.request(`
+          mutation DeleteArticle($id: ID!) {
+            articleDelete(id: $id) {
+              deletedArticleId
+              userErrors { field message }
+            }
+          }
+        `, { variables: { id: ArticleSyncService.toArticleGid(post.shopifyArticle.shopifyArticleId) } });
+
+        const errors = result.data?.articleDelete?.userErrors;
+        if (errors?.length > 0) {
+          console.error("Failed to delete from Shopify:", errors);
+        }
       } catch (shopifyErr) {
         console.error("Failed to delete from Shopify:", shopifyErr);
       }
@@ -472,18 +482,27 @@ router.post("/:id/unpublish", async (req, res) => {
       return res.status(400).json({ error: "Post is not published to Shopify." });
     }
 
-    const client = new shopify.api.clients.Rest({ session });
-    
-    // Set published to false to unpublish it
-    await client.put({
-      path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
-      data: {
-        article: {
-          published: false,
+    const client = new shopify.api.clients.Graphql({ session });
+
+    // Set isPublished to false to unpublish it
+    const unpublishResult = await client.request(`
+      mutation UnpublishArticle($id: ID!, $article: ArticleUpdateInput!) {
+        articleUpdate(id: $id, article: $article) {
+          article { id }
+          userErrors { field message }
         }
+      }
+    `, {
+      variables: {
+        id: ArticleSyncService.toArticleGid(post.shopifyArticle.shopifyArticleId),
+        article: { isPublished: false },
       },
-      type: "application/json",
     });
+
+    const unpublishErrors = unpublishResult.data?.articleUpdate?.userErrors;
+    if (unpublishErrors?.length > 0) {
+      return res.status(502).json({ error: unpublishErrors.map(e => e.message).join("; ") });
+    }
 
     await prisma.$transaction([
       prisma.shopifyArticle.update({
@@ -619,12 +638,22 @@ router.get("/shopify/blogs", async (req, res) => {
     const session = res.locals.shopify?.session;
     if (!session) return res.status(401).json({ error: "Unauthorized" });
 
-    const client = new shopify.api.clients.Rest({ session });
-    const response = await client.get({ path: "blogs" });
-    const blogs = response.body?.blogs || [];
+    const client = new shopify.api.clients.Graphql({ session });
+    const result = await client.request(`
+      query ListBlogs($first: Int!) {
+        blogs(first: $first) {
+          nodes { id title handle }
+        }
+      }
+    `, { variables: { first: 50 } });
+    const blogs = result.data?.blogs?.nodes || [];
 
     res.json({
-      blogs: blogs.map((b) => ({ id: b.id, title: b.title, handle: b.handle })),
+      blogs: blogs.map((b) => ({
+        id: ArticleSyncService.numericIdFromGid(b.id),
+        title: b.title,
+        handle: b.handle,
+      })),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1282,12 +1311,8 @@ router.get("/:id/conflict-diff", async (req, res) => {
     const session = res.locals.shopify?.session;
     if (!session) return res.status(401).json({ error: "No session" });
 
-    const client = new shopify.api.clients.Rest({ session });
-    const response = await client.get({
-      path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
-    });
-
-    const remote = response.body?.article;
+    const client = new shopify.api.clients.Graphql({ session });
+    const remote = await ArticleSyncService.fetchArticleByGid(client, post.shopifyArticle.shopifyArticleId);
     if (!remote) {
       return res.status(404).json({ error: "Article not found on Shopify" });
     }
@@ -1381,11 +1406,8 @@ router.post("/:id/resolve-conflict", async (req, res) => {
     const validSession = session?.find(s => s.accessToken);
     if (!validSession) return res.status(401).json({ error: "No active Shopify session" });
 
-    const client = new shopify.api.clients.Rest({ session: validSession });
-    const response = await client.get({
-      path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
-    });
-    const remote = response.body?.article;
+    const client = new shopify.api.clients.Graphql({ session: validSession });
+    const remote = await ArticleSyncService.fetchArticleByGid(client, post.shopifyArticle.shopifyArticleId);
     if (!remote) return res.status(404).json({ error: "Article not found on Shopify" });
 
     const localTags = await prisma.postTag.findMany({

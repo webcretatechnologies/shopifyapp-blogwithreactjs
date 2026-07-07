@@ -35,11 +35,23 @@ router.get("/blogs", async (req, res) => {
     const session = res.locals.shopify?.session;
     if (!session) return res.status(401).json({ error: "Unauthorized" });
 
-    const client = new shopify.api.clients.Rest({ session });
-    const response = await client.get({ path: "blogs" });
-    const blogs = response.body?.blogs || [];
+    const client = new shopify.api.clients.Graphql({ session });
+    const result = await client.request(`
+      query ListBlogs($first: Int!) {
+        blogs(first: $first) {
+          nodes { id title handle }
+        }
+      }
+    `, { variables: { first: 50 } });
+    const blogs = result.data?.blogs?.nodes || [];
 
-    res.json({ blogs: blogs.map((b) => ({ id: b.id, title: b.title, handle: b.handle })) });
+    res.json({
+      blogs: blogs.map((b) => ({
+        id: ArticleSyncService.numericIdFromGid(b.id),
+        title: b.title,
+        handle: b.handle,
+      })),
+    });
   } catch (err) {
     console.error("GET /api/import/blogs error:", err);
     res.status(500).json({ error: err.message });
@@ -55,9 +67,28 @@ router.get("/articles", async (req, res) => {
     const { blog_id } = req.query;
     if (!blog_id) return res.status(400).json({ error: "blog_id is required" });
 
-    const client = new shopify.api.clients.Rest({ session });
-    const response = await client.get({ path: `blogs/${blog_id}/articles` });
-    const articles = response.body?.articles || [];
+    const client = new shopify.api.clients.Graphql({ session });
+    const result = await client.request(`
+      query GetBlogArticles($id: ID!, $first: Int!) {
+        blog(id: $id) {
+          articles(first: $first) {
+            nodes {
+              id
+              title
+              author { name }
+              isPublished
+              publishedAt
+            }
+          }
+        }
+      }
+    `, { variables: { id: ArticleSyncService.toBlogGid(blog_id), first: 250 } });
+    const articles = (result.data?.blog?.articles?.nodes || []).map((a) => ({
+      id: ArticleSyncService.numericIdFromGid(a.id),
+      title: a.title,
+      author: a.author?.name || "",
+      published_at: a.isPublished ? a.publishedAt : null,
+    }));
 
     // Check which ones are already imported
     const importedIds = await prisma.shopifyArticle.findMany({
@@ -68,10 +99,7 @@ router.get("/articles", async (req, res) => {
 
     res.json({
       articles: articles.map((a) => ({
-        id: a.id,
-        title: a.title,
-        author: a.author,
-        published_at: a.published_at,
+        ...a,
         is_imported: importedSet.has(String(a.id)),
       })),
     });
@@ -101,9 +129,8 @@ router.post("/execute", async (req, res) => {
     }
 
     // Fetch from Shopify
-    const client = new shopify.api.clients.Rest({ session });
-    const response = await client.get({ path: `blogs/${blog_id}/articles/${article_id}` });
-    const shopifyArticle = response.body?.article;
+    const client = new shopify.api.clients.Graphql({ session });
+    const shopifyArticle = await ArticleSyncService.fetchArticleByGid(client, article_id);
     if (!shopifyArticle) return res.status(404).json({ error: "Article not found on Shopify" });
 
     // Parse HTML to JSON blocks

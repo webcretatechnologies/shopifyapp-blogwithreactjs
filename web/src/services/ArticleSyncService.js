@@ -41,6 +41,92 @@ const METAFIELD_NAMESPACE = "blog_app";
 const METAFIELD_KEY = "source";
 const METAFIELD_TYPE = "json";
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  GRAPHQL ID / SHAPE ADAPTERS
+//
+//  The DB stores bare numeric Shopify IDs (as it always has). The GraphQL
+//  Admin API speaks in GIDs (gid://shopify/Article/123). These helpers convert
+//  at the boundary so the numeric IDs already persisted for existing synced
+//  articles keep working without a data migration.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function toArticleGid(id) {
+  const numeric = String(id).match(/\d+$/)?.[0] || id;
+  return `gid://shopify/Article/${numeric}`;
+}
+
+function toBlogGid(id) {
+  const numeric = String(id).match(/\d+$/)?.[0] || id;
+  return `gid://shopify/Blog/${numeric}`;
+}
+
+function numericIdFromGid(gid) {
+  return String(gid || "").match(/\d+$/)?.[0] || null;
+}
+
+/**
+ * Adapts a GraphQL Article object into the REST-article shape the rest of
+ * this file's merge/normalize logic already expects (it was written against
+ * webhook payloads, which remain REST-shaped regardless of which API this
+ * app uses for its own outbound calls).
+ */
+function articleFromGraphQL(article) {
+  if (!article) return null;
+  return {
+    id: numericIdFromGid(article.id),
+    title: article.title || "",
+    body_html: article.body || "",
+    author: article.author?.name || "",
+    tags: Array.isArray(article.tags) ? article.tags.join(", ") : "",
+    image: article.image?.url ? { src: article.image.url } : null,
+    handle: article.handle || "",
+    published_at: article.isPublished ? (article.publishedAt || null) : null,
+    updated_at: article.updatedAt || null,
+    blog_id: article.blog?.id ? numericIdFromGid(article.blog.id) : null,
+  };
+}
+
+/** Builds an ArticleCreateInput/ArticleUpdateInput-shaped object from REST-style article fields. */
+function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image }) {
+  const input = {
+    title,
+    body: body_html,
+    author: { name: author || "Admin" },
+    isPublished: !!published,
+    handle,
+  };
+  const tagList = (tags || "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (tagList.length > 0) input.tags = tagList;
+  if (image?.src) input.image = { url: image.src };
+  return input;
+}
+
+/** Fetches a single article by (numeric or GID) ID, returned in REST-article shape (or null). */
+async function fetchArticleByGid(graphqlClient, articleId) {
+  const result = await graphqlClient.request(`
+    query GetArticle($id: ID!) {
+      article(id: $id) {
+        id
+        title
+        handle
+        body
+        author { name }
+        image { url altText }
+        tags
+        isPublished
+        publishedAt
+        updatedAt
+        blog { id }
+      }
+    }
+  `, { variables: { id: toArticleGid(articleId) } });
+
+  return articleFromGraphQL(result.data?.article || null);
+}
+
 // ─── Scalar fields we merge independently ─────────────────────────────────────
 const SCALAR_FIELDS = ["title", "author", "status", "tags", "featuredImage", "slug"];
 
@@ -364,69 +450,71 @@ function applyMergedResult(merged, conflicts, post, remotePayload) {
  * Write a lightweight v2 sync marker metafield on a Shopify article.
  * Contains only hashes + revision — NOT full content (that lives in our DB).
  *
- * @param {Object} restClient - Shopify REST client
+ * @param {Object} graphqlClient - Shopify GraphQL client
  * @param {string} blogId - Shopify blog ID
  * @param {string} articleId - Shopify article ID
  * @param {Object} baseline - The baseline snapshot object
  * @param {number} postId - Local app post ID (for DB lookup)
  */
-async function writeSyncMarker(restClient, blogId, articleId, baseline, postId) {
+async function writeSyncMarker(graphqlClient, blogId, articleId, baseline, postId) {
   try {
     const shopifyLink = await prisma.shopifyArticle.findUnique({
       where: { postId },
     });
     if (!shopifyLink) return;
 
-    const markerPayload = {
-      metafield: {
-        namespace: METAFIELD_NAMESPACE,
-        key: METAFIELD_KEY,
-        type: METAFIELD_TYPE,
-        value: JSON.stringify({
-          version: 2,
-          managedBy: "blog_app",
-          mode: "baseline_sync",
-          revision: baseline.revision,
-          lastSyncedAt: baseline.syncedAt,
-          hashes: {
-            title:          baseline.fields.title.hash,
-            author:         baseline.fields.author.hash,
-            status:         baseline.fields.status.hash,
-            tags:           baseline.fields.tags.hash,
-            featuredImage:  baseline.fields.featuredImage.hash,
-            editorHtml:     baseline.fields.content.editorHtml.hash,
-            contentJson:    baseline.fields.content.contentJson.hash,
-            storefrontHtml: baseline.fields.content.storefrontHtml.hash,
-          },
-          capabilities: { fieldLevelMerge: true, structuredSourceAvailable: true },
-        }),
+    const value = JSON.stringify({
+      version: 2,
+      managedBy: "blog_app",
+      mode: "baseline_sync",
+      revision: baseline.revision,
+      lastSyncedAt: baseline.syncedAt,
+      hashes: {
+        title:          baseline.fields.title.hash,
+        author:         baseline.fields.author.hash,
+        status:         baseline.fields.status.hash,
+        tags:           baseline.fields.tags.hash,
+        featuredImage:  baseline.fields.featuredImage.hash,
+        editorHtml:     baseline.fields.content.editorHtml.hash,
+        contentJson:    baseline.fields.content.contentJson.hash,
+        storefrontHtml: baseline.fields.content.storefrontHtml.hash,
       },
-    };
+      capabilities: { fieldLevelMerge: true, structuredSourceAvailable: true },
+    });
 
-    if (shopifyLink.sourceMetafieldId) {
-      const result = await restClient.put({
-        path: `blogs/${blogId}/articles/${articleId}/metafields/${shopifyLink.sourceMetafieldId}`,
-        data: markerPayload,
-        type: "application/json",
-      });
-      if (result.body?.metafield?.id) {
-        await prisma.shopifyArticle.update({
-          where: { id: shopifyLink.id },
-          data: { sourceMetafieldId: String(result.body.metafield.id) },
-        });
+    // metafieldsSet upserts regardless of whether the metafield already
+    // exists, so there's no separate create-vs-update branch needed here.
+    const result = await graphqlClient.request(`
+      mutation SetSyncMarker($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          metafields { id }
+          userErrors { field message }
+        }
       }
-    } else {
-      const result = await restClient.post({
-        path: `blogs/${blogId}/articles/${articleId}/metafields`,
-        data: markerPayload,
-        type: "application/json",
+    `, {
+      variables: {
+        metafields: [{
+          ownerId: toArticleGid(articleId),
+          namespace: METAFIELD_NAMESPACE,
+          key: METAFIELD_KEY,
+          type: METAFIELD_TYPE,
+          value,
+        }],
+      },
+    });
+
+    const errors = result.data?.metafieldsSet?.userErrors;
+    if (errors?.length > 0) {
+      console.warn(`[ArticleSyncService] metafieldsSet userErrors for article ${articleId}:`, errors);
+      return;
+    }
+
+    const metafieldId = result.data?.metafieldsSet?.metafields?.[0]?.id;
+    if (metafieldId) {
+      await prisma.shopifyArticle.update({
+        where: { id: shopifyLink.id },
+        data: { sourceMetafieldId: metafieldId },
       });
-      if (result.body?.metafield?.id) {
-        await prisma.shopifyArticle.update({
-          where: { id: shopifyLink.id },
-          data: { sourceMetafieldId: String(result.body.metafield.id) },
-        });
-      }
     }
   } catch (err) {
     console.warn(`[ArticleSyncService] Failed to write sync marker for article ${articleId}:`, err.message);
@@ -437,22 +525,28 @@ async function writeSyncMarker(restClient, blogId, articleId, baseline, postId) 
  * Read the sync marker metafield from a Shopify article.
  * Returns null if no metafield exists (article is external).
  */
-async function readSyncMarker(restClient, blogId, articleId) {
+async function readSyncMarker(graphqlClient, blogId, articleId) {
   try {
-    const listResult = await restClient.get({
-      path: `blogs/${blogId}/articles/${articleId}/metafields`,
+    const result = await graphqlClient.request(`
+      query GetSyncMarker($id: ID!, $namespace: String!, $key: String!) {
+        article(id: $id) {
+          metafield(namespace: $namespace, key: $key) { id value }
+        }
+      }
+    `, {
+      variables: {
+        id: toArticleGid(articleId),
+        namespace: METAFIELD_NAMESPACE,
+        key: METAFIELD_KEY,
+      },
     });
-    const metafields = listResult.body?.metafields || [];
-    const sourceMetafield = metafields.find(
-      (m) => m.namespace === METAFIELD_NAMESPACE && m.key === METAFIELD_KEY
-    );
+
+    const sourceMetafield = result.data?.article?.metafield;
     if (!sourceMetafield) return null;
 
     let parsed;
     try {
-      parsed = typeof sourceMetafield.value === "string"
-        ? JSON.parse(sourceMetafield.value)
-        : sourceMetafield.value;
+      parsed = JSON.parse(sourceMetafield.value);
     } catch {
       return null;
     }
@@ -517,7 +611,6 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   if (!validSession) throw new Error(`No active Shopify session for ${post.shop.domain}`);
 
   const graphqlClient = new shopify.api.clients.Graphql({ session: validSession });
-  const restClient = new shopify.api.clients.Rest({ session: validSession });
 
   // Compile content for storefront
   let storefrontHtml = await EditorContentCompiler.compileForStorefront(
@@ -634,33 +727,51 @@ ${analyticsBlockEnd}`;
   let articleId = shopifyLink.shopifyArticleId;
   let remoteUpdatedAt = null;
 
-  const articleData = {
-    article: {
-      title: post.title,
-      body_html: storefrontHtml,
-      author: post.author || "Admin",
-      published,
-      tags: tagNames,
-      handle: post.slug,
-      ...(post.featuredImage ? { image: { src: post.featuredImage } } : {}),
-    },
-  };
+  const articleInput = toArticleGraphQLInput({
+    title: post.title,
+    body_html: storefrontHtml,
+    author: post.author || "Admin",
+    published,
+    tags: tagNames,
+    handle: post.slug,
+    image: post.featuredImage ? { src: post.featuredImage } : null,
+  });
 
   if (articleId) {
-    const result = await restClient.put({
-      path: `blogs/${shopifyLink.shopifyBlogId}/articles/${articleId}`,
-      data: articleData,
-      type: "application/json",
-    });
-    remoteUpdatedAt = result.body?.article?.updated_at || null;
+    const result = await graphqlClient.request(`
+      mutation UpdateArticle($id: ID!, $article: ArticleUpdateInput!) {
+        articleUpdate(id: $id, article: $article) {
+          article { id updatedAt }
+          userErrors { field message }
+        }
+      }
+    `, { variables: { id: toArticleGid(articleId), article: articleInput } });
+
+    const errors = result.data?.articleUpdate?.userErrors;
+    if (errors?.length > 0) {
+      throw new Error(`articleUpdate failed: ${errors.map(e => e.message).join("; ")}`);
+    }
+    remoteUpdatedAt = result.data?.articleUpdate?.article?.updatedAt || null;
   } else {
-    const result = await restClient.post({
-      path: `blogs/${shopifyLink.shopifyBlogId}/articles`,
-      data: articleData,
-      type: "application/json",
+    const result = await graphqlClient.request(`
+      mutation CreateArticle($article: ArticleCreateInput!) {
+        articleCreate(article: $article) {
+          article { id updatedAt }
+          userErrors { field message }
+        }
+      }
+    `, {
+      variables: {
+        article: { ...articleInput, blogId: toBlogGid(shopifyLink.shopifyBlogId) },
+      },
     });
-    articleId = String(result.body?.article?.id);
-    remoteUpdatedAt = result.body?.article?.updated_at || null;
+
+    const errors = result.data?.articleCreate?.userErrors;
+    if (errors?.length > 0) {
+      throw new Error(`articleCreate failed: ${errors.map(e => e.message).join("; ")}`);
+    }
+    articleId = numericIdFromGid(result.data?.articleCreate?.article?.id);
+    remoteUpdatedAt = result.data?.articleCreate?.article?.updatedAt || null;
     if (!articleId) throw new Error("Shopify did not return an article ID");
   }
 
@@ -705,7 +816,7 @@ ${analyticsBlockEnd}`;
   });
 
   // Write lightweight v2 sync marker metafield
-  await writeSyncMarker(restClient, shopifyLink.shopifyBlogId, articleId, baseline, post.id);
+  await writeSyncMarker(graphqlClient, shopifyLink.shopifyBlogId, articleId, baseline, post.id);
 
   await logSyncEvent({
     shopId: post.shopId,
@@ -742,15 +853,12 @@ async function syncAfterLocalEdit(postId, { publishMode = false } = {}) {
   const validSession = session?.find(s => s.accessToken);
   if (!validSession) throw new Error(`No active Shopify session for ${post.shop.domain}`);
 
-  const client = new shopify.api.clients.Rest({ session: validSession });
+  const graphqlClient = new shopify.api.clients.Graphql({ session: validSession });
   let remote = null;
 
   if (post.shopifyArticle.shopifyArticleId) {
     try {
-      const response = await client.get({
-        path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
-      });
-      remote = response.body?.article || null;
+      remote = await fetchArticleByGid(graphqlClient, post.shopifyArticle.shopifyArticleId);
     } catch (err) {
       console.warn(`[ArticleSyncService] Could not fetch remote article for post ${postId}:`, err.message);
     }
@@ -1015,8 +1123,8 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
         const sessions = await shopify.config.sessionStorage.findSessionsByShop(shop.domain);
         const sessionForMarker = sessions?.find(s => s.accessToken);
         if (sessionForMarker && link.shopifyArticleId && link.shopifyBlogId) {
-          const restClient = new shopify.api.clients.Rest({ session: sessionForMarker });
-          syncMarker = await readSyncMarker(restClient, link.shopifyBlogId, link.shopifyArticleId);
+          const graphqlClient = new shopify.api.clients.Graphql({ session: sessionForMarker });
+          syncMarker = await readSyncMarker(graphqlClient, link.shopifyBlogId, link.shopifyArticleId);
 
           if (syncMarker?.metafieldId) {
             await prisma.shopifyArticle.update({
@@ -1217,12 +1325,9 @@ async function reconcilePost(postId) {
   if (!validSession) return { status: "no_session" };
 
   try {
-    const client = new shopify.api.clients.Rest({ session: validSession });
-    const response = await client.get({
-      path: `blogs/${post.shopifyArticle.shopifyBlogId}/articles/${post.shopifyArticle.shopifyArticleId}`,
-    });
+    const graphqlClient = new shopify.api.clients.Graphql({ session: validSession });
+    const remote = await fetchArticleByGid(graphqlClient, post.shopifyArticle.shopifyArticleId);
 
-    const remote = response.body?.article;
     if (!remote) {
       await prisma.shopifyArticle.update({
         where: { postId: post.id },
@@ -1382,4 +1487,9 @@ export const ArticleSyncService = {
   normalizeRemoteState,
   buildBaselineSnapshot,
   fieldHash,
+  toArticleGid,
+  toBlogGid,
+  numericIdFromGid,
+  articleFromGraphQL,
+  fetchArticleByGid,
 };

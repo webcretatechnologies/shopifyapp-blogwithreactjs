@@ -1,6 +1,5 @@
 import express from "express";
 import { prisma } from "../../shopify.js";
-import ThemeInjectionService from "../services/ThemeInjectionService.js";
 
 const router = express.Router();
 
@@ -38,7 +37,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Update settings and sync to Shopify active theme assets
+// Update settings
 router.post("/", async (req, res) => {
   try {
     const session = res.locals.shopify?.session;
@@ -94,26 +93,11 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // Fetch the combined settings for theme sync
-    const updatedSettings = await prisma.shopSetting.findMany({
-      where: { shopId: shop.id },
-    });
-
-    const settingsObject = updatedSettings.reduce((acc, setting) => {
-      let val = setting.value;
-      if (val === "true") val = true;
-      else if (val === "false") val = false;
-      acc[setting.key] = val;
-      return acc;
-    }, {});
-
-    // Sync settings to active Shopify theme using Asset API
-    const syncSuccess = await ThemeInjectionService.injectSettings(session, settingsObject);
-    if (!syncSuccess) {
-      console.warn("Theme custom settings sync warning: failed to write to Shopify Asset API.");
-    }
-
-    res.json({ success: true, synced: syncSuccess });
+    // Branding/layout/toggle settings and custom header/footer code are applied
+    // per-article at publish time (see EditorContentCompiler.compileForStorefront),
+    // not written into the merchant's theme — apps aren't permitted to make direct
+    // theme code changes (Shopify App Store requirement 5.1.1).
+    res.json({ success: true });
   } catch (error) {
     console.error("Error saving settings:", error);
     res.status(500).json({ error: "Failed to save settings" });
