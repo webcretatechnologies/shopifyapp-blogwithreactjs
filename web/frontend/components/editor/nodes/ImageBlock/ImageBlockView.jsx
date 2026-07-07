@@ -41,6 +41,8 @@ export default function ImageBlockView({ node, updateAttributes, deleteNode }) {
           borderRadius: '4px',
           position: 'absolute',
           top: '-36px',
+          left: '50%',
+          transform: 'translateX(-50%)',
           zIndex: 10,
         }}
       >

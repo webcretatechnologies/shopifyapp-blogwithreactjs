@@ -13,7 +13,9 @@ export default function DividerBlockView({ node, updateAttributes, deleteNode })
       className="tiptap-divider-block tiptap-block"
       style={{
         position: 'relative',
-        padding: `${attrs.spacing / 2}px 0`
+        // Must match DividerBlock.js renderHTML's `margin: ${spacing}px 0`
+        // exactly, or the editor shows different spacing than the published page.
+        padding: `${attrs.spacing}px 0`
       }}
     >
       <div 

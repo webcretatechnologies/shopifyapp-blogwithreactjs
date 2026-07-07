@@ -22,23 +22,9 @@ export const LegacyProductSwitcherExtension = createBlockExtension({
   }
 });
 
-export const LegacyProductSliderExtension = createBlockExtension({
-  name: 'product_slider',
-  title: 'Edit Product Slider (Legacy)',
-  PreviewComponent: ProductGridBlockPreview,
-  SettingsComponent: ProductGridBlockSettings,
-  defaultAttributes: {
-    title: 'Featured Products',
-    titleAlign: 'left',
-    searchQuery: '',
-    manualProducts: [],
-    columns: '4',
-    maxProducts: '12',
-    cardStyle: 'shadow',
-    gap: '16px',
-    showPrice: true,
-    showButton: true,
-    buttonText: 'Add to Cart',
-    buttonColor: '#008060',
-  }
-});
+// Note: there is no legacy product_slider extension here — that name is
+// owned by the current ProductSliderExtension.jsx. A previous duplicate
+// extension of the same name existed in this file but was never registered
+// in TiptapEditor.jsx; it was removed since a second Node.create() with an
+// identical `name` would collide with the real one the moment both got
+// imported.

@@ -13,6 +13,7 @@ export const ProductCard = Node.create({
       productId: strAttr("productId", ""),
       title: strAttr("title", ""),
       price: strAttr("price", ""),
+      currency: strAttr("currency", ""),
       imageUrl: strAttr("imageUrl", ""),
       compareAtPrice: strAttr("compareAtPrice", ""),
       handle: strAttr("handle", ""),

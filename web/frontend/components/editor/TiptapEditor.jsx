@@ -464,6 +464,13 @@ export default function TiptapEditor({
           >
             📦
           </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().insertContent({ type: 'product_slider' }).run()}
+            active={editor.isActive("product_slider")}
+            title="Insert Product Slider"
+          >
+            ↔
+          </Btn>
         </div>
         <Sep />
 
@@ -594,13 +601,6 @@ export default function TiptapEditor({
             title="Insert Product Switcher (Legacy)"
           >
             🔄
-          </Btn>
-          <Btn
-            onClick={() => editor.chain().focus().insertContent({ type: 'product_slider' }).run()}
-            active={editor.isActive("product_slider")}
-            title="Insert Product Slider (Legacy)"
-          >
-            ↔
           </Btn>
         </div>
         <Sep />

@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { Modal, FormLayout, TextField, Select, Checkbox, Button } from '@shopify/polaris';
+import { formatPrice } from '../../../../utils/priceUtils.js';
+import { useShopifyStoreCurrency } from '../../../../hooks/useShopifyProducts.js';
 
 export default function ProductCardView({ node, updateAttributes, deleteNode }) {
   const [isEditing, setIsEditing] = useState(false);
   const attrs = node.attrs;
+  const { storeCurrency } = useShopifyStoreCurrency();
+  const currency = attrs.currency || storeCurrency || 'USD';
 
   const handleUpdate = (key, value) => {
     updateAttributes({ [key]: value });
@@ -21,8 +25,11 @@ export default function ProductCardView({ node, updateAttributes, deleteNode }) 
       title: product.title || '',
       handle: product.handle || '',
       imageUrl: product.images?.[0]?.originalSrc || product.images?.[0]?.src || '',
-      price: variant?.price ? `$${variant.price}` : '',
-      compareAtPrice: variant?.compareAtPrice ? `$${variant.compareAtPrice}` : '',
+      // Store the raw numeric value, not a pre-formatted "$X.XX" string, so it
+      // can be formatted with the correct currency wherever it's displayed.
+      price: variant?.price || '',
+      compareAtPrice: variant?.compareAtPrice || '',
+      currency: storeCurrency || 'USD',
     });
   };
 
@@ -102,10 +109,10 @@ export default function ProductCardView({ node, updateAttributes, deleteNode }) 
           </h3>
           {attrs.showPrice && (
             <div style={{ marginBottom: attrs.layout === 'compact' ? '0' : '16px' }}>
-              <span style={{ fontWeight: 'bold' }}>{attrs.price || '$0.00'}</span>
+              <span style={{ fontWeight: 'bold' }}>{attrs.price ? formatPrice(attrs.price, currency) : formatPrice(0, currency)}</span>
               {attrs.compareAtPrice && (
                 <span style={{ textDecoration: 'line-through', color: '#6d7175', marginLeft: '8px', fontSize: '14px' }}>
-                  {attrs.compareAtPrice}
+                  {formatPrice(attrs.compareAtPrice, currency)}
                 </span>
               )}
             </div>

@@ -175,6 +175,13 @@ export class EditorContentCompiler {
       let compiledHtml = null;
       try {
         switch (type) {
+          // NOTE: this loop only iterates div[data-type] elements (see `divs`
+          // above). The current DividerBlock node (nodes/DividerBlock/DividerBlock.js)
+          // renders an <hr data-type="dividerBlock">, not a <div>, so this case
+          // is unreachable for new content — it only fires for the legacy
+          // div-based markup produced by the old createBlockExtension-based
+          // DividerExtension. Keep it for backward compatibility with old
+          // articles; don't assume it's exercised by newly inserted dividers.
           case "dividerBlock":
             compiledHtml = this.renderDivider(attrs);
             break;
@@ -206,6 +213,12 @@ export class EditorContentCompiler {
           case "collection":
             compiledHtml = await this.renderCollection(attrs, shopifySession, shopifyClient);
             break;
+          // Same caveat as dividerBlock above: the current ImageBlock node
+          // (nodes/ImageBlock/ImageBlock.js) renders a <figure data-type="imageBlock">,
+          // not a <div>, so this case only fires for legacy div-based image
+          // markup — new Image Blocks pass through untouched via the default
+          // case below and are already fully self-contained (including the
+          // real rich-text caption, which this function has no access to).
           case "imageBlock":
             compiledHtml = this.renderImage(attrs);
             break;
@@ -588,7 +601,7 @@ export class EditorContentCompiler {
     return `
       <div style="width: 100%; margin: 24px 0;">
         ${headerHtml}
-        <div style="${gridStyle}">
+        <div class="blogger-product-grid" style="${gridStyle}">
           ${cardsHtml}
         </div>
       </div>
@@ -901,7 +914,7 @@ export class EditorContentCompiler {
         `;
       });
 
-      contentHtml = `<div style="${gridStyle}">${cardsHtml}</div>`;
+      contentHtml = `<div class="blogger-product-grid" style="${gridStyle}">${cardsHtml}</div>`;
     }
 
     return `
@@ -975,8 +988,11 @@ export class EditorContentCompiler {
       ? `<a href="${productUrl}" style="display: block; ${isHorizontal ? "width: 30%; min-width: 120px; flex-shrink: 0; flex-grow: 1;" : "width: 100%;"}"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" style="width: 100%; height: 100%; min-height: 150px; object-fit: cover; display: block;" /></a>`
       : "";
 
-    const priceHtml = showPrice
-      ? `<div style="margin: 0 0 12px 0;"><span style="font-weight: bold;">${escapeHtml(price)}</span>${compareAtPrice ? `<span style="text-decoration: line-through; color: #6d7175; margin-left: 8px; font-size: 14px;">${escapeHtml(compareAtPrice)}</span>` : ""}</div>`
+    const currency = attrs.currency || attrs._storeCurrency || "USD";
+    const formattedPrice = price ? formatPrice(price, currency) : "";
+    const formattedCompareAtPrice = compareAtPrice ? formatPrice(compareAtPrice, currency) : "";
+    const priceHtml = showPrice && formattedPrice
+      ? `<div style="margin: 0 0 12px 0;"><span style="font-weight: bold;">${escapeHtml(formattedPrice)}</span>${formattedCompareAtPrice ? `<span style="text-decoration: line-through; color: #6d7175; margin-left: 8px; font-size: 14px;">${escapeHtml(formattedCompareAtPrice)}</span>` : ""}</div>`
       : "";
 
     const buttonHtml = showButton
@@ -1138,6 +1154,20 @@ export class EditorContentCompiler {
     }
     .blogger-article-container .tiptap-column {
       flex: 1 1 100% !important;
+    }
+  }
+
+  /* Product Grid / Collection / Product Switcher grids: the inline
+     grid-template-columns is set per-block, so it doesn't respond to
+     viewport width on its own — collapse it at common breakpoints. */
+  @media (max-width: 640px) {
+    .blogger-article-container .blogger-product-grid {
+      grid-template-columns: repeat(2, 1fr) !important;
+    }
+  }
+  @media (max-width: 420px) {
+    .blogger-article-container .blogger-product-grid {
+      grid-template-columns: 1fr !important;
     }
   }
 
