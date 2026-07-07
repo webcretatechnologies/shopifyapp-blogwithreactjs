@@ -58,6 +58,7 @@ export default function ColumnLayoutView({ node, editor, getPos, deleteNode }) {
           zIndex: 10,
         }}
       >
+        <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#5c5f62', padding: '0 8px' }}>GRID LAYOUT</span>
         {[2, 3, 4].map((n) => (
           <button
             key={n}
@@ -66,21 +67,13 @@ export default function ColumnLayoutView({ node, editor, getPos, deleteNode }) {
             className={`tiptap-btn ${colCount === n ? 'tiptap-btn--active' : ''}`}
             title={n < colCount ? `${n} columns (content of removed columns is kept)` : `${n} columns`}
           >
-            {n} cols
+            {n} columns
           </button>
         ))}
         <button type="button" onClick={() => deleteNode()} className="tiptap-btn" style={{ color: '#d82c0d' }}>🗑</button>
       </div>
 
-      <NodeViewContent
-        className="column-layout-content"
-        style={{
-          display: 'flex',
-          gap: '16px',
-          flexWrap: 'nowrap',
-          width: '100%'
-        }}
-      />
+      <NodeViewContent className="column-layout-content" />
     </NodeViewWrapper>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { NodeViewWrapper, NodeViewContent } from '@tiptap/react';
 
 const MIN_WIDTH = 15;
@@ -6,11 +6,10 @@ const MIN_WIDTH = 15;
 export default function ColumnView({ node, editor, getPos }) {
   const width = node.attrs.width || 50;
   // Transient widths during drag: [ownWidth, neighborWidth]. The document is
-  // only updated once, on mouseup, so a resize is a single undo step.
   const [dragWidths, setDragWidths] = useState(null);
   const cleanupRef = useRef(null);
 
-  useEffect(() => () => cleanupRef.current?.(), []);
+  const displayWidth = dragWidths ? dragWidths[0] : width;
 
   const getSiblingInfo = () => {
     const pos = getPos();
@@ -72,7 +71,6 @@ export default function ColumnView({ node, editor, getPos }) {
     document.addEventListener('mouseup', onMouseUp);
   };
 
-  const displayWidth = dragWidths ? dragWidths[0] : width;
   const hasRightNeighbor = !!getSiblingInfo();
 
   return (
@@ -82,16 +80,18 @@ export default function ColumnView({ node, editor, getPos }) {
         flex: `${displayWidth} ${displayWidth} 0%`,
         minWidth: 0,
         position: 'relative',
-        border: '1px dashed transparent',
+        border: '1px dashed #e1e3e5',
+        borderRadius: '4px',
+        padding: '4px',
         transition: dragWidths ? 'none' : 'border-color 0.2s',
       }}
       onMouseEnter={(e) => {
         if (e.currentTarget === e.target) {
-          e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)';
+          e.currentTarget.style.borderColor = 'rgba(44,110,203,0.5)';
         }
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = 'transparent';
+        e.currentTarget.style.borderColor = '#e1e3e5';
       }}
     >
       <NodeViewContent className="tiptap-column-content" style={{ minHeight: '40px' }} />

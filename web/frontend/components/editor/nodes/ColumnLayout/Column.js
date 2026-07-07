@@ -24,7 +24,7 @@ export const Column = Node.create({
   renderHTML({ node, HTMLAttributes }) {
     // flex-grow proportional to width keeps totals valid regardless of gap
     const width = node.attrs.width || 50;
-    return ["div", mergeAttributes(HTMLAttributes, { "data-type": "column", class: "tiptap-column", style: `flex: ${width} ${width} 0%; min-width: 0;` }), 0];
+    return ["div", mergeAttributes(HTMLAttributes, { "data-type": "column", class: "tiptap-column", style: `flex: ${width} ${width} 0%; min-width: 240px;` }), 0];
   },
 
   addNodeView() {

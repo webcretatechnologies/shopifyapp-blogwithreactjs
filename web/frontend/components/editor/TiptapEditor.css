@@ -368,3 +368,30 @@
   opacity: 1;
   pointer-events: auto;
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   COLUMN LAYOUT STYLES
+
+   Tiptap's ReactNodeViewRenderer inserts each node view's contentDOM as a
+   plain `document.createElement('div')` (marked with
+   [data-node-view-content-react]) *inside* the element rendered by
+   <NodeViewContent>. Column node views end up mounted inside that inner raw
+   div, not inside the div carrying our className/inline styles, so flex
+   rules on `.column-layout-content` never reach them. Target the raw div
+   directly instead.
+   ════════════════════════════════════════════════════════════════════════════ */
+.column-layout-wrapper > [data-node-view-content] > [data-node-view-content-react] {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: stretch;
+  width: 100%;
+}
+
+.tiptap-column-content {
+  min-height: 40px;
+}
+
+.tiptap-column {
+  min-width: 150px !important; /* Lower min-width to prevent overflow in editor */
+}

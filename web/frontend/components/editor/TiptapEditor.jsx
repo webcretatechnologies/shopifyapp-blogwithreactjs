@@ -537,9 +537,9 @@ export default function TiptapEditor({
               }).run()
             }
             active={editor.isActive("columnLayout")}
-            title="Insert 2-Column Layout"
+            title="Insert Grid Layout"
           >
-            ▥
+            ⊞
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'videoEmbedBlock' }).run()}

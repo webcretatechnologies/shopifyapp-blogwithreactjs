@@ -427,13 +427,13 @@ export class EditorContentCompiler {
 
     let cardStyle = "";
     if (layout === "horizontal") {
-      cardStyle = `display: flex; gap: 16px; align-items: center; border: 1px solid #e1e3e5; border-radius: 10px; padding: 16px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: ${maxWidth || "600px"}; margin: 20px 0; box-sizing: border-box;`;
+      cardStyle = `display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid #e1e3e5; border-radius: 10px; padding: 16px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: ${maxWidth || "600px"}; margin: 20px 0; box-sizing: border-box;`;
       return `
         <div style="${cardStyle}">
-          <div style="width: ${imageSize}; height: ${imageSize}; flex-shrink: 0; border-radius: 8px; overflow: hidden; border: 1px solid #f1f2f3;">
+          <div style="width: ${imageSize}; height: ${imageSize}; flex-shrink: 0; flex-grow: 1; max-width: 100%; border-radius: 8px; overflow: hidden; border: 1px solid #f1f2f3; text-align: center;">
             ${imgHtml}
           </div>
-          <div style="flex: 1; min-width: 0;">
+          <div style="flex: 1; min-width: 200px;">
             ${badgeHtml}
             <h4 style="margin: 0 0 6px; font-size: 16px; font-weight: 600; color: #202223; font-family: sans-serif; line-height: 1.3;">
               <a href="${pLink}" style="color: inherit; text-decoration: none;">${product.title || "Product"}</a>
@@ -972,7 +972,7 @@ export class EditorContentCompiler {
     const isCompact = layout === "compact";
 
     const imageHtml = showImage && !isCompact && imageUrl
-      ? `<a href="${productUrl}" style="display: block; ${isHorizontal ? "width: 30%; flex-shrink: 0;" : "width: 100%;"}"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" style="width: 100%; height: 100%; min-height: 150px; object-fit: cover; display: block;" /></a>`
+      ? `<a href="${productUrl}" style="display: block; ${isHorizontal ? "width: 30%; min-width: 120px; flex-shrink: 0; flex-grow: 1;" : "width: 100%;"}"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" style="width: 100%; height: 100%; min-height: 150px; object-fit: cover; display: block;" /></a>`
       : "";
 
     const priceHtml = showPrice
@@ -984,9 +984,9 @@ export class EditorContentCompiler {
       : "";
 
     return `
-      <div style="display: flex; flex-direction: ${isHorizontal ? "row" : "column"}; ${isCompact ? "align-items: center;" : ""} border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; background: ${backgroundColor}; overflow: hidden; margin: 16px 0; font-family: sans-serif;">
+      <div style="display: flex; flex-direction: ${isHorizontal ? "row" : "column"}; flex-wrap: wrap; ${isCompact ? "align-items: center;" : ""} border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; background: ${backgroundColor}; overflow: hidden; margin: 16px 0; font-family: sans-serif;">
         ${imageHtml}
-        <div style="flex: 1; padding: 16px; ${isCompact ? "display: flex; align-items: center; justify-content: space-between; gap: 16px;" : ""}">
+        <div style="flex: 1; min-width: 200px; padding: 16px; ${isCompact ? "display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;" : ""}">
           <div>
             <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;"><a href="${productUrl}" style="color: inherit; text-decoration: none;">${escapeHtml(title)}</a></h3>
             ${priceHtml}
