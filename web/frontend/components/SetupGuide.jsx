@@ -65,16 +65,17 @@ export default function SetupGuide({ shop, isExtensionActive, hasPosts }) {
                  const isPast = step.isCompleted;
                  
                  return (
-                   <div key={step.id} style={{ 
-                     border: isActive ? '1px solid #c9cccf' : '1px solid #e1e3e5',
-                     boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                     borderRadius: '8px', 
-                     padding: '16px',
-                     background: isPast ? '#fafbfb' : '#ffffff',
-                     transition: 'all 0.2s ease-in-out'
-                   }}>
+                   <Box
+                     key={step.id}
+                     padding="400"
+                     borderColor={isActive ? 'border-strong' : 'border'}
+                     borderWidth="025"
+                     borderRadius="200"
+                     background={isPast ? 'bg-surface-secondary' : 'bg-surface'}
+                     shadow={isActive ? '100' : 'none'}
+                   >
                      <InlineStack align="start" gap="300" wrap={false}>
-                       <div style={{ marginTop: '2px', flexShrink: 0 }}>
+                       <Box>
                          {isPast ? (
                            <Icon source={CheckCircleIcon} tone="success" />
                          ) : (
@@ -82,8 +83,8 @@ export default function SetupGuide({ shop, isExtensionActive, hasPosts }) {
                              width: '24px',
                              height: '24px',
                              borderRadius: '50%',
-                             background: isActive ? '#202223' : '#e1e3e5',
-                             color: isActive ? '#fff' : '#8c9196',
+                             background: isActive ? 'var(--p-color-text)' : 'var(--p-color-bg-surface-secondary)',
+                             color: isActive ? 'var(--p-color-bg-surface)' : 'var(--p-color-text-subdued)',
                              display: 'flex',
                              alignItems: 'center',
                              justifyContent: 'center',
@@ -93,7 +94,7 @@ export default function SetupGuide({ shop, isExtensionActive, hasPosts }) {
                              {step.id}
                            </div>
                          )}
-                       </div>
+                       </Box>
                        
                        <BlockStack gap="200">
                          <Text variant="headingSm" as="h4" fontWeight={isActive ? "bold" : "medium"}>{step.title}</Text>
@@ -109,7 +110,7 @@ export default function SetupGuide({ shop, isExtensionActive, hasPosts }) {
                          )}
                        </BlockStack>
                      </InlineStack>
-                   </div>
+                   </Box>
                  );
               })}
             </BlockStack>

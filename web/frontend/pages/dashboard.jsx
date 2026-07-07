@@ -14,6 +14,7 @@ import {
   Divider,
   Badge,
   ProgressBar,
+  InlineGrid,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { RefreshIcon } from "@shopify/polaris-icons";
@@ -38,13 +39,13 @@ function MiniFunnel({ funnel = [] }) {
                 {stage.count.toLocaleString()}
               </Text>
             </InlineStack>
-            <div style={{ marginTop: 4 }}>
+            <Box paddingBlockStart="100">
               <ProgressBar
                 progress={Math.round(pct)}
                 size="small"
                 tone={i === 3 ? "success" : i === 0 ? "primary" : "highlight"}
               />
-            </div>
+            </Box>
           </div>
         );
       })}
@@ -160,13 +161,7 @@ export default function Dashboard() {
                 <Spinner />
               </Box>
             ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                  gap: "16px",
-                }}
-              >
+              <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
                 <StatsCard
                   title="Total Articles"
                   value={stats?.totalPosts ?? 0}
@@ -191,7 +186,7 @@ export default function Dashboard() {
                   icon="🏆"
                   color="#008060"
                 />
-              </div>
+              </InlineGrid>
             )}
           </Layout.Section>
 
@@ -239,9 +234,11 @@ export default function Dashboard() {
                         <div key={p.id}>
                           <InlineStack align="space-between" blockAlign="center">
                             <BlockStack gap="050">
-                              <Text variant="bodySm" fontWeight="semibold" truncate style={{ maxWidth: "200px" }}>
-                                {p.title || "Untitled"}
-                              </Text>
+                              <div style={{ maxWidth: "200px" }}>
+                                <Text variant="bodySm" fontWeight="semibold" truncate>
+                                  {p.title || "Untitled"}
+                                </Text>
+                              </div>
                               <Badge tone={p.status === "published" ? "success" : "info"}>
                                 {p.status}
                               </Badge>

@@ -4,6 +4,7 @@ import { NavMenu } from "@shopify/app-bridge-react";
 import Routes from "./Routes";
 import { QueryProvider, PolarisProvider } from "./components";
 import ChatBubble from "./components/chat/ChatBubble";
+import { Box } from "@shopify/polaris";
 
 export default function App() {
   const pages = import.meta.glob("./pages/**/!(*.test.[jt]sx)*.([jt]sx)", {
@@ -30,9 +31,9 @@ export default function App() {
               <a href="/support">Support</a>
             </NavMenu>
           )}
-          <div style={{ paddingBottom: "80px" }}>
+          <Box paddingBlockEnd="1600">
             <Routes pages={pages} />
-          </div>
+          </Box>
           {/* Custom in-app chat bubble (shown on all pages) */}
           {!isAdminPath && <ChatBubble />}
         </QueryProvider>

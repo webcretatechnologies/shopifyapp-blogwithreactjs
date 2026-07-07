@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { BlockStack, TextField, Select, Text, Checkbox, Spinner, Icon } from '@shopify/polaris';
+import { BlockStack, TextField, Select, Text, Checkbox, Spinner, Icon, Box, Button, InlineStack } from '@shopify/polaris';
 import { useShopifyProducts, useShopifyStoreCurrency } from '../../../../hooks/useShopifyProducts.js';
 import { formatPrice } from '../../../../utils/priceUtils.js';
 
@@ -206,19 +206,12 @@ export function ProductSliderBlockSettings({ block, onUpdate }) {
         value={block.titleAlign || 'left'}
         onChange={v => onUpdate({ titleAlign: v })}
       />
-      <div style={{ borderTop: '1px solid #e1e3e5', paddingTop: '12px' }}>
+      <Box borderBlockStartWidth="025" borderColor="border" paddingBlockStart="300">
         <Text variant="bodyMd" fontWeight="semibold">Products</Text>
-      </div>
-      <button
-        type="button"
-        onClick={handlePickProducts}
-        style={{
-          width: '100%', padding: '8px', border: '1px solid #c9cccf',
-          borderRadius: '6px', background: '#fff', cursor: 'pointer', fontSize: '13px',
-        }}
-      >
+      </Box>
+      <Button onClick={handlePickProducts} fullWidth>
         🎠 Pick Products from Shopify
-      </button>
+      </Button>
       {block.manualProducts?.length > 0 && (
         <Text variant="bodySm" tone="subdued">{block.manualProducts.length} product(s) selected</Text>
       )}
@@ -230,9 +223,9 @@ export function ProductSliderBlockSettings({ block, onUpdate }) {
         autoComplete="off"
         helpText="Searches your Shopify catalog in real-time"
       />
-      <div style={{ borderTop: '1px solid #e1e3e5', paddingTop: '12px' }}>
+      <Box borderBlockStartWidth="025" borderColor="border" paddingBlockStart="300">
         <Text variant="bodyMd" fontWeight="semibold">Layout & Style</Text>
-      </div>
+      </Box>
       <Select
         label="Card Style"
         options={[{ label: 'Shadow', value: 'shadow' }, { label: 'Border', value: 'border' }, { label: 'Minimal', value: 'minimal' }]}
@@ -245,9 +238,9 @@ export function ProductSliderBlockSettings({ block, onUpdate }) {
         onChange={v => onUpdate({ gap: v })}
         autoComplete="off"
       />
-      <div style={{ borderTop: '1px solid #e1e3e5', paddingTop: '12px' }}>
+      <Box borderBlockStartWidth="025" borderColor="border" paddingBlockStart="300">
         <Text variant="bodyMd" fontWeight="semibold">Display Options</Text>
-      </div>
+      </Box>
       <Checkbox
         label="Show price"
         checked={block.showPrice !== false}
@@ -266,15 +259,18 @@ export function ProductSliderBlockSettings({ block, onUpdate }) {
             onChange={v => onUpdate({ buttonText: v })}
             autoComplete="off"
           />
-          <div>
-            <Text variant="bodySm" fontWeight="semibold">Button Color</Text>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
-              <input type="color" value={block.buttonColor || '#008060'} onChange={e => onUpdate({ buttonColor: e.target.value })}
-                style={{ width: 36, height: 36, border: '1px solid #c9cccf', borderRadius: '4px', cursor: 'pointer', padding: 0 }} />
-              <input type="text" value={block.buttonColor || '#008060'} onChange={e => onUpdate({ buttonColor: e.target.value })}
-                style={{ flex: 1, padding: '6px 10px', border: '1px solid #c9cccf', borderRadius: '6px', fontSize: '13px' }} />
-            </div>
-          </div>
+          <Box>
+            <Text variant="bodyMd" fontWeight="semibold">Button Color</Text>
+            <Box paddingBlockStart="100">
+              <InlineStack gap="200" blockAlign="center" wrap={false}>
+                <input type="color" value={block.buttonColor || '#008060'} onChange={e => onUpdate({ buttonColor: e.target.value })}
+                  style={{ width: 36, height: 36, border: '1px solid var(--p-color-border)', borderRadius: '4px', cursor: 'pointer', padding: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <TextField value={block.buttonColor || '#008060'} onChange={v => onUpdate({ buttonColor: v })} autoComplete="off" />
+                </div>
+              </InlineStack>
+            </Box>
+          </Box>
         </>
       )}
     </BlockStack>

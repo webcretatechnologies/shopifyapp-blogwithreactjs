@@ -835,29 +835,23 @@ export default function Admin() {
 
   return (
     <Frame>
-      <div
-        style={{
-          display: "flex",
-          minHeight: "100vh",
-          backgroundColor: "#f6f8fa",
-          color: "#202223",
-          fontFamily: "Inter, sans-serif",
-        }}
+      <Box
+        background="bg-surface-secondary"
+        minHeight="100vh"
+        color="text"
       >
+        <InlineStack wrap={false}>
         {/* ─── SIDEBAR NAVIGATION ─── */}
           <div
           style={{
             width: "260px",
-            backgroundColor: "#ffffff",
-            borderRight: "1px solid #e1e3e5",
-            boxShadow: "2px 0 12px rgba(0, 0, 0, 0.03)",
+            backgroundColor: "var(--p-color-bg-surface)",
+            borderRight: "1px solid var(--p-color-border)",
             display: "flex",
             flexDirection: "column",
-            position: "fixed",
             height: "100vh",
-            left: 0,
+            position: "sticky",
             top: 0,
-            zIndex: 100,
           }}
         >
           {/* Header */}
@@ -977,38 +971,23 @@ export default function Admin() {
         </div>
 
         {/* ─── MAIN APP PAGE BODY ─── */}
-        <div
-          style={{
-            flexGrow: 1,
-            marginLeft: "260px",
-            display: "flex",
-            flexDirection: "column",
-            minHeight: "100vh",
-          }}
-        >
+        <Box flex="1" background="bg-surface-secondary">
           {/* Header bar */}
-          <header
-            style={{
-              height: "64px",
-              backgroundColor: "#ffffff",
-              borderBottom: "1px solid #e1e3e5",
-              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.02)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "0 32px",
-              position: "sticky",
-              top: 0,
-              zIndex: 90,
-            }}
+          <Box
+            background="bg-surface"
+            padding="400"
+            borderBlockEndWidth="025"
+            borderColor="border"
           >
+            <InlineStack align="space-between" blockAlign="center">
             <Text variant="headingLg" as="h1">
               <span style={{ color: "#202223" }}>{getSectionTitle()}</span>
             </Text>
             <InlineStack gap="300" align="center">
               <Badge tone="success">Active System Credentials</Badge>
             </InlineStack>
-          </header>
+            </InlineStack>
+          </Box>
 
           {/* Content container */}
           <main style={{ padding: "32px", flexGrow: 1 }}>
@@ -2366,7 +2345,7 @@ export default function Admin() {
               )}
             </BlockStack>
           </main>
-        </div>
+        </Box>
 
         {/* ─── MODAL: OVERRIDE PLAN ─── */}
         <Modal
@@ -2641,7 +2620,8 @@ export default function Admin() {
             onCancel={closeConfirmAction}
           />
         )}
-      </div>
+        </InlineStack>
+      </Box>
     </Frame>
   );
 }

@@ -1,7 +1,7 @@
 /**
  * DividerBlock — Visual horizontal rule between sections.
  */
-import { BlockStack, Select, Text } from '@shopify/polaris';
+import { BlockStack, Select, Text, Box, InlineStack, TextField } from '@shopify/polaris';
 
 export function DividerBlockPreview({ block }) {
   return (
@@ -39,23 +39,26 @@ export function DividerBlockSettings({ block, onUpdate }) {
         value={block.thickness || '1px'}
         onChange={(v) => onUpdate({ thickness: v })}
       />
-      <div>
-        <Text variant="bodySm" fontWeight="semibold">Color</Text>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
-          <input
-            type="color"
-            value={block.color || '#e1e3e5'}
-            onChange={(e) => onUpdate({ color: e.target.value })}
-            style={{ width: 36, height: 36, border: '1px solid #c9cccf', borderRadius: '4px', cursor: 'pointer', padding: 0 }}
-          />
-          <input
-            type="text"
-            value={block.color || '#e1e3e5'}
-            onChange={(e) => onUpdate({ color: e.target.value })}
-            style={{ flex: 1, padding: '6px 10px', border: '1px solid #c9cccf', borderRadius: '6px', fontSize: '13px' }}
-          />
-        </div>
-      </div>
+      <Box>
+        <Text variant="bodyMd" fontWeight="semibold">Color</Text>
+        <Box paddingBlockStart="100">
+          <InlineStack gap="200" blockAlign="center" wrap={false}>
+            <input
+              type="color"
+              value={block.color || '#e1e3e5'}
+              onChange={(e) => onUpdate({ color: e.target.value })}
+              style={{ width: 36, height: 36, border: '1px solid var(--p-color-border)', borderRadius: '4px', cursor: 'pointer', padding: 0 }}
+            />
+            <div style={{ flex: 1 }}>
+              <TextField
+                value={block.color || '#e1e3e5'}
+                onChange={(v) => onUpdate({ color: v })}
+                autoComplete="off"
+              />
+            </div>
+          </InlineStack>
+        </Box>
+      </Box>
       <Select
         label="Vertical Spacing"
         options={[

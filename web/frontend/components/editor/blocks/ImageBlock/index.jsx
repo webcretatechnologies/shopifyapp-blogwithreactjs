@@ -2,7 +2,7 @@
  * ImageBlock — Image block with optional caption, alignment, border radius, and link.
  * Integrates with ShopifyFilePicker for Shopify CDN images.
  */
-import { BlockStack, TextField, Select, Text, Checkbox } from '@shopify/polaris';
+import { BlockStack, TextField, Select, Text, Checkbox, Button, InlineStack } from '@shopify/polaris';
 import ShopifyFilePicker from '../../../ShopifyFilePicker';
 import { useState } from 'react';
 
@@ -73,24 +73,16 @@ export function ImageBlockSettings({ block, onUpdate }) {
           style={{ width: '100%', borderRadius: '6px', maxHeight: '120px', objectFit: 'cover' }}
         />
       )}
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <button
-          type="button"
-          onClick={() => setShowPicker(true)}
-          style={{ flex: 1, padding: '6px 12px', border: '1px solid #c9cccf', borderRadius: '6px', background: '#fff', cursor: 'pointer', fontSize: '13px' }}
-        >
-          {block.src ? 'Change Image' : '+ Add Image'}
-        </button>
+      <InlineStack gap="200" wrap={false}>
+        <Button onClick={() => setShowPicker(true)} fullWidth>
+          {block.src ? 'Change Image' : 'Add Image'}
+        </Button>
         {block.src && (
-          <button
-            type="button"
-            onClick={() => onUpdate({ src: '' })}
-            style={{ padding: '6px 10px', border: '1px solid #fed3d1', borderRadius: '6px', background: '#fff4f4', color: '#d82c0d', cursor: 'pointer', fontSize: '12px' }}
-          >
+          <Button onClick={() => onUpdate({ src: '' })} tone="critical">
             Remove
-          </button>
+          </Button>
         )}
-      </div>
+      </InlineStack>
       <TextField
         label="Image URL (or paste directly)"
         value={block.src || ''}

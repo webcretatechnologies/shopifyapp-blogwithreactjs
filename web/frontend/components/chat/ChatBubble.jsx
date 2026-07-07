@@ -7,10 +7,13 @@ import {
   Text,
   TextField,
   Button,
-  Badge,
+  Box,
   BlockStack,
   InlineStack,
+  Icon,
+  Badge,
 } from "@shopify/polaris";
+import { ChatIcon, XIcon, SendIcon } from "@shopify/polaris-icons";
 import { io } from "socket.io-client";
 
 let socket = null;
@@ -109,111 +112,75 @@ export default function ChatBubble() {
             right: "24px",
             width: "360px",
             height: "480px",
-            background: "#fff",
-            borderRadius: "16px",
-            boxShadow: "0 8px 40px rgba(0,0,0,0.18)",
+            zIndex: 9999,
             display: "flex",
             flexDirection: "column",
-            zIndex: 9999,
-            border: "1px solid #e1e3e5",
+            borderRadius: "16px",
             overflow: "hidden",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.18)",
+            border: "1px solid var(--p-color-border)",
+            background: "var(--p-color-bg-surface)",
           }}
         >
           {/* Header */}
-          <div
-            style={{
-              background: "linear-gradient(135deg, #008060, #00a97c)",
-              padding: "16px",
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: "50%",
-                  background: "rgba(255,255,255,0.2)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "18px",
-                }}
-              >
-                💬
-              </div>
-              <div>
-                <div style={{ fontWeight: "700", fontSize: "15px" }}>
-                  Support Chat
-                </div>
-                <div
-                  style={{
-                    fontSize: "12px",
-                    opacity: 0.85,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "4px",
-                  }}
+          <Box padding="400" background="bg-surface-brand">
+            <InlineStack align="space-between" blockAlign="center">
+              <InlineStack gap="300" blockAlign="center">
+                <Box
+                  background="bg-surface"
+                  borderRadius="500"
+                  padding="100"
                 >
-                  <div
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: isConnected ? "#5DF08B" : "#ccc",
-                    }}
-                  />
-                  {isConnected ? "Online" : "Connecting..."}
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: "20px",
-                lineHeight: 1,
-                padding: "4px",
-              }}
-            >
-              ×
-            </button>
-          </div>
+                  <Icon source={ChatIcon} tone="base" />
+                </Box>
+                <BlockStack gap="0">
+                  <Text variant="headingSm" as="h3" tone="text-inverse">
+                    Support Chat
+                  </Text>
+                  <InlineStack gap="100" blockAlign="center">
+                    <div
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: isConnected ? "var(--p-color-bg-surface-success)" : "var(--p-color-bg-surface-secondary)",
+                      }}
+                    />
+                    <Text variant="bodySm" tone="text-inverse">
+                      {isConnected ? "Online" : "Connecting..."}
+                    </Text>
+                  </InlineStack>
+                </BlockStack>
+              </InlineStack>
+              <Button
+                variant="plain"
+                icon={XIcon}
+                onClick={() => setIsOpen(false)}
+                accessibilityLabel="Close chat"
+              />
+            </InlineStack>
+          </Box>
 
           {/* Messages */}
           <div
             style={{
               flex: 1,
               overflowY: "auto",
+              background: "var(--p-color-bg-surface-secondary)",
               padding: "16px",
               display: "flex",
               flexDirection: "column",
               gap: "8px",
-              background: "#f9fafb",
             }}
           >
             {messages.length === 0 && (
-              <div
-                style={{
-                  textAlign: "center",
-                  marginTop: "40px",
-                  color: "#6d7175",
-                }}
-              >
-                <div style={{ fontSize: "36px", marginBottom: "8px" }}>👋</div>
-                <div style={{ fontSize: "14px", fontWeight: "600" }}>
-                  Hi there!
-                </div>
-                <div style={{ fontSize: "13px" }}>
-                  How can we help you today?
-                </div>
-              </div>
+              <Box padding="400">
+                <BlockStack gap="200" inlineAlign="center">
+                  <Text variant="heading3xl" as="div">👋</Text>
+                  <Text variant="headingSm" as="h4">Hi there!</Text>
+                  <Text variant="bodySm" tone="subdued">How can we help you today?</Text>
+                </BlockStack>
+              </Box>
             )}
             {messages.map((msg, i) => (
               <MessageBubble key={i} msg={msg} />
@@ -222,49 +189,24 @@ export default function ChatBubble() {
           </div>
 
           {/* Input */}
-          <div
-            style={{
-              padding: "12px",
-              borderTop: "1px solid #e1e3e5",
-              display: "flex",
-              gap: "8px",
-              background: "#fff",
-            }}
-          >
-            <input
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message... (Enter to send)"
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                border: "1px solid #c9cccf",
-                borderRadius: "8px",
-                fontSize: "13px",
-                outline: "none",
-                fontFamily: "inherit",
-              }}
-            />
-            <button
-              onClick={sendMessage}
-              disabled={!inputText.trim() || !isConnected}
-              style={{
-                padding: "10px 14px",
-                background:
-                  !inputText.trim() || !isConnected ? "#e1e3e5" : "#008060",
-                color: "#fff",
-                border: "none",
-                borderRadius: "8px",
-                cursor:
-                  !inputText.trim() || !isConnected ? "default" : "pointer",
-                fontSize: "16px",
-                transition: "background 0.2s ease",
-              }}
-            >
-              ➤
-            </button>
-          </div>
+          <Box padding="300" borderBlockStartWidth="025" borderColor="border">
+            <InlineStack gap="200" wrap={false} blockAlign="center">
+              <div style={{ flex: 1 }} onKeyDown={handleKeyDown}>
+                <TextField
+                  value={inputText}
+                  onChange={setInputText}
+                  placeholder="Type a message..."
+                  autoComplete="off"
+                />
+              </div>
+              <Button
+                icon={SendIcon}
+                variant="primary"
+                onClick={sendMessage}
+                disabled={!inputText.trim() || !isConnected}
+              />
+            </InlineStack>
+          </Box>
         </div>
       )}
 
@@ -279,23 +221,21 @@ export default function ChatBubble() {
           height: 56,
           borderRadius: "50%",
           background: isOpen
-            ? "#202223"
-            : "linear-gradient(135deg, #008060, #00a97c)",
+            ? "var(--p-color-bg-surface-inverse)"
+            : "var(--p-color-bg-surface-brand)",
           border: "none",
           cursor: "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: "22px",
-          color: "#fff",
-          boxShadow: "0 4px 20px rgba(0,128,96,0.35)",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
           zIndex: 9999,
           transition: "all 0.3s ease",
           transform: isOpen ? "rotate(45deg)" : "rotate(0)",
         }}
         title={isOpen ? "Close chat" : "Open support chat"}
       >
-        {isOpen ? "✕" : "💬"}
+        <Icon source={isOpen ? XIcon : ChatIcon} tone="text-inverse" />
 
         {/* Unread badge */}
         {unreadCount > 0 && !isOpen && (
@@ -304,20 +244,9 @@ export default function ChatBubble() {
               position: "absolute",
               top: -4,
               right: -4,
-              width: 20,
-              height: 20,
-              borderRadius: "50%",
-              background: "#d82c0d",
-              color: "#fff",
-              fontSize: "11px",
-              fontWeight: "700",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "2px solid #fff",
             }}
           >
-            {unreadCount > 9 ? "9+" : unreadCount}
+            <Badge tone="critical">{unreadCount > 9 ? "9+" : unreadCount}</Badge>
           </div>
         )}
       </button>
@@ -335,51 +264,32 @@ function MessageBubble({ msg }) {
     : "";
 
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: isMerchant ? "flex-end" : "flex-start",
-        marginBottom: "2px",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "80%",
-          padding: "8px 12px",
-          borderRadius: isMerchant
-            ? "14px 14px 2px 14px"
-            : "14px 14px 14px 2px",
-          background: isMerchant ? "#008060" : "#fff",
-          color: isMerchant ? "#fff" : "#202223",
-          fontSize: "13px",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-          border: isMerchant ? "none" : "1px solid #e1e3e5",
-        }}
+    <InlineStack align={isMerchant ? "end" : "start"}>
+      <Box
+        padding="200"
+        background={isMerchant ? "bg-surface-brand" : "bg-surface"}
+        borderRadius={isMerchant ? "200" : "200"}
+        borderWidth={isMerchant ? "0" : "025"}
+        borderColor="border"
+        shadow="100"
+        maxWidth="80%"
       >
-        {!isMerchant && (
-          <div
-            style={{
-              fontSize: "10px",
-              fontWeight: "700",
-              color: "#6d7175",
-              marginBottom: "2px",
-            }}
-          >
-            {msg.senderName || "Support"}
+        <BlockStack gap="100">
+          {!isMerchant && (
+            <Text variant="bodyXs" fontWeight="bold" tone="subdued">
+              {msg.senderName || "Support"}
+            </Text>
+          )}
+          <Text variant="bodyMd" tone={isMerchant ? "text-inverse" : "base"}>
+            {msg.text}
+          </Text>
+          <div style={{ textAlign: isMerchant ? "right" : "left" }}>
+            <Text variant="bodyXs" tone={isMerchant ? "text-inverse" : "subdued"}>
+              {time}
+            </Text>
           </div>
-        )}
-        <div>{msg.text}</div>
-        <div
-          style={{
-            fontSize: "10px",
-            opacity: 0.65,
-            marginTop: "4px",
-            textAlign: isMerchant ? "right" : "left",
-          }}
-        >
-          {time}
-        </div>
-      </div>
-    </div>
+        </BlockStack>
+      </Box>
+    </InlineStack>
   );
 }
