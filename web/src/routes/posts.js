@@ -1796,8 +1796,8 @@ router.post("/:id/translate-auto", async (req, res) => {
       title: post.title || "",
       excerpt: post.excerpt || "",
       contentHtml: post.contentHtml || "",
-      metaTitle: post.metaTitle || "",
-      metaDescription: post.metaDescription || "",
+      metaTitle: post.metaTitle || post.title || "",
+      metaDescription: post.metaDescription || post.excerpt || "",
     };
 
     const translateScriptPath = path.join(__dirname, "../../../translate.py");

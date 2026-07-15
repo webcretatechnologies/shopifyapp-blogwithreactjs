@@ -804,25 +804,15 @@ export default function PostEditor() {
           {/* ─── Main Content ───────────────────────────────────── */}
           <Layout.Section>
             <BlockStack gap="400">
-              {/* Article Details */}
+              {/* Title */}
               <Card>
                 <Box padding="500">
                   <BlockStack gap="400">
-                    <Text variant="headingMd" as="h3">Article Details</Text>
-                    <Divider />
                     <TextField
-                      label="Article Title"
+                      label="Title"
                       value={post.title}
                       onChange={handleTitleChange}
-                      placeholder="Enter article title..."
-                      autoComplete="off"
-                    />
-                    <TextField
-                      label="URL Slug"
-                      value={post.slug}
-                      onChange={handleField("slug")}
-                      prefix="/"
-                      helpText="Auto-generated from title"
+                      placeholder="e.g. My first blog post"
                       autoComplete="off"
                     />
                   </BlockStack>
@@ -841,6 +831,64 @@ export default function PostEditor() {
                       onInit={handleEditorInit}
                       placeholder="Write your article content here..."
                       uploadUrl="/api/posts/upload"
+                    />
+                  </BlockStack>
+                </Box>
+              </Card>
+
+              {/* Excerpt */}
+              <Card>
+                <Box padding="500">
+                  <BlockStack gap="300">
+                    <Text variant="headingMd">Excerpt</Text>
+                    <Text variant="bodyMd" tone="subdued">
+                      Add a summary of the post to appear on your home page or blog.
+                    </Text>
+                    <Divider />
+                    <TextField
+                      label="Excerpt"
+                      labelHidden
+                      value={post.excerpt || ""}
+                      onChange={handleField("excerpt")}
+                      multiline={3}
+                      autoComplete="off"
+                    />
+                  </BlockStack>
+                </Box>
+              </Card>
+
+              {/* Search engine listing preview */}
+              <Card>
+                <Box padding="500">
+                  <BlockStack gap="400">
+                    <Text variant="headingMd">Search engine listing preview</Text>
+                    <Text variant="bodyMd" tone="subdued">
+                      Add a title and description to see how this blog post might appear in a search engine listing
+                    </Text>
+                    <Divider />
+                    <TextField
+                      label="Page title"
+                      value={seoData.metaTitle}
+                      onChange={(val) => setSeoData((s) => ({ ...s, metaTitle: val }))}
+                      maxLength={70}
+                      showCharacterCount
+                      autoComplete="off"
+                    />
+                    <TextField
+                      label="Meta description"
+                      value={seoData.metaDescription}
+                      onChange={(val) => setSeoData((s) => ({ ...s, metaDescription: val }))}
+                      multiline={3}
+                      maxLength={320}
+                      showCharacterCount
+                      autoComplete="off"
+                    />
+                    <TextField
+                      label="URL handle"
+                      value={post.slug}
+                      onChange={handleField("slug")}
+                      prefix="/"
+                      autoComplete="off"
                     />
                   </BlockStack>
                 </Box>
@@ -873,27 +921,21 @@ export default function PostEditor() {
           <Layout.Section variant="oneThird">
             <BlockStack gap="400">
               
-              {/* Publishing */}
+              {/* Visibility */}
               <Card>
                 <Box padding="500">
                   <BlockStack gap="300">
-                    <Text variant="headingMd">Publishing</Text>
+                    <Text variant="headingMd">Visibility</Text>
                     <Divider />
                     <Select
-                      label="Status"
+                      label=""
+                      labelHidden
                       options={[
-                        { label: "Draft", value: "draft" },
-                        { label: "Published", value: "published" },
+                        { label: "Hidden", value: "draft" },
+                        { label: "Visible", value: "published" },
                       ]}
                       value={post.status}
                       onChange={handleField("status")}
-                    />
-                    <Select
-                      label="Publish to Shopify Blog"
-                      options={blogOptions}
-                      value={shopifyBlogId}
-                      onChange={setShopifyBlogId}
-                      helpText="Select which Shopify blog to push this article to"
                     />
                     {post.status === "published" ? (
                       <BlockStack gap="200">
@@ -942,11 +984,11 @@ export default function PostEditor() {
                 </Box>
               </Card>
 
-              {/* Organization & Settings */}
+              {/* Organization */}
               <Card>
                 <Box padding="500">
                   <BlockStack gap="400">
-                    <Text variant="headingMd">Organization & settings</Text>
+                    <Text variant="headingMd">Organization</Text>
                     <Divider />
                     
                     <TextField
@@ -956,8 +998,15 @@ export default function PostEditor() {
                       autoComplete="off"
                     />
 
+                    <Select
+                      label="Blog"
+                      options={blogOptions}
+                      value={shopifyBlogId}
+                      onChange={setShopifyBlogId}
+                    />
+
                     <BlockStack gap="200">
-                      <Text variant="bodyMd" fontWeight="semibold">Featured Image</Text>
+                      <Text variant="bodyMd" fontWeight="semibold">Featured image</Text>
                       <DropZone
                         onDrop={handleDropZoneDrop}
                         allowMultiple={false}

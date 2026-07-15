@@ -15,10 +15,9 @@ import {
   Spinner,
   Box,
   Banner,
-  ContextualSaveBar,
 } from "@shopify/polaris";
 import { ArrowLeftIcon, LanguageIcon, AlertCircleIcon } from "@shopify/polaris-icons";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 // Helper component for side-by-side field translation
@@ -77,8 +76,50 @@ export default function PostTranslationPage() {
   const [translatedMetaTitle, setTranslatedMetaTitle] = useState("");
   const [translatedMetaDesc, setTranslatedMetaDesc] = useState("");
 
-  // Track if changes have been made (dirty state)
-  const [isDirty, setIsDirty] = useState(false);
+  // Calculate dirty state by comparing current form fields to saved translations
+  const isDirty = useMemo(() => {
+    const found = translations.find((t) => t.locale === selectedLocale) || {};
+    return (
+      (translatedTitle || "") !== (found.title || "") ||
+      (translatedExcerpt || "") !== (found.excerpt || "") ||
+      (translatedContent || "") !== (found.contentHtml || "") ||
+      (translatedMetaTitle || "") !== (found.metaTitle || "") ||
+      (translatedMetaDesc || "") !== (found.metaDescription || "")
+    );
+  }, [
+    translations,
+    selectedLocale,
+    translatedTitle,
+    translatedExcerpt,
+    translatedContent,
+    translatedMetaTitle,
+    translatedMetaDesc,
+  ]);
+  const isFirstRender = useRef(true);
+  const saveBarId = "translation-save-bar";
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    if (window.shopify?.saveBar) {
+      if (isDirty) {
+        window.shopify.saveBar.show(saveBarId).catch((e) => console.log("SaveBar show error:", e.message));
+      } else {
+        window.shopify.saveBar.hide(saveBarId).catch((e) => console.log("SaveBar hide error:", e.message));
+      }
+    }
+  }, [isDirty]);
+
+  useEffect(() => {
+    return () => {
+      if (window.shopify?.saveBar) {
+        window.shopify.saveBar.hide(saveBarId).catch((e) => console.log("SaveBar clean-up hide error:", e.message));
+      }
+    };
+  }, []);
 
   const loadTranslations = useCallback(async () => {
     try {
@@ -135,13 +176,11 @@ export default function PostTranslationPage() {
       setTranslatedMetaTitle("");
       setTranslatedMetaDesc("");
     }
-    setIsDirty(false); // Reset dirty state on language change
   }, [selectedLocale, translations]);
 
-  // Handlers for input changes (marks form as dirty)
+  // Handlers for input changes
   const handleFieldChange = (setter) => (value) => {
     setter(value);
-    setIsDirty(true);
   };
 
   const handleSave = async () => {
@@ -161,7 +200,6 @@ export default function PostTranslationPage() {
       });
       if (!res.ok) throw new Error("Save translation failed");
       setToast({ content: "✅ Translation saved successfully" });
-      setIsDirty(false);
       await loadTranslations();
     } catch {
       setToast({ content: "❌ Failed to save translation", error: true });
@@ -194,7 +232,6 @@ export default function PostTranslationPage() {
         setTranslatedContent(data.translation.contentHtml || "");
         setTranslatedMetaTitle(data.translation.metaTitle || "");
         setTranslatedMetaDesc(data.translation.metaDescription || "");
-        setIsDirty(false); // It's saved immediately by the backend
       }
       
       await loadTranslations();
@@ -239,28 +276,25 @@ export default function PostTranslationPage() {
         />
       )}
       
-      {/* Contextual Save Bar for unsaved changes */}
-      {isDirty && (
-        <ContextualSaveBar
-          message="Unsaved translation changes"
-          saveAction={{
-            onAction: handleSave,
-            loading: isSaving,
-          }}
-          discardAction={{
-            onAction: () => {
-              // Re-trigger the useEffect to reload original fields
-              const found = translations.find((t) => t.locale === selectedLocale);
-              setTranslatedTitle(found?.title || "");
-              setTranslatedExcerpt(found?.excerpt || "");
-              setTranslatedContent(found?.contentHtml || "");
-              setTranslatedMetaTitle(found?.metaTitle || "");
-              setTranslatedMetaDesc(found?.metaDescription || "");
-              setIsDirty(false);
-            },
-          }}
-        />
-      )}
+      <ui-save-bar id={saveBarId}>
+        <button
+          variant="primary"
+          onClick={handleSave}
+          loading={isSaving ? "" : undefined}
+        >
+          Save
+        </button>
+        <button onClick={() => {
+          const found = translations.find((t) => t.locale === selectedLocale);
+          setTranslatedTitle(found?.title || "");
+          setTranslatedExcerpt(found?.excerpt || "");
+          setTranslatedContent(found?.contentHtml || "");
+          setTranslatedMetaTitle(found?.metaTitle || "");
+          setTranslatedMetaDesc(found?.metaDescription || "");
+        }}>
+          Discard
+        </button>
+      </ui-save-bar>
 
       <Page
         backAction={{
@@ -343,15 +377,17 @@ export default function PostTranslationPage() {
                 <Divider />
 
                 <TranslationRow title="Content (HTML)" originalContent={post.contentHtml} isHtml={true}>
-                  <TextField
-                    label="Translated Content HTML"
-                    labelHidden
-                    value={translatedContent}
-                    onChange={handleFieldChange(setTranslatedContent)}
-                    multiline={12}
-                    autoComplete="off"
-                    monospaced
-                  />
+                  <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                    <TextField
+                      label="Translated Content HTML"
+                      labelHidden
+                      value={translatedContent}
+                      onChange={handleFieldChange(setTranslatedContent)}
+                      multiline={20}
+                      autoComplete="off"
+                      monospaced
+                    />
+                  </div>
                 </TranslationRow>
 
               </BlockStack>

@@ -86,8 +86,7 @@ function articleFromGraphQL(article) {
   };
 }
 
-/** Builds an ArticleCreateInput/ArticleUpdateInput-shaped object from REST-style article fields. */
-function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image }) {
+function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image, summary, meta_title, meta_description }) {
   const input = {
     title,
     body: body_html,
@@ -95,12 +94,39 @@ function toArticleGraphQLInput({ title, body_html, author, published, tags, hand
     isPublished: !!published,
     handle,
   };
+  
+  if (summary !== undefined) {
+    input.summary = summary || "";
+  }
+  
   const tagList = (tags || "")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
   if (tagList.length > 0) input.tags = tagList;
   if (image?.src) input.image = { url: image.src };
+
+  const metafields = [];
+  if (meta_title !== undefined) {
+    metafields.push({
+      namespace: "global",
+      key: "title_tag",
+      value: meta_title || "",
+      type: "string",
+    });
+  }
+  if (meta_description !== undefined) {
+    metafields.push({
+      namespace: "global",
+      key: "description_tag",
+      value: meta_description || "",
+      type: "string",
+    });
+  }
+  if (metafields.length > 0) {
+    input.metafields = metafields;
+  }
+  
   return input;
 }
 
@@ -744,6 +770,9 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     tags: tagNames,
     handle: post.slug,
     image: post.featuredImage ? { src: post.featuredImage } : null,
+    summary: post.excerpt,
+    meta_title: post.metaTitle,
+    meta_description: post.metaDescription,
   });
 
   if (articleId) {
