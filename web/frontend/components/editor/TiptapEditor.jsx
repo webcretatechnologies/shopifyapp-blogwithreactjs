@@ -66,6 +66,7 @@ const Sep = () => <div className="tiptap-toolbar__separator" />;
 export default function TiptapEditor({
   content,
   onChange,
+  onInit,
   placeholder = "Start writing...",
   uploadUrl = "/api/posts/upload",
 }) {
@@ -182,10 +183,12 @@ export default function TiptapEditor({
     const nextContent = content || "";
     const currentContent = editor.getHTML();
     if (!editor.isFocused && nextContent !== currentContent) {
-      lastEmittedHtmlRef.current = nextContent;
       editor.commands.setContent(nextContent, { emitUpdate: false });
+      const normalized = editor.getHTML();
+      lastEmittedHtmlRef.current = normalized;
+      if (onInit) onInit(normalized);
     }
-  }, [content, editor]);
+  }, [content, editor, onInit]);
 
   if (!editor) return null;
 

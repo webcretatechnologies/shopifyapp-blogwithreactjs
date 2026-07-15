@@ -255,7 +255,6 @@ export default function PostEditor() {
   const [originalPost, setOriginalPost] = useState(null);
   const [contentHtml, setContentHtml] = useState("");
   const [originalContentHtml, setOriginalContentHtml] = useState("");
-  const contentHtmlSyncedRef = useRef(false);
   const isFirstRender = useRef(true);
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
@@ -300,7 +299,6 @@ export default function PostEditor() {
       setOriginalPost(data.post);
       setContentHtml(data.post.contentHtml || "");
       setOriginalContentHtml(data.post.contentHtml || "");
-      contentHtmlSyncedRef.current = false;
       setTags(data.post.tags || []);
       setFeatures(data.features || {});
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
@@ -434,10 +432,11 @@ export default function PostEditor() {
 
   const handleContentChange = useCallback((newHtml) => {
     setContentHtml(newHtml);
-    if (!contentHtmlSyncedRef.current) {
-      setOriginalContentHtml(newHtml);
-      contentHtmlSyncedRef.current = true;
-    }
+  }, []);
+
+  const handleEditorInit = useCallback((normalizedHtml) => {
+    setOriginalContentHtml(normalizedHtml);
+    setContentHtml(normalizedHtml);
   }, []);
 
 
@@ -568,7 +567,6 @@ export default function PostEditor() {
   };
 
   const handleDiscard = () => {
-    contentHtmlSyncedRef.current = false;
     if (isEditing && originalPost) {
       setPost(originalPost);
       setContentHtml(originalPost.contentHtml || "");
@@ -840,6 +838,7 @@ export default function PostEditor() {
                     <TiptapEditor
                       content={contentHtml}
                       onChange={handleContentChange}
+                      onInit={handleEditorInit}
                       placeholder="Write your article content here..."
                       uploadUrl="/api/posts/upload"
                     />
