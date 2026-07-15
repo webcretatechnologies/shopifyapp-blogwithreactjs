@@ -341,8 +341,10 @@ export async function trackEvent({
  */
 export async function getShopAnalytics(shopId, days = 30) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  // Immediately-preceding window of equal length, used to compute period-over-period trends.
+  const previousSince = new Date(since.getTime() - days * 24 * 60 * 60 * 1000);
 
-  const [totalPosts, published, drafts, recentAnalytics, topPostsGrouped, allAnalytics] = await Promise.all([
+  const [totalPosts, published, drafts, recentAnalytics, topPostsGrouped, allAnalytics, previousAnalytics] = await Promise.all([
     prisma.post.count({ where: { shopId } }),
     prisma.post.count({ where: { shopId, status: "published" } }),
     prisma.post.count({ where: { shopId, status: "draft" } }),
@@ -384,6 +386,18 @@ export async function getShopAnalytics(shopId, days = 30) {
         revenue: true,
         sources: true,
         countries: true,
+      },
+    }),
+    // Same-length prior window, for trend comparison
+    prisma.postAnalytic.findMany({
+      where: {
+        post: { shopId },
+        date: { gte: previousSince, lt: since },
+      },
+      select: {
+        views: true,
+        conversions: true,
+        revenue: true,
       },
     }),
   ]);
@@ -507,6 +521,32 @@ export async function getShopAnalytics(shopId, days = 30) {
   const checkoutRate = totalViews > 0 ? ((totalCheckouts / totalViews) * 100).toFixed(2) : "0.00";
   const conversionRate = totalViews > 0 ? ((totalConversions / totalViews) * 100).toFixed(2) : "0.00";
 
+  // ── Period-over-period trends ──────────────────────────────────────
+  const prevTotals = previousAnalytics.reduce(
+    (acc, a) => {
+      acc.views += a.views || 0;
+      acc.conversions += a.conversions || 0;
+      acc.revenue += a.revenue || 0;
+      return acc;
+    },
+    { views: 0, conversions: 0, revenue: 0 }
+  );
+  const prevConversionRate = prevTotals.views > 0 ? (prevTotals.conversions / prevTotals.views) * 100 : 0;
+  const currentConversionRate = parseFloat(conversionRate);
+
+  // Only report a trend when both windows have data — a % change against an
+  // empty baseline (or from zero activity) reads as noise on the dashboard.
+  const pctChange = (current, previous) => {
+    if (current <= 0 || previous <= 0) return null;
+    return Math.round(((current - previous) / previous) * 1000) / 10;
+  };
+
+  const trends = {
+    views: pctChange(totalViews, prevTotals.views),
+    revenue: pctChange(totals.totalRevenue, prevTotals.revenue),
+    conversionRate: pctChange(currentConversionRate, prevConversionRate),
+  };
+
   return {
     stats: {
       totalPosts,
@@ -532,6 +572,8 @@ export async function getShopAnalytics(shopId, days = 30) {
     topSources: sortedSources,
     topCountries: sortedCountries,
     funnel,
+    trends,
+    days,
   };
 }
 

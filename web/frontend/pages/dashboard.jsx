@@ -7,20 +7,28 @@ import {
   Card,
   Text,
   Button,
-  Spinner,
   Box,
   InlineStack,
   BlockStack,
   Divider,
   Badge,
   ProgressBar,
-  InlineGrid,
+  Select,
+  Banner,
+  SkeletonBodyText,
+  SkeletonDisplayText,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { RefreshIcon } from "@shopify/polaris-icons";
-import StatsCard from "../components/analytics/StatsCard";
+import KpiRow from "../components/common/KpiRow";
 import AnalyticsChart from "../components/analytics/AnalyticsChart";
 import SetupGuide from "../components/SetupGuide";
+
+const RANGE_OPTIONS = [
+  { label: "Last 7 days", value: "7" },
+  { label: "Last 30 days", value: "30" },
+  { label: "Last 90 days", value: "90" },
+];
 
 // ─── Mini Funnel ─────────────────────────────────────────────────────────
 function MiniFunnel({ funnel = [] }) {
@@ -61,11 +69,17 @@ export default function Dashboard() {
   const [shopInfo, setShopInfo] = useState(null);
   const [extensionActive, setExtensionActive] = useState(false);
   const [extensionLoading, setExtensionLoading] = useState(true);
+  const [range, setRange] = useState("30");
+  // Mirrors SetupGuide's dismissal flag: while the guide is visible it already
+  // contains the enable-tracking step, so the banner would be a duplicate prompt.
+  const [setupDismissed] = useState(
+    () => localStorage.getItem("blogger_setup_dismissed") === "1"
+  );
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = async (days = range) => {
     setAnalyticsLoading(true);
     try {
-      const res = await fetch("/api/posts/analytics/summary");
+      const res = await fetch(`/api/posts/analytics/summary?days=${days}`);
       if (res.ok) {
         const data = await res.json();
         setAnalytics(data);
@@ -74,6 +88,11 @@ export default function Dashboard() {
     } finally {
       setAnalyticsLoading(false);
     }
+  };
+
+  const handleRangeChange = (value) => {
+    setRange(value);
+    fetchAnalytics(value);
   };
 
   const fetchShop = async () => {
@@ -114,93 +133,115 @@ export default function Dashboard() {
             ? `${shopInfo.domain} · Plan: ${shopInfo.planKey?.toUpperCase() || "FREE"}`
             : ""
         }
+        primaryAction={{
+          content: "Write new article",
+          onAction: () => navigate("/posts/new"),
+        }}
+        secondaryActions={[
+          { content: "Manage articles", onAction: () => navigate("/posts") },
+          { content: "Import posts", onAction: () => navigate("/posts/import") },
+        ]}
       >
         <Layout>
           {/* ── Setup Guide ─────────────────────────────────────────── */}
           {!analyticsLoading && !extensionLoading && (
             <Layout.Section>
-              <SetupGuide 
-                shop={shopInfo?.domain} 
-                isExtensionActive={extensionActive} 
-                hasPosts={stats?.totalPosts > 0} 
+              <SetupGuide
+                shop={shopInfo?.domain}
+                isExtensionActive={extensionActive}
+                hasPosts={stats?.totalPosts > 0}
               />
             </Layout.Section>
           )}
 
-          {/* ── Quick Actions Banner ────────────────────────────────── */}
+          {/* ── Date range toolbar ──────────────────────────────────── */}
           <Layout.Section>
-            <Card>
-              <Box padding="400">
-                <InlineStack align="space-between" blockAlign="center" wrap={false}>
-                  <InlineStack gap="400" blockAlign="center">
-                    <Text variant="headingMd" as="h2">Quick Actions</Text>
-                    <InlineStack gap="200">
-                      <Button variant="primary" onClick={() => navigate("/posts/new")}>
-                        ✍️ Write New Article
-                      </Button>
-                      <Button onClick={() => navigate("/posts")}>
-                        📋 Manage Articles
-                      </Button>
-                      <Button onClick={() => navigate("/posts/import")}>
-                        📥 Import Posts
-                      </Button>
-                    </InlineStack>
-                  </InlineStack>
-                  <Button onClick={fetchAnalytics} icon={RefreshIcon} size="slim">
-                    Refresh
-                  </Button>
-                </InlineStack>
+            <InlineStack align="end" gap="200" blockAlign="center">
+              <Box minWidth="160px">
+                <Select
+                  label="Date range"
+                  labelHidden
+                  options={RANGE_OPTIONS}
+                  value={range}
+                  onChange={handleRangeChange}
+                />
               </Box>
-            </Card>
+              <Button
+                onClick={() => fetchAnalytics()}
+                icon={RefreshIcon}
+                accessibilityLabel="Refresh analytics"
+              />
+            </InlineStack>
           </Layout.Section>
 
-          {/* ── Stats Cards ────────────────────────────────────────── */}
+          {/* ── Tracking not active — empty-state guidance ──────────── */}
+          {!extensionLoading && !extensionActive && setupDismissed && (
+            <Layout.Section>
+              <Banner
+                title="Storefront tracking isn't active yet"
+                tone="warning"
+                action={{
+                  content: "Enable tracking",
+                  onAction: () =>
+                    window.open(`https://${shopInfo?.domain}/admin/themes/current/editor?context=apps`, "_blank"),
+                }}
+              >
+                <Text as="p">
+                  Views, revenue, and conversions below will stay at zero until you enable the Blog Analytics app embed in your theme editor.
+                </Text>
+              </Banner>
+            </Layout.Section>
+          )}
+
+          {/* ── KPI Summary ────────────────────────────────────────── */}
           <Layout.Section>
-            {analyticsLoading ? (
-              <Box padding="400" align="center">
-                <Spinner />
-              </Box>
-            ) : (
-              <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
-                <StatsCard
-                  title="Total Articles"
-                  value={stats?.totalPosts ?? 0}
-                  icon="📝"
-                  color="#008060"
-                />
-                <StatsCard
-                  title="Views (30d)"
-                  value={(stats?.totalViews ?? 0).toLocaleString()}
-                  icon="👁"
-                  color="#005bd3"
-                />
-                <StatsCard
-                  title="Revenue"
-                  value={`$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  icon="💰"
-                  color="#f39c12"
-                />
-                <StatsCard
-                  title="Conversion Rate"
-                  value={`${stats?.conversionRate ?? "0.00"}%`}
-                  icon="🏆"
-                  color="#008060"
-                />
-              </InlineGrid>
-            )}
+            <KpiRow
+              loading={analyticsLoading}
+              items={[
+                { label: "Total articles", value: stats?.totalPosts ?? 0 },
+                {
+                  label: `Views (${range}d)`,
+                  value: (stats?.totalViews ?? 0).toLocaleString(),
+                  trend: analytics?.trends?.views,
+                },
+                {
+                  label: "Revenue",
+                  value: `$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                  trend: analytics?.trends?.revenue,
+                },
+                {
+                  label: "Conversion rate",
+                  value: `${stats?.conversionRate ?? "0.00"}%`,
+                  trend: analytics?.trends?.conversionRate,
+                },
+              ]}
+            />
           </Layout.Section>
 
           {/* ── Multi-Series Chart ─────────────────────────────────── */}
           <Layout.Section>
-            <AnalyticsChart
-              data={analytics?.daily || []}
-              title="Blog Performance — Last 30 Days"
-              series={[
-                { key: "views", label: "Views", color: "#008060" },
-                { key: "addToCart", label: "Add to Cart", color: "#e67e22" },
-                { key: "conversions", label: "Conversions", color: "#005bd3" },
-              ]}
-            />
+            {analyticsLoading ? (
+              <Card>
+                <Box padding="400">
+                  <SkeletonDisplayText size="small" />
+                  <Box paddingBlockStart="400">
+                    <SkeletonBodyText lines={6} />
+                  </Box>
+                </Box>
+              </Card>
+            ) : (
+              <AnalyticsChart
+                data={analytics?.daily || []}
+                title={`Blog performance — last ${range} days`}
+                period={range}
+                showPeriodSelector={false}
+                series={[
+                  { key: "views", label: "Views", color: "#008060" },
+                  { key: "addToCart", label: "Add to cart", color: "#e67e22" },
+                  { key: "conversions", label: "Conversions", color: "#005bd3" },
+                ]}
+              />
+            )}
           </Layout.Section>
 
           {/* ── Funnel + Top Posts ──────────────────── */}
@@ -208,13 +249,17 @@ export default function Dashboard() {
             <Card>
               <Box padding="400">
                 <BlockStack gap="300">
-                  <Text variant="headingMd">🔄 Conversion Funnel</Text>
+                  <Text variant="headingMd" as="h3">Conversion funnel</Text>
                   <Divider />
-                  {analytics?.funnel?.length ? (
+                  {analyticsLoading ? (
+                    <SkeletonBodyText lines={4} />
+                  ) : analytics?.funnel?.length ? (
                     <MiniFunnel funnel={analytics.funnel} />
                   ) : (
                     <Text tone="subdued" variant="bodySm">
-                      No funnel data yet.
+                      {extensionActive
+                        ? "No funnel data yet for this period."
+                        : "No funnel data yet. Enable storefront tracking above to start collecting it."}
                     </Text>
                   )}
                 </BlockStack>
@@ -223,11 +268,21 @@ export default function Dashboard() {
           </Layout.Section>
 
           <Layout.Section variant="oneHalf">
-            {analytics?.topPosts?.length > 0 ? (
+            {analyticsLoading ? (
               <Card>
                 <Box padding="400">
                   <BlockStack gap="300">
-                    <Text variant="headingMd">🏆 Top Posts</Text>
+                    <Text variant="headingMd" as="h3">Top posts</Text>
+                    <Divider />
+                    <SkeletonBodyText lines={5} />
+                  </BlockStack>
+                </Box>
+              </Card>
+            ) : analytics?.topPosts?.length > 0 ? (
+              <Card>
+                <Box padding="400">
+                  <BlockStack gap="300">
+                    <Text variant="headingMd" as="h3">Top posts</Text>
                     <Divider />
                     <BlockStack gap="300">
                       {analytics.topPosts.slice(0, 5).map((p, index) => (
@@ -264,9 +319,13 @@ export default function Dashboard() {
               <Card>
                 <Box padding="400">
                   <BlockStack gap="300">
-                    <Text variant="headingMd">🏆 Top Posts</Text>
+                    <Text variant="headingMd" as="h3">Top posts</Text>
                     <Divider />
-                    <Text tone="subdued" variant="bodySm">No performance data yet.</Text>
+                    <Text tone="subdued" variant="bodySm">
+                      {extensionActive
+                        ? "No performance data yet for this period. Check back once your posts start getting traffic."
+                        : "No performance data yet. Enable storefront tracking above to start collecting it."}
+                    </Text>
                   </BlockStack>
                 </Box>
               </Card>

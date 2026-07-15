@@ -18,9 +18,17 @@ import {
   Button,
   ProgressBar,
   IndexTable,
+  Icon,
 } from "@shopify/polaris";
-import { ExportIcon } from "@shopify/polaris-icons";
-import StatsCard from "../components/analytics/StatsCard";
+import {
+  ExportIcon,
+  ViewIcon,
+  CartIcon,
+  CreditCardIcon,
+  CheckCircleIcon,
+  CheckIcon,
+} from "@shopify/polaris-icons";
+import KpiRow from "../components/common/KpiRow";
 import AnalyticsChart from "../components/analytics/AnalyticsChart";
 import DeviceChart from "../components/analytics/DeviceChart";
 import TopSources from "../components/analytics/TopSources";
@@ -34,7 +42,7 @@ function FunnelChart({ funnel = [] }) {
     <Card>
       <Box padding="400">
         <BlockStack gap="300">
-          <Text variant="headingMd">🔄 Conversion Funnel</Text>
+          <Text variant="headingMd" as="h3">Conversion funnel</Text>
           <Divider />
           <BlockStack gap="200">
             {funnel.map((stage, i) => {
@@ -44,26 +52,18 @@ function FunnelChart({ funnel = [] }) {
                   ? ((1 - stage.count / funnel[i - 1].count) * 100).toFixed(1)
                   : null;
               const arrow = i < funnel.length - 1 ? "↓" : "";
+              const stageIcon = [ViewIcon, CartIcon, CreditCardIcon, CheckCircleIcon][i];
               return (
                 <div key={stage.stage}>
                   <InlineStack align="space-between" blockAlign="center">
                     <InlineStack gap="200" blockAlign="center">
-                      <div
-                        style={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: "8px",
-                          background: i === 3 ? "#008060" : i === 0 ? "#005bd3" : "#e1e3e5",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "13px",
-                          color: i >= 3 ? "#fff" : "#202223",
-                          fontWeight: "700",
-                        }}
+                      <Box
+                        background={i === 3 ? "bg-success-subdued" : i === 0 ? "bg-info-subdued" : "bg-subdued"}
+                        borderRadius="200"
+                        padding="150"
                       >
-                        {["👁", "🛒", "💳", "✅"][i] || "•"}
-                      </div>
+                        <Icon source={stageIcon || CheckIcon} tone={i === 3 ? "success" : i === 0 ? "info" : "subdued"} />
+                      </Box>
                       <BlockStack gap="025">
                         <Text variant="bodySm" fontWeight="semibold">
                           {stage.stage}
@@ -105,7 +105,7 @@ function CountryBreakdown({ countries = [] }) {
     <Card>
       <Box padding="400">
         <BlockStack gap="300">
-          <Text variant="headingMd">🌍 Top Countries</Text>
+          <Text variant="headingMd" as="h3">Top countries</Text>
           <Divider />
           {countries.slice(0, 8).map(({ code, count }) => {
             const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0";
@@ -202,40 +202,19 @@ export default function Analytics() {
       ) : (
         <BlockStack gap="500">
           <Layout>
-            {/* ── Stats Cards Row ────────────────────────────────────── */}
+            {/* ── KPI Summary ────────────────────────────────────────── */}
             <Layout.Section>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                  gap: "16px",
-                }}
-              >
-                <StatsCard
-                  title="Total Views"
-                  value={(stats?.totalViews ?? 0).toLocaleString()}
-                  icon="👁"
-                  color="#005bd3"
-                />
-                <StatsCard
-                  title="Unique Visitors"
-                  value={(stats?.totalUniqueVisitors ?? 0).toLocaleString()}
-                  icon="👤"
-                  color="#9c27b0"
-                />
-                <StatsCard
-                  title="Revenue"
-                  value={`$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  icon="💰"
-                  color="#f39c12"
-                />
-                <StatsCard
-                  title="Overall Conv. Rate"
-                  value={`${stats?.conversionRate ?? "0.00"}%`}
-                  icon="🏆"
-                  color="#008060"
-                />
-              </div>
+              <KpiRow
+                items={[
+                  { label: "Total Views", value: (stats?.totalViews ?? 0).toLocaleString() },
+                  { label: "Unique Visitors", value: (stats?.totalUniqueVisitors ?? 0).toLocaleString() },
+                  {
+                    label: "Revenue",
+                    value: `$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                  },
+                  { label: "Overall Conv. Rate", value: `${stats?.conversionRate ?? "0.00"}%` },
+                ]}
+              />
             </Layout.Section>
           </Layout>
 
@@ -313,7 +292,7 @@ export default function Analytics() {
               <Card>
                 <Box padding="400">
                   <BlockStack gap="300">
-                    <Text variant="headingMd">🏆 Top Performing Posts</Text>
+                    <Text variant="headingMd" as="h3">Top performing posts</Text>
                     <Divider />
                     {(!analytics?.topPosts || analytics.topPosts.length === 0) && (
                       <Text tone="subdued" variant="bodySm">
@@ -325,23 +304,22 @@ export default function Analytics() {
                       <div key={p.id}>
                         <InlineStack align="space-between" blockAlign="center">
                           <InlineStack gap="200" blockAlign="center">
-                            <div
-                              style={{
-                                width: 24,
-                                height: 24,
-                                borderRadius: "50%",
-                                background: i === 0 ? "#f5a623" : "#e1e3e5",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "11px",
-                                fontWeight: "700",
-                                color: i === 0 ? "#fff" : "#6d7175",
-                                flexShrink: 0,
-                              }}
+                            <Box
+                              background={i === 0 ? "bg-caution-strong" : "bg-subdued"}
+                              borderRadius="full"
+                              minWidth="24px"
+                              minHeight="24px"
                             >
-                              {i + 1}
-                            </div>
+                              <InlineStack align="center" blockAlign="center">
+                                <Text
+                                  variant="bodyXs"
+                                  fontWeight="bold"
+                                  tone={i === 0 ? "text-inverse" : "subdued"}
+                                >
+                                  {i + 1}
+                                </Text>
+                              </InlineStack>
+                            </Box>
                             <BlockStack gap="025">
                               <Text variant="bodySm" fontWeight="semibold">
                                 {p.title?.substring(0, 35) || "Untitled"}
@@ -358,14 +336,20 @@ export default function Analytics() {
                         </InlineStack>
                         {p.addToCart > 0 && (
                           <div style={{ marginTop: 6, paddingLeft: 34 }}>
-                            <InlineStack gap="300">
-                              <Text variant="bodyXs" tone="subdued">
-                                🛒 {p.addToCart} cart
-                              </Text>
-                              {p.conversions > 0 && (
-                                <Text variant="bodyXs" tone="success">
-                                  ✅ {p.conversions} conv
+                            <InlineStack gap="300" blockAlign="center">
+                              <InlineStack gap="050" blockAlign="center">
+                                <Icon source={CartIcon} tone="subdued" />
+                                <Text variant="bodyXs" tone="subdued">
+                                  {p.addToCart} cart
                                 </Text>
+                              </InlineStack>
+                              {p.conversions > 0 && (
+                                <InlineStack gap="050" blockAlign="center">
+                                  <Icon source={CheckCircleIcon} tone="success" />
+                                  <Text variant="bodyXs" tone="success">
+                                    {p.conversions} conv
+                                  </Text>
+                                </InlineStack>
                               )}
                               {p.addToCartRate !== "0.00" && (
                                 <Text variant="bodyXs" tone="subdued">
@@ -374,7 +358,7 @@ export default function Analytics() {
                               )}
                               {p.revenue > 0 && (
                                 <Text variant="bodyXs" tone="subdued">
-                                  💰 ${Number(p.revenue).toFixed(2)}
+                                  ${Number(p.revenue).toFixed(2)}
                                 </Text>
                               )}
                             </InlineStack>

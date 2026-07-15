@@ -1,5 +1,5 @@
 import ReactApexChart from "react-apexcharts";
-import { Card, Text, Box, BlockStack } from "@shopify/polaris";
+import { Card, Text, Box, BlockStack, InlineStack } from "@shopify/polaris";
 
 export default function DeviceChart({ breakdown = { desktop: 0, mobile: 0, tablet: 0 } }) {
   const total = breakdown.desktop + breakdown.mobile + breakdown.tablet;
@@ -64,30 +64,24 @@ export default function DeviceChart({ breakdown = { desktop: 0, mobile: 0, table
               { label: "Mobile", value: breakdown.mobile, color: "#005bd3" },
               { label: "Tablet", value: breakdown.tablet, color: "#9ca3af" },
             ].map(({ label, value, color }) => (
-              <div
-                key={label}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "6px 0",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <div
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      backgroundColor: color,
-                    }}
-                  />
-                  <Text variant="bodySm">{label}</Text>
-                </div>
-                <Text variant="bodySm" fontWeight="semibold">
-                  {total > 0 ? `${Math.round((value / total) * 100)}%` : "—"}
-                </Text>
-              </div>
+              <Box key={label} paddingBlock="150">
+                <InlineStack align="space-between" blockAlign="center">
+                  <InlineStack gap="200" blockAlign="center">
+                    <div
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        backgroundColor: color,
+                      }}
+                    />
+                    <Text variant="bodySm">{label}</Text>
+                  </InlineStack>
+                  <Text variant="bodySm" fontWeight="semibold">
+                    {total > 0 ? `${Math.round((value / total) * 100)}%` : "—"}
+                  </Text>
+                </InlineStack>
+              </Box>
             ))}
           </BlockStack>
         </BlockStack>

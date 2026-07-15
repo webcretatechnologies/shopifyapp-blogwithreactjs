@@ -1054,8 +1054,12 @@ router.get("/analytics/summary", async (req, res) => {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
 
+    const ALLOWED_DAYS = [7, 30, 90];
+    const requestedDays = parseInt(req.query.days, 10);
+    const days = ALLOWED_DAYS.includes(requestedDays) ? requestedDays : 30;
+
     // Use the shared analytics service for comprehensive data
-    const analytics = await getShopAnalytics(shop.id, 30);
+    const analytics = await getShopAnalytics(shop.id, days);
     if (!analytics) {
       return res.json({
         stats: { totalPosts: 0, published: 0, drafts: 0, totalViews: 0, totalUniqueVisitors: 0, totalAddToCart: 0, totalCheckouts: 0, totalConversions: 0, totalRevenue: 0, addToCartRate: "0.00", checkoutRate: "0.00", conversionRate: "0.00" },
@@ -1066,6 +1070,8 @@ router.get("/analytics/summary", async (req, res) => {
         topSources: [],
         topCountries: [],
         funnel: [],
+        trends: {},
+        days,
       });
     }
 

@@ -42,7 +42,8 @@ export default function SetupGuide({ shop, isExtensionActive, hasPosts }) {
   const completedSteps = steps.filter(s => s.isCompleted).length;
   const progress = (completedSteps / steps.length) * 100;
 
-  if (isDismissed) return null;
+  // Hide once dismissed or fully completed — a finished guide is just clutter.
+  if (isDismissed || completedSteps === steps.length) return null;
 
   return (
     <BlockStack gap="400">
@@ -79,20 +80,22 @@ export default function SetupGuide({ shop, isExtensionActive, hasPosts }) {
                          {isPast ? (
                            <Icon source={CheckCircleIcon} tone="success" />
                          ) : (
-                           <div style={{
-                             width: '24px',
-                             height: '24px',
-                             borderRadius: '50%',
-                             background: isActive ? 'var(--p-color-text)' : 'var(--p-color-bg-surface-secondary)',
-                             color: isActive ? 'var(--p-color-bg-surface)' : 'var(--p-color-text-subdued)',
-                             display: 'flex',
-                             alignItems: 'center',
-                             justifyContent: 'center',
-                             fontSize: '12px',
-                             fontWeight: 'bold'
-                           }}>
-                             {step.id}
-                           </div>
+                           <Box
+                             background={isActive ? 'bg-inverse' : 'bg-surface-secondary'}
+                             borderRadius="full"
+                             minWidth="24px"
+                             minHeight="24px"
+                           >
+                             <InlineStack align="center" blockAlign="center">
+                               <Text
+                                 variant="bodySm"
+                                 fontWeight="bold"
+                                 tone={isActive ? 'text-inverse' : 'subdued'}
+                               >
+                                 {step.id}
+                               </Text>
+                             </InlineStack>
+                           </Box>
                          )}
                        </Box>
                        

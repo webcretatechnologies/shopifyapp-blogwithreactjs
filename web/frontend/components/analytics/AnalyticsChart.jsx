@@ -15,10 +15,15 @@ export default function AnalyticsChart({
   color = "#008060",
   series: seriesProp,
   chartType = "area",
+  period: controlledPeriod,
+  showPeriodSelector = true,
 }) {
   // Use series if provided; otherwise build from color prop for backward compat
   const series = seriesProp || [{ key: "views", label: "Views", color }];
-  const [period, setPeriod] = useState("30");
+  const [internalPeriod, setInternalPeriod] = useState("30");
+  // When the parent owns the date range (controlled), the internal selector is
+  // typically hidden and the data is already scoped server-side.
+  const period = controlledPeriod ?? internalPeriod;
 
   const filtered = data.slice(-parseInt(period));
 
@@ -101,17 +106,19 @@ export default function AnalyticsChart({
               ))}
             </Text>
           </BlockStack>
-          <Select
-            label=""
-            labelHidden
-            options={[
-              { label: "Last 7 days", value: "7" },
-              { label: "Last 30 days", value: "30" },
-              { label: "Last 90 days", value: "90" },
-            ]}
-            value={period}
-            onChange={setPeriod}
-          />
+          {showPeriodSelector && (
+            <Select
+              label="Date range"
+              labelHidden
+              options={[
+                { label: "Last 7 days", value: "7" },
+                { label: "Last 30 days", value: "30" },
+                { label: "Last 90 days", value: "90" },
+              ]}
+              value={period}
+              onChange={setInternalPeriod}
+            />
+          )}
         </InlineStack>
         <div style={{ marginTop: "16px" }}>
           <ReactApexChart
