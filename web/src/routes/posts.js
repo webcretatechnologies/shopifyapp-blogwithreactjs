@@ -6,6 +6,7 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
+import { spawn } from "child_process";
 import { PrismaClient } from "@prisma/client";
 import JsonLdService from "../services/JsonLdService.js";
 import shopify from "../../shopify.js";
@@ -756,6 +757,33 @@ router.get("/shopify/products", async (req, res) => {
 
     res.json({ products });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/posts/shopify/locales — Fetch store active locales ────────────
+router.get("/shopify/locales", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+
+    const client = new shopify.api.clients.Graphql({ session });
+
+    const result = await client.request(`
+      query GetShopLocales {
+        shopLocales {
+          locale
+          name
+          primary
+          published
+        }
+      }
+    `);
+
+    const locales = (result.data?.shopLocales || []).filter(l => l.published);
+    res.json({ locales });
+  } catch (err) {
+    console.error("GET /api/posts/shopify/locales error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1607,6 +1635,107 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+async function syncTranslationToShopify(postId, translation, session) {
+  try {
+    const shopifyArticle = await prisma.shopifyArticle.findUnique({
+      where: { postId: postId },
+    });
+    
+    if (!shopifyArticle || !shopifyArticle.shopifyArticleId) {
+      // The article has not been synced to Shopify yet, so we cannot translate it.
+      return;
+    }
+
+    const articleGid = `gid://shopify/Article/${shopifyArticle.shopifyArticleId}`;
+    const graphqlClient = new shopify.api.clients.Graphql({ session });
+
+    // Step 1: Fetch translatable resources to get the digests
+    const queryRes = await graphqlClient.request(`
+      query GetTranslatableResource($resourceId: ID!) {
+        translatableResource(resourceId: $resourceId) {
+          resourceId
+          translatableContent {
+            key
+            value
+            digest
+            locale
+          }
+        }
+      }
+    `, { variables: { resourceId: articleGid } });
+
+    const translatableContent = queryRes.data?.translatableResource?.translatableContent || [];
+    const getDigest = (key) => translatableContent.find(c => c.key === key)?.digest;
+    
+    console.log(`[TranslationSync] Translatable content keys for ${articleGid}:`, translatableContent.map(c => c.key));
+
+    const translationsInput = [];
+    
+    const pushField = (key, val) => {
+      const digest = getDigest(key);
+      if (digest && val) {
+        translationsInput.push({
+          key,
+          value: val,
+          locale: translation.locale,
+          translatableContentDigest: digest,
+        });
+      }
+    };
+
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      include: {
+        shop: true,
+        products: { include: { product: true }, orderBy: { position: "asc" } },
+      },
+    });
+
+    let translatedStorefrontHtml = translation.contentHtml || "";
+    if (post) {
+      translatedStorefrontHtml = await ArticleSyncService.buildStorefrontHtmlForPost(
+        post, 
+        translation.contentHtml || "", 
+        session, 
+        graphqlClient
+      );
+    }
+
+    pushField("title", translation.title);
+    pushField("body_html", translatedStorefrontHtml);
+    pushField("summary_html", translation.excerpt);
+    pushField("meta_title", translation.metaTitle);
+    pushField("meta_description", translation.metaDescription);
+    // Note: 'handle' translations are not managed by our UI currently.
+
+    if (translationsInput.length === 0) {
+      console.log("[TranslationSync] No translations to sync (empty input)");
+      return;
+    }
+    
+    console.log(`[TranslationSync] Sending ${translationsInput.length} fields to Shopify:`, translationsInput.map(t => t.key));
+
+    // Step 2: Register translations
+    const mutationRes = await graphqlClient.request(`
+      mutation registerTranslations($resourceId: ID!, $translations: [TranslationInput!]!) {
+        translationsRegister(resourceId: $resourceId, translations: $translations) {
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `, { variables: { resourceId: articleGid, translations: translationsInput } });
+
+    const errors = mutationRes.data?.translationsRegister?.userErrors;
+    if (errors && errors.length > 0) {
+      console.error("[TranslationSync] translationsRegister errors:", errors);
+    }
+  } catch (err) {
+    console.error("[TranslationSync] Error syncing translation to Shopify:", err.message);
+  }
+}
+
 // ─── Translations API Routes ───────────────────────────────────────────────
 router.get("/:id/translations", async (req, res) => {
   try {
@@ -1638,8 +1767,101 @@ router.post("/:id/translations", async (req, res) => {
       update: { title, excerpt, contentHtml, metaTitle, metaDescription },
     });
 
+    const session = res.locals.shopify?.session;
+    if (session) {
+      await syncTranslationToShopify(postId, translation, session);
+    }
+
     res.json({ success: true, translation });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/:id/translate-auto", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const postId = parseInt(req.params.id);
+    const { locale } = req.body;
+    if (!locale) return res.status(422).json({ error: "Locale is required" });
+
+    const post = await prisma.post.findFirst({
+      where: { id: postId, shopId: shop.id },
+    });
+    if (!post) return res.status(404).json({ error: "Post not found" });
+
+    const sourceData = {
+      title: post.title || "",
+      excerpt: post.excerpt || "",
+      contentHtml: post.contentHtml || "",
+      metaTitle: post.metaTitle || "",
+      metaDescription: post.metaDescription || "",
+    };
+
+    const translateScriptPath = path.join(__dirname, "../../../translate.py");
+
+    const pythonProcess = spawn("python3", [translateScriptPath, locale]);
+
+    let outputData = "";
+    let errorData = "";
+
+    pythonProcess.stdout.on("data", (data) => {
+      outputData += data.toString();
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      errorData += data.toString();
+    });
+
+    pythonProcess.stdin.write(JSON.stringify(sourceData));
+    pythonProcess.stdin.end();
+
+    await new Promise((resolve, reject) => {
+      pythonProcess.on("close", (code) => {
+        if (code !== 0) {
+          reject(new Error(`Python process exited with code ${code}: ${errorData}`));
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    const parsedOutput = JSON.parse(outputData.trim());
+
+    if (parsedOutput.success === false) {
+      throw new Error(parsedOutput.message || "Translation failed inside Python script");
+    }
+
+    const translation = await prisma.postTranslation.upsert({
+      where: { postId_locale: { postId, locale } },
+      create: { 
+        postId, 
+        locale, 
+        title: parsedOutput.title || null, 
+        excerpt: parsedOutput.excerpt || null, 
+        contentHtml: parsedOutput.contentHtml || null, 
+        metaTitle: parsedOutput.metaTitle || null, 
+        metaDescription: parsedOutput.metaDescription || null 
+      },
+      update: { 
+        title: parsedOutput.title || null, 
+        excerpt: parsedOutput.excerpt || null, 
+        contentHtml: parsedOutput.contentHtml || null, 
+        metaTitle: parsedOutput.metaTitle || null, 
+        metaDescription: parsedOutput.metaDescription || null 
+      },
+    });
+
+    const session = res.locals.shopify?.session;
+    if (session) {
+      await syncTranslationToShopify(postId, translation, session);
+    }
+
+    res.json({ success: true, translation });
+  } catch (err) {
+    console.error("POST /:id/translate-auto error:", err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -584,37 +584,11 @@ async function logSyncEvent({
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  PUSH (APP → SHOPIFY)
+//  HTML COMPILATION
 // ══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Push a post from the app to Shopify.
- * After success, writes a baseline snapshot + v2 sync marker metafield.
- */
-async function pushPostToShopify(postId, { publishMode = false } = {}) {
-  const post = await prisma.post.findUnique({
-    where: { id: postId },
-    include: {
-      shopifyArticle: true,
-      tags: { include: { tag: true } },
-      shop: true,
-      products: { include: { product: true }, orderBy: { position: "asc" } },
-    },
-  });
-
-  if (!post) throw new Error(`Post ${postId} not found`);
-  const shopifyLink = post.shopifyArticle;
-  if (!shopifyLink?.shopifyBlogId) throw new Error("Post is not linked to a Shopify blog");
-
-  const session = await shopify.config.sessionStorage.findSessionsByShop(post.shop.domain);
-  const validSession = session?.find(s => s.accessToken);
-  if (!validSession) throw new Error(`No active Shopify session for ${post.shop.domain}`);
-
-  const graphqlClient = new shopify.api.clients.Graphql({ session: validSession });
-
-  // Compile content for storefront
+export async function buildStorefrontHtmlForPost(post, rawHtml, validSession, graphqlClient) {
   let storefrontHtml = await EditorContentCompiler.compileForStorefront(
-    post.contentHtml || "", validSession, graphqlClient, post.shop.domain
+    rawHtml, validSession, graphqlClient, post.shop.domain
   );
 
   let storeCurrency = "USD";
@@ -653,12 +627,6 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   if (renderer.sliderScriptInjected) {
     storefrontHtml += "\n" + BlockRenderer.relatedProductSliderScriptBlock();
   }
-
-  // Tag string
-  const tagNames = post.tags
-    ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ")
-    : "";
-  const published = publishMode ? true : post.status === "published";
 
   // ── Inject tracking pixel ──────────────────────────────────────────────
   const trackingKey = await ensureTrackingKey(post.id);
@@ -712,6 +680,47 @@ ${analyticsBlockEnd}`;
       storefrontHtml += "\n" + analyticsBlock;
     }
   }
+
+  return storefrontHtml;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  PUSH (APP → SHOPIFY)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Push a post from the app to Shopify.
+ * After success, writes a baseline snapshot + v2 sync marker metafield.
+ */
+async function pushPostToShopify(postId, { publishMode = false } = {}) {
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+    include: {
+      shopifyArticle: true,
+      tags: { include: { tag: true } },
+      shop: true,
+      products: { include: { product: true }, orderBy: { position: "asc" } },
+    },
+  });
+
+  if (!post) throw new Error(`Post ${postId} not found`);
+  const shopifyLink = post.shopifyArticle;
+  if (!shopifyLink?.shopifyBlogId) throw new Error("Post is not linked to a Shopify blog");
+
+  const session = await shopify.config.sessionStorage.findSessionsByShop(post.shop.domain);
+  const validSession = session?.find(s => s.accessToken);
+  if (!validSession) throw new Error(`No active Shopify session for ${post.shop.domain}`);
+
+  const graphqlClient = new shopify.api.clients.Graphql({ session: validSession });
+
+  // Compile content for storefront
+  let storefrontHtml = await buildStorefrontHtmlForPost(post, post.contentHtml || "", validSession, graphqlClient);
+
+  // Tag string
+  const tagNames = post.tags
+    ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ")
+    : "";
+  const published = publishMode ? true : post.status === "published";
 
   // Compute outbound hash for echo suppression
   const outboundHash = computeContentHash({
@@ -1472,6 +1481,7 @@ function startReconciliationScheduler(intervalMinutes = RECONCILE_INTERVAL_MINUT
 // ══════════════════════════════════════════════════════════════════════════════
 
 export const ArticleSyncService = {
+  buildStorefrontHtmlForPost,
   pushPostToShopify,
   syncAfterLocalEdit,
   handleArticleWebhook,

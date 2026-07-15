@@ -4,6 +4,7 @@ import {
   Card,
   BlockStack,
   InlineStack,
+  InlineGrid,
   Text,
   Button,
   Select,
@@ -13,24 +14,46 @@ import {
   Frame,
   Spinner,
   Box,
-  Badge,
   Banner,
+  ContextualSaveBar,
 } from "@shopify/polaris";
-import { SaveIcon, ArrowLeftIcon, LanguageIcon } from "@shopify/polaris-icons";
-import { useState, useEffect, useCallback } from "react";
+import { ArrowLeftIcon, LanguageIcon, AlertCircleIcon } from "@shopify/polaris-icons";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
-const LOCALES = [
-  { label: "Arabic (ar)", value: "ar" },
-  { label: "French (fr)", value: "fr" },
-  { label: "German (de)", value: "de" },
-  { label: "Spanish (es)", value: "es" },
-  { label: "Japanese (ja)", value: "ja" },
-  { label: "Chinese (zh)", value: "zh" },
-  { label: "Portuguese (pt)", value: "pt" },
-  { label: "Dutch (nl)", value: "nl" },
-  { label: "Italian (it)", value: "it" },
-];
+// Helper component for side-by-side field translation
+function TranslationRow({ title, originalContent, isHtml, children }) {
+  return (
+    <BlockStack gap="300">
+      <Text variant="headingSm" as="h3">{title}</Text>
+      <InlineGrid columns={['oneHalf', 'oneHalf']} gap="400" alignItems="start">
+        {/* Original Content Box */}
+        <Box 
+          padding="300" 
+          background="bg-surface-secondary" 
+          borderRadius="200"
+          borderWidth="025"
+          borderColor="border-subdued"
+        >
+          {isHtml ? (
+            <div 
+              style={{ maxHeight: '400px', overflowY: 'auto', fontSize: '14px', lineHeight: '1.5' }}
+              dangerouslySetInnerHTML={{ __html: originalContent || "<p><em>No content provided.</em></p>" }} 
+            />
+          ) : (
+            <Text as="p" tone={originalContent ? "base" : "subdued"} breakWord>
+              {originalContent || "No content provided."}
+            </Text>
+          )}
+        </Box>
+        {/* Translated Content Box */}
+        <Box>
+          {children}
+        </Box>
+      </InlineGrid>
+    </BlockStack>
+  );
+}
 
 export default function PostTranslationPage() {
   const { id } = useParams();
@@ -39,16 +62,23 @@ export default function PostTranslationPage() {
   const [post, setPost] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
   const [translations, setTranslations] = useState([]);
-  const [selectedLocale, setSelectedLocale] = useState("ar");
+  const [storeLocales, setStoreLocales] = useState([]);
+  
+  // Selected locale for translation
+  const [selectedLocale, setSelectedLocale] = useState("");
   const [toast, setToast] = useState(null);
 
-  // Translation Form Fields
+  // Form Fields
   const [translatedTitle, setTranslatedTitle] = useState("");
   const [translatedExcerpt, setTranslatedExcerpt] = useState("");
   const [translatedContent, setTranslatedContent] = useState("");
   const [translatedMetaTitle, setTranslatedMetaTitle] = useState("");
   const [translatedMetaDesc, setTranslatedMetaDesc] = useState("");
+
+  // Track if changes have been made (dirty state)
+  const [isDirty, setIsDirty] = useState(false);
 
   const loadTranslations = useCallback(async () => {
     try {
@@ -57,6 +87,21 @@ export default function PostTranslationPage() {
       setTranslations(data.translations || []);
     } catch {}
   }, [id]);
+
+  const loadLocales = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/posts/shopify/locales`);
+      const data = await res.json();
+      const mappedLocales = (data.locales || []).map(l => ({
+        label: `${l.name} (${l.locale})`,
+        value: l.locale,
+      }));
+      setStoreLocales(mappedLocales);
+      if (mappedLocales.length > 0) {
+        setSelectedLocale(mappedLocales[0].value);
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     async function loadPost() {
@@ -71,9 +116,10 @@ export default function PostTranslationPage() {
     }
     loadPost();
     loadTranslations();
-  }, [id, loadTranslations]);
+    loadLocales();
+  }, [id, loadTranslations, loadLocales]);
 
-  // Sync translation form fields when active locale changes
+  // Load existing translation into form when locale changes
   useEffect(() => {
     const found = translations.find((t) => t.locale === selectedLocale);
     if (found) {
@@ -89,7 +135,14 @@ export default function PostTranslationPage() {
       setTranslatedMetaTitle("");
       setTranslatedMetaDesc("");
     }
+    setIsDirty(false); // Reset dirty state on language change
   }, [selectedLocale, translations]);
+
+  // Handlers for input changes (marks form as dirty)
+  const handleFieldChange = (setter) => (value) => {
+    setter(value);
+    setIsDirty(true);
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -108,6 +161,7 @@ export default function PostTranslationPage() {
       });
       if (!res.ok) throw new Error("Save translation failed");
       setToast({ content: "✅ Translation saved successfully" });
+      setIsDirty(false);
       await loadTranslations();
     } catch {
       setToast({ content: "❌ Failed to save translation", error: true });
@@ -116,28 +170,39 @@ export default function PostTranslationPage() {
     }
   };
 
-  const handleAutoTranslate = () => {
-    if (!post) return;
-    setToast({ content: "🪄 Simulating Auto-Translate..." });
-    // Simulate auto-translate using a mock service delay
-    setTimeout(() => {
-      setTranslatedTitle(
-        `[Translated ${selectedLocale.toUpperCase()}] ${post.title}`,
-      );
-      setTranslatedExcerpt(
-        `[Translated ${selectedLocale.toUpperCase()}] ${post.excerpt || ""}`,
-      );
-      setTranslatedContent(
-        `[Translated ${selectedLocale.toUpperCase()}]\n${post.contentHtml || ""}`,
-      );
-      setTranslatedMetaTitle(
-        `[Translated ${selectedLocale.toUpperCase()}] ${post.metaTitle || ""}`,
-      );
-      setTranslatedMetaDesc(
-        `[Translated ${selectedLocale.toUpperCase()}] ${post.metaDescription || ""}`,
-      );
-      setToast({ content: "✨ Auto-translation generated!" });
-    }, 800);
+  const handleAutoTranslate = async () => {
+    if (!post || !selectedLocale) return;
+    setToast({ content: "🪄 Translating content..." });
+    setIsTranslating(true);
+    
+    try {
+      const res = await fetch(`/api/posts/${id}/translate-auto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locale: selectedLocale }),
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Auto-translate failed");
+      
+      setToast({ content: "✨ Translation generated and saved successfully!" });
+      
+      // Update UI fields
+      if (data.translation) {
+        setTranslatedTitle(data.translation.title || "");
+        setTranslatedExcerpt(data.translation.excerpt || "");
+        setTranslatedContent(data.translation.contentHtml || "");
+        setTranslatedMetaTitle(data.translation.metaTitle || "");
+        setTranslatedMetaDesc(data.translation.metaDescription || "");
+        setIsDirty(false); // It's saved immediately by the backend
+      }
+      
+      await loadTranslations();
+    } catch (err) {
+      setToast({ content: `❌ ${err.message}`, error: true });
+    } finally {
+      setIsTranslating(false);
+    }
   };
 
   if (isLoading) {
@@ -173,147 +238,161 @@ export default function PostTranslationPage() {
           onDismiss={() => setToast(null)}
         />
       )}
+      
+      {/* Contextual Save Bar for unsaved changes */}
+      {isDirty && (
+        <ContextualSaveBar
+          message="Unsaved translation changes"
+          saveAction={{
+            onAction: handleSave,
+            loading: isSaving,
+          }}
+          discardAction={{
+            onAction: () => {
+              // Re-trigger the useEffect to reload original fields
+              const found = translations.find((t) => t.locale === selectedLocale);
+              setTranslatedTitle(found?.title || "");
+              setTranslatedExcerpt(found?.excerpt || "");
+              setTranslatedContent(found?.contentHtml || "");
+              setTranslatedMetaTitle(found?.metaTitle || "");
+              setTranslatedMetaDesc(found?.metaDescription || "");
+              setIsDirty(false);
+            },
+          }}
+        />
+      )}
+
       <Page
         backAction={{
           content: "Back to Edit",
           onAction: () => navigate(`/posts/${id}/edit`),
           icon: ArrowLeftIcon,
         }}
-        title={`Translate: ${post.title}`}
-        subtitle="Manage multi-language translations of this article for storefront localization"
-        primaryAction={{
-          content: "Save Translation",
-          icon: SaveIcon,
-          loading: isSaving,
-          onAction: handleSave,
-        }}
+        title="Translate Post"
+        subtitle={`Translating: ${post.title}`}
       >
         <Layout>
-          {/* Left panel: Original post Reference */}
-          <Layout.Section variant="oneHalf">
-            <BlockStack gap="400">
-              <Card>
-                <Box padding="400">
-                  <BlockStack gap="300">
-                    <Text variant="headingMd">
-                      📝 Original Content (English)
-                    </Text>
-                    <Divider />
-                    <BlockStack gap="100">
-                      <Text variant="bodySm" fontWeight="bold">
-                        Title
-                      </Text>
-                      <Text variant="bodyMd">{post.title}</Text>
-                    </BlockStack>
-                    <BlockStack gap="100">
-                      <Text variant="bodySm" fontWeight="bold">
-                        Excerpt
-                      </Text>
-                      <Text variant="bodyMd" tone="subdued">
-                        {post.excerpt || "No excerpt added."}
-                      </Text>
-                    </BlockStack>
-                    <BlockStack gap="100">
-                      <Text variant="bodySm" fontWeight="bold">
-                        Content HTML Preview
-                      </Text>
-                      <div
-                        style={{
-                          maxHeight: "300px",
-                          overflowY: "auto",
-                          padding: "12px",
-                          border: "1px solid #e1e3e5",
-                          borderRadius: "6px",
-                          fontSize: "14px",
-                          lineHeight: "1.6",
-                          background: "#f9fafb",
-                        }}
-                        dangerouslySetInnerHTML={{
-                          __html: post.contentHtml || "",
-                        }}
-                      />
-                    </BlockStack>
-                  </BlockStack>
-                </Box>
-              </Card>
-            </BlockStack>
-          </Layout.Section>
-
-          {/* Right panel: Target Translation Form */}
-          <Layout.Section variant="oneHalf">
-            <BlockStack gap="400">
-              <Card>
-                <Box padding="400">
-                  <BlockStack gap="400">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text variant="headingMd">🌍 Localized Content</Text>
-                      <Button
-                        size="slim"
-                        icon={LanguageIcon}
-                        onClick={handleAutoTranslate}
-                      >
-                        Auto-Translate
-                      </Button>
-                    </InlineStack>
-                    <Divider />
+          {/* Header Context Bar */}
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <Box width="300px">
                     <Select
                       label="Target Language"
-                      options={LOCALES}
+                      labelHidden
+                      options={storeLocales}
                       value={selectedLocale}
-                      onChange={setSelectedLocale}
+                      onChange={(newLocale) => {
+                        if (isDirty) {
+                          // Note: In a production app, we'd show a modal here to warn about unsaved changes.
+                          // For simplicity, we just discard and switch.
+                        }
+                        setSelectedLocale(newLocale);
+                      }}
+                      disabled={storeLocales.length === 0}
                     />
-                    <TextField
-                      label="Translated Title"
-                      value={translatedTitle}
-                      onChange={setTranslatedTitle}
-                      autoComplete="off"
-                    />
-                    <TextField
-                      label="Translated Excerpt"
-                      value={translatedExcerpt}
-                      onChange={setTranslatedExcerpt}
-                      multiline={3}
-                      autoComplete="off"
-                    />
-                    <TextField
-                      label="Translated Content HTML"
-                      value={translatedContent}
-                      onChange={setTranslatedContent}
-                      multiline={8}
-                      autoComplete="off"
-                      monospaced
-                    />
-                  </BlockStack>
-                </Box>
-              </Card>
+                  </Box>
+                  <Button
+                    icon={LanguageIcon}
+                    onClick={handleAutoTranslate}
+                    loading={isTranslating}
+                    disabled={storeLocales.length === 0}
+                  >
+                    Auto-Translate this Language
+                  </Button>
+                </InlineStack>
+                {storeLocales.length === 0 && (
+                  <Banner tone="warning" icon={AlertCircleIcon}>
+                    No active secondary languages found in your store. Add and publish languages in your Shopify Settings.
+                  </Banner>
+                )}
+              </BlockStack>
+            </Card>
+          </Layout.Section>
 
-              {/* Translation SEO Meta Card */}
-              <Card>
-                <Box padding="400">
-                  <BlockStack gap="400">
-                    <Text variant="headingMd">🔍 Localized SEO Settings</Text>
-                    <Divider />
-                    <TextField
-                      label="Meta Title"
-                      value={translatedMetaTitle}
-                      onChange={setTranslatedMetaTitle}
-                      maxLength={70}
-                      showCharacterCount
-                      autoComplete="off"
-                    />
-                    <TextField
-                      label="Meta Description"
-                      value={translatedMetaDesc}
-                      onChange={setTranslatedMetaDesc}
-                      maxLength={160}
-                      showCharacterCount
-                      multiline={3}
-                      autoComplete="off"
-                    />
-                  </BlockStack>
-                </Box>
-              </Card>
-            </BlockStack>
+          {/* Core Fields */}
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="400">
+                <Text variant="headingMd" as="h2">Content</Text>
+                
+                <TranslationRow title="Title" originalContent={post.title} isHtml={false}>
+                  <TextField
+                    label="Translated Title"
+                    labelHidden
+                    value={translatedTitle}
+                    onChange={handleFieldChange(setTranslatedTitle)}
+                    autoComplete="off"
+                  />
+                </TranslationRow>
+
+                <Divider />
+
+                <TranslationRow title="Excerpt" originalContent={post.excerpt} isHtml={false}>
+                  <TextField
+                    label="Translated Excerpt"
+                    labelHidden
+                    value={translatedExcerpt}
+                    onChange={handleFieldChange(setTranslatedExcerpt)}
+                    multiline={3}
+                    autoComplete="off"
+                  />
+                </TranslationRow>
+
+                <Divider />
+
+                <TranslationRow title="Content (HTML)" originalContent={post.contentHtml} isHtml={true}>
+                  <TextField
+                    label="Translated Content HTML"
+                    labelHidden
+                    value={translatedContent}
+                    onChange={handleFieldChange(setTranslatedContent)}
+                    multiline={12}
+                    autoComplete="off"
+                    monospaced
+                  />
+                </TranslationRow>
+
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+
+          {/* SEO Fields */}
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="400">
+                <Text variant="headingMd" as="h2">Search Engine Optimization</Text>
+                
+                <TranslationRow title="Meta Title" originalContent={post.metaTitle || post.title} isHtml={false}>
+                  <TextField
+                    label="Translated Meta Title"
+                    labelHidden
+                    value={translatedMetaTitle}
+                    onChange={handleFieldChange(setTranslatedMetaTitle)}
+                    maxLength={70}
+                    showCharacterCount
+                    autoComplete="off"
+                  />
+                </TranslationRow>
+
+                <Divider />
+
+                <TranslationRow title="Meta Description" originalContent={post.metaDescription || post.excerpt} isHtml={false}>
+                  <TextField
+                    label="Translated Meta Description"
+                    labelHidden
+                    value={translatedMetaDesc}
+                    onChange={handleFieldChange(setTranslatedMetaDesc)}
+                    maxLength={160}
+                    showCharacterCount
+                    multiline={3}
+                    autoComplete="off"
+                  />
+                </TranslationRow>
+
+              </BlockStack>
+            </Card>
           </Layout.Section>
         </Layout>
       </Page>

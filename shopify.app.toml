@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "946c7f95fc6780b88559e90d45ad7f96"
-name = "Blogger React"
+name = "Blogger React - Local"
 application_url = "https://example.com"
 embedded = true
 
@@ -11,7 +11,7 @@ redirect_urls = [
 ]
 
 [access_scopes]
-scopes = "read_content,write_content,read_products,write_products,read_customers,read_orders,read_themes,write_themes,read_script_tags,write_script_tags,write_files"
+scopes = "read_content,write_content,read_products,write_products,read_customers,read_orders,read_themes,write_themes,read_script_tags,write_script_tags,write_files,read_locales,read_translations,write_translations"
 
 [webhooks]
 api_version = "2025-10"
