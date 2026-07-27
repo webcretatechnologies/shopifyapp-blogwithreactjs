@@ -41,7 +41,23 @@ import Dropcursor from "@tiptap/extension-dropcursor";
 import Gapcursor from "@tiptap/extension-gapcursor";
 import ShopifyFilePicker from "../ShopifyFilePicker";
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Modal, TextField, FormLayout } from "@shopify/polaris";
+import { Icon, Modal, TextField, FormLayout } from "@shopify/polaris";
+import {
+  TextBoldIcon, TextItalicIcon, TextUnderlineIcon,
+  TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon,
+  ListBulletedIcon, ListNumberedIcon, TextQuoteIcon, MinusIcon,
+  LinkIcon, ImageAddIcon, PlayIcon, PlayCircleIcon,
+  DataTableIcon, CodeIcon, CodeAddIcon,
+  UndoIcon, RedoIcon, TextColorIcon, TextBlockIcon,
+  CartIcon, ProductListIcon, CollectionIcon, ButtonIcon, ButtonPressIcon,
+  LayoutSectionIcon, LayoutColumns2Icon, ImageWithTextOverlayIcon,
+  PinIcon, StarIcon, RefreshIcon,
+} from "@shopify/polaris-icons";
+import {
+  Strikethrough, Highlighter, Code2, SlidersHorizontal,
+  Film, ArrowUpDown, Lightbulb, SeparatorHorizontal, Tag,
+  Heading1, Heading2, Heading3,
+} from "lucide-react";
 import "./TiptapEditor.css";
 
 const Btn = ({ onClick, active, disabled = false, title, children, style = {} }) => (
@@ -256,52 +272,45 @@ export default function TiptapEditor({
             active={editor.isActive("bold")}
             title="Bold"
           >
-            <b>B</b>
+            <Icon source={TextBoldIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().toggleItalic().run()}
             active={editor.isActive("italic")}
             title="Italic"
           >
-            <i>I</i>
+            <Icon source={TextItalicIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().toggleUnderline().run()}
             active={editor.isActive("underline")}
             title="Underline"
           >
-            <u>U</u>
+            <Icon source={TextUnderlineIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().toggleStrike().run()}
             active={editor.isActive("strike")}
             title="Strikethrough"
           >
-            <s>S</s>
+            <Strikethrough size={14} />
           </Btn>
         </div>
         <Sep />
 
         {/* ── Headings ── */}
         <div className="tiptap-toolbar__group">
-          {[1, 2, 3].map((l) => (
-            <Btn
-              key={l}
-              onClick={() =>
-                editor.chain().focus().toggleHeading({ level: l }).run()
-              }
-              active={editor.isActive("heading", { level: l })}
-              title={`H${l}`}
-            >
-              H{l}
-            </Btn>
-          ))}
-          <Btn
-            onClick={() => editor.chain().focus().setParagraph().run()}
-            active={editor.isActive("paragraph")}
-            title="Paragraph"
-          >
-            ¶
+          <Btn onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive("heading", { level: 1 })} title="Heading 1">
+            <Heading1 size={14} />
+          </Btn>
+          <Btn onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive("heading", { level: 2 })} title="Heading 2">
+            <Heading2 size={14} />
+          </Btn>
+          <Btn onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive("heading", { level: 3 })} title="Heading 3">
+            <Heading3 size={14} />
+          </Btn>
+          <Btn onClick={() => editor.chain().focus().setParagraph().run()} active={editor.isActive("paragraph")} title="Paragraph">
+            <Icon source={TextBlockIcon} />
           </Btn>
         </div>
         <Sep />
@@ -313,21 +322,21 @@ export default function TiptapEditor({
             active={editor.isActive({ textAlign: "left" })}
             title="Align Left"
           >
-            ≡L
+            <Icon source={TextAlignLeftIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().setTextAlign("center").run()}
             active={editor.isActive({ textAlign: "center" })}
             title="Center"
           >
-            ≡C
+            <Icon source={TextAlignCenterIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().setTextAlign("right").run()}
             active={editor.isActive({ textAlign: "right" })}
             title="Align Right"
           >
-            ≡R
+            <Icon source={TextAlignRightIcon} />
           </Btn>
         </div>
         <Sep />
@@ -339,28 +348,28 @@ export default function TiptapEditor({
             active={editor.isActive("bulletList")}
             title="Bullet List"
           >
-            • —
+            <Icon source={ListBulletedIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
             active={editor.isActive("orderedList")}
             title="Numbered List"
           >
-            1.
+            <Icon source={ListNumberedIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().toggleBlockquote().run()}
             active={editor.isActive("blockquote")}
             title="Blockquote"
           >
-            "
+            <Icon source={TextQuoteIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().setHorizontalRule().run()}
             active={false}
             title="Horizontal Rule"
           >
-            ─
+            <Icon source={MinusIcon} />
           </Btn>
         </div>
         <Sep />
@@ -372,7 +381,7 @@ export default function TiptapEditor({
             style={{ cursor: "pointer", display: "flex", alignItems: "center" }}
             className="tiptap-btn"
           >
-            <span>A</span>
+            <Icon source={TextColorIcon} />
             <input
               type="color"
               style={{ width: 0, height: 0, opacity: 0, position: "absolute" }}
@@ -386,7 +395,7 @@ export default function TiptapEditor({
             style={{ cursor: "pointer", display: "flex", alignItems: "center" }}
             className={`tiptap-btn${editor.isActive("highlight") ? " tiptap-btn--active" : ""}`}
           >
-            <span style={{ background: "#ffd700", padding: "0 2px" }}>H</span>
+            <Highlighter size={14} />
             <input
               type="color"
               defaultValue="#ffd700"
@@ -410,14 +419,14 @@ export default function TiptapEditor({
             active={editor.isActive("code")}
             title="Inline Code"
           >
-            {`"`}
+            <Icon source={CodeIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
             active={editor.isActive("codeBlock")}
             title="Code Block"
           >
-            {"{ }"}
+            <Code2 size={14} />
           </Btn>
         </div>
         <Sep />
@@ -429,17 +438,17 @@ export default function TiptapEditor({
             active={editor.isActive("link")}
             title="Insert Link"
           >
-            🔗
+            <Icon source={LinkIcon} />
           </Btn>
           <Btn onClick={() => setShowShopifyPicker(true)} active={false} title="Upload / Select Image">
-            🖼
+            <Icon source={ImageAddIcon} />
           </Btn>
           <Btn
             onClick={() => setShowYoutubeModal(true)}
             active={editor.isActive("youtube")}
             title="Embed YouTube/Video"
           >
-            ▶️
+            <Icon source={PlayIcon} />
           </Btn>
         </div>
         <Sep />
@@ -451,28 +460,28 @@ export default function TiptapEditor({
             active={editor.isActive("buyButton")}
             title="Insert Buy Button"
           >
-            🛒
+            <Icon source={CartIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'productGrid' }).run()}
             active={editor.isActive("productGrid")}
             title="Insert Product Grid"
           >
-            🛍️
+            <Icon source={ProductListIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'collection' }).run()}
             active={editor.isActive("collection")}
             title="Insert Collection"
           >
-            📦
+            <Icon source={CollectionIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'product_slider' }).run()}
             active={editor.isActive("product_slider")}
             title="Insert Product Slider"
           >
-            ↔
+            <SlidersHorizontal size={14} />
           </Btn>
         </div>
         <Sep />
@@ -484,56 +493,56 @@ export default function TiptapEditor({
             active={editor.isActive("ctaButton")}
             title="Insert CTA Button"
           >
-            🔘
+            <Icon source={ButtonIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'heroBlock' }).run()}
             active={editor.isActive("heroBlock")}
             title="Insert Hero Section"
           >
-            🦸
+            <Icon source={LayoutSectionIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'videoBlock' }).run()}
             active={editor.isActive("videoBlock")}
             title="Insert Video Embed"
           >
-            🎬
+            <Film size={14} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'spacerBlock' }).run()}
             active={editor.isActive("spacerBlock")}
             title="Insert Spacer"
           >
-            ↕
+            <ArrowUpDown size={14} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'dividerBlock' }).run()}
             active={editor.isActive("dividerBlock")}
             title="Insert Stylized Divider"
           >
-            ➖
+            <SeparatorHorizontal size={14} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'imageBlock' }).run()}
             active={editor.isActive("imageBlock")}
             title="Insert Image Block with Caption/Border/Link"
           >
-            🖼️
+            <Icon source={ImageWithTextOverlayIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'calloutBlock' }).run()}
             active={editor.isActive("calloutBlock")}
             title="Insert Callout (Info/Warning/Tip)"
           >
-            💡
+            <Lightbulb size={14} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'buttonBlock' }).run()}
             active={editor.isActive("buttonBlock")}
             title="Insert Custom Button"
           >
-            ⏺
+            <Icon source={ButtonPressIcon} />
           </Btn>
           <Btn
             onClick={() =>
@@ -549,28 +558,28 @@ export default function TiptapEditor({
             active={editor.isActive("columnLayout")}
             title="Insert Grid Layout"
           >
-            ⊞
+            <Icon source={LayoutColumns2Icon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'videoEmbedBlock' }).run()}
             active={editor.isActive("videoEmbedBlock")}
             title="Insert Video Embed Block (YouTube/Vimeo/Loom)"
           >
-            📹
+            <Icon source={PlayCircleIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'htmlBlock' }).run()}
             active={editor.isActive("htmlBlock")}
             title="Insert HTML/Liquid Block"
           >
-            ⌗
+            <Icon source={CodeAddIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'productCard' }).run()}
             active={editor.isActive("productCard")}
             title="Insert Product Card"
           >
-            🛍
+            <Icon source={ProductListIcon} />
           </Btn>
         </div>
         <Sep />
@@ -582,28 +591,28 @@ export default function TiptapEditor({
             active={editor.isActive("product")}
             title="Insert Product Card (Legacy)"
           >
-            🏷
+            <Tag size={14} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'product_sidebar' }).run()}
             active={editor.isActive("product_sidebar")}
             title="Insert Sticky Product (Legacy)"
           >
-            📌
+            <Icon source={PinIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'featured_product' }).run()}
             active={editor.isActive("featured_product")}
             title="Insert Featured Product (Legacy)"
           >
-            ⭐
+            <Icon source={StarIcon} />
           </Btn>
           <Btn
             onClick={() => editor.chain().focus().insertContent({ type: 'product_switcher' }).run()}
             active={editor.isActive("product_switcher")}
             title="Insert Product Switcher (Legacy)"
           >
-            🔄
+            <Icon source={RefreshIcon} />
           </Btn>
         </div>
         <Sep />
@@ -618,7 +627,7 @@ export default function TiptapEditor({
             active={isInTable || showTablePicker}
             title="Insert Table"
           >
-            ⊞
+            <Icon source={DataTableIcon} />
           </Btn>
           {showTablePicker && (
             <div className="tiptap-table-grid-picker" onMouseLeave={() => { setTablePickerHover({ row: 0, col: 0 }); setShowTablePicker(false); }}>
@@ -773,14 +782,14 @@ export default function TiptapEditor({
                 disabled={!canUndo}
                 title="Undo"
               >
-                ↩
+                <Icon source={UndoIcon} />
               </Btn>
               <Btn
                 onClick={() => editor.chain().focus().redo().run()}
                 disabled={!canRedo}
                 title="Redo"
               >
-                ↪
+                <Icon source={RedoIcon} />
               </Btn>
         </div>
         <Sep />
@@ -790,7 +799,7 @@ export default function TiptapEditor({
             active={showHtml}
             title="Edit HTML"
           >
-            {"</>"}
+            <Icon source={CodeIcon} />
           </Btn>
         </div>
       </div>

@@ -395,3 +395,59 @@
 .tiptap-column {
   min-width: 150px !important; /* Lower min-width to prevent overflow in editor */
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   BUILDER VARIANT OVERRIDES
+   Used by RichTextEditor.jsx (the Builder's embedded Tiptap instance).
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* No fixed border — the Builder's CanvasNode provides selection outline */
+.tiptap-editor-container--builder {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.tiptap-editor-container--builder:focus-within {
+  border: none;
+  box-shadow: none;
+}
+
+/* Builder content area is auto-height, not fixed 300px */
+.tiptap-content--builder {
+  min-height: 60px;
+  padding: 8px 12px;
+}
+
+.tiptap-content--builder .ProseMirror {
+  min-height: 40px;
+}
+
+/* Bubble toolbar that floats above selected text in the Builder */
+.tiptap-bubble-toolbar {
+  background: #1a1a2e;
+  border-radius: 6px;
+  padding: 4px 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  border-bottom: none;
+}
+
+.tiptap-bubble-toolbar .tiptap-btn {
+  color: #e2e8f0;
+  min-width: 26px;
+  height: 26px;
+}
+
+.tiptap-bubble-toolbar .tiptap-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tiptap-bubble-toolbar .tiptap-btn--active {
+  background: #2c6ecb;
+  color: #fff;
+}
+
+.tiptap-bubble-toolbar .tiptap-toolbar__separator {
+  background: rgba(255, 255, 255, 0.2);
+  height: 18px;
+}
