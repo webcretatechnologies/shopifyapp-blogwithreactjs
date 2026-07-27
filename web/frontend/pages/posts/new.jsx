@@ -16,6 +16,7 @@ import {
   Checkbox,
   Box,
   Text,
+  Icon,
   InlineStack,
   BlockStack,
   Divider,
@@ -26,9 +27,11 @@ import {
   ResourceItem,
   Thumbnail,
   DropZone,
+  RadioButton,
+  Collapsible,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { ViewIcon } from "@shopify/polaris-icons";
+import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon } from "@shopify/polaris-icons";
 import confetti from "canvas-confetti";
 import TiptapEditor from "../../components/editor/TiptapEditor";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
@@ -288,6 +291,8 @@ export default function PostEditor() {
     ogDescription: "",
     ogImage: "",
   });
+  const [seoExpanded, setSeoExpanded] = useState(false);
+  const [excerptExpanded, setExcerptExpanded] = useState(false);
 
   // Load existing post
   const loadPost = useCallback(async () => {
@@ -312,6 +317,9 @@ export default function PostEditor() {
         ogDescription: data.post.ogDescription || "",
         ogImage: data.post.ogImage || "",
       });
+      // Auto-expand sections if they have content
+      if (data.post.excerpt) setExcerptExpanded(true);
+      if (data.post.metaTitle || data.post.metaDescription) setSeoExpanded(true);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -801,30 +809,34 @@ export default function PostEditor() {
             </Layout.Section>
           )}
 
-          {/* ─── Main Content ───────────────────────────────────── */}
+          {/* ══════════════════════════════════════════════════════
+               MAIN CONTENT COLUMN
+          ══════════════════════════════════════════════════════ */}
           <Layout.Section>
             <BlockStack gap="400">
-              {/* Title */}
+
+              {/* Title — no card header, just the input, like Shopify */}
               <Card>
-                <Box padding="500">
-                  <BlockStack gap="400">
-                    <TextField
-                      label="Title"
-                      value={post.title}
-                      onChange={handleTitleChange}
-                      placeholder="e.g. My first blog post"
-                      autoComplete="off"
-                    />
-                  </BlockStack>
+                <Box padding="400">
+                  <TextField
+                    label="Title"
+                    value={post.title}
+                    onChange={handleTitleChange}
+                    placeholder="e.g. My first blog post"
+                    autoComplete="off"
+                    size="large"
+                  />
                 </Box>
               </Card>
 
-              {/* Content Card */}
+              {/* Content — full-width editor, no divider */}
               <Card>
-                <Box padding="500">
-                  <BlockStack gap="300">
-                    <Text variant="headingMd">Content</Text>
-                    <Divider />
+                <Box padding="0">
+                  <Box paddingBlock="300" paddingInline="400">
+                    <Text variant="headingSm" tone="subdued">Content</Text>
+                  </Box>
+                  <Divider />
+                  <Box padding="0">
                     <TiptapEditor
                       content={contentHtml}
                       onChange={handleContentChange}
@@ -832,75 +844,143 @@ export default function PostEditor() {
                       placeholder="Write your article content here..."
                       uploadUrl="/api/posts/upload"
                     />
-                  </BlockStack>
+                  </Box>
                 </Box>
               </Card>
 
-              {/* Excerpt */}
+              {/* Excerpt — collapsible like Shopify */}
               <Card>
-                <Box padding="500">
-                  <BlockStack gap="300">
-                    <Text variant="headingMd">Excerpt</Text>
-                    <Text variant="bodyMd" tone="subdued">
-                      Add a summary of the post to appear on your home page or blog.
-                    </Text>
-                    <Divider />
-                    <TextField
-                      label="Excerpt"
-                      labelHidden
-                      value={post.excerpt || ""}
-                      onChange={handleField("excerpt")}
-                      multiline={3}
-                      autoComplete="off"
-                    />
-                  </BlockStack>
+                <Box padding="0">
+                  <Box
+                    paddingBlock="400"
+                    paddingInline="400"
+                    as="button"
+                    onClick={() => setExcerptExpanded((v) => !v)}
+                    style={{
+                      width: "100%",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text variant="headingSm">Excerpt</Text>
+                      <Text variant="bodySm" tone="subdued">
+                        {excerptExpanded ? "▲" : "▼"}
+                      </Text>
+                    </InlineStack>
+                  </Box>
+                  {excerptExpanded && (
+                    <>
+                      <Divider />
+                      <Box padding="400">
+                        <BlockStack gap="200">
+                          <Text variant="bodySm" tone="subdued">
+                            Add a summary of the post to appear on your home page or blog.
+                          </Text>
+                          <TextField
+                            label="Excerpt"
+                            labelHidden
+                            value={post.excerpt || ""}
+                            onChange={handleField("excerpt")}
+                            multiline={4}
+                            autoComplete="off"
+                            placeholder="Add a summary..."
+                          />
+                        </BlockStack>
+                      </Box>
+                    </>
+                  )}
                 </Box>
               </Card>
 
-              {/* Search engine listing preview */}
+              {/* Search engine listing — matches Shopify's exact layout */}
               <Card>
-                <Box padding="500">
-                  <BlockStack gap="400">
-                    <Text variant="headingMd">Search engine listing preview</Text>
-                    <Text variant="bodyMd" tone="subdued">
-                      Add a title and description to see how this blog post might appear in a search engine listing
-                    </Text>
-                    <Divider />
-                    <TextField
-                      label="Page title"
-                      value={seoData.metaTitle}
-                      onChange={(val) => setSeoData((s) => ({ ...s, metaTitle: val }))}
-                      maxLength={70}
-                      showCharacterCount
-                      autoComplete="off"
-                    />
-                    <TextField
-                      label="Meta description"
-                      value={seoData.metaDescription}
-                      onChange={(val) => setSeoData((s) => ({ ...s, metaDescription: val }))}
-                      multiline={3}
-                      maxLength={320}
-                      showCharacterCount
-                      autoComplete="off"
-                    />
-                    <TextField
-                      label="URL handle"
-                      value={post.slug}
-                      onChange={handleField("slug")}
-                      prefix="/"
-                      autoComplete="off"
-                    />
-                  </BlockStack>
+                <Box padding="0">
+                  <Box
+                    paddingBlock="400"
+                    paddingInline="400"
+                    as="button"
+                    onClick={() => setSeoExpanded((v) => !v)}
+                    style={{
+                      width: "100%",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text variant="headingSm">Search engine listing</Text>
+                      <Text variant="bodySm" tone="subdued">
+                        {seoExpanded ? "▲" : "▼"}
+                      </Text>
+                    </InlineStack>
+                  </Box>
+
+                  {/* Always-visible URL preview, like Shopify */}
+                  <Divider />
+                  <Box paddingBlock="300" paddingInline="400">
+                    <BlockStack gap="100">
+                      <Text variant="bodySm" tone="subdued">
+                        {window.shopify?.config?.shop || "your-store.myshopify.com"}
+                      </Text>
+                      <Text variant="bodySm" tone="magic">
+                        https://{window.shopify?.config?.shop || "your-store.myshopify.com"}/blogs/{shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/{post.slug || ""}
+                      </Text>
+                      <Text variant="bodySm" tone="subdued">
+                        {seoData.metaTitle || post.title || ""}
+                      </Text>
+                      <Text variant="bodySm" tone="subdued">
+                        {seoData.metaDescription || post.excerpt || ""}
+                      </Text>
+                    </BlockStack>
+                  </Box>
+
+                  {seoExpanded && (
+                    <>
+                      <Divider />
+                      <Box padding="400">
+                        <BlockStack gap="400">
+                          <TextField
+                            label="Page title"
+                            value={seoData.metaTitle}
+                            onChange={(val) => setSeoData((s) => ({ ...s, metaTitle: val }))}
+                            maxLength={70}
+                            showCharacterCount
+                            autoComplete="off"
+                          />
+                          <TextField
+                            label="Meta description"
+                            value={seoData.metaDescription}
+                            onChange={(val) => setSeoData((s) => ({ ...s, metaDescription: val }))}
+                            multiline={3}
+                            maxLength={320}
+                            showCharacterCount
+                            autoComplete="off"
+                          />
+                          <TextField
+                            label="URL handle"
+                            value={post.slug}
+                            onChange={handleField("slug")}
+                            prefix="blogs/"
+                            helpText={`https://${window.shopify?.config?.shop || "your-store.myshopify.com"}/blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/${post.slug || ""}`}
+                            autoComplete="off"
+                          />
+                        </BlockStack>
+                      </Box>
+                    </>
+                  )}
                 </Box>
               </Card>
-
 
               {/* Custom CSS (plan-gated) */}
               {features.custom_css?.enabled && (
                 <Card>
-                  <Box padding="500">
+                  <Box padding="400">
                     <BlockStack gap="300">
-                      <Text variant="headingMd">Custom CSS</Text>
+                      <Text variant="headingSm">Custom CSS</Text>
                       <TextField
                         label=""
                         value={post.customCss || ""}
@@ -917,28 +997,44 @@ export default function PostEditor() {
             </BlockStack>
           </Layout.Section>
 
-          {/* ─── Sidebar ─────────────────────────────────────────── */}
+          {/* ══════════════════════════════════════════════════════
+               SIDEBAR
+          ══════════════════════════════════════════════════════ */}
           <Layout.Section variant="oneThird">
             <BlockStack gap="400">
-              
-              {/* Visibility */}
+
+              {/* ── Visibility ── */}
               <Card>
-                <Box padding="500">
+                <Box paddingBlockStart="400" paddingBlockEnd="300" paddingInline="400">
+                  <Text variant="headingMd" as="h2">Visibility</Text>
+                </Box>
+                <Divider />
+                <Box padding="400">
                   <BlockStack gap="300">
-                    <Text variant="headingMd">Visibility</Text>
+                    <BlockStack gap="0">
+                      <RadioButton
+                        label="Visible"
+                        helpText={
+                          post.status === "published" && post.publishedAt
+                            ? `As of ${new Date(post.publishedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} at ${new Date(post.publishedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })} GMT+5:30`
+                            : null
+                        }
+                        checked={post.status === "published"}
+                        id="visibility-visible"
+                        name="visibility"
+                        onChange={() => handleField("status")("published")}
+                      />
+                      <RadioButton
+                        label="Hidden"
+                        checked={post.status === "draft"}
+                        id="visibility-hidden"
+                        name="visibility"
+                        onChange={() => handleField("status")("draft")}
+                      />
+                    </BlockStack>
                     <Divider />
-                    <Select
-                      label=""
-                      labelHidden
-                      options={[
-                        { label: "Hidden", value: "draft" },
-                        { label: "Visible", value: "published" },
-                      ]}
-                      value={post.status}
-                      onChange={handleField("status")}
-                    />
                     {post.status === "published" ? (
-                      <BlockStack gap="200">
+                      <BlockStack gap="300">
                         <Button
                           variant="primary"
                           onClick={() => handleSave("published", "sidebar")}
@@ -950,27 +1046,26 @@ export default function PostEditor() {
                         </Button>
                         <Button
                           tone="critical"
+                          variant="plain"
                           onClick={handleUnpublish}
                           loading={isUnpublishing}
                           disabled={isSaving || isUnpublishing}
-                          fullWidth
                         >
                           Unpublish
                         </Button>
                       </BlockStack>
                     ) : (
-                      <BlockStack gap="200">
+                      <BlockStack gap="300">
                         <Button
                           onClick={() => handleSave("draft", "sidebar")}
                           loading={isSavingSidebar}
                           disabled={isSaving && !isSavingSidebar}
                           fullWidth
                         >
-                          Save Draft
+                          Save draft
                         </Button>
                         <Button
                           variant="primary"
-                          tone="success"
                           onClick={handlePublish}
                           loading={isPublishing}
                           disabled={isSaving || isPublishing || !shopifyBlogId}
@@ -984,74 +1079,114 @@ export default function PostEditor() {
                 </Box>
               </Card>
 
-              {/* Organization */}
+              {/* ── Image (Featured Image) ── */}
               <Card>
-                <Box padding="500">
+                <Box paddingBlockStart="400" paddingBlockEnd="300" paddingInline="400">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text variant="headingMd" as="h2">Image</Text>
+                    {post.featuredImage && (
+                      <Button
+                        variant="plain"
+                        disclosure
+                        onClick={() => setShowFilePicker(true)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                  </InlineStack>
+                </Box>
+                <Box padding="400" paddingBlockStart="0">
+                  {post.featuredImage ? (
+                    <BlockStack gap="300">
+                      <div
+                        style={{
+                          borderRadius: "var(--p-border-radius-300, 8px)",
+                          overflow: "hidden",
+                          border: "1px solid var(--p-color-border-subdued)",
+                        }}
+                      >
+                        <img
+                          src={post.featuredImage}
+                          alt="Featured image"
+                          style={{
+                            width: "100%",
+                            display: "block",
+                            maxHeight: "220px",
+                            objectFit: "cover",
+                          }}
+                        />
+                      </div>
+                      <Button
+                        tone="critical"
+                        variant="plain"
+                        onClick={() => handleField("featuredImage")("")}
+                        size="slim"
+                      >
+                        Remove image
+                      </Button>
+                    </BlockStack>
+                  ) : (
+                    <BlockStack gap="300">
+                      <DropZone
+                        onDrop={handleDropZoneDrop}
+                        allowMultiple={false}
+                        accept="image/*"
+                        variableHeight
+                      >
+                        {isUploadingImage ? (
+                          <Box padding="600">
+                            <BlockStack align="center" inlineAlign="center" gap="200">
+                              <Spinner size="small" />
+                              <Text variant="bodySm" tone="subdued">Uploading…</Text>
+                            </BlockStack>
+                          </Box>
+                        ) : (
+                          <Box padding="600">
+                            <BlockStack align="center" inlineAlign="center" gap="100">
+                              <Icon source={ImageIcon} tone="subdued" />
+                              <Text variant="bodySm" tone="subdued" alignment="center">
+                                Add image
+                              </Text>
+                            </BlockStack>
+                          </Box>
+                        )}
+                      </DropZone>
+                      <Button
+                        fullWidth
+                        onClick={() => setShowFilePicker(true)}
+                        variant="secondary"
+                      >
+                        Add from Shopify Files
+                      </Button>
+                    </BlockStack>
+                  )}
+                </Box>
+              </Card>
+
+              {/* ── Organization ── */}
+              <Card>
+                <Box paddingBlockStart="400" paddingBlockEnd="300" paddingInline="400">
+                  <Text variant="headingMd" as="h2">Organization</Text>
+                </Box>
+                <Divider />
+                <Box padding="400">
                   <BlockStack gap="400">
-                    <Text variant="headingMd">Organization</Text>
-                    <Divider />
-                    
                     <TextField
                       label="Author"
                       value={post.author || ""}
                       onChange={handleField("author")}
                       autoComplete="off"
                     />
-
                     <Select
                       label="Blog"
                       options={blogOptions}
                       value={shopifyBlogId}
                       onChange={setShopifyBlogId}
                     />
-
                     <BlockStack gap="200">
-                      <Text variant="bodyMd" fontWeight="semibold">Featured image</Text>
-                      <DropZone
-                        onDrop={handleDropZoneDrop}
-                        allowMultiple={false}
-                        accept="image/*"
-                      >
-                        {isUploadingImage ? (
-                          <Box padding="400" align="center">
-                            <Spinner size="small" />
-                          </Box>
-                        ) : (
-                          <DropZone.FileUpload />
-                        )}
-                      </DropZone>
-                      <Button fullWidth onClick={() => setShowFilePicker(true)}>
-                        Browse Shopify Images
-                      </Button>
-                      {post.featuredImage && (
-                        <div style={{ position: "relative", marginTop: "8px" }}>
-                          <img
-                            src={post.featuredImage}
-                            alt="Featured"
-                            style={{
-                              width: "100%",
-                              borderRadius: 8,
-                              maxHeight: 150,
-                              objectFit: "cover",
-                            }}
-                          />
-                          <div style={{ position: "absolute", top: 8, right: 8 }}>
-                            <Button
-                              size="micro"
-                              onClick={() => handleField("featuredImage")("")}
-                              tone="critical"
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </BlockStack>
-
-                    <BlockStack gap="200">
-                      <Text variant="bodyMd" fontWeight="semibold">Tags</Text>
+                      <Text variant="bodyMd" fontWeight="medium">Tags</Text>
                       {tags.length > 0 && (
-                        <InlineStack gap="200">
+                        <InlineStack gap="100" wrap>
                           {tags.map((tag) => (
                             <Tag key={tag} onRemove={() => removeTag(tag)}>
                               {tag}
@@ -1059,69 +1194,66 @@ export default function PostEditor() {
                           ))}
                         </InlineStack>
                       )}
-                      <InlineStack gap="200">
+                      <InlineStack gap="200" blockAlign="start">
                         <div style={{ flex: 1 }}>
                           <TextField
-                            label=""
+                            label="Add tags"
                             labelHidden
                             value={tagInput}
                             onChange={setTagInput}
-                            placeholder="Add tag..."
+                            placeholder="Vintage, cotton, summer"
                             onKeyPress={(e) => e.key === "Enter" && addTag()}
                             autoComplete="off"
                           />
                         </div>
-                        <Button onClick={addTag}>Add</Button>
+                        <Button onClick={addTag} variant="secondary">Add</Button>
                       </InlineStack>
                     </BlockStack>
                   </BlockStack>
                 </Box>
               </Card>
 
-
-
-              {/* Shopify Sync Status — real-time indicator */}
+              {/* ── Shopify Sync Status ── */}
               <SyncStatusIndicator
                 postId={post.id}
                 postTitle={post.title}
                 initialArticle={post.shopifyArticle}
               />
 
+              {/* ── Delete Article ── */}
               {isEditing && (
-                <div style={{
-                  border: "1px solid var(--p-color-border-critical, #fd8888)",
-                  backgroundColor: "var(--p-color-bg-surface-critical-subdued, #fff5f5)",
-                  borderRadius: "8px",
-                  padding: "16px"
-                }}>
-                  <BlockStack gap="200">
-                    <Text variant="headingMd" tone="critical">
-                      Danger Zone
-                    </Text>
-                    <Text tone="subdued" variant="bodySm">
-                      Delete this article entirely. This action is irreversible.
-                    </Text>
-                    {post.status === "published" && (
-                      <Checkbox
-                        label="Also delete this article from my Shopify store"
-                        checked={deleteFromShopify}
-                        onChange={setDeleteFromShopify}
-                      />
-                    )}
-                    <Button
-                      tone="critical"
-                      loading={isDeleting}
-                      onClick={handleDelete}
-                    >
-                      Delete Article
-                    </Button>
-                  </BlockStack>
-                </div>
+                <Card>
+                  <Box padding="400">
+                    <BlockStack gap="300">
+                      <Text variant="headingMd" tone="critical">Delete article</Text>
+                      <Text tone="subdued" variant="bodySm">
+                        Deleting this article will remove it permanently from the app. This action cannot be undone.
+                      </Text>
+                      {(post.status === "published" || post.shopifyArticle) && (
+                        <Checkbox
+                          label="Also delete from my Shopify store"
+                          checked={deleteFromShopify}
+                          onChange={setDeleteFromShopify}
+                        />
+                      )}
+                      <Button
+                        tone="critical"
+                        variant="plain"
+                        loading={isDeleting}
+                        onClick={handleDelete}
+                      >
+                        Delete article
+                      </Button>
+                    </BlockStack>
+                  </Box>
+                </Card>
               )}
+
             </BlockStack>
           </Layout.Section>
         </Layout>
       </Page>
+
 
         <ShopifyFilePicker
         open={showFilePicker}
