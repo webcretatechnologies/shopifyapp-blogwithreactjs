@@ -84,111 +84,24 @@ export class ShopifyArticleParser {
         }
       }
 
-      switch (tagName) {
-        case "h1": case "h2": case "h3": case "h4": case "h5": case "h6":
-          blocks.push({
-            id: this._generateId(),
-            type: "heading",
-            level: parseInt(tagName.substring(1)),
-            data: $el.text().trim(),
-          });
-          break;
+      if (["style", "script", "meta", "link"].includes(tagName)) return;
 
-        case "p": {
-          // Check for inline app markers
-          const text = $el.html()?.trim();
-          if (text) {
-            appendTextBlock(text);
-          }
-          break;
+      // If this element or any of its descendants is a builder block,
+      // we must process its children recursively so we don't lose the builder block.
+      const hasBuilderBlocks = $el.find("[data-type], [data-blog-app-block]").length > 0;
+      
+      if (!hasBuilderBlocks) {
+        // Safe to just keep the whole HTML structure (including tables, headings, spans, paragraphs!)
+        const outerHtml = $.html(node);
+        if (outerHtml?.trim()) {
+          appendTextBlock(outerHtml);
         }
-
-        case "ul":
-        case "ol": {
-          const items = [];
-          $el.children("li").each((_, li) => {
-            const txt = $(li).html()?.trim();
-            if (txt) items.push(txt);
-          });
-          if (items.length) {
-            blocks.push({
-              id: this._generateId(),
-              type: "list",
-              listType: tagName,
-              items,
-            });
-          }
-          break;
-        }
-
-        case "img": {
-          const src = $el.attr("src");
-          if (src) {
-            blocks.push({
-              id: this._generateId(),
-              type: "image",
-              url: src,
-              alt: $el.attr("alt") || "",
-              data: "",
-            });
-          }
-          break;
-        }
-
-        case "hr":
-          blocks.push({
-            id: this._generateId(),
-            type: "divider",
-            data: "",
-          });
-          break;
-
-        case "table": {
-          const headers = [];
-          const rows = [];
-          $el.find("thead th, thead td").each((_, th) => headers.push($(th).text().trim()));
-          $el.find("tbody tr, tr").each((_, tr) => {
-            const row = [];
-            $(tr).find("td, th").each((_, td) => {
-              if ($(td).closest("thead").length === 0) {
-                row.push($(td).text().trim());
-              }
-            });
-            if (row.length) rows.push(row);
-          });
-          if (headers.length || rows.length) {
-            blocks.push({
-              id: this._generateId(),
-              type: "table",
-              headers,
-              rows,
-            });
-          }
-          break;
-        }
-
-        case "div":
-        case "span":
-        case "section":
-          // Recursively process children
-          $el.children().each((_, child) => processNode(child));
-          break;
-
-        case "style":
-        case "script":
-        case "meta":
-        case "link":
-          // Skip non-content elements
-          break;
-
-        default:
-          // Wrap unknown elements as text
-          const outerHtml = $.html(node);
-          if (outerHtml?.trim()) {
-            appendTextBlock(outerHtml);
-          }
-          break;
+        return;
       }
+
+      // If it DOES contain builder blocks (e.g. it's a wrapper <div>),
+      // we process its children recursively.
+      $el.contents().each((_, child) => processNode(child));
     };
 
     // Process top-level children
