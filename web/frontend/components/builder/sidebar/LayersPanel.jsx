@@ -288,23 +288,17 @@ export default function LayersPanel() {
         position: "relative" 
       }}
     >
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={flatIds} strategy={verticalListSortingStrategy}>
-          {visibleItems.map((item) => (
-            <LayerRow
-              key={item.id}
-              id={item.id}
-              depth={item.depth}
-              isCollapsed={collapsedIds.has(item.id)}
-              onToggleCollapse={toggleCollapse}
-            />
-          ))}
-        </SortableContext>
-      </DndContext>
+      <SortableContext items={flatIds} strategy={verticalListSortingStrategy}>
+        {visibleItems.map((item) => (
+          <LayerRow
+            key={item.id}
+            id={item.id}
+            depth={item.depth}
+            isCollapsed={collapsedIds.has(item.id)}
+            onToggleCollapse={toggleCollapse}
+          />
+        ))}
+      </SortableContext>
     </div>
   );
 }

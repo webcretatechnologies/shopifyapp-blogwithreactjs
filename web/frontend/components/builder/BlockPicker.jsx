@@ -23,7 +23,110 @@ import {
 } from "@shopify/polaris-icons";
 import { nanoid } from "./store/nanoid";
 import LayersPanel from "./sidebar/LayersPanel";
+import { useDraggable } from "@dnd-kit/core";
 
+function DraggableBlockItem({ type, entry, onClick, isRailMode }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `new-block-${type}`,
+    data: { isNew: true, type, settings: entry.defaultSettings },
+  });
+
+  const pointerListeners = { ...listeners };
+  delete pointerListeners.onKeyDown;
+
+  return (
+    <button
+      ref={setNodeRef}
+      {...pointerListeners}
+      {...attributes}
+      type="button"
+      onClick={onClick}
+      aria-label={`Add ${entry.label}`}
+      style={isRailMode ? {
+        width: "36px",
+        height: "36px",
+        borderRadius: "6px",
+        border: "1px solid var(--p-color-border-subdued)",
+        background: "var(--p-color-bg-surface)",
+        color: "#008060",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: isDragging ? "grabbing" : "grab",
+        transition: "all 0.15s ease",
+        outline: "none",
+        opacity: isDragging ? 0.5 : 1,
+      } : {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "6px",
+        minHeight: "72px",
+        background: "var(--p-color-bg-surface)",
+        border: "1px solid var(--p-color-border)",
+        borderRadius: "8px",
+        padding: "10px 6px",
+        cursor: isDragging ? "grabbing" : "grab",
+        transition: "all 0.15s cubic-bezier(0.4, 0, 0.2, 1)",
+        outline: "none",
+        opacity: isDragging ? 0.5 : 1,
+      }}
+      onMouseEnter={(e) => {
+        if (isDragging) return;
+        e.currentTarget.style.borderColor = "#008060";
+        e.currentTarget.style.background = isRailMode ? "#f4f6f8" : "#f4f8f6";
+        if (!isRailMode) {
+          e.currentTarget.style.transform = "translateY(-1px)";
+          e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,128,96,0.1)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (isDragging) return;
+        e.currentTarget.style.borderColor = isRailMode ? "var(--p-color-border-subdued)" : "var(--p-color-border)";
+        e.currentTarget.style.background = "var(--p-color-bg-surface)";
+        if (!isRailMode) {
+          e.currentTarget.style.transform = "none";
+          e.currentTarget.style.boxShadow = "none";
+        }
+      }}
+      onFocus={(e) => {
+        e.currentTarget.style.borderColor = "#008060";
+        e.currentTarget.style.boxShadow = "0 0 0 2px rgba(0,128,96,0.2)";
+      }}
+      onBlur={(e) => {
+        e.currentTarget.style.borderColor = isRailMode ? "var(--p-color-border-subdued)" : "var(--p-color-border)";
+        e.currentTarget.style.boxShadow = "none";
+      }}
+    >
+      {isRailMode ? (
+        <div style={{ display: "flex", alignItems: "center", color: "#008060" }}>
+          {entry.icon}
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              width: "32px",
+              height: "32px",
+              borderRadius: "50%",
+              background: "#e8f5f0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#008060",
+            }}
+          >
+            {entry.icon}
+          </div>
+          <Text variant="bodySm" alignment="center" fontWeight="medium">
+            {entry.label}
+          </Text>
+        </>
+      )}
+    </button>
+  );
+}
 
 export default function BlockPicker({ isRailMode = false }) {
   const [selectedTab, setSelectedTab] = useState(0); // 0: blocks, 1: layers
@@ -143,36 +246,13 @@ export default function BlockPicker({ isRailMode = false }) {
                   const entry = BlockRegistry[type];
                   if (!entry) return null;
                   return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => handleAddBlock(type)}
-                      aria-label={`Add ${entry.label}`}
-                      title={entry.label}
-                      style={{
-                        width: "36px",
-                        height: "36px",
-                        borderRadius: "6px",
-                        border: "1px solid var(--p-color-border-subdued)",
-                        background: "var(--p-color-bg-surface)",
-                        color: "#008060",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                        transition: "all 0.15s ease",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = "#008060";
-                        e.currentTarget.style.background = "#f4f6f8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = "var(--p-color-border-subdued)";
-                        e.currentTarget.style.background = "var(--p-color-bg-surface)";
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center" }}>{entry.icon}</div>
-                    </button>
+                    <DraggableBlockItem 
+                      key={type} 
+                      type={type} 
+                      entry={entry} 
+                      onClick={() => handleAddBlock(type)} 
+                      isRailMode={true}
+                    />
                   );
                 })}
               </div>
@@ -183,14 +263,6 @@ export default function BlockPicker({ isRailMode = false }) {
   }
 
   // ── Standard Expanded Sidebar Mode ──
-  const tabs = tabDefs.map((tab) => ({
-    id: tab.id,
-    content: (
-      <InlineStack align="center" blockAlign="center" gap="100">
-        <Icon source={tab.icon} /> {tab.label}
-      </InlineStack>
-    ),
-  }));
 
   return (
     <div
@@ -321,64 +393,12 @@ export default function BlockPicker({ isRailMode = false }) {
                       {filteredTypes.map((type) => {
                         const entry = BlockRegistry[type];
                         return (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => handleAddBlock(type)}
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              gap: "6px",
-                              minHeight: "72px",
-                              background: "var(--p-color-bg-surface)",
-                              border: "1px solid var(--p-color-border)",
-                              borderRadius: "8px",
-                              padding: "10px 6px",
-                              cursor: "pointer",
-                              transition: "all 0.15s cubic-bezier(0.4, 0, 0.2, 1)",
-                              outline: "none",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = "#008060";
-                              e.currentTarget.style.background = "#f4f8f6";
-                              e.currentTarget.style.transform = "translateY(-1px)";
-                              e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,128,96,0.1)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = "var(--p-color-border)";
-                              e.currentTarget.style.background = "var(--p-color-bg-surface)";
-                              e.currentTarget.style.transform = "none";
-                              e.currentTarget.style.boxShadow = "none";
-                            }}
-                            onFocus={(e) => {
-                              e.currentTarget.style.borderColor = "#008060";
-                              e.currentTarget.style.boxShadow = "0 0 0 2px rgba(0,128,96,0.2)";
-                            }}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderColor = "var(--p-color-border)";
-                              e.currentTarget.style.boxShadow = "none";
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: "32px",
-                                height: "32px",
-                                borderRadius: "50%",
-                                background: "#e8f5f0",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "#008060",
-                              }}
-                            >
-                              {entry.icon}
-                            </div>
-                            <Text variant="bodySm" alignment="center" fontWeight="medium">
-                              {entry.label}
-                            </Text>
-                          </button>
+                          <DraggableBlockItem 
+                            key={type} 
+                            type={type} 
+                            entry={entry} 
+                            onClick={() => handleAddBlock(type)} 
+                          />
                         );
                       })}
                     </InlineGrid>

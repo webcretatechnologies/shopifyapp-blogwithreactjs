@@ -27,11 +27,27 @@ import {
   XIcon
 } from "@shopify/polaris-icons";
 
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  pointerWithin,
+  rectIntersection,
+  MeasuringStrategy,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+} from "@dnd-kit/core";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useBuilderStore } from "./store/useBuilderStore";
 import BlockPicker from "./BlockPicker";
 import BuilderCanvas from "./canvas/BuilderCanvas";
 import SettingsPanel from "./settings/SettingsPanel";
 import BreadcrumbBar from "./canvas/BreadcrumbBar";
+import CanvasNode from "./canvas/CanvasNode";
+import { resolveDropTarget, getActiveCenterY } from "./utils/treeUtils";
+import { BlockRegistry } from "./BlockRegistry";
 
 export default function DragDropBuilderContainer({
   initialBlocksAst,
@@ -70,6 +86,143 @@ export default function DragDropBuilderContainer({
   const setDeviceMode = useBuilderStore((s) => s.setDeviceMode);
   const zoomLevel = useBuilderStore((s) => s.zoomLevel);
   const setZoomLevel = useBuilderStore((s) => s.setZoomLevel);
+
+  const [activeId, setActiveId] = useState(null);
+  const activeBlock = useBuilderStore((s) => activeId && !String(activeId).startsWith("new-block-") ? s.blocksById[activeId] : null);
+
+  // Exclude KeyboardSensor so sidebar native click/enter works normally
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    })
+  );
+
+  const announcements = {
+    onDragStart({ active }) {
+      const type = active.data.current?.type || "Block";
+      return `Picked up ${type}.`;
+    },
+    onDragOver({ active, over }) {
+      if (over) return `Block over position ${over.id}.`;
+      return "Block is over an invalid area.";
+    },
+    onDragEnd({ active, over }) {
+      if (over) return `Block dropped at position ${over.id}.`;
+      return "Block drag cancelled.";
+    },
+    onDragCancel() {
+      return "Block drag cancelled.";
+    }
+  };
+
+// Global pointer Y tracker for precise Y coordinates during drag events
+if (typeof window !== "undefined" && !window.__lastPointerYTracker) {
+  window.__lastPointerYTracker = true;
+  window.addEventListener("pointermove", (e) => { window.__lastPointerY = e.clientY; }, { passive: true });
+}
+
+  // Custom collision detection to guarantee a drop target for external blocks
+  const customCollisionDetection = (args) => {
+    // 1. Safely extract all droppable container objects into a JS Array
+    const allContainers = Array.from(
+      args.droppableContainers?.values?.() || args.droppableContainers || []
+    );
+
+    // 2. Separate specific CanvasNode block containers from canvas-root
+    const blockContainers = allContainers.filter(
+      (c) => c && c.id !== "canvas-root" && !c.disabled
+    );
+
+    // Get pointer Y coordinate with 3-tier fallback (args pointer -> active item center -> global pointer position)
+    const pointerY =
+      args.pointerCoordinates?.y ||
+      getActiveCenterY(args.active) ||
+      (typeof window !== "undefined" ? window.__lastPointerY : 0) || 0;
+
+    if (blockContainers.length > 0 && pointerY > 0) {
+      // 3. Direct Y-hit: pointer is inside a block's bounding rect
+      for (const c of blockContainers) {
+        const node = c.node?.current || document.getElementById(c.id);
+        const domRect = node?.getBoundingClientRect?.() || c.rect?.current;
+        if (domRect && domRect.height > 0) {
+          if (pointerY >= domRect.top && pointerY <= domRect.bottom) {
+            return [{ id: c.id }];
+          }
+        }
+      }
+
+      // 4. Closest vertical center fallback
+      let closestContainer = null;
+      let minDistance = Infinity;
+      for (const c of blockContainers) {
+        const node = c.node?.current || document.getElementById(c.id);
+        const domRect = node?.getBoundingClientRect?.() || c.rect?.current;
+        if (domRect && domRect.height > 0) {
+          const dist = Math.abs(pointerY - (domRect.top + domRect.height / 2));
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestContainer = c;
+          }
+        }
+      }
+      if (closestContainer) return [{ id: closestContainer.id }];
+    }
+
+    // 5. Final fallback: empty canvas
+    return [{ id: "canvas-root" }];
+  };
+
+  const handleDragStart = (event) => {
+    setActiveId(event.active.id);
+  };
+
+
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over) return;
+
+    const isNew = active.data.current?.isNew;
+
+    // Handle drop on empty canvas
+    if (over.id === "canvas-root") {
+      if (isNew) {
+        addBlock(active.data.current.type, active.data.current.settings, null, rootIds.length);
+      } else {
+        useBuilderStore.getState().moveBlock(active.id, null, rootIds.length);
+      }
+      return;
+    }
+
+    if (!isNew && active.id === over.id) return;
+
+    const overIsSection = over.data.current?.isSection === true;
+
+    // Determine above/below insertion using cursor vs hovered block center
+    let isBelow = false;
+    if (active && over?.rect) {
+      const activeCenter = getActiveCenterY(active);
+      const overCenter = over.rect.top + over.rect.height / 2;
+      if (activeCenter > 0 && overCenter > 0) {
+        isBelow = activeCenter > overCenter;
+      }
+    }
+
+    const state = useBuilderStore.getState();
+    const target = resolveDropTarget(state.blocksById, state.rootIds, active.id, over.id, overIsSection, isBelow);
+
+    if (target) {
+      if (isNew) {
+        addBlock(active.data.current.type, active.data.current.settings, target.newParentId, target.newIndex);
+      } else {
+        useBuilderStore.getState().moveBlock(active.id, target.newParentId, target.newIndex);
+      }
+    }
+  };
 
   // Symmetric auto-open & auto-close right settings drawer on block selection/deselection in narrow mode
   useEffect(() => {
@@ -243,8 +396,71 @@ export default function DragDropBuilderContainer({
         boxShadow: "var(--p-shadow-100)",
       };
 
+  let dragOverlayContent = null;
+  if (activeId) {
+    if (String(activeId).startsWith("new-block-")) {
+      // It's a new block from the sidebar
+      const type = activeId.replace("new-block-", "");
+      const entry = BlockRegistry[type];
+      if (entry) {
+        dragOverlayContent = (
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            width: "80px",
+            height: "72px",
+            background: "#fff",
+            border: "2px solid #008060",
+            borderRadius: "8px",
+            boxShadow: "0 20px 40px rgba(0,0,0,0.15)",
+            transform: "scale(1.05) rotate(2deg)",
+            pointerEvents: "none",
+          }}>
+            <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#e8f5f0", display: "flex", alignItems: "center", justifyContent: "center", color: "#008060" }}>
+              {entry.icon}
+            </div>
+            <span style={{ fontSize: "11px", fontWeight: 600 }}>{entry.label}</span>
+          </div>
+        );
+      }
+    } else if (activeBlock) {
+      // It's an existing block from the canvas
+      dragOverlayContent = (
+        <div style={{ 
+          opacity: 0.95, 
+          transform: "scale(1.02) rotate(1.5deg)", 
+          pointerEvents: "none",
+          boxShadow: "0 20px 40px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)",
+          borderRadius: "4px",
+          background: "#fff"
+        }}>
+          <CanvasNode id={activeBlock.id} isGhost={true} />
+        </div>
+      );
+    }
+  }
+
   const builderUI = (
-    <div style={containerStyle}>
+    <DndContext
+      id="root-dnd-context"
+      sensors={sensors}
+      collisionDetection={customCollisionDetection}
+      measuring={{
+        droppable: {
+          strategy: MeasuringStrategy.Always,
+        },
+      }}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => {
+        setActiveId(null);
+      }}
+      announcements={announcements}
+    >
+      <div style={containerStyle}>
       {/* ── Top Bar ── */}
       <Box padding="300" borderBlockEndWidth="025" borderColor="border-secondary" background="bg-surface">
         <InlineStack align="space-between" blockAlign="center" wrap={false}>
@@ -549,7 +765,12 @@ export default function DragDropBuilderContainer({
           </div>
         )}
       </div>
-    </div>
+      </div>
+      
+      <DragOverlay style={{ pointerEvents: "none" }} dropAnimation={{ sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: "0.4" } } }) }}>
+        {dragOverlayContent}
+      </DragOverlay>
+    </DndContext>
   );
 
   if (isFullscreen) {

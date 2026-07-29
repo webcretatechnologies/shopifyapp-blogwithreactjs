@@ -1,5 +1,6 @@
 import React, { memo, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
+import { useDndContext } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { BlockRegistry, normalizeBlockType } from "../BlockRegistry";
 import { useBuilderStore } from "../store/useBuilderStore";
@@ -7,6 +8,7 @@ import { GripVertical, Trash2, Copy, ArrowUp, ArrowDown, EyeOff } from "lucide-r
 import BlockErrorBoundary from "../BlockErrorBoundary";
 import BlockContextMenu from "./BlockContextMenu";
 import SavePatternModal from "../SavePatternModal";
+import { getActiveCenterY } from "../utils/treeUtils";
 
 const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   const block = useBuilderStore((s) => s.blocksById[id]);
@@ -23,6 +25,8 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   // Context menu state (mouse-only, see BlockContextMenu.jsx for accessibility note)
   const [contextMenu, setContextMenu] = useState(null);
   const [showSavePatternModal, setShowSavePatternModal] = useState(false);
+  const [justDropped, setJustDropped] = useState(false);
+  const isReducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   if (!block) return null;
 
@@ -35,7 +39,9 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
 
   const { PreviewComponent, allowsChildren } = registryEntry;
 
-  // dnd-kit setup
+  // dnd-kit setup — single useSortable call to avoid double-registration
+  // which causes dnd-kit's internal registry to report inMap: false and
+  // hasNodeCurrent: false even though the DOM element exists.
   const {
     attributes,
     listeners,
@@ -43,6 +49,8 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
     transform,
     transition,
     isDragging,
+    activeIndex,
+    index,
   } = useSortable({
     id,
     data: {
@@ -50,6 +58,18 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
       isSection: allowsChildren,
     },
   });
+
+  // Track drop settle
+  React.useEffect(() => {
+    if (isDragging) {
+      setJustDropped(false);
+    } else if (!isDragging && transform !== null) {
+      // The moment isDragging becomes false, but we had a transform (meaning we were dragged)
+      setJustDropped(true);
+      const timer = setTimeout(() => setJustDropped(false), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isDragging, transform]);
 
   const isColumnNode = type === "Column";
   const isColumnLayoutNode = type === "ColumnLayout";
@@ -62,9 +82,13 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
     (deviceMode === "desktop" && block.settings?.hideOnDesktop);
 
   let opacity = 1;
-  if (isDragging && !isGhost) opacity = 0.3;
-  if (isGhost) opacity = 0.9;
-  if (isHiddenInCurrentView) opacity = 0.35;
+  let isPlaceholder = false;
+  if (isDragging && !isGhost) {
+    opacity = 0.5;
+    isPlaceholder = true;
+  }
+  if (isGhost) opacity = 1;
+  if (isHiddenInCurrentView && !isGhost) opacity = 0.35;
 
   const isSectionNode = type === "Section";
   const isLayoutBlock = isColumnNode || isColumnLayoutNode || isSectionNode;
@@ -83,12 +107,40 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   //
   // Visual boundaries (green outline + floating toolbar) appear ONLY on selection/hover.
   // ──────────────────────────────────────────────────────────────────────────────
+  // Sibling insertion indicator logic
+  // activeIndex and index now come from the single useSortable call above.
+  const { over, active } = useDndContext();
+  
+  // dnd-kit's useSortable isOver is false for external draggables not in the SortableContext array.
+  // We MUST check the global over.id instead.
+  const isOverNode = over?.id === id;
+  const isContainerDropTarget = isOverNode && allowsChildren && !isDragging;
+  const isSiblingDropTarget = isOverNode && !allowsChildren && !isDragging;
+
+  let isBelow = false;
+  if (isSiblingDropTarget && active && over?.rect) {
+    const activeCenter = getActiveCenterY(active);
+    const overCenter = over.rect.top + over.rect.height / 2;
+    if (activeCenter > 0 && overCenter > 0) {
+      isBelow = activeCenter > overCenter;
+    } else {
+      isBelow = activeIndex !== -1 && activeIndex < index;
+    }
+  }
+
+  // Use a class name to allow global CSS variables to override behavior
+  let className = "canvas-node-wrapper";
+  if (isSiblingDropTarget) className += " sibling-drop-target";
+  if (isContainerDropTarget) className += " container-drop-target";
+
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
     opacity,
     position: "relative",
-    outline: isSelected && !isGhost
+    outline: isPlaceholder
+      ? "2px dashed var(--p-color-border)"
+      : isContainerDropTarget
+      ? "2px solid #008060"
+      : isSelected && !isGhost
       ? "2px solid #008060"
       : isHovered && !isGhost
       ? "1px solid #008060"
@@ -101,13 +153,49 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
     flex: isColumnNode ? 1 : undefined,
     minWidth: isColumnNode ? 0 : undefined,
     boxShadow: isGhost
-      ? "0 8px 30px rgba(0,0,0,0.12)"
+      ? "0 20px 40px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)"
       : isSelected
       ? "0 0 0 3px rgba(0, 128, 96, 0.15)"
       : "none",
-    background: isColumnNode ? "#fafbfc" : "transparent",
+    background: justDropped 
+      ? "rgba(0, 128, 96, 0.05)" 
+      : isContainerDropTarget
+      ? "#f4f8f6"
+      : isPlaceholder
+      ? "var(--p-color-bg-surface-secondary)"
+      : isColumnNode 
+      ? "#fafbfc" 
+      : "transparent",
     padding: isColumnNode ? "6px" : undefined,
   };
+
+  const spacerStyle = {
+    height: isSiblingDropTarget ? "48px" : "0px",
+    maxHeight: isSiblingDropTarget ? "48px" : "0px",
+    opacity: isSiblingDropTarget ? 1 : 0,
+    margin: isSiblingDropTarget ? "8px 0" : "0px",
+    border: isSiblingDropTarget ? "2px dashed #008060" : "none",
+    background: "#f4f8f6",
+    borderRadius: "6px",
+    overflow: "hidden",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#008060",
+    fontSize: "13px",
+    fontWeight: 500,
+    pointerEvents: "none",
+    boxSizing: "border-box",
+    transition: isReducedMotion
+      ? "none"
+      : "all 0.2s cubic-bezier(0.18, 0.67, 0.6, 1.22)",
+  };
+
+  const SpacerComponent = (
+    <div style={spacerStyle}>
+      Drop block here
+    </div>
+  );
 
   const handleClick = (e) => {
     if (isGhost) return;
@@ -137,12 +225,16 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   return (
     <div
       ref={setNodeRef}
+      id={id}
       style={style}
+      className={className}
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onContextMenu={handleContextMenu}
     >
+      {/* Unified Upper Sibling Insertion Indicator */}
+      {isSiblingDropTarget && !isBelow && SpacerComponent}
       {/* ── Toolbar (Shown on Hover/Select) ── */}
       {(isSelected || isHovered) && !isDragging && !isGhost && (
         <div
@@ -215,7 +307,7 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
 
       {/* ── Block Content & Children ── */}
       {PreviewComponent && (
-        <div style={{ position: "relative", width: "100%", zIndex: 1, pointerEvents: (isDragging || isGhost) ? "none" : "auto" }}>
+        <div style={{ position: "relative", width: "100%", zIndex: 1, pointerEvents: (isDragging || isGhost) ? "none" : "auto", opacity: isPlaceholder ? 0.3 : 1 }}>
           <BlockErrorBoundary>
             <PreviewComponent block={block} isSelected={isSelected} />
           </BlockErrorBoundary>
@@ -235,19 +327,23 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
           {(!block.childrenIds || block.childrenIds.length === 0) && (
             <div style={{
               textAlign: "center",
-              color: "#8c9196",
+              color: isContainerDropTarget ? "#008060" : "#8c9196",
               fontSize: "13px",
               padding: "24px 0",
               width: "100%",
-              border: "2px dashed #e1e3e5",
+              border: isContainerDropTarget ? "2px dashed #008060" : "2px dashed #e1e3e5",
               borderRadius: "6px",
-              background: "#fafbfc"
+              background: isContainerDropTarget ? "transparent" : "#fafbfc",
+              transition: isReducedMotion ? "none" : "all 200ms ease"
             }}>
               Drop a block here
             </div>
           )}
         </div>
       )}
+
+      {/* Unified Lower Sibling Insertion Indicator */}
+      {isSiblingDropTarget && isBelow && SpacerComponent}
 
       {/* ── Context Menu ── */}
       {contextMenu && (
