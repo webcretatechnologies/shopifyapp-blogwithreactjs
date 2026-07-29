@@ -165,9 +165,21 @@ export default function SettingsControls({ block, onChange }) {
   if (type === "ProductSlider") return <ProductSliderBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "CTAButton") return <CTAButtonBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "HeroSection") return <HeroBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
-  if (type === "VideoEmbed") return <VideoBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
+  if (type === "VideoEmbed" || type === "VideoBlock") return <VideoBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   // Note: SpacerBlockSettings is the classic one; we use it for both variants
   if (type === "Spacer") return <SpacerBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
+
+  if (type === "ButtonBlock") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <TextField label="Button Text" value={settings.text || ""} onChange={(val) => update("text", val)} autoComplete="off" />
+        <TextField label="Link URL" value={settings.url || ""} onChange={(val) => update("url", val)} autoComplete="off" />
+        <Select label="Alignment" options={["left", "center", "right"]} value={settings.alignment || "center"} onChange={(val) => update("alignment", val)} />
+        <TextField label="Background Color" type="color" value={settings.backgroundColor || "#008060"} onChange={(val) => update("backgroundColor", val)} autoComplete="off" />
+        <TextField label="Text Color" type="color" value={settings.textColor || "#ffffff"} onChange={(val) => update("textColor", val)} autoComplete="off" />
+      </div>
+    );
+  }
 
   // -------------------------------------------------------------------------
   // Builder-Specific Blocks

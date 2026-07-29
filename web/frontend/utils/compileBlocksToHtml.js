@@ -157,12 +157,62 @@ function compileCoreBlockHtml(type, settings, children) {
       </div>`;
     }
 
+    case "VideoBlock":
     case "VideoEmbed": {
       const url = settings.url || "";
       if (!url) return "";
       const maxW = settings.maxWidth || "100%";
       return `<div style="max-width: ${maxW}; margin: 16px auto;">
         <iframe src="${url}" style="width: 100%; aspect-ratio: 16/9; border: none; border-radius: 8px;" allowfullscreen></iframe>
+      </div>`;
+    }
+
+    case "ButtonBlock": {
+      const text = settings.text || "Click Here";
+      const url = settings.url || "#";
+      const align = settings.alignment || settings.align || "center";
+      const color = settings.backgroundColor || settings.color || "#008060";
+      const textColor = settings.textColor || "#ffffff";
+      const br = (settings.borderRadius !== undefined ? settings.borderRadius : 6) + "px";
+      return `<div style="text-align: ${align}; margin: 16px 0;">
+        <a href="${url}" style="display: inline-block; background-color: ${color}; color: ${textColor}; padding: 12px 24px; border-radius: ${br}; font-weight: 600; text-decoration: none;">${text}</a>
+      </div>`;
+    }
+
+    case "Collection": {
+      const heading = settings.heading || "Featured Collection";
+      const cols = settings.columns || 3;
+      const products = settings.manualProducts || settings.products || [];
+      return `<div style="margin: 24px 0;">
+        ${settings.showTitle !== false && heading ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: left;">${heading}</h3>` : ''}
+        <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'};">
+          ${products.map(p => `
+            <div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; text-align: center; background: #fff;">
+              ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 180px; object-fit: contain; margin-bottom: 12px;" />` : ''}
+              <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
+              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 12px;">₹${p.price}</p>` : ''}
+              ${settings.showButton !== false ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Shop Now'}</button>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+    }
+
+    case "ProductSlider": {
+      const title = settings.title || "";
+      const products = settings.manualProducts || settings.products || [];
+      return `<div style="margin: 24px 0; overflow-x: auto;">
+        ${title ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: ${settings.titleAlign || 'left'};">${title}</h3>` : ''}
+        <div style="display: flex; gap: ${settings.gap || '16px'}; overflow-x: auto; padding-bottom: 8px;">
+          ${products.map(p => `
+            <div style="min-width: 220px; flex-shrink: 0; border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; text-align: center; background: #fff;">
+              ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 160px; object-fit: contain; margin-bottom: 12px;" />` : ''}
+              <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
+              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 12px;">₹${p.price}</p>` : ''}
+              ${settings.showButton !== false ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Add to Cart'}</button>` : ''}
+            </div>
+          `).join('')}
+        </div>
       </div>`;
     }
 
