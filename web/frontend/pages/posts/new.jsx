@@ -291,37 +291,18 @@ const legacyHtmlToAst = (html) => {
         const tableData = [];
         let hasHeader = false;
 
-        // Check for complexity
-        if (node.querySelector("table, img, a, iframe") || node.querySelector("[rowspan], [colspan]")) {
+        // Only truly unsupported constructs make a table "complex":
+        //   • Nested <table> inside a cell — our Table block can't represent that.
+        //   • rowspan / colspan attributes — data would be misaligned.
+        // Links (<a>), images (<img>), <code>, <strong>, etc. are perfectly fine
+        // as raw innerHTML inside a cell and are NOT a reason to fall back to Html.
+        if (node.querySelector("table") || node.querySelector("[rowspan], [colspan]")) {
           isComplex = true;
-        } else {
-          // Additional check: are there inline styles, spans, or non-text nodes inside cells that we might lose?
-          // We will be very strict: if a cell contains anything other than text, <br>, or basic formatting (b, i, u, strong, em), we flag it.
-          const cells = Array.from(node.querySelectorAll("td, th"));
-          for (const cell of cells) {
-            const forbidden = Array.from(cell.children).some(child => {
-              const tag = child.tagName.toLowerCase();
-              return !["br", "b", "i", "u", "strong", "em", "p", "span"].includes(tag);
-            });
-            if (forbidden) {
-              isComplex = true;
-              break;
-            }
-          }
         }
 
         if (isComplex) {
-          blocks.push({
-            id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            type: "Callout",
-            settings: {
-              title: "Table Import Review",
-              body: "This table contained complex formatting (such as links, images, or merged cells) and was imported as raw HTML. Please review it to ensure everything looks correct.",
-              backgroundColor: "#fff4e5",
-              borderColor: "#b66e13",
-              emoji: "⚠️"
-            }
-          });
+          // Fall back: render the original HTML verbatim inside an Html block.
+          // Skip the warning Callout so we don't pollute the canvas.
           blocks.push({
             id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             type: "Html",
@@ -330,26 +311,29 @@ const legacyHtmlToAst = (html) => {
             }
           });
         } else {
+          // Walk every <tr>; collect raw innerHTML of each <th>/<td>.
+          // Raw innerHTML preserves links, bold, images, code, etc. faithfully.
           const rows = Array.from(node.querySelectorAll("tr"));
           rows.forEach((row, rowIndex) => {
             const cells = Array.from(row.querySelectorAll("th, td"));
             if (rowIndex === 0 && cells.some(c => c.tagName.toLowerCase() === "th")) {
               hasHeader = true;
             }
-            // keep basic innerHTML for cells to preserve bold/italic/br
             tableData.push(cells.map(c => c.innerHTML.trim()));
           });
 
-          blocks.push({
-            id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            type: "Table",
-            settings: {
-              rows: tableData.length,
-              cols: tableData.length > 0 ? tableData[0].length : 0,
-              hasHeader: hasHeader,
-              tableData: tableData
-            }
-          });
+          if (tableData.length > 0) {
+            blocks.push({
+              id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              type: "Table",
+              settings: {
+                rows: tableData.length,
+                cols: tableData[0].length,
+                hasHeader: hasHeader,
+                tableData: tableData
+              }
+            });
+          }
         }
       } else {
         appendTextBlock(node.outerHTML);
