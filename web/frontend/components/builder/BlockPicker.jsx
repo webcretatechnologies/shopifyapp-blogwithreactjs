@@ -15,89 +15,23 @@ import {
   SearchIcon, 
   LayoutBlockIcon, 
   MagicIcon, 
-  StarIcon, 
-  ThemeTemplateIcon, 
-  DeleteIcon, 
-  PlusIcon 
+  StarIcon,
+  ThemeTemplateIcon,
+  DeleteIcon,
+  PlusIcon,
+  ListBulletedIcon
 } from "@shopify/polaris-icons";
 import { nanoid } from "./store/nanoid";
+import LayersPanel from "./sidebar/LayersPanel";
 
-const PRESET_TEMPLATES = [
-  {
-    id: "hero-with-cta",
-    title: "Hero Banner + CTA",
-    description: "High-impact heading, subtitle, and primary action button.",
-    blocks: [
-      { type: "Heading", settings: { text: "Welcome to Our Brand", level: 1, align: "center", color: "#111827" } },
-      { type: "Paragraph", settings: { text: "Discover our latest collection crafted with premium materials.", align: "center", color: "#4b5563" } },
-      { type: "Button", settings: { label: "Shop Now", url: "/collections/all", align: "center", variant: "primary" } },
-    ],
-  },
-  {
-    id: "feature-grid",
-    title: "3-Feature Highlights",
-    description: "Column layout showcasing key selling points or values.",
-    blocks: [
-      { type: "Heading", settings: { text: "Why Choose Us", level: 2, align: "center" } },
-      {
-        type: "ColumnLayout",
-        settings: { columns: 3, gap: "16px" },
-        children: [
-          { type: "Column", children: [{ type: "Heading", settings: { text: "Free Shipping", level: 3 } }, { type: "Paragraph", settings: { text: "On all orders over $50" } }] },
-          { type: "Column", children: [{ type: "Heading", settings: { text: "24/7 Support", level: 3 } }, { type: "Paragraph", settings: { text: "Dedicated customer service" } }] },
-          { type: "Column", children: [{ type: "Heading", settings: { text: "30-Day Returns", level: 3 } }, { type: "Paragraph", settings: { text: "Hassle-free money back guarantee" } }] },
-        ],
-      },
-    ],
-  },
-];
-
-/**
- * Regenerates nanoid IDs recursively for a raw block tree so that inserting
- * a pattern multiple times never produces duplicate ID keys in the store.
- */
-function regenerateBlockIds(node) {
-  const newId = nanoid();
-  const children = Array.isArray(node.children) ? node.children.map(regenerateBlockIds) : [];
-  return {
-    ...node,
-    id: newId,
-    children,
-  };
-}
 
 export default function BlockPicker({ isRailMode = false }) {
-  const [selectedTab, setSelectedTab] = useState(0); // 0: blocks, 1: presets, 2: patterns
+  const [selectedTab, setSelectedTab] = useState(0); // 0: blocks, 1: layers
   const [searchQuery, setSearchQuery] = useState("");
-  const [patterns, setPatterns] = useState([]);
-  const [loadingPatterns, setLoadingPatterns] = useState(false);
 
   const addBlock = useBuilderStore((s) => s.addBlock);
   const selectedBlockId = useBuilderStore((s) => s.selectedBlockId);
   const blocksById = useBuilderStore((s) => s.blocksById);
-  const normalizeAstAndHydrate = useBuilderStore((s) => s.normalizeAstAndHydrate);
-
-  // Fetch patterns from backend database
-  const fetchPatterns = useCallback(async () => {
-    setLoadingPatterns(true);
-    try {
-      const res = await fetch("/api/patterns");
-      if (res.ok) {
-        const data = await res.json();
-        setPatterns(data.patterns || []);
-      }
-    } catch (_) {
-      /* ignore fetch errors */
-    } finally {
-      setLoadingPatterns(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (selectedTab === 2) {
-      fetchPatterns();
-    }
-  }, [selectedTab, fetchPatterns]);
 
   const handleAddBlock = (type) => {
     let targetParentId = null;
@@ -119,42 +53,11 @@ export default function BlockPicker({ isRailMode = false }) {
     addBlock(type, defaultSettings || {}, targetParentId);
   };
 
-  const handleAddPreset = (preset) => {
-    preset.blocks.forEach((templateBlock) => {
-      const newBlock = createBlock(templateBlock.type);
-      newBlock.settings = { ...newBlock.settings, ...templateBlock.settings };
-      addBlock(newBlock.type, newBlock.settings);
-    });
-  };
-
-  const handleAddPattern = (pattern) => {
-    if (!pattern.blocks) return;
-
-    // Deep clone and generate fresh IDs
-    const freshRoot = regenerateBlockIds(pattern.blocks);
-
-    // Convert existing store to AST, append fresh pattern AST, and re-hydrate normalized store
-    const currentAst = useBuilderStore.getState().getBlocksAst();
-    const updatedAst = [...currentAst, freshRoot];
-    normalizeAstAndHydrate(updatedAst);
-  };
-
-  const handleDeletePattern = async (e, patternId) => {
-    e.stopPropagation();
-    try {
-      const res = await fetch(`/api/patterns/${patternId}`, { method: "DELETE" });
-      if (res.ok) {
-        setPatterns((prev) => prev.filter((p) => p.id !== patternId));
-      }
-    } catch (_) {}
-  };
-
   const query = searchQuery.toLowerCase().trim();
 
   const tabDefs = [
     { id: 'blocks', label: 'Blocks', icon: LayoutBlockIcon },
-    { id: 'presets', label: 'Presets', icon: MagicIcon },
-    { id: 'patterns', label: 'Saved', icon: StarIcon },
+    { id: 'layers', label: 'Layers', icon: ListBulletedIcon },
   ];
 
   // ── Render 48px Icon Rail Mode ──
@@ -273,56 +176,6 @@ export default function BlockPicker({ isRailMode = false }) {
                   );
                 })}
               </div>
-            ))}
-
-          {selectedTab === 1 &&
-            PRESET_TEMPLATES.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => handleAddPreset(preset)}
-                aria-label={`Add Preset: ${preset.title}`}
-                title={preset.title}
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "6px",
-                  border: "1px solid var(--p-color-border)",
-                  background: "var(--p-color-bg-surface)",
-                  color: "#008060",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                }}
-              >
-                <Icon source={ThemeTemplateIcon} />
-              </button>
-            ))}
-
-          {selectedTab === 2 &&
-            patterns.map((pattern) => (
-              <button
-                key={pattern.id}
-                type="button"
-                onClick={() => handleAddPattern(pattern)}
-                aria-label={`Add Pattern: ${pattern.name}`}
-                title={pattern.name}
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "6px",
-                  border: "1px solid var(--p-color-border)",
-                  background: "var(--p-color-bg-surface)",
-                  color: "#008060",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                }}
-              >
-                <Icon source={StarIcon} />
-              </button>
             ))}
         </div>
       </div>
@@ -548,151 +401,9 @@ export default function BlockPicker({ isRailMode = false }) {
           </Box>
         )}
 
-        {/* ── Presets View ── */}
         {selectedTab === 1 && (
-          <Box style={{ display: "flex", flexDirection: "column", gap: "var(--p-space-200)" }}>
-            {PRESET_TEMPLATES.filter((p) => !query || p.title.toLowerCase().includes(query)).map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => handleAddPreset(preset)}
-                style={{
-                  background: "var(--p-color-bg-surface)",
-                  border: "1px solid var(--p-color-border)",
-                  borderRadius: "var(--p-border-radius-200)",
-                  padding: "var(--p-space-300)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  transition: "all 0.15s ease",
-                  outline: "none",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "var(--p-color-border-emphasis)";
-                  e.currentTarget.style.boxShadow = "var(--p-shadow-100)";
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "var(--p-color-border)";
-                  e.currentTarget.style.boxShadow = "none";
-                  e.currentTarget.style.transform = "none";
-                }}
-              >
-                <Box paddingBlockEnd="100">
-                  <InlineStack align="start" blockAlign="center" gap="200">
-                    <div style={{ color: "var(--p-color-icon-success)", display: "flex", alignItems: "center" }}>
-                      <Icon source={ThemeTemplateIcon} />
-                    </div>
-                    <Text variant="headingSm" as="h4">
-                      {preset.title}
-                    </Text>
-                  </InlineStack>
-                </Box>
-                <Text variant="bodySm" tone="subdued">
-                  {preset.description}
-                </Text>
-              </button>
-            ))}
-          </Box>
-        )}
-
-        {/* ── Saved Patterns View (Backend Persisted) ── */}
-        {selectedTab === 2 && (
-          <Box style={{ display: "flex", flexDirection: "column", gap: "var(--p-space-200)" }}>
-            {loadingPatterns ? (
-              <Box padding="600">
-                <InlineStack align="center" blockAlign="center" gap="200">
-                  <Spinner size="small" />
-                  <Text tone="subdued">Loading patterns...</Text>
-                </InlineStack>
-              </Box>
-            ) : patterns.length === 0 ? (
-              <Box padding="600">
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ marginBottom: "var(--p-space-200)", color: "var(--p-color-icon-subdued)" }}>
-                    <Icon source={StarIcon} />
-                  </div>
-                  <Box paddingBlockEnd="100">
-                    <Text variant="headingSm">No Saved Patterns Yet</Text>
-                  </Box>
-                  <Text variant="bodySm" tone="subdued">
-                    Right-click any block on the canvas and choose "Save as Pattern" to store it here.
-                  </Text>
-                </div>
-              </Box>
-            ) : (
-              patterns
-                .filter((p) => !query || p.name.toLowerCase().includes(query))
-                .map((pattern) => (
-                  <button
-                    key={pattern.id}
-                    type="button"
-                    onClick={() => handleAddPattern(pattern)}
-                    style={{
-                      background: "var(--p-color-bg-surface)",
-                      border: "1px solid var(--p-color-border)",
-                      borderRadius: "var(--p-border-radius-200)",
-                      padding: "var(--p-space-300)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      transition: "all 0.15s ease",
-                      position: "relative",
-                      display: "block",
-                      width: "100%",
-                      outline: "none",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "var(--p-color-border-emphasis)";
-                      e.currentTarget.style.boxShadow = "var(--p-shadow-100)";
-                      e.currentTarget.style.transform = "translateY(-1px)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "var(--p-color-border)";
-                      e.currentTarget.style.boxShadow = "none";
-                      e.currentTarget.style.transform = "none";
-                    }}
-                  >
-                    <Box paddingBlockEnd="100">
-                      <InlineStack align="space-between" blockAlign="center" wrap={false}>
-                        <InlineStack align="start" blockAlign="center" gap="100">
-                          <div style={{ color: "var(--p-color-icon-success)" }}>
-                            <Icon source={StarIcon} />
-                          </div>
-                          <Text variant="headingSm" as="h4">
-                            {pattern.name}
-                          </Text>
-                        </InlineStack>
-                        <button
-                          type="button"
-                          title="Delete pattern"
-                          onClick={(e) => handleDeletePattern(e, pattern.id)}
-                          style={{ background: "none", border: "none", color: "var(--p-color-icon-subdued)", cursor: "pointer", padding: "2px" }}
-                          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--p-color-icon-critical)")}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--p-color-icon-subdued)")}
-                        >
-                          <Icon source={DeleteIcon} />
-                        </button>
-                      </InlineStack>
-                    </Box>
-
-                    {pattern.description && (
-                      <Box paddingBlockEnd="100">
-                        <Text variant="bodySm" tone="subdued">
-                          {pattern.description}
-                        </Text>
-                      </Box>
-                    )}
-
-                    <InlineStack align="start" blockAlign="center" gap="025">
-                      <div style={{ color: "var(--p-color-icon-success)" }}>
-                        <Icon source={PlusIcon} />
-                      </div>
-                      <Text variant="bodySm" tone="success" fontWeight="medium">
-                        Click to insert on canvas
-                      </Text>
-                    </InlineStack>
-                  </button>
-                ))
-            )}
+          <Box padding="0">
+            <LayersPanel />
           </Box>
         )}
       </Box>

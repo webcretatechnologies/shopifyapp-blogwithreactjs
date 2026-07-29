@@ -33,17 +33,11 @@ export function resolveDropTarget(blocksById, rootIds, activeId, overId, overIsS
   const siblings = parentId ? blocksById[parentId].childrenIds : rootIds;
   const overIndex = siblings.indexOf(overId);
 
-  // If the active block is currently before the over block in the same parent,
-  // we actually want to drop it at overIndex (it will shift things).
-  // Otherwise, drop at overIndex + 1.
-  const activeBlock = blocksById[activeId];
-  const activeIndex = siblings.indexOf(activeId);
-  const isSameParent = activeBlock.parentId === parentId;
-  
-  let newIndex = overIndex;
-  if (!isSameParent || activeIndex > overIndex) {
-    newIndex = overIndex + 1;
-  }
-
-  return { newParentId: parentId, newIndex };
+  // When we use overIndex directly:
+  // - If dragging down (activeIndex < overIndex), removing activeId shrinks the array before overIndex.
+  //   Inserting at overIndex then places it exactly where we want (effectively swapping or shifting).
+  // - If dragging up (activeIndex > overIndex), removing activeId doesn't affect indices before it.
+  //   Inserting at overIndex places it exactly where overId was, pushing overId down.
+  // This perfectly matches dnd-kit's SortableContext swap behavior.
+  return { newParentId: parentId, newIndex: overIndex };
 }

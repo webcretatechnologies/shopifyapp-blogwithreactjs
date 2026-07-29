@@ -139,6 +139,16 @@ export const BlockRegistry = {
     label: "Text",
     icon: <Icon source={TextAlignLeftIcon} />,
     category: "content",
+    getPreviewText: (b) => {
+      try {
+        if (typeof b.settings?.content === "string") return b.settings.content.replace(/<[^>]*>?/gm, '').substring(0, 40).trim();
+        const str = JSON.stringify(b.settings?.content || "");
+        // Extract basic text from tiptap json
+        const matches = str.match(/"text":"([^"]+)"/g);
+        if (matches) return matches.map(m => m.split('":"')[1].slice(0, -1)).join(' ').substring(0, 40).trim();
+        return "Rich Text";
+      } catch { return "Rich Text"; }
+    },
     allowsChildren: false,
     defaultSettings: {
       content: { type: "doc", content: [{ type: "paragraph" }] },
@@ -150,6 +160,7 @@ export const BlockRegistry = {
     label: "Heading",
     icon: <Icon source={TextTitleIcon} />,
     category: "content",
+    getPreviewText: (b) => b.settings?.text?.substring(0, 40) || "Heading",
     allowsChildren: false,
     defaultSettings: {
       text: "Your Heading",
@@ -224,6 +235,7 @@ export const BlockRegistry = {
     label: "Image",
     icon: <Icon source={ImageWithTextOverlayIcon} />,
     category: "media",
+    getPreviewText: (b) => b.settings?.alt || b.settings?.src?.split('/').pop() || "Image",
     allowsChildren: false,
     defaultSettings: {
       src: "",
@@ -307,6 +319,7 @@ export const BlockRegistry = {
     label: "Product Grid",
     icon: <Icon source={ProductListIcon} />,
     category: "commerce",
+    getPreviewText: (b) => b.settings?.manualProducts ? `Product Grid — ${b.settings.manualProducts.length} items` : "Product Grid",
     allowsChildren: false,
     defaultSettings: {
       title: "",
@@ -331,6 +344,7 @@ export const BlockRegistry = {
     label: "Collection",
     icon: <Icon source={CollectionIcon} />,
     category: "commerce",
+    getPreviewText: (b) => b.settings?.collection?.title ? `Collection — ${b.settings.collection.title}` : "Collection",
     allowsChildren: false,
     defaultSettings: {
       heading: "",
@@ -472,6 +486,7 @@ export const BlockRegistry = {
     label: "Table",
     icon: <Icon source={DataTableIcon} />,
     category: "content",
+    getPreviewText: (b) => b.settings?.tableData ? `Table — ${b.settings.tableData.length}×${b.settings.tableData[0]?.length || 0}` : "Table",
     allowsChildren: false,
     defaultSettings: {
       rows: 3,
