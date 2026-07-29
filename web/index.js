@@ -38,6 +38,7 @@ import wizardRoutes from "./src/routes/wizard.js";
 import supportRoutes from "./src/routes/support.js";
 import superAdminRoutes from "./src/routes/superAdmin.js";
 import trackingRoutes from "./src/routes/tracking.js";
+import patternRoutes from "./src/routes/patterns.js";
 
 // Process-level event handlers to prevent crashes from unhandled network errors
 process.on("unhandledRejection", (reason, promise) => {
@@ -407,6 +408,9 @@ app.use("/api/wizard", wizardRoutes);
 
 // Support
 app.use("/api/support", supportRoutes);
+
+// Reusable Patterns
+app.use("/api/patterns", patternRoutes);
 
 // Super Admin API
 app.use("/admin-api", superAdminRoutes);

@@ -1,0 +1,340 @@
+/**
+ * compileBlocksToHtml.js
+ *
+ * Compiles the Builder AST array into a single clean, responsive,
+ * SEO-optimized HTML string.
+ *
+ * Visibility / hide-on-device:
+ *   Blocks with settings.hideOnMobile / hideOnTablet / hideOnDesktop are
+ *   wrapped in a <div> carrying a CSS class and compileBlocksToHtml() prepends
+ *   a <style> block with the corresponding @media rules. The <style> is emitted
+ *   once, not once-per-block, so output size is O(1) regardless of how many
+ *   blocks use the feature. Blocks with no visibility flags are unchanged.
+ */
+
+import { generateHTML } from "@tiptap/html";
+import { builderRichTextExtensions } from "../components/editor/richTextExtensions";
+
+/**
+ * CSS emitted once at the top of compiled output when at least one block
+ * has a visibility flag set. Breakpoints match the editor's device preview
+ * (mobile ≤767px, tablet 768-1023px, desktop ≥1024px).
+ */
+const VISIBILITY_CSS = `<style>
+  @media (max-width: 767px)  { .builder-hide-mobile  { display: none !important; } }
+  @media (min-width: 768px) and (max-width: 1023px) { .builder-hide-tablet  { display: none !important; } }
+  @media (min-width: 1024px) { .builder-hide-desktop { display: none !important; } }
+</style>`;
+
+/**
+ * Wraps a compiled block's HTML string with hide-on-device class wrappers
+ * if the block settings require it. Returns the original string untouched
+ * if no visibility flags are set (zero overhead for the common case).
+ */
+function applyVisibilityWrapper(html, settings = {}) {
+  if (!html) return html;
+  const classes = [];
+  if (settings.hideOnMobile)  classes.push("builder-hide-mobile");
+  if (settings.hideOnTablet)  classes.push("builder-hide-tablet");
+  if (settings.hideOnDesktop) classes.push("builder-hide-desktop");
+  if (classes.length === 0) return html;
+  return `<div class="${classes.join(" ")}">${html}</div>`;
+}
+
+/**
+ * Walk a block AST and return true if any block or child has a hide flag set.
+ * Used to decide whether to prepend the VISIBILITY_CSS style block.
+ */
+function hasVisibilityFlags(blocks) {
+  if (!Array.isArray(blocks)) return false;
+  for (const b of blocks) {
+    const s = b.settings || {};
+    if (s.hideOnMobile || s.hideOnTablet || s.hideOnDesktop) return true;
+    if (b.children?.length && hasVisibilityFlags(b.children)) return true;
+  }
+  return false;
+}
+
+export function compileSingleBlockToHtml(block) {
+  if (!block || !block.type) return "";
+
+  const { type, settings = {}, children = [] } = block;
+
+  // Compile the core HTML for this block type, then optionally wrap it
+  // in a hide-on-device <div> if any visibility flags are set.
+  const html = compileCoreBlockHtml(type, settings, children);
+  return applyVisibilityWrapper(html, settings);
+}
+
+function compileCoreBlockHtml(type, settings, children) {
+  switch (type) {
+    case "Heading": {
+      const level = settings.level || 2;
+      const align = settings.align || "left";
+      const color = settings.color || "#202223";
+      const text = settings.text || "";
+      const fontSize = settings.fontSize ? `font-size: ${settings.fontSize};` : "";
+      return `<h${level} style="text-align: ${align}; color: ${color}; ${fontSize} margin: 16px 0 8px;">${text}</h${level}>`;
+    }
+
+    case "RichText": {
+      if (!settings.content) return "";
+      if (typeof settings.content === "string") return settings.content;
+      try {
+        return generateHTML(settings.content, builderRichTextExtensions());
+      } catch {
+        return "<p></p>";
+      }
+    }
+
+    case "Section": {
+      const bg = settings.backgroundColor || "#ffffff";
+      const pt = settings.paddingTop || "40px";
+      const pb = settings.paddingBottom || "40px";
+      const pl = settings.paddingLeft || "24px";
+      const pr = settings.paddingRight || "24px";
+      const maxW = settings.maxWidth || "100%";
+      const br = settings.borderRadius || "0px";
+      const innerHtml = children.map(compileSingleBlockToHtml).join("");
+      return `<section style="background-color: ${bg}; padding: ${pt} ${pr} ${pb} ${pl}; max-width: ${maxW}; border-radius: ${br}; margin: 0 auto 20px; box-sizing: border-box;">${innerHtml}</section>`;
+    }
+
+    case "ColumnLayout": {
+      const gap = settings.gap || "16px";
+      const innerHtml = children.map(compileSingleBlockToHtml).join("");
+      return `<div style="display: flex; gap: ${gap}; width: 100%; margin: 16px 0; box-sizing: border-box;" class="builder-column-layout">${innerHtml}</div>`;
+    }
+
+    case "Column": {
+      const innerHtml = children.map(compileSingleBlockToHtml).join("");
+      return `<div style="flex: 1; min-width: 0; box-sizing: border-box;" class="builder-column">${innerHtml}</div>`;
+    }
+
+    case "Divider": {
+      const style = settings.style || "solid";
+      const color = settings.color || "#e1e3e5";
+      const thickness = settings.thickness || "1px";
+      const width = settings.width || "100%";
+      const mt = settings.marginTop || "16px";
+      const mb = settings.marginBottom || "16px";
+      return `<hr style="border: none; border-top: ${thickness} ${style} ${color}; width: ${width}; margin: ${mt} auto ${mb};" />`;
+    }
+
+    case "Spacer": {
+      const height = settings.height || "40px";
+      return `<div style="height: ${height}; width: 100%;"></div>`;
+    }
+
+    case "Callout": {
+      const bg = settings.backgroundColor || "#fdfbc8";
+      const border = settings.borderColor || "#eab308";
+      const emoji = settings.emoji || "💡";
+      const title = settings.title || "";
+      const body = settings.body || "";
+      return `<div style="background-color: ${bg}; border-left: 4px solid ${border}; padding: 16px; border-radius: 6px; display: flex; gap: 12px; align-items: center; margin: 16px 0;">
+        <span style="font-size: 24px;">${emoji}</span>
+        <div>
+          <strong style="display: block; margin-bottom: 4px; color: #202223;">${title}</strong>
+          <span style="color: #4a4a4a;">${body}</span>
+        </div>
+      </div>`;
+    }
+
+    case "Image": {
+      const src = settings.src || "";
+      if (!src) return "";
+      const alt = settings.alt || "";
+      const width = settings.width || "100%";
+      const align = settings.alignment || "center";
+      const br = settings.borderRadius || 0;
+      const caption = settings.caption || "";
+      const imgTag = `<img src="${src}" alt="${alt}" style="max-width: ${width}; border-radius: ${br}px; height: auto; display: inline-block;" />`;
+      const linkedImg = settings.linkUrl ? `<a href="${settings.linkUrl}" target="${settings.linkTarget || '_self'}">${imgTag}</a>` : imgTag;
+
+      return `<div style="text-align: ${align}; margin: 16px 0;">
+        ${linkedImg}
+        ${caption ? `<p style="font-size: 13px; color: #6d7175; margin-top: 6px; text-align: center;">${caption}</p>` : ''}
+      </div>`;
+    }
+
+    case "VideoEmbed": {
+      const url = settings.url || "";
+      if (!url) return "";
+      const maxW = settings.maxWidth || "100%";
+      return `<div style="max-width: ${maxW}; margin: 16px auto;">
+        <iframe src="${url}" style="width: 100%; aspect-ratio: 16/9; border: none; border-radius: 8px;" allowfullscreen></iframe>
+      </div>`;
+    }
+
+    case "Html": {
+      return `<div class="custom-html-block">${settings.code || ""}</div>`;
+    }
+
+    case "Table": {
+      const data = settings.tableData || [];
+      const hasHeader = settings.hasHeader;
+      
+      let theadRows = [];
+      let tbodyRows = [];
+      
+      if (data.length > 0) {
+        if (hasHeader) {
+          theadRows = [data[0]];
+          tbodyRows = data.slice(1);
+        } else {
+          tbodyRows = data;
+        }
+      }
+
+      const theadHtml = theadRows.length > 0 ? `
+        <thead>
+          ${theadRows.map(row => `
+            <tr>
+              ${row.map(cell => `<th style="border: 1px solid #e1e3e5; padding: 8px; background: #f4f6f8; font-weight: 600;">${cell || ''}</th>`).join('')}
+            </tr>
+          `).join('')}
+        </thead>
+      ` : '';
+
+      const tbodyHtml = `
+        <tbody>
+          ${tbodyRows.map(row => `
+            <tr>
+              ${row.map(cell => `<td style="border: 1px solid #e1e3e5; padding: 8px;">${cell || ''}</td>`).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      `;
+
+      return `
+        <div style="margin: 16px 0; overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; border: 1px solid #e1e3e5; text-align: left;">
+            ${theadHtml}
+            ${tbodyHtml}
+          </table>
+        </div>
+      `;
+    }
+
+    case "CTAButton": {
+      const text = settings.text || "Shop Now";
+      const url = settings.url || "#";
+      const align = settings.align || "center";
+      const color = settings.color || "#008060";
+      const textColor = settings.textColor || "#ffffff";
+      const br = settings.borderRadius || "6px";
+      return `<div style="text-align: ${align}; margin: 16px 0;">
+        <a href="${url}" style="display: inline-block; background-color: ${color}; color: ${textColor}; padding: 12px 24px; border-radius: ${br}; font-weight: 600; text-decoration: none;">${text}</a>
+      </div>`;
+    }
+
+    case "HeroSection": {
+      const heading = settings.heading || "";
+      const subheading = settings.subheading || "";
+      const bgImg = settings.backgroundImage || "";
+      const minH = settings.minHeight || "360px";
+      const align = settings.align || "center";
+      const textColor = settings.textColor || "#ffffff";
+      const showCta = settings.showCta;
+      const ctaText = settings.ctaText || "Shop Now";
+      const ctaUrl = settings.ctaUrl || "#";
+      const ctaColor = settings.ctaColor || "#008060";
+      const ctaTextColor = settings.ctaTextColor || "#ffffff";
+
+      return `<div style="position: relative; background-color: #1a1a1a; ${bgImg ? `background-image: url('${bgImg}'); background-size: cover; background-position: center;` : ''} min-height: ${minH}; display: flex; align-items: center; justify-content: ${align}; padding: 40px 24px; border-radius: 8px; color: ${textColor}; text-align: ${align}; margin: 20px 0;">
+        <div style="max-width: 600px; z-index: 2;">
+          <h1 style="font-size: 32px; font-weight: 700; margin-bottom: 12px; color: inherit;">${heading}</h1>
+          <p style="font-size: 16px; margin-bottom: 24px; opacity: 0.9; color: inherit;">${subheading}</p>
+          ${showCta ? `<a href="${ctaUrl}" style="display: inline-block; background: ${ctaColor}; color: ${ctaTextColor}; padding: 12px 24px; border-radius: 6px; font-weight: 600; text-decoration: none;">${ctaText}</a>` : ''}
+        </div>
+      </div>`;
+    }
+
+    case "ProductGrid": {
+      const title = settings.title || "";
+      const products = settings.manualProducts || [];
+      const cols = settings.columns || 3;
+      return `<div style="margin: 24px 0;">
+        ${title ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: ${settings.titleAlign || 'left'};">${title}</h3>` : ''}
+        <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'};">
+          ${products.map(p => `
+            <div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; text-align: center; background: #fff;">
+              ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 180px; object-fit: contain; margin-bottom: 12px;" />` : ''}
+              <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
+              ${settings.showPrice && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 12px;">₹${p.price}</p>` : ''}
+              ${settings.showButton ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Add to Cart'}</button>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+    }
+
+    case "ProductCard": {
+      const title = settings.title || "Sample Product";
+      const price = settings.price ? (String(settings.price).startsWith('$') || String(settings.price).startsWith('₹') ? settings.price : `$${settings.price}`) : "";
+      const imageUrl = settings.imageUrl || settings.imageurl || settings.image || (typeof settings.featuredImage === 'string' ? settings.featuredImage : settings.featuredImage?.url) || settings.product?.image || settings.product?.featuredImage?.url || settings.product?.images?.[0]?.originalSrc || settings.product?.images?.[0]?.src || "";
+      const showImage = settings.showImage !== false;
+      const showPrice = settings.showPrice !== false;
+      const showButton = settings.showButton !== false;
+      const buttonText = settings.buttonText || "Add to Cart";
+      const buttonColor = settings.buttonColor || "#008060";
+      const layout = settings.layout || "vertical";
+      const br = settings.borderRadius ?? 8;
+      const borderColor = settings.borderColor || "#e1e3e5";
+      const bg = settings.backgroundColor || "#ffffff";
+
+      const isHorizontal = layout === "horizontal";
+      const isCompact = layout === "compact";
+
+      let imageHtml = "";
+      if (showImage) {
+        if (isCompact) {
+          if (imageUrl) {
+            imageHtml = `<div style="width: 60px; height: 60px; background: #f4f6f8; border-radius: 4px; overflow: hidden; flex-shrink: 0; margin-right: 12px; display: flex; align-items: center; justify-content: center; border: 1px solid ${borderColor};"><img src="${imageUrl}" alt="${title}" style="width: 100%; height: 100%; object-fit: contain; display: block;" /></div>`;
+          }
+        } else if (isHorizontal) {
+          imageHtml = `<div style="width: 35%; min-width: 120px; min-height: 140px; background: #f4f6f8; overflow: hidden; display: flex; align-items: center; justify-content: center; border-right: 1px solid ${borderColor}; flex-shrink: 0;">${imageUrl ? `<img src="${imageUrl}" alt="${title}" style="max-width: 100%; max-height: 200px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto;" />` : `<div style="color: #8c9196; font-size: 13px;">No image</div>`}</div>`;
+        } else {
+          imageHtml = `<div style="width: 100%; min-height: 160px; max-height: 280px; background: #f4f6f8; overflow: hidden; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid ${borderColor};">${imageUrl ? `<img src="${imageUrl}" alt="${title}" style="max-width: 100%; max-height: 280px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto;" />` : `<div style="color: #8c9196; font-size: 13px;">No image</div>`}</div>`;
+        }
+      }
+
+      return `<div style="border: 1px solid ${borderColor}; border-radius: ${br}px; background-color: ${bg}; overflow: hidden; display: flex; flex-direction: ${isHorizontal ? 'row' : 'column'}; align-items: ${isCompact ? 'center' : 'stretch'}; padding: ${isCompact ? '12px' : '0'}; margin: 16px 0; box-sizing: border-box;" class="builder-product-card">
+        ${imageHtml}
+        <div style="flex: 1; padding: ${isCompact ? '0 12px' : '16px'}; display: ${isCompact ? 'flex' : 'block'}; align-items: center; justify-content: space-between;">
+          <div style="flex: 1;">
+            <h4 style="margin: 0 0 8px; font-size: 16px; font-weight: 600; color: #202223;">${title}</h4>
+            ${showPrice && price ? `<p style="margin: 0 0 12px; font-weight: 700; color: #008060;">${price}</p>` : ''}
+          </div>
+          ${showButton ? `<a href="${settings.handle ? `/products/${settings.handle}` : '#'}" style="display: inline-block; background-color: ${buttonColor}; color: #ffffff; text-decoration: none; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center; width: ${!isHorizontal && !isCompact ? '100%' : 'auto'}; box-sizing: border-box;">${buttonText}</a>` : ''}
+        </div>
+      </div>`;
+    }
+
+    case "BuyButton": {
+      const p = settings.product;
+      if (!p) return "";
+      return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 16px; max-width: ${settings.maxWidth || '360px'}; margin: 16px 0;">
+        ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="width: ${settings.imageSize || '80px'}; height: auto; object-fit: contain;" />` : ''}
+        <div style="flex: 1;">
+          <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 4px;">${p.title}</h4>
+          ${settings.showPrice && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 8px;">₹${p.price}</p>` : ''}
+          <button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Add to Cart'}</button>
+        </div>
+      </div>`;
+    }
+
+    default: {
+      return children.map(compileSingleBlockToHtml).join("");
+    }
+  }
+}
+
+export function compileBlocksToHtml(blocks) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return "";
+  const compiled = blocks.map(compileSingleBlockToHtml).join("\n");
+  // Prepend the responsive visibility CSS once if any block has a hide flag.
+  // This is O(1) in the output — one <style> block regardless of block count.
+  const prefix = hasVisibilityFlags(blocks) ? VISIBILITY_CSS + "\n" : "";
+  return prefix + compiled;
+}

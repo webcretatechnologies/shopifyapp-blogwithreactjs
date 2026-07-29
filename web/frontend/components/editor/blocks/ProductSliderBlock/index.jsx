@@ -176,7 +176,18 @@ export function ProductSliderBlockSettings({ block, onUpdate }) {
 
   const handlePickProducts = async () => {
     if (!window.shopify?.resourcePicker) return;
-    const selection = await window.shopify.resourcePicker({ type: 'product', multiple: true });
+    const initialSelection = block.manualProducts?.map(p => {
+      const rawId = p.shopifyProductId || p.id;
+      if (!rawId) return null;
+      const idStr = String(rawId);
+      return { id: idStr.startsWith('gid://') ? idStr : `gid://shopify/Product/${idStr}` };
+    }).filter(Boolean) || [];
+
+    const selection = await window.shopify.resourcePicker({
+      type: 'product',
+      multiple: true,
+      selectionIds: initialSelection,
+    });
     if (selection) {
       const picked = selection.map(p => ({
         shopifyProductId: p.id,

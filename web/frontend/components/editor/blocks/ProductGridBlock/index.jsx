@@ -18,15 +18,16 @@ import { formatPrice } from '../../../../utils/priceUtils.js';
 // ── Preview ───────────────────────────────────────────────────────────────────
 
 export function ProductGridBlockPreview({ block }) {
-  const query = block.searchQuery || '';
-  const limit = block.columns ? block.columns * 3 : 6;
+  const s = block?.settings || block || {};
+  const query = s.searchQuery || '';
+  const limit = (s.columns ? parseInt(s.columns) : 3) * 3;
   const { products, isLoading } = useShopifyProducts(query, Math.min(limit, 12));
   const { storeCurrency } = useShopifyStoreCurrency();
 
-  const displayProducts = block.manualProducts?.length > 0 ? block.manualProducts : products;
-  const cols = parseInt(block.columns || '3');
-  const showPrice = block.showPrice !== false;
-  const showButton = block.showButton !== false;
+  const displayProducts = s.manualProducts?.length > 0 ? s.manualProducts : products;
+  const cols = parseInt(s.columns || '3') || 3;
+  const showPrice = s.showPrice !== false;
+  const showButton = s.showButton !== false;
 
   if (isLoading && displayProducts.length === 0) {
     return (
@@ -50,30 +51,31 @@ export function ProductGridBlockPreview({ block }) {
   }
 
   return (
-    <div>
-      {block.title && (
+    <div style={{ width: '100%' }}>
+      {s.title && (
         <h3 style={{
           margin: '0 0 16px', fontSize: '20px', fontWeight: '700',
-          color: block.titleColor || '#202223',
-          textAlign: block.titleAlign || 'left',
+          color: s.titleColor || '#202223',
+          textAlign: s.titleAlign || 'left',
         }}>
-          {block.title}
+          {s.title}
         </h3>
       )}
       <div style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${cols}, 1fr)`,
-        gap: block.gap || '16px',
+        gap: s.gap || '16px',
+        width: '100%',
       }}>
-        {displayProducts.slice(0, parseInt(block.maxProducts || '12')).map((p) => (
+        {displayProducts.slice(0, parseInt(s.maxProducts || '12')).map((p, idx) => (
           <ProductCard
-            key={p.shopifyProductId || p.handle}
+            key={p.shopifyProductId || p.id || p.handle || `prod_${idx}`}
             product={p}
             showPrice={showPrice}
             showButton={showButton}
-            cardStyle={block.cardStyle || 'shadow'}
-            buttonColor={block.buttonColor || '#008060'}
-            buttonText={block.buttonText || 'Add to Cart'}
+            cardStyle={s.cardStyle || 'shadow'}
+            buttonColor={s.buttonColor || '#008060'}
+            buttonText={s.buttonText || 'Add to Cart'}
             storeCurrency={storeCurrency}
           />
         ))}
@@ -95,7 +97,7 @@ function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, b
         <img
           src={product.image}
           alt={product.title}
-          style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }}
+          style={{ width: '100%', aspectRatio: '1', objectFit: 'contain', display: 'block', margin: 0, background: '#f8f9fa' }}
         />
       ) : (
         <div style={{ width: '100%', aspectRatio: '1', background: '#f1f2f3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -134,7 +136,18 @@ export function ProductGridBlockSettings({ block, onUpdate }) {
 
   const handlePickProducts = async () => {
     if (!window.shopify?.resourcePicker) return;
-    const selection = await window.shopify.resourcePicker({ type: 'product', multiple: true });
+    const initialSelection = block.manualProducts?.map(p => {
+      const rawId = p.shopifyProductId || p.id;
+      if (!rawId) return null;
+      const idStr = String(rawId);
+      return { id: idStr.startsWith('gid://') ? idStr : `gid://shopify/Product/${idStr}` };
+    }).filter(Boolean) || [];
+
+    const selection = await window.shopify.resourcePicker({
+      type: 'product',
+      multiple: true,
+      selectionIds: initialSelection,
+    });
     if (selection) {
       const picked = selection.map(p => ({
         shopifyProductId: p.id,

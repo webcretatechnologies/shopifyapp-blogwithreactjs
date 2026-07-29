@@ -133,7 +133,16 @@ export function BuyButtonBlockSettings({ block, onUpdate }) {
 
   const handlePickProduct = async () => {
     if (!window.shopify?.resourcePicker) return;
-    const selection = await window.shopify.resourcePicker({ type: 'product', multiple: false });
+    const rawId = block.product?.shopifyProductId || block.product?.id;
+    const initialSelection = rawId ? [{
+      id: String(rawId).startsWith('gid://') ? String(rawId) : `gid://shopify/Product/${rawId}`
+    }] : [];
+
+    const selection = await window.shopify.resourcePicker({
+      type: 'product',
+      multiple: false,
+      selectionIds: initialSelection,
+    });
     if (selection?.[0]) {
       const p = selection[0];
       onUpdate({

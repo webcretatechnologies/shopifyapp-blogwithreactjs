@@ -44,6 +44,7 @@ model Shop {
   settings      ShopSetting[]
   storeLogs     StoreLog[]
   tags          Tag[]
+  templates     Template[]
   webhookLogs   WebhookLog[]
 }
 
@@ -286,9 +287,15 @@ model Template {
   description String?
   thumbnail   String?
   blocks      Json
+  source      String   @default("template") // "template" | "pattern"
+  shopId      Int?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  shop        Shop?    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([source])
 }
 
 model WebhookLog {

@@ -70,6 +70,8 @@
 
 .tiptap-content {
   min-height: 300px;
+  max-height: 600px;
+  overflow-y: auto;
   padding: 16px;
 }
 
@@ -89,37 +91,45 @@
   height: 0;
 }
 
-.tiptap-content .ProseMirror h1 { font-size: 2em; font-weight: 700; margin: 0.5em 0; }
-.tiptap-content .ProseMirror h2 { font-size: 1.5em; font-weight: 700; margin: 0.5em 0; }
-.tiptap-content .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin: 0.5em 0; }
-.tiptap-content .ProseMirror ul { list-style: disc; padding-left: 1.5em; }
-.tiptap-content .ProseMirror ol { list-style: decimal; padding-left: 1.5em; }
-.tiptap-content .ProseMirror blockquote {
+.tiptap-content h1, .tiptap-content .ProseMirror h1 { font-size: 2em; font-weight: 700; margin: 0.5em 0; }
+.tiptap-content h2, .tiptap-content .ProseMirror h2 { font-size: 1.5em; font-weight: 700; margin: 0.5em 0; }
+.tiptap-content h3, .tiptap-content .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin: 0.5em 0; }
+.tiptap-content ul,
+.tiptap-content .ProseMirror ul { list-style-type: disc !important; padding-left: 1.5em !important; margin: 0.5em 0 !important; }
+.tiptap-content ol,
+.tiptap-content .ProseMirror ol { list-style-type: decimal !important; padding-left: 1.5em !important; margin: 0.5em 0 !important; }
+.tiptap-content li,
+.tiptap-content .ProseMirror li { display: list-item !important; margin-bottom: 0.25em !important; }
+.tiptap-content li > p,
+.tiptap-content .ProseMirror li > p { margin: 0 !important; display: inline !important; }
+.tiptap-content blockquote, .tiptap-content .ProseMirror blockquote {
   border-left: 4px solid #2c6ecb;
   padding-left: 1em;
   color: #6d7175;
   margin: 1em 0;
 }
-.tiptap-content .ProseMirror code {
+.tiptap-content code, .tiptap-content .ProseMirror code {
   background: #f1f2f3;
   border-radius: 3px;
   padding: 2px 5px;
   font-size: 0.9em;
   font-family: monospace;
 }
-.tiptap-content .ProseMirror pre {
+.tiptap-content pre, .tiptap-content .ProseMirror pre {
   background: #1a1a2e;
   color: #e2e8f0;
   padding: 1em;
   border-radius: 8px;
   overflow: auto;
 }
-.tiptap-content .ProseMirror img {
+.tiptap-content > img, .tiptap-content > p img,
+.tiptap-content .ProseMirror > img,
+.tiptap-content .ProseMirror > p img {
   max-width: 100%;
   border-radius: 6px;
   margin: 0.5em 0;
 }
-.tiptap-content .ProseMirror a {
+.tiptap-content a, .tiptap-content .ProseMirror a {
   color: #2c6ecb;
   text-decoration: underline;
 }
@@ -128,12 +138,14 @@
    TABLE STYLES — Professional editor table UX
    ════════════════════════════════════════════════════════════════════════════ */
 
+.tiptap-content .tableWrapper,
 .tiptap-content .ProseMirror .tableWrapper {
   overflow-x: auto;
   margin: 1rem 0;
   border-radius: 8px;
 }
 
+.tiptap-content table,
 .tiptap-content .ProseMirror table {
   border-collapse: collapse;
   table-layout: fixed;
@@ -146,6 +158,8 @@
   background: #fff;
 }
 
+.tiptap-content th,
+.tiptap-content td,
 .tiptap-content .ProseMirror th,
 .tiptap-content .ProseMirror td {
   position: relative;
@@ -156,6 +170,7 @@
   box-sizing: border-box;
 }
 
+.tiptap-content th,
 .tiptap-content .ProseMirror th {
   background: #f6f6f7;
   font-weight: 600;
@@ -163,15 +178,18 @@
   color: #202223;
 }
 
+.tiptap-content td,
 .tiptap-content .ProseMirror td {
   background: #fff;
   color: #202223;
 }
 
+.tiptap-content tr:nth-child(even) td,
 .tiptap-content .ProseMirror tr:nth-child(even) td {
   background: #fcfcfd;
 }
 
+.tiptap-content table p,
 .tiptap-content .ProseMirror table p {
   margin: 0;
 }
@@ -451,3 +469,27 @@
   background: rgba(255, 255, 255, 0.2);
   height: 18px;
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   CUSTOM NODEVIEW CSS ISOLATION
+   Prevents broad ProseMirror document selectors (p, img, h1, etc.) from
+   bleeding into custom block components.
+   ════════════════════════════════════════════════════════════════════════════ */
+[data-node-view-wrapper] img,
+.custom-block-node img {
+  all: revert;
+  max-width: 100%;
+}
+
+[data-node-view-wrapper] p,
+[data-node-view-wrapper] h1,
+[data-node-view-wrapper] h2,
+[data-node-view-wrapper] h3,
+.custom-block-node p,
+.custom-block-node h1,
+.custom-block-node h2,
+.custom-block-node h3 {
+  margin-block-start: initial;
+  margin-block-end: initial;
+}
+

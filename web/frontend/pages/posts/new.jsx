@@ -33,14 +33,37 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon } from "@shopify/polaris-icons";
 import confetti from "canvas-confetti";
-import TiptapEditor from "../../components/editor/TiptapEditor";
+import DragDropBuilderContainer from "../../components/builder/DragDropBuilderContainer";
+import { compileBlocksToHtml } from "../../utils/compileBlocksToHtml";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
 import ArticlePreview from "../../components/editor/ArticlePreview";
 import SyncStatusIndicator from "../../components/SyncStatusIndicator.jsx";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
+import { useBuilderStore } from "../../components/builder/store/useBuilderStore";
+import { normalizeBlocksAst } from "../../components/builder/BlockRegistry";
 
 
-const parseHtmlToBlocks = (html) => {
+
+const hasMeaningfulBlocks = (blocks) => {
+  if (!Array.isArray(blocks) || blocks.length === 0) return false;
+  return blocks.some((b) => {
+    if (!b) return false;
+    if (b.type === "RichText") {
+      const c = b.settings?.content;
+      if (!c) return false;
+      if (typeof c === "string") return c.replace(/<[^>]*>/g, "").trim().length > 0;
+      if (typeof c === "object" && Array.isArray(c.content)) {
+        return c.content.some((n) => n.content?.length > 0 || (n.text && n.text.trim() !== "") || n.type !== "paragraph");
+      }
+      return false;
+    }
+    if (b.type === "Heading") return !!b.settings?.text;
+    if (Array.isArray(b.children) && b.children.length > 0) return hasMeaningfulBlocks(b.children);
+    return true; // any other block type (ProductGrid, BuyButton, Image, etc.) counts as content
+  });
+};
+
+const legacyHtmlToAst = (html) => {
   if (!html || html.trim() === "" || html === "undefined") return [];
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, "text/html");
@@ -49,18 +72,33 @@ const parseHtmlToBlocks = (html) => {
   const appendTextBlock = (contentHtmlStr) => {
     if (!contentHtmlStr || contentHtmlStr.trim() === "") return;
     const lastBlock = blocks[blocks.length - 1];
-    if (lastBlock && lastBlock.type === "text") {
-      lastBlock.content = (lastBlock.content || "") + contentHtmlStr;
+    if (lastBlock && (lastBlock.type === "RichText" || lastBlock.type === "text")) {
+      lastBlock.type = "RichText";
+      lastBlock.settings = lastBlock.settings || {};
+      lastBlock.settings.content = (lastBlock.settings.content || "") + contentHtmlStr;
     } else {
       blocks.push({
         id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        type: "text",
-        content: contentHtmlStr
+        type: "RichText",
+        settings: {
+          content: contentHtmlStr
+        }
       });
     }
   };
 
-  const children = Array.from(doc.body.childNodes);
+  let rootContainer = doc.body;
+  if (
+    doc.body.children.length === 1 &&
+    doc.body.children[0].tagName === "DIV" &&
+    (doc.body.children[0].classList.contains("tiptap-content") ||
+     doc.body.children[0].classList.contains("builder-post") ||
+     doc.body.children[0].classList.contains("article-content"))
+  ) {
+    rootContainer = doc.body.children[0];
+  }
+
+  const children = Array.from(rootContainer.childNodes);
   for (let i = 0; i < children.length; i++) {
     const node = children[i];
     
@@ -75,20 +113,33 @@ const parseHtmlToBlocks = (html) => {
       const dataType = node.getAttribute("data-type");
       if (dataType) {
         const TYPE_MAP = {
-          buyButton: 'buy_button',
-          productGrid: 'product_grid',
-          collection: 'collection',
-          ctaButton: 'cta_button',
-          heroBlock: 'hero',
-          videoBlock: 'video',
-          spacerBlock: 'spacer',
-          dividerBlock: 'divider',
-          imageBlock: 'image',
-          product: 'product',
-          product_sidebar: 'product_sidebar',
-          featured_product: 'featured_product',
-          product_switcher: 'product_switcher',
-          product_slider: 'product_slider'
+          buyButton: 'BuyButton',
+          buy_button: 'BuyButton',
+          productGrid: 'ProductGrid',
+          product_grid: 'ProductGrid',
+          collection: 'Collection',
+          ctaButton: 'CTAButton',
+          cta_button: 'CTAButton',
+          heroBlock: 'HeroSection',
+          hero: 'HeroSection',
+          videoBlock: 'VideoEmbed',
+          video: 'VideoEmbed',
+          spacerBlock: 'Spacer',
+          spacer: 'Spacer',
+          dividerBlock: 'Divider',
+          divider: 'Divider',
+          imageBlock: 'Image',
+          image: 'Image',
+          heading: 'Heading',
+          calloutBlock: 'Callout',
+          callout: 'Callout',
+          buttonBlock: 'CTAButton',
+          htmlBlock: 'Html',
+          html: 'Html',
+          product_slider: 'ProductSlider',
+          productSlider: 'ProductSlider',
+          productCard: 'ProductCard',
+          product: 'ProductCard'
         };
 
         const ATTR_MAP = {
@@ -144,16 +195,15 @@ const parseHtmlToBlocks = (html) => {
           titlealign: 'titleAlign'
         };
 
-        const block = {
-          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          type: TYPE_MAP[dataType] || dataType
-        };
+        const blockType = TYPE_MAP[dataType] || dataType;
+        const settings = {};
 
         Array.from(node.attributes).forEach(attr => {
           if (attr.name.startsWith("data-")) {
             const key = attr.name.substring(5);
             if (key === "type") return;
-            const mappedKey = ATTR_MAP[key] || key;
+            const camelKey = attr.name.substring(5).split('-').map((w, i) => i === 0 ? w : w[0].toUpperCase() + w.substring(1)).join('');
+            const mappedKey = ATTR_MAP[key] || camelKey;
             let val = attr.value;
             if (val === "true") val = true;
             else if (val === "false") val = false;
@@ -162,9 +212,15 @@ const parseHtmlToBlocks = (html) => {
             } else if (!isNaN(val) && val.trim() !== "" && key === "overlayopacity") {
               val = parseFloat(val);
             }
-            block[mappedKey] = val;
+            settings[mappedKey] = val;
           }
         });
+
+        const block = {
+          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: blockType,
+          settings: settings
+        };
 
         blocks.push(block);
         continue;
@@ -230,6 +286,71 @@ const parseHtmlToBlocks = (html) => {
         });
       } else if (tagName === "br") {
         continue;
+      } else if (tagName === "table") {
+        let isComplex = false;
+        const tableData = [];
+        let hasHeader = false;
+
+        // Check for complexity
+        if (node.querySelector("table, img, a, iframe") || node.querySelector("[rowspan], [colspan]")) {
+          isComplex = true;
+        } else {
+          // Additional check: are there inline styles, spans, or non-text nodes inside cells that we might lose?
+          // We will be very strict: if a cell contains anything other than text, <br>, or basic formatting (b, i, u, strong, em), we flag it.
+          const cells = Array.from(node.querySelectorAll("td, th"));
+          for (const cell of cells) {
+            const forbidden = Array.from(cell.children).some(child => {
+              const tag = child.tagName.toLowerCase();
+              return !["br", "b", "i", "u", "strong", "em", "p", "span"].includes(tag);
+            });
+            if (forbidden) {
+              isComplex = true;
+              break;
+            }
+          }
+        }
+
+        if (isComplex) {
+          blocks.push({
+            id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: "Callout",
+            settings: {
+              title: "Table Import Review",
+              body: "This table contained complex formatting (such as links, images, or merged cells) and was imported as raw HTML. Please review it to ensure everything looks correct.",
+              backgroundColor: "#fff4e5",
+              borderColor: "#b66e13",
+              emoji: "⚠️"
+            }
+          });
+          blocks.push({
+            id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: "Html",
+            settings: {
+              code: `<div style="overflow-x:auto;">\n${node.outerHTML}\n</div>`
+            }
+          });
+        } else {
+          const rows = Array.from(node.querySelectorAll("tr"));
+          rows.forEach((row, rowIndex) => {
+            const cells = Array.from(row.querySelectorAll("th, td"));
+            if (rowIndex === 0 && cells.some(c => c.tagName.toLowerCase() === "th")) {
+              hasHeader = true;
+            }
+            // keep basic innerHTML for cells to preserve bold/italic/br
+            tableData.push(cells.map(c => c.innerHTML.trim()));
+          });
+
+          blocks.push({
+            id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: "Table",
+            settings: {
+              rows: tableData.length,
+              cols: tableData.length > 0 ? tableData[0].length : 0,
+              hasHeader: hasHeader,
+              tableData: tableData
+            }
+          });
+        }
       } else {
         appendTextBlock(node.outerHTML);
       }
@@ -254,10 +375,18 @@ export default function PostEditor() {
     contentJson: [],
     customCss: "",
     productSliderPosition: "none",
+    editorMode: "builder", // Default to builder instead of wysiwyg
   });
   const [originalPost, setOriginalPost] = useState(null);
+  
+  // contentHtml is now purely for backend sync and legacy loads.
   const [contentHtml, setContentHtml] = useState("");
   const [originalContentHtml, setOriginalContentHtml] = useState("");
+  
+  
+  // Track structural edits made in either editor mode
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  
   const isFirstRender = useRef(true);
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
@@ -300,14 +429,57 @@ export default function PostEditor() {
       const res = await fetch(`/api/posts/${id}`);
       if (!res.ok) throw new Error("Post not found");
       const data = await res.json();
-      setPost(data.post);
-      setOriginalPost(data.post);
+      
+      // Safely parse contentJson if stringified
+      let initialJson = data.post.contentJson;
+      if (typeof initialJson === "string") {
+        try {
+          initialJson = JSON.parse(initialJson);
+        } catch (e) {
+          initialJson = null;
+        }
+      }
+      let initialMode = data.post.editorMode || "builder";
+      
+      let normalizedBlocks = normalizeBlocksAst(initialJson || []);
+
+      if (!hasMeaningfulBlocks(normalizedBlocks) && data.post.contentHtml && data.post.contentHtml.trim() !== "") {
+        initialJson = legacyHtmlToAst(data.post.contentHtml);
+        normalizedBlocks = normalizeBlocksAst(initialJson || []);
+      }
+
+      const p = {
+        title: data.post.title || "",
+        slug: data.post.slug || "",
+        excerpt: data.post.excerpt || "",
+        status: data.post.status || "draft",
+        author: data.post.author || "",
+        featuredImage: data.post.featuredImage || "",
+        contentJson: normalizedBlocks,
+        customCss: data.post.customCss || "",
+        productSliderPosition: data.post.productSliderPosition || "none",
+        editorMode: initialMode,
+        shopifyArticle: data.post.shopifyArticle || null,
+      };
+
+      setPost(p);
+      setOriginalPost(p);
       setContentHtml(data.post.contentHtml || "");
       setOriginalContentHtml(data.post.contentHtml || "");
       setTags(data.post.tags || []);
       setFeatures(data.features || {});
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
 
+      // Directly hydrate builder store & tiptap document so both modes load instantly
+      useBuilderStore.getState().hydrate(normalizedBlocks);
+
+      // Reset unsaved changes flag on fresh load
+      setHasUnsavedChanges(false);
+      if (window.shopify?.saveBar) {
+        try {
+          window.shopify.saveBar.hide("post-editor-save-bar").catch(() => {});
+        } catch (e) {}
+      }
 
       setSeoData({
         metaTitle: data.post.metaTitle || "",
@@ -347,12 +519,14 @@ export default function PostEditor() {
   }, [isEditing, loadPost]);
 
   const isFieldDirty = (val1, val2) => {
-    const clean1 = val1 === null || val1 === undefined ? "" : val1;
-    const clean2 = val2 === null || val2 === undefined ? "" : val2;
+    const clean1 = val1 === null || val1 === undefined ? "" : String(val1).trim();
+    const clean2 = val2 === null || val2 === undefined ? "" : String(val2).trim();
     return clean1 !== clean2;
   };
 
   const isDirty = useMemo(() => {
+    if (hasUnsavedChanges) return true;
+    
     if (!isEditing) {
       return (
         isFieldDirty(post.title, "") ||
@@ -361,7 +535,6 @@ export default function PostEditor() {
         isFieldDirty(post.author, "") ||
         isFieldDirty(post.featuredImage, "") ||
         isFieldDirty(post.customCss, "") ||
-        isFieldDirty(contentHtml, "") ||
         tags.length > 0 ||
         isFieldDirty(shopifyBlogId, "") ||
         isFieldDirty(seoData.metaTitle, "") ||
@@ -381,7 +554,6 @@ export default function PostEditor() {
       isFieldDirty(post.author, o.author) ||
       isFieldDirty(post.featuredImage, o.featuredImage) ||
       isFieldDirty(post.customCss, o.customCss) ||
-      isFieldDirty(contentHtml, originalContentHtml) ||
       isFieldDirty(shopifyBlogId, o.shopifyArticle?.shopifyBlogId) ||
       isFieldDirty(seoData.metaTitle, o.metaTitle) ||
       isFieldDirty(seoData.metaDescription, o.metaDescription) ||
@@ -396,21 +568,16 @@ export default function PostEditor() {
       !tags.every((t) => originalTags.includes(t));
 
     return isPostDirty || isTagsDirty;
-  }, [post, contentHtml, originalContentHtml, tags, shopifyBlogId, originalPost, isEditing, seoData]);
+  }, [hasUnsavedChanges, post, tags, shopifyBlogId, originalPost, isEditing, seoData]);
 
   const saveBarId = "post-editor-save-bar";
 
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-
     if (window.shopify?.saveBar) {
       if (isDirty) {
-        window.shopify.saveBar.show(saveBarId).catch((e) => console.log("SaveBar show error:", e.message));
+        window.shopify.saveBar.show(saveBarId).catch(() => {});
       } else {
-        window.shopify.saveBar.hide(saveBarId).catch((e) => console.log("SaveBar hide error:", e.message));
+        window.shopify.saveBar.hide(saveBarId).catch(() => {});
       }
     }
   }, [isDirty]);
@@ -418,7 +585,7 @@ export default function PostEditor() {
   useEffect(() => {
     return () => {
       if (window.shopify?.saveBar) {
-        window.shopify.saveBar.hide(saveBarId).catch((e) => console.log("SaveBar clean-up hide error:", e.message));
+        window.shopify.saveBar.hide(saveBarId).catch(() => {});
       }
     };
   }, []);
@@ -492,14 +659,20 @@ export default function PostEditor() {
   );
 
   const buildPayload = () => {
+    // Both modes save storefront HTML by compiling the AST
+    const builderBlocks = useBuilderStore.getState().blocks;
+    const finalAst = builderBlocks && builderBlocks.length > 0 ? builderBlocks : post.contentJson || [];
+
+    const finalContentHtml = compileBlocksToHtml(finalAst);
+
     return {
       ...post,
-      contentHtml: contentHtml,
-      contentJson: parseHtmlToBlocks(contentHtml),
+      contentHtml: finalContentHtml,
+      contentJson: finalAst,
       tags,
       blogId: shopifyBlogId || undefined,
       productSliderProducts: [],
-      editorMode: "wysiwyg",
+      editorMode: post.editorMode || "builder",
       ...seoData,
     };
   };
@@ -530,6 +703,7 @@ export default function PostEditor() {
 
       setToast({ content: "Article saved successfully" });
       if (!isEditing && data.post?.id) {
+        setHasUnsavedChanges(false);
         if (data.isFirstPost) {
           setNewPostId(data.post.id);
           setShowCongratsModal(true);
@@ -558,9 +732,11 @@ export default function PostEditor() {
           navigate(`/posts/${data.post.id}/edit`);
         }
       } else if (!isEditing) {
+         setHasUnsavedChanges(false);
          navigate(`/posts/${data.post.id}/edit`);
       } else {
-         loadPost();
+         setHasUnsavedChanges(false);
+         setOriginalPost(payload);
       }
       return data.post?.id || id;
     } catch (err) {
@@ -575,8 +751,9 @@ export default function PostEditor() {
   };
 
   const handleDiscard = () => {
+    setHasUnsavedChanges(false);
     if (isEditing && originalPost) {
-      setPost(originalPost);
+      setPost({ ...originalPost });
       setContentHtml(originalPost.contentHtml || "");
       setOriginalContentHtml(originalPost.contentHtml || "");
       setTags(originalPost.tags || []);
@@ -600,7 +777,9 @@ export default function PostEditor() {
         contentJson: [],
         customCss: "",
         productSliderPosition: "none",
+        editorMode: "builder",
       });
+      setTiptapJson(null);
       setContentHtml("");
       setOriginalContentHtml("");
       setTags([]);
@@ -619,10 +798,14 @@ export default function PostEditor() {
   const handlePreviewClick = async () => {
     setIsPreviewLoading(true);
     try {
+      const finalAst = post.contentJson || [];
+
+      const htmlToPreview = compileBlocksToHtml(finalAst);
+
       const res = await fetch("/api/posts/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentHtml }),
+        body: JSON.stringify({ contentHtml: htmlToPreview }),
       });
       const data = await res.json();
       if (data.contentHtml) {
@@ -714,7 +897,6 @@ export default function PostEditor() {
     { label: "— Select a blog —", value: "" },
     ...shopifyBlogs.map((b) => ({ label: b.title, value: String(b.id) })),
   ];
-
 
 
   if (isLoading) {
@@ -810,7 +992,7 @@ export default function PostEditor() {
           )}
 
           {/* ══════════════════════════════════════════════════════
-               MAIN CONTENT COLUMN
+               FULL-WIDTH BUILDER AREA
           ══════════════════════════════════════════════════════ */}
           <Layout.Section>
             <BlockStack gap="400">
@@ -829,24 +1011,50 @@ export default function PostEditor() {
                 </Box>
               </Card>
 
-              {/* Content — full-width editor, no divider */}
+              {/* Content — conditionally render Builder or WYSIWYG */}
               <Card>
                 <Box padding="0">
                   <Box paddingBlock="300" paddingInline="400">
-                    <Text variant="headingSm" tone="subdued">Content</Text>
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text variant="headingSm" tone="subdued">Content</Text>
+                    </InlineStack>
                   </Box>
                   <Divider />
                   <Box padding="0">
-                    <TiptapEditor
-                      content={contentHtml}
-                      onChange={handleContentChange}
-                      onInit={handleEditorInit}
-                      placeholder="Write your article content here..."
-                      uploadUrl="/api/posts/upload"
-                    />
+                      <DragDropBuilderContainer
+                        initialBlocksAst={post.contentJson || []}
+                        onChange={(blocksAst) => {
+                          setPost((p) => {
+                            if (JSON.stringify(p.contentJson) === JSON.stringify(blocksAst)) return p;
+                            const origJsonStr = JSON.stringify(originalPost?.contentJson || []);
+                            const currJsonStr = JSON.stringify(blocksAst || []);
+                            if (origJsonStr !== currJsonStr) {
+                              setHasUnsavedChanges(true);
+                            }
+                            return { ...p, contentJson: blocksAst };
+                          });
+                        }}
+                        postTitle={post.title}
+                        onTitleChange={handleTitleChange}
+                        onSave={() => handleSave(post.status === "published" ? "published" : "draft", "header")}
+                        onPreview={handlePreviewClick}
+                        isSaving={isSaving}
+                        isPreviewLoading={isPreviewLoading}
+                      />
                   </Box>
                 </Box>
               </Card>
+            </BlockStack>
+          </Layout.Section>
+        </Layout>
+
+        <div style={{ marginTop: "var(--p-space-500)" }}>
+          <Layout>
+            {/* ══════════════════════════════════════════════════════
+                 SECONDARY CONTENT COLUMN (LEFT)
+            ══════════════════════════════════════════════════════ */}
+            <Layout.Section style={{ flex: "1 1 0%", maxWidth: "none" }}>
+              <BlockStack gap="400">
 
               {/* Excerpt — collapsible like Shopify */}
               <Card>
@@ -998,9 +1206,9 @@ export default function PostEditor() {
           </Layout.Section>
 
           {/* ══════════════════════════════════════════════════════
-               SIDEBAR
+               SIDEBAR (Compact Width for Maximum Canvas Space)
           ══════════════════════════════════════════════════════ */}
-          <Layout.Section variant="oneThird">
+          <Layout.Section variant="oneThird" style={{ flex: "0 0 300px", maxWidth: "300px" }}>
             <BlockStack gap="400">
 
               {/* ── Visibility ── */}
@@ -1252,6 +1460,7 @@ export default function PostEditor() {
             </BlockStack>
           </Layout.Section>
         </Layout>
+        </div>
       </Page>
 
 

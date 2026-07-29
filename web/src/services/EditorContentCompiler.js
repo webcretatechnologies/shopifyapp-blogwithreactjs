@@ -78,7 +78,13 @@ const ATTR_MAP = {
   showviewall: 'showViewAll',
   linkurl: 'linkUrl',
   minheight: 'minHeight',
-  titlealign: 'titleAlign'
+  titlealign: 'titleAlign',
+  imageurl: 'imageUrl',
+  compareatprice: 'compareAtPrice',
+  productid: 'productId',
+  showimage: 'showImage',
+  bordercolor: 'borderColor',
+  backgroundcolor: 'backgroundColor'
 };
 
 function hexToRgba(hex, opacity) {
@@ -961,20 +967,20 @@ export class EditorContentCompiler {
   }
 
   static renderProductCard(attrs) {
-    const title = attrs.title || "";
-    const price = attrs.price || "";
-    const compareAtPrice = attrs.compareAtPrice || "";
-    const imageUrl = attrs.imageUrl || "";
-    const handle = attrs.handle || "";
-    const buttonText = attrs.buttonText || "Add to Cart";
-    const buttonColor = attrs.buttonColor || "#2d6a4f";
-    const showImage = attrs.showImage !== false;
-    const showPrice = attrs.showPrice !== false;
-    const showButton = attrs.showButton !== false;
+    const title = attrs.title || attrs.product?.title || "";
+    const price = attrs.price || attrs.product?.price || "";
+    const compareAtPrice = attrs.compareAtPrice || attrs.compareatprice || attrs.product?.compareAtPrice || "";
+    const imageUrl = attrs.imageUrl || attrs.imageurl || attrs.image || (typeof attrs.featuredImage === 'string' ? attrs.featuredImage : attrs.featuredImage?.url) || attrs.product?.image || attrs.product?.featuredImage?.url || attrs.product?.images?.[0]?.originalSrc || attrs.product?.images?.[0]?.src || "";
+    const handle = attrs.handle || attrs.product?.handle || "";
+    const buttonText = attrs.buttonText || attrs.buttontext || "Add to Cart";
+    const buttonColor = attrs.buttonColor || attrs.buttoncolor || "#2d6a4f";
+    const showImage = attrs.showImage !== false && attrs.showimage !== false && attrs.showimage !== "false";
+    const showPrice = attrs.showPrice !== false && attrs.showprice !== false && attrs.showprice !== "false";
+    const showButton = attrs.showButton !== false && attrs.showbutton !== false && attrs.showbutton !== "false";
     const layout = attrs.layout || "vertical";
-    const borderRadius = parseInt(attrs.borderRadius) || 8;
-    const borderColor = attrs.borderColor || "#e0e0e0";
-    const backgroundColor = attrs.backgroundColor || "#ffffff";
+    const borderRadius = parseInt(attrs.borderRadius || attrs.borderradius) || 8;
+    const borderColor = attrs.borderColor || attrs.bordercolor || "#e0e0e0";
+    const backgroundColor = attrs.backgroundColor || attrs.backgroundcolor || "#ffffff";
 
     if (!title) {
       return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">Product not selected</div>`;
@@ -984,13 +990,22 @@ export class EditorContentCompiler {
     const isHorizontal = layout === "horizontal";
     const isCompact = layout === "compact";
 
-    const imageHtml = showImage && !isCompact && imageUrl
-      ? `<a href="${productUrl}" style="display: block; ${isHorizontal ? "width: 30%; min-width: 120px; flex-shrink: 0; flex-grow: 1;" : "width: 100%;"}"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" style="width: 100%; height: 100%; min-height: 150px; object-fit: cover; display: block;" /></a>`
-      : "";
+    let imageHtml = "";
+    if (showImage) {
+      if (isCompact) {
+        if (imageUrl) {
+          imageHtml = `<a href="${productUrl}" style="display: block; width: 60px; height: 60px; flex-shrink: 0; margin-right: 12px;"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 4px; display: block;" /></a>`;
+        }
+      } else if (isHorizontal) {
+        imageHtml = `<a href="${productUrl}" style="display: flex; align-items: center; justify-content: center; width: 30%; min-width: 120px; flex-shrink: 0; background: #f4f6f8; border-right: 1px solid ${borderColor};"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" style="max-width: 100%; max-height: 200px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto;" /></a>`;
+      } else {
+        imageHtml = `<a href="${productUrl}" style="display: flex; align-items: center; justify-content: center; width: 100%; min-height: 160px; max-height: 280px; background: #f4f6f8; border-bottom: 1px solid ${borderColor}; overflow: hidden;">${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" style="max-width: 100%; max-height: 280px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto;" />` : `<div style="color: #8c9196; font-size: 13px;">No image</div>`}</a>`;
+      }
+    }
 
     const currency = attrs.currency || attrs._storeCurrency || "USD";
-    const formattedPrice = price ? formatPrice(price, currency) : "";
-    const formattedCompareAtPrice = compareAtPrice ? formatPrice(compareAtPrice, currency) : "";
+    const formattedPrice = price ? (String(price).startsWith('$') || String(price).startsWith('₹') ? price : formatPrice(price, currency)) : "";
+    const formattedCompareAtPrice = compareAtPrice ? (String(compareAtPrice).startsWith('$') || String(compareAtPrice).startsWith('₹') ? compareAtPrice : formatPrice(compareAtPrice, currency)) : "";
     const priceHtml = showPrice && formattedPrice
       ? `<div style="margin: 0 0 12px 0;"><span style="font-weight: bold;">${escapeHtml(formattedPrice)}</span>${formattedCompareAtPrice ? `<span style="text-decoration: line-through; color: #6d7175; margin-left: 8px; font-size: 14px;">${escapeHtml(formattedCompareAtPrice)}</span>` : ""}</div>`
       : "";
@@ -1062,6 +1077,29 @@ export class EditorContentCompiler {
   .shopify-section-article {
     padding-bottom: 80px !important;
     margin-bottom: 80px !important;
+  }
+
+  /* List styling (bullet lists & numbered lists) */
+  .blogger-article-container ul {
+    list-style-type: disc !important;
+    padding-left: 24px !important;
+    margin: 12px 0 !important;
+  }
+
+  .blogger-article-container ol {
+    list-style-type: decimal !important;
+    padding-left: 24px !important;
+    margin: 12px 0 !important;
+  }
+
+  .blogger-article-container li {
+    display: list-item !important;
+    margin-bottom: 4px !important;
+  }
+
+  .blogger-article-container li > p {
+    margin: 0 !important;
+    display: inline !important;
   }
 
   .blogger-primary-btn {

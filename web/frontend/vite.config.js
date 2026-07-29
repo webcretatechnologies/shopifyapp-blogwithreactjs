@@ -54,6 +54,11 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     preserveSymlinks: true,
+    alias: {
+      react: join(__vite_dirname, "node_modules/react"),
+      "react-dom": join(__vite_dirname, "node_modules/react-dom"),
+    },
+    dedupe: ["react", "react-dom"],
   },
   server: {
     host: "localhost",

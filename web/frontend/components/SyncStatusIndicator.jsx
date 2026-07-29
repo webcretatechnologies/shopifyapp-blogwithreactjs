@@ -103,6 +103,7 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
   const stateConfig = SYNC_STATE_CONFIG[syncState] || { label: syncState, tone: "info", icon: null };
   const isDegraded = article.structureDegraded;
   const hasError = article.lastError;
+  const isConflict = syncState === "conflict" || syncState === "external_edit";
 
   return (
     <Card>
@@ -146,11 +147,11 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
             </Text>
           )}
 
-          {/* Degraded warning */}
-          {isDegraded && (
-            <Banner tone="warning">
+          {/* Degraded / External Edit warning for Builder posts */}
+          {(isDegraded || isConflict) && (
+            <Banner tone="warning" title="External Edit Detected">
               <Text variant="bodySm" as="p">
-                Structure degraded — blocks parsed from HTML.
+                This article was edited on Shopify directly. Saving from the Visual Builder will re-compile your layout to Shopify.
               </Text>
             </Banner>
           )}

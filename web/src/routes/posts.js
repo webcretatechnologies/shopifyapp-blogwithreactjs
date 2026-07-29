@@ -142,7 +142,7 @@ router.post("/", async (req, res) => {
       categoryId,
       tags = [],
       blogId,
-      editorMode = "wysiwyg",
+      editorMode = "builder",
       metaTitle,
       metaDescription,
       canonicalUrl,
@@ -185,7 +185,7 @@ router.post("/", async (req, res) => {
         productSliderSource,
         productSliderConfig: productSliderConfig || null,
         categoryId: categoryId ? parseInt(categoryId) : null,
-        editorMode: "wysiwyg",
+        editorMode: "builder",
         metaTitle: metaTitle || null,
         metaDescription: metaDescription || null,
         canonicalUrl: canonicalUrl || null,
@@ -277,7 +277,7 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    const finalEditorMode = "wysiwyg";
+    const finalEditorMode = editorMode || post.editorMode || "builder";
     let finalContentHtml = post.contentHtml;
     if (reqContentHtml !== undefined) {
       const session = res.locals.shopify?.session;
@@ -311,7 +311,7 @@ router.put("/:id", async (req, res) => {
         ...(productSliderConfig && { productSliderConfig }),
         ...(categoryId !== undefined && { categoryId: categoryId ? parseInt(categoryId) : null }),
         ...(publishedAt && { publishedAt: new Date(publishedAt) }),
-        editorMode: "wysiwyg",
+        editorMode: finalEditorMode,
         metaTitle: metaTitle !== undefined ? metaTitle : post.metaTitle,
         metaDescription: metaDescription !== undefined ? metaDescription : post.metaDescription,
         canonicalUrl: canonicalUrl !== undefined ? canonicalUrl : post.canonicalUrl,

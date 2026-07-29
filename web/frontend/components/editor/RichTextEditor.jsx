@@ -20,7 +20,8 @@
  *   readOnly      — bool (default false)
  */
 
-import { useEditor, EditorContent, BubbleMenu } from "@tiptap/react";
+import { useEditor, EditorContent } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
 import { useEffect, useRef } from "react";
 import { Icon } from "@shopify/polaris";
 import {
@@ -35,6 +36,7 @@ import {
   TextQuoteIcon,
   LinkIcon,
   TextColorIcon,
+  TextBlockIcon,
 } from "@shopify/polaris-icons";
 import {
   Strikethrough,
@@ -47,7 +49,7 @@ import { builderRichTextExtensions } from "./richTextExtensions";
 import "./TiptapEditor.css"; // reuse the same toolbar/btn CSS variables
 
 // ---------------------------------------------------------------------------
-// Inline toolbar button — same shape as TiptapEditor.jsx's <Btn>
+// Inline toolbar button
 // ---------------------------------------------------------------------------
 const Btn = ({ onClick, active, title, children }) => (
   <button
@@ -88,10 +90,26 @@ export default function RichTextEditor({
 
   const extensions = builderRichTextExtensions(placeholder);
 
+  const getNormalizedContent = (raw) => {
+    if (!raw) return EMPTY_DOC;
+    if (typeof raw === "string") {
+      const trimmed = raw.trim();
+      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+        try {
+          return JSON.parse(trimmed);
+        } catch (e) {}
+      }
+    }
+    return raw;
+  };
+
+  const initialContent = getNormalizedContent(content);
+
   const editor = useEditor({
     extensions,
-    content: content ?? EMPTY_DOC,
+    content: initialContent,
     editable: !readOnly,
+    autofocus: false,
     onUpdate: ({ editor: ed }) => {
       onChangeRef.current?.(ed.getJSON());
     },
@@ -101,7 +119,7 @@ export default function RichTextEditor({
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     if (editor.isFocused) return; // don't interrupt active typing
-    const incoming = content ?? EMPTY_DOC;
+    const incoming = getNormalizedContent(content);
     const current = editor.getJSON();
     if (JSON.stringify(incoming) !== JSON.stringify(current)) {
       editor.commands.setContent(incoming, false);
@@ -160,6 +178,9 @@ export default function RichTextEditor({
             </Btn>
             <Btn onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive("heading", { level: 3 })} title="Heading 3">
               <Heading3 size={14} />
+            </Btn>
+            <Btn onClick={() => editor.chain().focus().setParagraph().run()} active={editor.isActive("paragraph")} title="Paragraph">
+              <Icon source={TextBlockIcon} />
             </Btn>
           </div>
           <Sep />
