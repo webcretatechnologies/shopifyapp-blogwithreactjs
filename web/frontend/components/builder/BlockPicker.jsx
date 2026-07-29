@@ -66,7 +66,7 @@ function regenerateBlockIds(node) {
   };
 }
 
-export default function BlockPicker() {
+export default function BlockPicker({ isRailMode = false }) {
   const [selectedTab, setSelectedTab] = useState(0); // 0: blocks, 1: presets, 2: patterns
   const [searchQuery, setSearchQuery] = useState("");
   const [patterns, setPatterns] = useState([]);
@@ -151,61 +151,292 @@ export default function BlockPicker() {
 
   const query = searchQuery.toLowerCase().trim();
 
-  const tabs = [
-    {
-      id: 'blocks',
-      content: (
-        <InlineStack align="center" blockAlign="center" gap="100">
-          <Icon source={LayoutBlockIcon} /> Blocks
-        </InlineStack>
-      ),
-    },
-    {
-      id: 'presets',
-      content: (
-        <InlineStack align="center" blockAlign="center" gap="100">
-          <Icon source={MagicIcon} /> Presets
-        </InlineStack>
-      ),
-    },
-    {
-      id: 'patterns',
-      content: (
-        <InlineStack align="center" blockAlign="center" gap="100">
-          <Icon source={StarIcon} /> Saved
-        </InlineStack>
-      ),
-    },
+  const tabDefs = [
+    { id: 'blocks', label: 'Blocks', icon: LayoutBlockIcon },
+    { id: 'presets', label: 'Presets', icon: MagicIcon },
+    { id: 'patterns', label: 'Saved', icon: StarIcon },
   ];
 
+  // ── Render 48px Icon Rail Mode ──
+  if (isRailMode) {
+    return (
+      <div
+        style={{
+          width: "48px",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          padding: "8px 4px",
+          background: "var(--p-color-bg-surface-secondary)",
+          borderRight: "1px solid var(--p-color-border-secondary)",
+          boxSizing: "border-box",
+        }}
+      >
+        {/* Pinned Tab Header Icons (Visually Separated) */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+            paddingBottom: "8px",
+            marginBottom: "8px",
+            borderBottom: "1px solid var(--p-color-border)",
+            width: "100%",
+            alignItems: "center",
+          }}
+        >
+          {tabDefs.map((tab, idx) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSelectedTab(idx)}
+              aria-label={`Tab: ${tab.label}`}
+              title={tab.label}
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "6px",
+                border: "none",
+                background: selectedTab === idx ? "#008060" : "transparent",
+                color: selectedTab === idx ? "#ffffff" : "var(--p-color-icon)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <Icon source={tab.icon} />
+            </button>
+          ))}
+        </div>
+
+        {/* Scrollable Block / Content Icons List */}
+        <div
+          style={{
+            flex: 1,
+            width: "100%",
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          {selectedTab === 0 &&
+            BLOCK_CATEGORIES.map((category) => (
+              <div key={category.label} style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+                <div
+                  style={{
+                    width: "20px",
+                    height: "1px",
+                    background: "var(--p-color-border-subdued)",
+                    margin: "4px 0",
+                  }}
+                  title={category.label}
+                />
+                {category.types.map((type) => {
+                  const entry = BlockRegistry[type];
+                  if (!entry) return null;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => handleAddBlock(type)}
+                      aria-label={`Add ${entry.label}`}
+                      title={entry.label}
+                      style={{
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--p-color-border-subdued)",
+                        background: "var(--p-color-bg-surface)",
+                        color: "#008060",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = "#008060";
+                        e.currentTarget.style.background = "#f4f6f8";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = "var(--p-color-border-subdued)";
+                        e.currentTarget.style.background = "var(--p-color-bg-surface)";
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center" }}>{entry.icon}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+
+          {selectedTab === 1 &&
+            PRESET_TEMPLATES.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => handleAddPreset(preset)}
+                aria-label={`Add Preset: ${preset.title}`}
+                title={preset.title}
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "6px",
+                  border: "1px solid var(--p-color-border)",
+                  background: "var(--p-color-bg-surface)",
+                  color: "#008060",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon source={ThemeTemplateIcon} />
+              </button>
+            ))}
+
+          {selectedTab === 2 &&
+            patterns.map((pattern) => (
+              <button
+                key={pattern.id}
+                type="button"
+                onClick={() => handleAddPattern(pattern)}
+                aria-label={`Add Pattern: ${pattern.name}`}
+                title={pattern.name}
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "6px",
+                  border: "1px solid var(--p-color-border)",
+                  background: "var(--p-color-bg-surface)",
+                  color: "#008060",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon source={StarIcon} />
+              </button>
+            ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Standard Expanded Sidebar Mode ──
+  const tabs = tabDefs.map((tab) => ({
+    id: tab.id,
+    content: (
+      <InlineStack align="center" blockAlign="center" gap="100">
+        <Icon source={tab.icon} /> {tab.label}
+      </InlineStack>
+    ),
+  }));
+
   return (
-    <Box padding="400" paddingBlockEnd="0" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      {/* Header */}
-      <Box paddingBlockEnd="300">
+    <div
+      style={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--p-color-bg-surface-secondary)",
+        padding: "20px 20px 0 20px",
+        boxSizing: "border-box",
+      }}
+    >
+      {/* Custom Sleek Scrollbar Styles */}
+      <style>{`
+        .block-picker-scroll::-webkit-scrollbar {
+          width: 5px;
+        }
+        .block-picker-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .block-picker-scroll::-webkit-scrollbar-thumb {
+          background: var(--p-color-border);
+          border-radius: 4px;
+        }
+        .block-picker-scroll::-webkit-scrollbar-thumb:hover {
+          background: var(--p-color-border-emphasis);
+        }
+      `}</style>
+
+      {/* Header & Search */}
+      <Box paddingBlockEnd="200">
         <Box paddingBlockEnd="200">
-          <Text variant="headingMd" as="h2">
+          <Text variant="headingSm" as="h3" fontWeight="bold">
             Add Content
           </Text>
         </Box>
 
-        {/* Search Input */}
+        {/* Search Input with Clear Button */}
         <TextField
           placeholder="Search blocks & patterns..."
           value={searchQuery}
           onChange={(val) => setSearchQuery(val)}
           autoComplete="off"
           prefix={<Icon source={SearchIcon} tone="subdued" />}
+          clearButton={Boolean(searchQuery)}
+          onClearButtonClick={() => setSearchQuery("")}
           labelHidden
           label="Search blocks"
+          selectTextOnFocus
         />
       </Box>
 
-      {/* Tab Buttons */}
-      <Box paddingBlockEnd="300">
-        <Tabs tabs={tabs} selected={selectedTab} onSelect={setSelectedTab} fitted />
+      {/* Segmented Control Tab Buttons (Never collapses into "More views") */}
+      <Box paddingBlockEnd="250">
+        <div
+          style={{
+            display: "flex",
+            background: "var(--p-color-bg-surface)",
+            border: "1px solid var(--p-color-border)",
+            borderRadius: "8px",
+            padding: "3px",
+            gap: "2px",
+            boxShadow: "inset 0 1px 2px rgba(0,0,0,0.03)",
+          }}
+        >
+          {tabDefs.map((tab, idx) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSelectedTab(idx)}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "4px",
+                padding: "6px 4px",
+                borderRadius: "6px",
+                border: "none",
+                background: selectedTab === idx ? "#008060" : "transparent",
+                color: selectedTab === idx ? "#ffffff" : "var(--p-color-text-subdued)",
+                fontSize: "12px",
+                fontWeight: selectedTab === idx ? 600 : 500,
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                outline: "none",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", transform: "scale(0.85)" }}>
+                <Icon source={tab.icon} tone={selectedTab === idx ? undefined : "subdued"} />
+              </div>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
       </Box>
 
-      <Box paddingBlockEnd="400" style={{ flex: 1, overflowY: "auto" }}>
+      {/* Content Area */}
+      <Box paddingBlockEnd="300" style={{ flex: 1, overflowY: "auto", paddingRight: "8px", paddingBottom: "20px" }} className="block-picker-scroll">
         {/* ── Blocks View ── */}
         {selectedTab === 0 && (
           <Box>
@@ -227,26 +458,19 @@ export default function BlockPicker() {
                 totalRendered += filteredTypes.length;
 
                 return (
-                  <Box key={category.label} paddingBlockEnd="400">
-                    <Box paddingBlockEnd="200">
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          color: "var(--p-color-text-subdued)",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.5px",
-                        }}
-                      >
+                  <Box key={category.label} paddingBlockEnd="300">
+                    <Box paddingBlockEnd="150" paddingInlineStart="050" paddingBlockStart="100">
+                      <Text variant="bodyXs" tone="subdued" fontWeight="bold" as="span" style={{ textTransform: "uppercase", letterSpacing: "0.8px" }}>
                         {category.label}
-                      </span>
+                      </Text>
                     </Box>
-                    <InlineGrid columns={2} gap="200">
+                    <InlineGrid columns={2} gap="300">
                       {filteredTypes.map((type) => {
                         const entry = BlockRegistry[type];
                         return (
                           <button
                             key={type}
+                            type="button"
                             onClick={() => handleAddBlock(type)}
                             style={{
                               display: "flex",
@@ -254,26 +478,50 @@ export default function BlockPicker() {
                               alignItems: "center",
                               justifyContent: "center",
                               gap: "6px",
-                              minHeight: "68px",
+                              minHeight: "72px",
                               background: "var(--p-color-bg-surface)",
-                              border: "1px solid var(--p-color-border-subdued)",
+                              border: "1px solid var(--p-color-border)",
                               borderRadius: "8px",
                               padding: "10px 6px",
                               cursor: "pointer",
-                              transition: "all 0.15s ease",
+                              transition: "all 0.15s cubic-bezier(0.4, 0, 0.2, 1)",
+                              outline: "none",
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.borderColor = "#008060";
-                              e.currentTarget.style.background = "#f4f6f8";
-                              e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.05)";
+                              e.currentTarget.style.background = "#f4f8f6";
+                              e.currentTarget.style.transform = "translateY(-1px)";
+                              e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,128,96,0.1)";
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = "var(--p-color-border-subdued)";
+                              e.currentTarget.style.borderColor = "var(--p-color-border)";
                               e.currentTarget.style.background = "var(--p-color-bg-surface)";
+                              e.currentTarget.style.transform = "none";
+                              e.currentTarget.style.boxShadow = "none";
+                            }}
+                            onFocus={(e) => {
+                              e.currentTarget.style.borderColor = "#008060";
+                              e.currentTarget.style.boxShadow = "0 0 0 2px rgba(0,128,96,0.2)";
+                            }}
+                            onBlur={(e) => {
+                              e.currentTarget.style.borderColor = "var(--p-color-border)";
                               e.currentTarget.style.boxShadow = "none";
                             }}
                           >
-                            <div style={{ color: "#008060", display: "flex", alignItems: "center" }}>{entry.icon}</div>
+                            <div
+                              style={{
+                                width: "32px",
+                                height: "32px",
+                                borderRadius: "50%",
+                                background: "#e8f5f0",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#008060",
+                              }}
+                            >
+                              {entry.icon}
+                            </div>
                             <Text variant="bodySm" alignment="center" fontWeight="medium">
                               {entry.label}
                             </Text>
@@ -302,10 +550,11 @@ export default function BlockPicker() {
 
         {/* ── Presets View ── */}
         {selectedTab === 1 && (
-          <Box style={{ display: "flex", flexDirection: "column", gap: "var(--p-space-300)" }}>
+          <Box style={{ display: "flex", flexDirection: "column", gap: "var(--p-space-200)" }}>
             {PRESET_TEMPLATES.filter((p) => !query || p.title.toLowerCase().includes(query)).map((preset) => (
               <button
                 key={preset.id}
+                type="button"
                 onClick={() => handleAddPreset(preset)}
                 style={{
                   background: "var(--p-color-bg-surface)",
@@ -315,19 +564,22 @@ export default function BlockPicker() {
                   cursor: "pointer",
                   textAlign: "left",
                   transition: "all 0.15s ease",
+                  outline: "none",
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.borderColor = "var(--p-color-border-emphasis)";
                   e.currentTarget.style.boxShadow = "var(--p-shadow-100)";
+                  e.currentTarget.style.transform = "translateY(-1px)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.borderColor = "var(--p-color-border)";
                   e.currentTarget.style.boxShadow = "none";
+                  e.currentTarget.style.transform = "none";
                 }}
               >
                 <Box paddingBlockEnd="100">
                   <InlineStack align="start" blockAlign="center" gap="200">
-                    <div style={{ color: "var(--p-color-icon-success)" }}>
+                    <div style={{ color: "var(--p-color-icon-success)", display: "flex", alignItems: "center" }}>
                       <Icon source={ThemeTemplateIcon} />
                     </div>
                     <Text variant="headingSm" as="h4">
@@ -345,16 +597,16 @@ export default function BlockPicker() {
 
         {/* ── Saved Patterns View (Backend Persisted) ── */}
         {selectedTab === 2 && (
-          <Box style={{ display: "flex", flexDirection: "column", gap: "var(--p-space-300)" }}>
+          <Box style={{ display: "flex", flexDirection: "column", gap: "var(--p-space-200)" }}>
             {loadingPatterns ? (
-              <Box padding="800">
+              <Box padding="600">
                 <InlineStack align="center" blockAlign="center" gap="200">
                   <Spinner size="small" />
                   <Text tone="subdued">Loading patterns...</Text>
                 </InlineStack>
               </Box>
             ) : patterns.length === 0 ? (
-              <Box padding="800">
+              <Box padding="600">
                 <div style={{ textAlign: "center" }}>
                   <div style={{ marginBottom: "var(--p-space-200)", color: "var(--p-color-icon-subdued)" }}>
                     <Icon source={StarIcon} />
@@ -363,7 +615,7 @@ export default function BlockPicker() {
                     <Text variant="headingSm">No Saved Patterns Yet</Text>
                   </Box>
                   <Text variant="bodySm" tone="subdued">
-                    Right-click any block or container on the canvas and choose "Save as Pattern" to store it here for your team.
+                    Right-click any block on the canvas and choose "Save as Pattern" to store it here.
                   </Text>
                 </div>
               </Box>
@@ -373,6 +625,7 @@ export default function BlockPicker() {
                 .map((pattern) => (
                   <button
                     key={pattern.id}
+                    type="button"
                     onClick={() => handleAddPattern(pattern)}
                     style={{
                       background: "var(--p-color-bg-surface)",
@@ -385,14 +638,17 @@ export default function BlockPicker() {
                       position: "relative",
                       display: "block",
                       width: "100%",
+                      outline: "none",
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = "var(--p-color-border-emphasis)";
                       e.currentTarget.style.boxShadow = "var(--p-shadow-100)";
+                      e.currentTarget.style.transform = "translateY(-1px)";
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.borderColor = "var(--p-color-border)";
                       e.currentTarget.style.boxShadow = "none";
+                      e.currentTarget.style.transform = "none";
                     }}
                   >
                     <Box paddingBlockEnd="100">
@@ -440,6 +696,6 @@ export default function BlockPicker() {
           </Box>
         )}
       </Box>
-    </Box>
+    </div>
   );
 }

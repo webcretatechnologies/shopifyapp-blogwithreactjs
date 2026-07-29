@@ -9,9 +9,7 @@ export function HtmlBuilderPreview({ block }) {
     return (
       <div
         style={{
-          background: "#f6f6f7",
-          border: "1px dashed #c9cccf",
-          padding: "16px",
+          padding: "8px 0",
           display: "flex",
           alignItems: "center",
           gap: "8px",

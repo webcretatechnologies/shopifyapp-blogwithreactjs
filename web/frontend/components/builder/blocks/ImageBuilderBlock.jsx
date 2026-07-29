@@ -9,10 +9,7 @@ export function ImageBuilderPreview({ block }) {
     return (
       <div
         style={{
-          background: "#f6f6f7",
-          border: "1px dashed #c9cccf",
-          borderRadius: s.borderRadius || "0",
-          padding: "40px 20px",
+          padding: "24px 16px",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",

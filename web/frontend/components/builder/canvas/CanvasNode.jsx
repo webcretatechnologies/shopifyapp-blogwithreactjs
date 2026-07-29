@@ -69,9 +69,20 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   const isSectionNode = type === "Section";
   const isLayoutBlock = isColumnNode || isColumnLayoutNode || isSectionNode;
 
-  // At-rest base style:
-  // All blocks sit flush and transparent on the white article canvas surface at rest.
-  // Visual boundaries and floating action toolbars appear ONLY on hover or selection.
+  // ── Chrome Ownership Rule ──────────────────────────────────────────────────────
+  // CanvasNode is the SOLE provider of block-level chrome:
+  //   background-color, border, border-radius, box-shadow, outer padding/margin.
+  // No PreviewComponent for any block type may apply these to its own root element.
+  //
+  // EXCEPTION TEST: "Would removing this property destroy the block's fundamental
+  // visual identity, or is it just decorative outer framing?"
+  // Recognized content-identity exceptions:
+  //   - Callout: backgroundColor & borderLeft define what a Callout is visually.
+  //   - HeroSection: full-bleed background image/gradient & borderRadius define a Hero banner.
+  //   - VideoBlock (loaded): borderRadius on the iframe wrapper for aspect-ratio clip.
+  //
+  // Visual boundaries (green outline + floating toolbar) appear ONLY on selection/hover.
+  // ──────────────────────────────────────────────────────────────────────────────
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,

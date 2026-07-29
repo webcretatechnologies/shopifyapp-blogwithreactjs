@@ -14,11 +14,8 @@ export function SectionBlockPreview({ block }) {
   return (
     <div
       style={{
-        backgroundColor: s.backgroundColor || "#ffffff",
-        borderRadius: s.borderRadius || "0px",
-        padding: "24px",
-        border: "2px dashed #c9cccf",
-        minHeight: "80px",
+        padding: "16px 0",
+        minHeight: "40px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

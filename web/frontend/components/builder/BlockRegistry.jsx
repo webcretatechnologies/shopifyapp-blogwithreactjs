@@ -209,7 +209,6 @@ export const BlockRegistry = {
           alignItems: "center",
           gap: "12px",
           borderRadius: "4px",
-          margin: "16px 0",
         }}
       >
         <span style={{ fontSize: "24px" }}>{block.settings.emoji || "💡"}</span>
@@ -438,7 +437,7 @@ export const BlockRegistry = {
       borderColor: "#e1e3e5",
     },
     PreviewComponent: ({ block }) => (
-      <div style={{ border: `1px solid ${block.settings.borderColor}`, borderRadius: `${block.settings.borderRadius}px`, padding: "16px", textAlign: block.settings.layout === 'vertical' ? 'center' : 'left', background: "#fff" }}>
+      <div style={{ padding: "8px 0", textAlign: block.settings.layout === 'vertical' ? 'center' : 'left' }}>
         {block.settings.showImage && <div style={{ height: "150px", background: block.settings.imageUrl ? `url(${block.settings.imageUrl}) center/contain no-repeat` : "#f4f6f8", marginBottom: "16px" }} />}
         <h3 style={{ margin: "0 0 8px" }}>{block.settings.title}</h3>
         {block.settings.showPrice && <p style={{ fontWeight: "bold", margin: "0 0 16px" }}>${block.settings.price}</p>}
@@ -461,7 +460,7 @@ export const BlockRegistry = {
       borderRadius: 4,
     },
     PreviewComponent: ({ block }) => (
-      <div style={{ textAlign: block.settings.alignment, margin: "16px 0" }}>
+      <div style={{ textAlign: block.settings.alignment, padding: "4px 0" }}>
         <button style={{ background: block.settings.backgroundColor, color: block.settings.textColor, padding: "10px 20px", border: "none", borderRadius: `${block.settings.borderRadius}px`, fontWeight: "bold" }}>
           {block.settings.text}
         </button>
@@ -502,7 +501,7 @@ export const BlockRegistry = {
       }
 
       return (
-        <div style={{ margin: "16px 0", overflowX: "auto" }}>
+        <div style={{ padding: "4px 0", overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #e1e3e5" }}>
             {theadRows.length > 0 && (
               <thead>

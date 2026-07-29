@@ -23,18 +23,16 @@ export function VideoBlockPreview({ block }) {
   if (!block.url) {
     return (
       <div style={{
-        background: 'linear-gradient(135deg, #1a1a2e, #16213e)',
-        borderRadius: '8px',
-        height: '120px',
+        padding: '24px 16px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         gap: '8px',
-        color: '#fff',
+        color: '#6d7175',
       }}>
         <span style={{ fontSize: '32px' }}>▶️</span>
-        <span style={{ fontSize: '12px', opacity: 0.7 }}>Paste a YouTube or Vimeo URL in settings</span>
+        <span style={{ fontSize: '13px' }}>Paste a YouTube or Vimeo URL in settings</span>
       </div>
     );
   }
@@ -67,11 +65,9 @@ export function VideoBlockPreview({ block }) {
 
   return (
     <div style={{
-      background: '#f1f2f3',
-      borderRadius: '8px',
       padding: '16px',
       fontSize: '13px',
-      color: '#6d7175',
+      color: '#d72c0d',
       textAlign: 'center',
     }}>
       ⚠️ Unsupported video URL — use YouTube or Vimeo

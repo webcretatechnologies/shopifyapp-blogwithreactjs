@@ -25,10 +25,9 @@ export function BuyButtonBlockPreview({ block }) {
   if (!product?.title) {
     return (
       <div style={{
-        padding: '32px 16px', textAlign: 'center',
-        border: '2px dashed #e1e3e5', borderRadius: '8px',
+        padding: '24px 16px', textAlign: 'center',
       }}>
-        <div style={{ fontSize: '36px', marginBottom: '8px' }}>🛒</div>
+        <div style={{ fontSize: '32px', marginBottom: '8px' }}>🛒</div>
         <Text variant="bodyMd" tone="subdued">Pick a product in the settings panel</Text>
       </div>
     );
@@ -39,12 +38,9 @@ export function BuyButtonBlockPreview({ block }) {
   if (layout === 'vertical') {
     return (
       <div style={{
-        borderRadius: '12px',
-        border: '1px solid #e1e3e5',
-        overflow: 'hidden',
-        background: '#fff',
         maxWidth: block.maxWidth || '320px',
         margin: '0 auto',
+        padding: '8px 0',
       }}>
         {product.image && (
           <img src={product.image} alt={product.title} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }} />
@@ -82,10 +78,7 @@ export function BuyButtonBlockPreview({ block }) {
       display: 'flex',
       gap: '20px',
       alignItems: 'center',
-      padding: '20px',
-      borderRadius: '12px',
-      border: '1px solid #e1e3e5',
-      background: '#fff',
+      padding: '8px 0',
     }}>
       {product.image && (
         <img src={product.image} alt={product.title}

@@ -393,7 +393,7 @@ export default function ArticlePreview({
               transition: "max-width 0.3s ease, border-radius 0.3s ease",
             }}
           >
-            {/* ── Inner content wrapper (overflow hidden for rounded corner clipping) ── */}
+            {/* ── Inner content wrapper ── */}
             <div style={{ overflow: "hidden", borderRadius: isMobile ? "24px 24px 0 0" : isTablet ? "16px 16px 0 0" : 0 }}>
 
             {/* ── Mobile status bar mock ── */}
@@ -524,7 +524,7 @@ export default function ArticlePreview({
                 </div>
               )}
             </div>
-            </div>{/* end inner content wrapper */}
+            </div>
           </div>
         </div>
       </div>

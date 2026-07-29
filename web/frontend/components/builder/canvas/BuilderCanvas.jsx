@@ -107,13 +107,12 @@ export default function BuilderCanvas({ deviceMode = "desktop" }) {
     <div
       style={{
         flex: 1,
+        width: "100%",
         height: "100%",
         overflowY: "auto",
         backgroundColor: "var(--p-color-bg-surface-secondary)",
         padding: deviceMode === "desktop" ? "24px 32px" : "16px",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
+        boxSizing: "border-box",
       }}
       onClick={() => clearSelection()} // click outside clears selection
     >
@@ -122,12 +121,15 @@ export default function BuilderCanvas({ deviceMode = "desktop" }) {
           width: "100%",
           maxWidth: getCanvasWidth(),
           minHeight: "100%",
+          margin: "0 auto",
           background: "#ffffff",
           boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
           borderRadius: "8px",
           padding: "32px 40px",
           transition: "max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
           boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         <DndContext

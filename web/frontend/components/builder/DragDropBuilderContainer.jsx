@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Card, Box, Button, ButtonGroup, InlineStack, TextField, Text, Tooltip, Icon } from "@shopify/polaris";
+import { Card, Box, Button, ButtonGroup, InlineStack, TextField, Text, Tooltip, Icon, useBreakpoints } from "@shopify/polaris";
 import { 
   UndoIcon, 
   RedoIcon, 
@@ -23,7 +23,8 @@ import {
   ViewIcon, 
   SaveIcon, 
   PlusIcon, 
-  MinusCircleIcon 
+  MinusCircleIcon,
+  XIcon
 } from "@shopify/polaris-icons";
 
 import { useBuilderStore } from "./store/useBuilderStore";
@@ -45,6 +46,12 @@ export default function DragDropBuilderContainer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [mobileLeftDrawerOpen, setMobileLeftDrawerOpen] = useState(false);
+  const [mobileRightDrawerOpen, setMobileRightDrawerOpen] = useState(false);
+
+  const { mdDown, lgDown } = useBreakpoints();
+  const isNarrow = mdDown; // < 768px
+  const isMedium = lgDown && !mdDown; // 768px - 1039px
 
   const hydrate = useBuilderStore((s) => s.hydrate);
   const blocksById = useBuilderStore((s) => s.blocksById);
@@ -59,12 +66,21 @@ export default function DragDropBuilderContainer({
   const deleteBlock = useBuilderStore((s) => s.deleteBlock);
   const duplicateBlock = useBuilderStore((s) => s.duplicateBlock);
   const addBlock = useBuilderStore((s) => s.addBlock);
-  // deviceMode and zoomLevel now live in the store so CanvasNode/SettingsPanel can read
-  // them without prop-drilling through BuilderCanvas.
   const deviceMode = useBuilderStore((s) => s.deviceMode);
   const setDeviceMode = useBuilderStore((s) => s.setDeviceMode);
   const zoomLevel = useBuilderStore((s) => s.zoomLevel);
   const setZoomLevel = useBuilderStore((s) => s.setZoomLevel);
+
+  // Symmetric auto-open & auto-close right settings drawer on block selection/deselection in narrow mode
+  useEffect(() => {
+    if (isNarrow) {
+      if (selectedBlockId) {
+        setMobileRightDrawerOpen(true);
+      } else {
+        setMobileRightDrawerOpen(false);
+      }
+    }
+  }, [selectedBlockId, isNarrow]);
 
   // Keyboard shortcuts
   const onSaveRef = useRef(onSave);
@@ -78,6 +94,14 @@ export default function DragDropBuilderContainer({
       const cmdOrCtrl = e.metaKey || e.ctrlKey;
 
       if (e.key === "Escape") {
+        if (mobileLeftDrawerOpen) {
+          setMobileLeftDrawerOpen(false);
+          return;
+        }
+        if (mobileRightDrawerOpen) {
+          setMobileRightDrawerOpen(false);
+          return;
+        }
         if (isFullscreen) setIsFullscreen(false);
         clearSelection();
         return;
@@ -201,7 +225,7 @@ export default function DragDropBuilderContainer({
         bottom: 0,
         width: "100vw",
         height: "100vh",
-        zIndex: 999999,
+        zIndex: 100,
         background: "var(--p-color-bg-surface-secondary)",
         display: "flex",
         flexDirection: "column",
@@ -364,27 +388,164 @@ export default function DragDropBuilderContainer({
         </InlineStack>
       </Box>
 
-      {/* ── Three-Pane Layout ── */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Left Pane: Block Picker */}
-        {showLeftSidebar && (
-          <div style={{ width: "280px", borderRight: "1px solid var(--p-color-border-secondary)", background: "var(--p-color-bg-surface-secondary)", flexShrink: 0, display: "flex", flexDirection: "column" }}>
-            <BlockPicker />
+      {/* ── Responsive Three-Pane Layout ── */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
+        {/* Left Pane: Block Picker (Wide & Medium Modes) */}
+        {!isNarrow && showLeftSidebar && (
+          <div
+            style={{
+              width: isMedium ? "48px" : "320px",
+              borderRight: "1px solid var(--p-color-border-secondary)",
+              background: "var(--p-color-bg-surface-secondary)",
+              flexShrink: 0,
+              display: "flex",
+              flexDirection: "column",
+              transition: "width 0.2s ease",
+            }}
+          >
+            <BlockPicker isRailMode={isMedium} />
           </div>
         )}
 
         {/* Center Pane: Breadcrumb + Canvas */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column", background: "var(--p-color-bg-surface-tertiary)" }}>
           <BreadcrumbBar />
-          <div style={{ flex: 1, overflow: "hidden", transform: `scale(${zoomLevel})`, transformOrigin: "top center" }}>
+          <div style={{ flex: 1, height: "100%", overflow: "hidden", transform: `scale(${zoomLevel})`, transformOrigin: "top center", display: "flex", flexDirection: "column" }}>
             <BuilderCanvas deviceMode={deviceMode} />
           </div>
+
+          {/* Floating Action Buttons (FAB) on Narrow Screen (<768px) */}
+          {isNarrow && (
+            <div
+              style={{
+                position: "absolute",
+                bottom: "16px",
+                left: "16px",
+                right: "16px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                pointerEvents: "none",
+                zIndex: 50,
+              }}
+            >
+              <div style={{ pointerEvents: "auto" }}>
+                <Button
+                  variant="primary"
+                  icon={PlusIcon}
+                  onClick={() => setMobileLeftDrawerOpen(true)}
+                  accessibilityLabel="Open block picker"
+                >
+                  Add Blocks
+                </Button>
+              </div>
+
+              {selectedBlockId && (
+                <div style={{ pointerEvents: "auto" }}>
+                  <Button
+                    variant="secondary"
+                    icon={LayoutSidebarRightIcon}
+                    onClick={() => setMobileRightDrawerOpen(!mobileRightDrawerOpen)}
+                    accessibilityLabel="Toggle Settings"
+                  >
+                    Settings
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Right Pane: Settings */}
-        {showRightSidebar && (
-          <div style={{ width: "300px", borderLeft: "1px solid var(--p-color-border-secondary)", background: "var(--p-color-bg-surface)", flexShrink: 0, display: "flex", flexDirection: "column" }}>
+        {/* Right Pane: Settings (Wide & Medium Modes) */}
+        {!isNarrow && showRightSidebar && (
+          <div
+            style={{
+              width: isMedium ? "260px" : "300px",
+              borderLeft: "1px solid var(--p-color-border-secondary)",
+              background: "var(--p-color-bg-surface)",
+              flexShrink: 0,
+              display: "flex",
+              flexDirection: "column",
+              transition: "width 0.2s ease",
+            }}
+          >
             <SettingsPanel />
+          </div>
+        )}
+
+        {/* ── Narrow Viewport (<768px): Left Block Picker Drawer Overlay ── */}
+        {isNarrow && mobileLeftDrawerOpen && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 1000, display: "flex" }}>
+            {/* Backdrop */}
+            <div
+              style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)" }}
+              onClick={() => setMobileLeftDrawerOpen(false)}
+            />
+            {/* Drawer */}
+            <div
+              style={{
+                position: "relative",
+                width: "280px",
+                maxWidth: "85vw",
+                height: "100%",
+                background: "var(--p-color-bg-surface)",
+                boxShadow: "4px 0 20px rgba(0,0,0,0.15)",
+                display: "flex",
+                flexDirection: "column",
+                zIndex: 1001,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--p-color-border)" }}>
+                <Text variant="headingSm">Block Picker</Text>
+                <Button
+                  variant="tertiary"
+                  icon={XIcon}
+                  onClick={() => setMobileLeftDrawerOpen(false)}
+                  accessibilityLabel="Close block picker"
+                />
+              </div>
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                <BlockPicker />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Narrow Viewport (<768px): Right Settings Drawer Overlay ── */}
+        {isNarrow && mobileRightDrawerOpen && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 1000, display: "flex", justifyContent: "flex-end" }}>
+            {/* Backdrop */}
+            <div
+              style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)" }}
+              onClick={() => setMobileRightDrawerOpen(false)}
+            />
+            {/* Drawer */}
+            <div
+              style={{
+                position: "relative",
+                width: "300px",
+                maxWidth: "85vw",
+                height: "100%",
+                background: "var(--p-color-bg-surface)",
+                boxShadow: "-4px 0 20px rgba(0,0,0,0.15)",
+                display: "flex",
+                flexDirection: "column",
+                zIndex: 1001,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--p-color-border)" }}>
+                <Text variant="headingSm">Block Settings</Text>
+                <Button
+                  variant="tertiary"
+                  icon={XIcon}
+                  onClick={() => setMobileRightDrawerOpen(false)}
+                  accessibilityLabel="Close settings"
+                />
+              </div>
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                <SettingsPanel />
+              </div>
+            </div>
           </div>
         )}
       </div>
