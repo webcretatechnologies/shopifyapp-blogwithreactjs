@@ -46,6 +46,7 @@ import {
   Heading3,
 } from "lucide-react";
 import { builderRichTextExtensions } from "./richTextExtensions";
+import { useBuilderStore } from "../builder/store/useBuilderStore";
 import "./TiptapEditor.css"; // reuse the same toolbar/btn CSS variables
 
 // ---------------------------------------------------------------------------
@@ -110,6 +111,17 @@ export default function RichTextEditor({
     content: initialContent,
     editable: !readOnly,
     autofocus: false,
+    editorProps: {
+      handleDrop: (view, event, slice, moved) => {
+        const activeDragId = useBuilderStore.getState().activeDragId;
+        if (activeDragId) {
+          // A dnd-kit block drag is active. Prevent Tiptap from natively inserting text.
+          event.preventDefault();
+          return true;
+        }
+        return false;
+      },
+    },
     onUpdate: ({ editor: ed }) => {
       onChangeRef.current?.(ed.getJSON());
     },

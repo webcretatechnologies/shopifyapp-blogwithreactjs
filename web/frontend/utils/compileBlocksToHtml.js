@@ -55,6 +55,33 @@ function hasVisibilityFlags(blocks) {
   return false;
 }
 
+function injectBlockIdentity(html, block) {
+  if (!html) return html;
+  
+  const trimmedHtml = html.trim();
+  const tagMatch = trimmedHtml.match(/^<([a-zA-Z0-9\-]+)([^>]*)>/);
+  if (!tagMatch) return html;
+  
+  const tag = tagMatch[1];
+  const rest = tagMatch[2];
+  
+  let dataAttrs = ` data-type="${block.type}"`;
+  
+  if (block.settings) {
+    const skipKeys = ["content", "text", "code", "tableData"];
+    for (const [key, value] of Object.entries(block.settings)) {
+      if (skipKeys.includes(key)) continue;
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        const kebabKey = key.replace(/([A-Z])/g, "-$1").toLowerCase();
+        const safeVal = String(value).replace(/"/g, '&quot;');
+        dataAttrs += ` data-${kebabKey}="${safeVal}"`;
+      }
+    }
+  }
+  
+  return `<${tag}${dataAttrs}${rest}>` + trimmedHtml.slice(tagMatch[0].length);
+}
+
 export function compileSingleBlockToHtml(block) {
   if (!block || !block.type) return "";
 
@@ -63,7 +90,8 @@ export function compileSingleBlockToHtml(block) {
   // Compile the core HTML for this block type, then optionally wrap it
   // in a hide-on-device <div> if any visibility flags are set.
   const html = compileCoreBlockHtml(type, settings, children);
-  return applyVisibilityWrapper(html, settings);
+  const identifiedHtml = injectBlockIdentity(html, block);
+  return applyVisibilityWrapper(identifiedHtml, settings);
 }
 
 function compileCoreBlockHtml(type, settings, children) {

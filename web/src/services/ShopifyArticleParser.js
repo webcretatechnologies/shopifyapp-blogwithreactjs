@@ -46,7 +46,7 @@ export class ShopifyArticleParser {
       }
     };
 
-    const processNode = (node) => {
+    const processNode = (node, currentBlocksArray) => {
       if (node.type === "text") {
         if (node.data?.trim()) {
           appendTextBlock(`<p>${node.data}</p>`);
@@ -59,28 +59,20 @@ export class ShopifyArticleParser {
       const $el = $(node);
       const tagName = node.tagName.toLowerCase();
 
-      // Check for custom app block data
-      if ($el.attr("data-blog-app-block") !== undefined) {
-        try {
-          const dataStr = $el.attr("data-blog-app-data");
-          const parsed = JSON.parse(dataStr);
-          if (parsed) {
-            parsed.id = this._generateId();
-            blocks.push(parsed);
-            return;
-          }
-        } catch (e) {
-          // ignore parse errors
-        }
-      }
-
-      // Check for app block wrappers (div[data-type])
+      // Check for app block wrappers (div[data-type] or h2[data-type] etc)
       const dataType = $el.attr("data-type");
       if (dataType) {
         const block = this._convertDataBlock($el, dataType);
         if (block) {
-          blocks.push(block);
-          return;
+          if (block.type === "ColumnLayout" || block.type === "Column") {
+            block.children = [];
+            currentBlocksArray.push(block);
+            $el.contents().each((_, child) => processNode(child, block.children));
+            return;
+          } else {
+            currentBlocksArray.push(block);
+            return;
+          }
         }
       }
 
@@ -88,7 +80,7 @@ export class ShopifyArticleParser {
 
       // If this element or any of its descendants is a builder block,
       // we must process its children recursively so we don't lose the builder block.
-      const hasBuilderBlocks = $el.find("[data-type], [data-blog-app-block]").length > 0;
+      const hasBuilderBlocks = $el.find("[data-type]").length > 0;
       
       if (!hasBuilderBlocks) {
         // Safe to just keep the whole HTML structure (including tables, headings, spans, paragraphs!)
@@ -101,11 +93,11 @@ export class ShopifyArticleParser {
 
       // If it DOES contain builder blocks (e.g. it's a wrapper <div>),
       // we process its children recursively.
-      $el.contents().each((_, child) => processNode(child));
+      $el.contents().each((_, child) => processNode(child, currentBlocksArray));
     };
 
     // Process top-level children
-    $("body").children().each((_, el) => processNode(el));
+    $("body").children().each((_, el) => processNode(el, blocks));
 
     // If no blocks were found, create a single text block
     if (blocks.length === 0) {
@@ -148,20 +140,28 @@ export class ShopifyArticleParser {
    */
   static _convertDataBlock($el, dataType) {
     const TYPE_MAP = {
-      buyButton: "buy_button",
-      productGrid: "product_grid",
-      collection: "collection",
-      ctaButton: "cta_button",
-      heroBlock: "hero",
-      videoBlock: "video",
-      spacerBlock: "spacer",
-      dividerBlock: "divider",
-      imageBlock: "image",
-      product: "product",
-      product_sidebar: "product_sidebar",
-      featured_product: "featured_product",
-      product_switcher: "product_switcher",
-      product_slider: "product_slider",
+      buyButton: "BuyButton",
+      buy_button: "BuyButton",
+      productGrid: "ProductGrid",
+      product_grid: "ProductGrid",
+      collection: "Collection",
+      ctaButton: "CTAButton",
+      cta_button: "CTAButton",
+      heroBlock: "Hero",
+      hero: "Hero",
+      videoBlock: "Video",
+      video: "Video",
+      spacerBlock: "Spacer",
+      spacer: "Spacer",
+      dividerBlock: "Divider",
+      divider: "Divider",
+      imageBlock: "Image",
+      image: "Image",
+      product: "ProductCard",
+      product_sidebar: "ProductSidebar",
+      featured_product: "FeaturedProduct",
+      product_switcher: "ProductSwitcher",
+      product_slider: "ProductSlider",
     };
 
     const ATTR_MAP = {
@@ -215,6 +215,9 @@ export class ShopifyArticleParser {
       width: "width",
       linkurl: "linkUrl",
       titlealign: "titleAlign",
+      level: "level",
+      hasheader: "hasHeader",
+      type: "type",
     };
 
     const block = {
@@ -235,9 +238,36 @@ export class ShopifyArticleParser {
         } else if (!isNaN(val) && val.trim() !== "" && key === "overlayopacity") {
           val = parseFloat(val);
         }
-        block[mappedKey] = val;
+        block.settings = block.settings || {};
+        block.settings[mappedKey] = val;
       }
     });
+
+    if (block.type === "Heading") {
+      block.settings = block.settings || {};
+      block.settings.text = $el.text() || "";
+    } else if (block.type === "RichText") {
+      block.settings = block.settings || {};
+      block.settings.content = $el.html() || "";
+    } else if (block.type === "Html") {
+      block.settings = block.settings || {};
+      block.settings.code = $el.html() || "";
+    } else if (block.type === "Callout") {
+      block.settings = block.settings || {};
+      block.settings.text = $el.html() || "";
+    } else if (block.type === "Table") {
+      block.settings = block.settings || {};
+      const tableData = [];
+      $el.find("tr").each((_, tr) => {
+        const row = [];
+        // Support both th and td equally for generic iteration
+        $(tr).find("th, td").each((_, td) => {
+          row.push($(td).text() || "");
+        });
+        tableData.push(row);
+      });
+      block.settings.tableData = tableData;
+    }
 
     return block;
   }

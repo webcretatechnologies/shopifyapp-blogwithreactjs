@@ -195,6 +195,18 @@ function fieldHash(value) {
 }
 
 /**
+ * Compute a hash for HTML fields that normalizes inter-tag whitespace.
+ * This prevents false-positive external-edit detection when Shopify alters whitespace upon save.
+ */
+function htmlHash(value) {
+  if (value === null || value === undefined) return crypto.createHash("sha256").update("__NULL__").digest("hex");
+  const normalized = typeof value === "string" 
+    ? value.replace(/>\s+</g, '><').replace(/\s+/g, ' ').trim()
+    : JSON.stringify(value);
+  return crypto.createHash("sha256").update(normalized).digest("hex");
+}
+
+/**
  * Compute a composite content hash from article fields (legacy, for echo suppression).
  */
 function computeContentHash(fields) {
@@ -284,9 +296,9 @@ function buildBaselineSnapshot(localState, storefrontHtml, revision) {
       tags:        { value: localState.tags,        hash: f(localState.tags) },
       featuredImage: { value: localState.featuredImage, hash: f(localState.featuredImage) },
       content: {
-        editorHtml:      { value: localState.content.editorHtml, hash: f(localState.content.editorHtml) },
-        contentJson:      { hash: f(JSON.stringify(localState.content.contentJson)) },
-        storefrontHtml:   { value: storefrontHtml, hash: f(storefrontHtml) },
+        editorHtml:      { value: localState.content.editorHtml, hash: f(localState.content.editorHtml), htmlHash: htmlHash(localState.content.editorHtml) },
+        contentJson:     { hash: f(JSON.stringify(localState.content.contentJson)) },
+        storefrontHtml:  { value: storefrontHtml, hash: f(storefrontHtml), htmlHash: htmlHash(storefrontHtml) },
       },
     },
   };
@@ -372,10 +384,10 @@ function threeWayMerge(base, local, remote, { localEditedSinceSync = false } = {
   }
 
   // ── Content field (dual representation) ─────────────────────────
-  const localContentHash   = fieldHash(local.content.editorHtml);
-  const remoteContentHash  = fieldHash(remote.content.storefrontHtml);
-  const baseEditorHash     = base?.fields?.content?.editorHtml?.hash;
-  const baseStorefrontHash = base?.fields?.content?.storefrontHtml?.hash;
+  const localContentHash   = htmlHash(local.content.editorHtml);
+  const remoteContentHash  = htmlHash(remote.content.storefrontHtml);
+  const baseEditorHash     = base?.fields?.content?.editorHtml?.htmlHash || base?.fields?.content?.editorHtml?.hash;
+  const baseStorefrontHash = base?.fields?.content?.storefrontHtml?.htmlHash || base?.fields?.content?.storefrontHtml?.hash;
 
   const localContentChanged  = changedFromBase(localContentHash, baseEditorHash);
   const remoteContentChanged = changedFromBase(remoteContentHash, baseStorefrontHash);
@@ -389,7 +401,7 @@ function threeWayMerge(base, local, remote, { localEditedSinceSync = false } = {
     merged.content = { value: null, source: "remote", needsParse: true };
   } else {
     // Both changed
-    if (localContentHash === fieldHash(remote.content.storefrontHtml)) {
+    if (localContentHash === htmlHash(remote.content.storefrontHtml)) {
       // Same change (converged) — keep local
       merged.content = { value: local.content, source: "both" };
     } else {

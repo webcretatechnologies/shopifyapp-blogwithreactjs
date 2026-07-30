@@ -148,6 +148,7 @@ if (typeof window !== "undefined" && !window.__lastPointerYTracker) {
         const domRect = node?.getBoundingClientRect?.() || c.rect?.current;
         if (domRect && domRect.height > 0) {
           if (pointerY >= domRect.top && pointerY <= domRect.bottom) {
+            useBuilderStore.getState().setLastDropTarget({ id: c.id, rect: domRect });
             return [{ id: c.id }];
           }
         }
@@ -155,6 +156,7 @@ if (typeof window !== "undefined" && !window.__lastPointerYTracker) {
 
       // 4. Closest vertical center fallback
       let closestContainer = null;
+      let closestRect = null;
       let minDistance = Infinity;
       for (const c of blockContainers) {
         const node = c.node?.current || document.getElementById(c.id);
@@ -164,27 +166,50 @@ if (typeof window !== "undefined" && !window.__lastPointerYTracker) {
           if (dist < minDistance) {
             minDistance = dist;
             closestContainer = c;
+            closestRect = domRect;
           }
         }
       }
-      if (closestContainer) return [{ id: closestContainer.id }];
+      if (closestContainer) {
+        useBuilderStore.getState().setLastDropTarget({ id: closestContainer.id, rect: closestRect });
+        return [{ id: closestContainer.id }];
+      }
     }
 
     // 5. Final fallback: empty canvas
+    useBuilderStore.getState().setLastDropTarget({ id: "canvas-root", rect: null });
     return [{ id: "canvas-root" }];
   };
 
   const handleDragStart = (event) => {
     setActiveId(event.active.id);
+    useBuilderStore.getState().setActiveDragId(event.active.id);
   };
 
 
 
   const handleDragEnd = (event) => {
-    const { active, over } = event;
+    let { active, over } = event;
     setActiveId(null);
+    useBuilderStore.getState().setActiveDragId(null);
 
-    if (!over) return;
+    const state = useBuilderStore.getState();
+
+    // Reconstruct over from lastDropTarget if dnd-kit reports null
+    if (!over) {
+      const fallbackTarget = state.lastDropTarget;
+      if (!fallbackTarget) return;
+
+      over = {
+        id: fallbackTarget.id,
+        rect: fallbackTarget.rect,
+        data: {
+          current: {
+            isSection: fallbackTarget.id !== "canvas-root" && state.blocksById[fallbackTarget.id]?.type === "Section"
+          }
+        }
+      };
+    }
 
     const isNew = active.data.current?.isNew;
 
@@ -212,7 +237,6 @@ if (typeof window !== "undefined" && !window.__lastPointerYTracker) {
       }
     }
 
-    const state = useBuilderStore.getState();
     const target = resolveDropTarget(state.blocksById, state.rootIds, active.id, over.id, overIsSection, isBelow);
 
     if (target) {
@@ -457,6 +481,7 @@ if (typeof window !== "undefined" && !window.__lastPointerYTracker) {
       onDragEnd={handleDragEnd}
       onDragCancel={() => {
         setActiveId(null);
+        useBuilderStore.getState().setActiveDragId(null);
       }}
       announcements={announcements}
     >

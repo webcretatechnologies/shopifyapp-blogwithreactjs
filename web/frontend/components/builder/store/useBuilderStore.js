@@ -17,6 +17,8 @@ export const useBuilderStore = create((set, get) => ({
   future: [],
   deviceMode: "desktop", // 'desktop' | 'tablet' | 'mobile'
   zoomLevel: 1.0,
+  activeDragId: null,
+  lastDropTarget: null,
 
   _commit(recipe) {
     const current = { blocksById: get().blocksById, rootIds: get().rootIds };
@@ -247,6 +249,14 @@ export const useBuilderStore = create((set, get) => ({
 
   setHovered(id) {
     set({ hoveredBlockId: id });
+  },
+
+  setActiveDragId(id) {
+    set({ activeDragId: id });
+  },
+
+  setLastDropTarget(target) {
+    set({ lastDropTarget: target });
   },
 
   hydrate(blocksAst) {

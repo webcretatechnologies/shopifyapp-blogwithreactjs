@@ -204,19 +204,27 @@ export class EditorContentCompiler {
             compiledHtml = this.renderCtaButton(attrs);
             break;
           case "buyButton":
+          case "BuyButton":
           case "product":
+          case "Product":
           case "product_sidebar":
+          case "ProductSidebar":
           case "featured_product":
+          case "FeaturedProduct":
             compiledHtml = this.renderBuyButton(attrs);
             break;
           case "productGrid":
+          case "ProductGrid":
           case "product_switcher":
+          case "ProductSwitcher":
             compiledHtml = await this.renderProductGrid(attrs, shopifySession, shopifyClient);
             break;
           case "product_slider":
+          case "ProductSlider":
             compiledHtml = await this.renderProductSlider(attrs, shopifySession, shopifyClient);
             break;
           case "collection":
+          case "Collection":
             compiledHtml = await this.renderCollection(attrs, shopifySession, shopifyClient);
             break;
           // Same caveat as dividerBlock above: the current ImageBlock node
@@ -226,15 +234,19 @@ export class EditorContentCompiler {
           // case below and are already fully self-contained (including the
           // real rich-text caption, which this function has no access to).
           case "imageBlock":
+          case "ImageBlock":
             compiledHtml = this.renderImage(attrs);
             break;
           case "productCard":
+          case "ProductCard":
             compiledHtml = this.renderProductCard(attrs);
             break;
           case "htmlBlock":
+          case "HtmlBlock":
             compiledHtml = this.renderHtmlBlock(attrs);
             break;
           case "videoEmbedBlock":
+          case "VideoEmbedBlock":
             compiledHtml = this.renderVideoEmbed(attrs);
             break;
           default:
