@@ -474,6 +474,90 @@ function compileCoreBlockHtml(type, settings, children) {
       </div>`;
     }
 
+    case "FaqBlock": {
+      const title = settings.title || "";
+      const titleAlign = settings.titleAlign || "left";
+      const layout = settings.layout || "accordion";
+      const items = Array.isArray(settings.items) ? settings.items : [];
+      const accentColor = settings.accentColor || "#008060";
+      const backgroundColor = settings.backgroundColor || "#ffffff";
+      const borderColor = settings.borderColor || "#e1e3e5";
+      const borderRadius = settings.borderRadius !== undefined ? settings.borderRadius : 8;
+      const firstOpen = settings.firstOpen !== false;
+      const enableSchema = settings.enableSchema !== false;
+
+      let schemaScript = "";
+      if (enableSchema && items.length > 0) {
+        const schemaData = {
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          "mainEntity": items.map((item) => ({
+            "@type": "Question",
+            "name": item.question || "",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": item.answer || "",
+            },
+          })),
+        };
+        schemaScript = `<script type="application/ld+json">${JSON.stringify(schemaData)}</script>`;
+      }
+
+      let contentHtml = "";
+
+      if (layout === "grid") {
+        const gridItemsHtml = items
+          .map(
+            (item) => `
+            <div style="background-color: ${backgroundColor}; border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+              <h4 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #202223; line-height: 1.4;">${item.question || ""}</h4>
+              <p style="margin: 0; font-size: 14px; color: #6d7175; line-height: 1.6;">${item.answer || ""}</p>
+            </div>
+          `
+          )
+          .join("");
+
+        contentHtml = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 16px 0;">${gridItemsHtml}</div>`;
+      } else {
+        const accordionItemsHtml = items
+          .map((item, idx) => {
+            const isOpen = firstOpen && idx === 0;
+            return `
+            <details ${isOpen ? "open" : ""} class="builder-faq-item" style="background-color: ${backgroundColor}; border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; overflow: hidden; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); transition: all 0.2s ease;">
+              <summary style="padding: 14px 18px; font-size: 15px; font-weight: 600; color: #202223; cursor: pointer; outline: none; list-style: none; display: flex; justify-content: space-between; align-items: center; user-select: none;">
+                <span class="faq-question-text" style="color: #202223; font-size: 15px; font-weight: 600; line-height: 1.4; transition: color 0.2s ease;">${item.question || ""}</span>
+                <span class="faq-icon-wrapper" style="color: ${accentColor}; flex-shrink: 0; display: inline-flex; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </span>
+              </summary>
+              <div style="padding: 14px 18px 16px 18px; border-top: 1px solid ${borderColor}; background-color: transparent;">
+                <p style="margin: 0; font-size: 14px; color: #4a4a4a; line-height: 1.6;">${item.answer || ""}</p>
+              </div>
+            </details>
+          `;
+          })
+          .join("");
+
+        const styleBlock = `<style>
+          .builder-faq-item summary::-webkit-details-marker,
+          .builder-faq-item summary::marker { display: none !important; }
+          .builder-faq-item[open] summary .faq-question-text { color: ${accentColor} !important; }
+          .builder-faq-item[open] summary .faq-icon-wrapper { transform: rotate(180deg) !important; }
+          .builder-faq-item[open] { box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important; }
+        </style>`;
+
+        contentHtml = `${styleBlock}<div style="margin: 16px 0;">${accordionItemsHtml}</div>`;
+      }
+
+      const titleHtml = title ? `<h2 style="text-align: ${titleAlign}; font-size: 22px; font-weight: 700; color: #202223; margin: 24px 0 16px 0;">${title}</h2>` : "";
+
+      return `<div class="builder-faq-block" style="width: 100%; margin: 24px 0;">
+        ${titleHtml}
+        ${contentHtml}
+        ${schemaScript}
+      </div>`;
+    }
+
     default: {
       return children.map(compileSingleBlockToHtml).join("");
     }

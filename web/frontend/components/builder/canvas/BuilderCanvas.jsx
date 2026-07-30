@@ -69,35 +69,43 @@ export default function BuilderCanvas({ deviceMode = "desktop" }) {
             {rootIds.length === 0 && (
               <div
                 style={{
-                  height: "200px",
+                  height: "220px",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
                   border: "2px dashed #c9cccf",
                   borderRadius: "8px",
-                  background: isOver ? "#f4f8f6" : "transparent",
+                  background: isOver ? "#f4f8f6" : "#fafbfc",
                   color: "#6d7175",
                   fontSize: "15px",
                   transition: "all 0.2s ease",
                 }}
               >
-                <div style={{ marginBottom: "12px" }}>Drag and drop blocks here to start building.</div>
+                <div style={{ marginBottom: "12px", fontWeight: 500 }}>Your article is empty. Drag and drop blocks here to start building.</div>
                 <button
                   type="button"
-                  onClick={() => document.querySelector('[title="Blocks"]')?.click()} // Fallback, could be a real prop if needed
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent("builder:switch-tab", { detail: 0 }));
+                    document.getElementById("builder-tab-blocks")?.click();
+                    setTimeout(() => {
+                      document.querySelector('input[placeholder*="Search blocks"]')?.focus();
+                    }, 50);
+                  }}
                   style={{
                     background: "#008060",
                     color: "white",
                     border: "none",
-                    padding: "8px 16px",
-                    borderRadius: "4px",
+                    padding: "9px 18px",
+                    borderRadius: "6px",
                     cursor: "pointer",
                     fontSize: "13px",
                     fontWeight: 600,
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                    transition: "all 0.15s ease",
                   }}
                 >
-                  Browse Blocks
+                  Browse & Add Blocks
                 </button>
               </div>
             )}

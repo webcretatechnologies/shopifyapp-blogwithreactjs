@@ -44,6 +44,7 @@ import { useBuilderStore } from "./store/useBuilderStore";
 import BlockPicker from "./BlockPicker";
 import BuilderCanvas from "./canvas/BuilderCanvas";
 import SettingsPanel from "./settings/SettingsPanel";
+import DeleteConfirmModal from "./DeleteConfirmModal";
 import BreadcrumbBar from "./canvas/BreadcrumbBar";
 import CanvasNode from "./canvas/CanvasNode";
 import { resolveDropTarget, getActiveCenterY } from "./utils/treeUtils";
@@ -78,8 +79,11 @@ export default function DragDropBuilderContainer({
   const canUndo = useBuilderStore((s) => s.canUndo());
   const canRedo = useBuilderStore((s) => s.canRedo());
   const selectedBlockId = useBuilderStore((s) => s.selectedBlockId);
+  const selectedBlockIds = useBuilderStore((s) => s.selectedBlockIds) || [];
   const clearSelection = useBuilderStore((s) => s.clearSelection);
   const deleteBlock = useBuilderStore((s) => s.deleteBlock);
+  const deleteSelectedBlocks = useBuilderStore((s) => s.deleteSelectedBlocks);
+  const requestDeleteSelectedBlocks = useBuilderStore((s) => s.requestDeleteSelectedBlocks);
   const duplicateBlock = useBuilderStore((s) => s.duplicateBlock);
   const addBlock = useBuilderStore((s) => s.addBlock);
   const deviceMode = useBuilderStore((s) => s.deviceMode);
@@ -329,16 +333,16 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
         return;
       }
 
-      if (selectedBlockId) {
+      if (selectedBlockId || selectedBlockIds.length > 0) {
         if (e.key === "Delete" || e.key === "Backspace") {
           e.preventDefault();
-          deleteBlock(selectedBlockId);
+          requestDeleteSelectedBlocks();
           return;
         }
 
         if (cmdOrCtrl && e.key.toLowerCase() === "d") {
           e.preventDefault();
-          duplicateBlock(selectedBlockId);
+          if (selectedBlockId) duplicateBlock(selectedBlockId);
           return;
         }
         
@@ -355,7 +359,8 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
             }
             return null;
           };
-          const nodeToCopy = findInAst(ast, selectedBlockId);
+          const targetId = selectedBlockId || selectedBlockIds[0];
+          const nodeToCopy = targetId ? findInAst(ast, targetId) : null;
           if (nodeToCopy) {
             try {
               await navigator.clipboard.writeText(JSON.stringify({ __builderBlock: true, data: nodeToCopy }));
@@ -386,7 +391,7 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullscreen, selectedBlockId, clearSelection, deleteBlock, duplicateBlock, undo, redo, getBlocksAst, addBlock]);
+  }, [isFullscreen, selectedBlockId, selectedBlockIds, clearSelection, deleteBlock, deleteSelectedBlocks, duplicateBlock, undo, redo, getBlocksAst, addBlock]);
 
   // Hydrate store whenever initialBlocksAst changes from parent, but guard against echo updates
   const lastInitialBlocksRef = useRef(null);
@@ -841,6 +846,7 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
       <DragOverlay style={{ pointerEvents: "none" }} dropAnimation={{ sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: "0.4" } } }) }}>
         {dragOverlayContent}
       </DragOverlay>
+      <DeleteConfirmModal />
     </DndContext>
   );
 

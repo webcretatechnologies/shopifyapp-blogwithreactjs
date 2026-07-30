@@ -247,6 +247,10 @@ export class ShopifyArticleParser {
       featured_product: "FeaturedProduct",
       product_switcher: "ProductSwitcher",
       product_slider: "ProductSlider",
+      faqBlock: "FaqBlock",
+      FaqBlock: "FaqBlock",
+      faq: "FaqBlock",
+      FAQ: "FaqBlock",
     };
 
     const ATTR_MAP = {

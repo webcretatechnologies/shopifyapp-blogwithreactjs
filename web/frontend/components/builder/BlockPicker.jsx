@@ -132,6 +132,15 @@ export default function BlockPicker({ isRailMode = false }) {
   const [selectedTab, setSelectedTab] = useState(0); // 0: blocks, 1: layers
   const [searchQuery, setSearchQuery] = useState("");
 
+  useEffect(() => {
+    const handleSwitchTab = (e) => {
+      const tabIndex = typeof e.detail === "number" ? e.detail : 0;
+      setSelectedTab(tabIndex);
+    };
+    window.addEventListener("builder:switch-tab", handleSwitchTab);
+    return () => window.removeEventListener("builder:switch-tab", handleSwitchTab);
+  }, []);
+
   const addBlock = useBuilderStore((s) => s.addBlock);
   const selectedBlockId = useBuilderStore((s) => s.selectedBlockId);
   const blocksById = useBuilderStore((s) => s.blocksById);
@@ -330,6 +339,7 @@ export default function BlockPicker({ isRailMode = false }) {
         >
           {tabDefs.map((tab, idx) => (
             <button
+              id={`builder-tab-${tab.id}`}
               key={tab.id}
               type="button"
               onClick={() => setSelectedTab(idx)}

@@ -18,21 +18,24 @@ import {
   useSortable
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Icon } from "@shopify/polaris";
+import { Icon, Button } from "@shopify/polaris";
 import { 
   DragHandleIcon, 
   ChevronDownIcon, 
   ChevronRightIcon, 
-  MenuHorizontalIcon 
+  MenuHorizontalIcon,
+  DeleteIcon
 } from "@shopify/polaris-icons";
 import BlockContextMenu from "../canvas/BlockContextMenu";
 
 function LayerRow({ id, depth, isCollapsed, onToggleCollapse }) {
   const blocksById = useBuilderStore((s) => s.blocksById);
   const selectedBlockId = useBuilderStore((s) => s.selectedBlockId);
+  const selectedBlockIds = useBuilderStore((s) => s.selectedBlockIds) || [];
   const selectBlock = useBuilderStore((s) => s.selectBlock);
+  const toggleBlockSelection = useBuilderStore((s) => s.toggleBlockSelection);
   const block = blocksById[id];
-  const isSelected = selectedBlockId === id;
+  const isSelected = selectedBlockIds.includes(id) || selectedBlockId === id;
   const rowRef = useRef(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -54,14 +57,13 @@ function LayerRow({ id, depth, isCollapsed, onToggleCollapse }) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    paddingLeft: `${depth * 16}px`,
+    paddingLeft: `${Math.min(depth * 12, 48)}px`,
     opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 999 : "auto",
   };
 
   useEffect(() => {
     if (isSelected && rowRef.current) {
-      // Small timeout to allow panel to mount if switching tabs
       setTimeout(() => {
         rowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
       }, 50);
@@ -101,19 +103,22 @@ function LayerRow({ id, depth, isCollapsed, onToggleCollapse }) {
         role="button"
         tabIndex={0}
         aria-selected={isSelected}
-        onClick={() => selectBlock(id)}
+        onClick={(e) => {
+          selectBlock(id, e.ctrlKey || e.metaKey || e.shiftKey);
+        }}
         onKeyDown={handleKeyDown}
         style={{
           display: "flex",
           alignItems: "center",
           gap: "4px",
-          padding: "6px 8px",
-          margin: "2px 8px",
+          padding: "4px 6px",
+          margin: "1px 4px",
           borderRadius: "6px",
           background: isSelected ? "var(--p-color-bg-surface-selected)" : "transparent",
           cursor: "pointer",
           border: isSelected ? "1px solid var(--p-color-border-focus)" : "1px solid transparent",
-          userSelect: "none"
+          userSelect: "none",
+          minWidth: 0
         }}
       >
         <button
@@ -126,18 +131,38 @@ function LayerRow({ id, depth, isCollapsed, onToggleCollapse }) {
             background: "none",
             border: "none",
             cursor: "grab",
-            padding: "2px",
+            padding: "0px",
             display: "flex",
             alignItems: "center",
-            color: "var(--p-color-icon-secondary)"
+            color: "var(--p-color-icon-secondary)",
+            flexShrink: 0
           }}
           onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()} // Let dnd-kit handle keyboard dragging
+          onKeyDown={(e) => e.stopPropagation()}
         >
-          <div style={{ width: 16, height: 16 }}><Icon source={DragHandleIcon} /></div>
+          <div style={{ width: 14, height: 14 }}><Icon source={DragHandleIcon} /></div>
         </button>
 
-        <div style={{ width: "20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => {
+            e.stopPropagation();
+            toggleBlockSelection(id);
+          }}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select ${label}`}
+          style={{
+            cursor: "pointer",
+            width: "13px",
+            height: "13px",
+            accentColor: "#008060",
+            margin: "0 2px",
+            flexShrink: 0
+          }}
+        />
+
+        <div style={{ width: "16px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           {hasChildren && (
             <button
               type="button"
@@ -151,35 +176,36 @@ function LayerRow({ id, depth, isCollapsed, onToggleCollapse }) {
                 background: "none",
                 border: "none",
                 cursor: "pointer",
-                padding: "2px",
+                padding: "0px",
                 display: "flex",
                 alignItems: "center",
                 color: "var(--p-color-icon-secondary)",
-                borderRadius: "4px"
+                borderRadius: "3px"
               }}
             >
-              <div style={{ width: 16, height: 16 }}>
+              <div style={{ width: 14, height: 14 }}>
                 <Icon source={isCollapsed ? ChevronRightIcon : ChevronDownIcon} />
               </div>
             </button>
           )}
         </div>
 
-        <div style={{ width: 16, height: 16, color: "var(--p-color-icon-secondary)", flexShrink: 0 }}>
+        <div style={{ width: 14, height: 14, color: "var(--p-color-icon-secondary)", flexShrink: 0 }}>
           {entry?.icon && <Icon source={entry.icon.props.source} />}
         </div>
 
         <div style={{ 
           flex: 1, 
+          minWidth: 0,
           overflow: "hidden", 
           textOverflow: "ellipsis", 
           whiteSpace: "nowrap",
-          fontSize: "13px",
+          fontSize: "12px",
           color: "var(--p-color-text)",
-          marginLeft: "4px"
+          marginLeft: "2px"
         }}>
           <span style={{ fontWeight: 500, marginRight: "4px" }}>{label}</span>
-          <span style={{ color: "var(--p-color-text-secondary)", fontSize: "12px" }}>
+          <span style={{ color: "var(--p-color-text-secondary)", fontSize: "11px" }}>
             {previewText && previewText !== label ? `• ${previewText}` : ""}
           </span>
         </div>
@@ -192,14 +218,15 @@ function LayerRow({ id, depth, isCollapsed, onToggleCollapse }) {
             background: "none",
             border: "none",
             cursor: "pointer",
-            padding: "4px",
+            padding: "2px",
             display: "flex",
             alignItems: "center",
             color: "var(--p-color-icon-secondary)",
-            borderRadius: "4px"
+            borderRadius: "3px",
+            flexShrink: 0
           }}
         >
-          <div style={{ width: 16, height: 16 }}><Icon source={MenuHorizontalIcon} /></div>
+          <div style={{ width: 14, height: 14 }}><Icon source={MenuHorizontalIcon} /></div>
         </button>
 
         {menuOpen && (
@@ -219,6 +246,10 @@ export default function LayersPanel() {
   const blocksById = useBuilderStore((s) => s.blocksById);
   const rootIds = useBuilderStore((s) => s.rootIds);
   const moveBlock = useBuilderStore((s) => s.moveBlock);
+  const selectedBlockIds = useBuilderStore((s) => s.selectedBlockIds) || [];
+  const selectAllBlocks = useBuilderStore((s) => s.selectAllBlocks);
+  const clearSelection = useBuilderStore((s) => s.clearSelection);
+  const requestDeleteSelectedBlocks = useBuilderStore((s) => s.requestDeleteSelectedBlocks);
 
   const [collapsedIds, setCollapsedIds] = useState(new Set());
 
@@ -247,6 +278,9 @@ export default function LayersPanel() {
   }, [blocksById, rootIds, collapsedIds]);
 
   const flatIds = visibleItems.map(v => v.id);
+  const totalBlocksCount = Object.keys(blocksById).length;
+  const selectedCount = selectedBlockIds.length;
+  const allSelected = totalBlocksCount > 0 && selectedCount === totalBlocksCount;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -285,9 +319,70 @@ export default function LayersPanel() {
     <div 
       style={{ 
         paddingBottom: "24px",
-        position: "relative" 
+        position: "relative",
+        overflowX: "hidden"
       }}
     >
+      <div 
+        style={{
+          padding: "8px 10px",
+          margin: "12px 8px 10px 8px",
+          borderRadius: "8px",
+          background: selectedCount > 0 ? "#fef2f2" : "var(--p-color-bg-surface-secondary)",
+          border: selectedCount > 0 ? "1px solid #fecaca" : "1px solid var(--p-color-border-subdued)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "6px"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: "var(--p-color-text)", userSelect: "none" }}>
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() => {
+                if (allSelected) clearSelection();
+                else selectAllBlocks();
+              }}
+              style={{ cursor: "pointer", width: "14px", height: "14px", accentColor: "#008060" }}
+            />
+            <span>{selectedCount > 0 ? `${selectedCount} selected` : "Select All"}</span>
+          </label>
+
+          {selectedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => clearSelection()}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--p-color-text-secondary)",
+                fontSize: "11px",
+                cursor: "pointer",
+                padding: "2px 4px",
+                borderRadius: "4px",
+                textDecoration: "underline"
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {selectedCount > 0 && (
+          <Button
+            tone="critical"
+            variant="primary"
+            fullWidth
+            size="micro"
+            icon={DeleteIcon}
+            onClick={() => requestDeleteSelectedBlocks()}
+          >
+            Delete {selectedCount} Selected Blocks
+          </Button>
+        )}
+      </div>
+
       <SortableContext items={flatIds} strategy={verticalListSortingStrategy}>
         {visibleItems.map((item) => (
           <LayerRow

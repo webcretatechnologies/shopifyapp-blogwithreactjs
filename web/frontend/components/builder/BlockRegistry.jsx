@@ -34,6 +34,7 @@ import {
   TextTitleIcon,
   DataTableIcon,
   TextAlignLeftIcon,
+  InfoIcon,
 } from "@shopify/polaris-icons";
 
 // -- Reuse existing block preview/settings components from the classic editor --
@@ -74,6 +75,7 @@ import { DividerBlockPreview } from "./blocks/DividerBlock";
 import { SpacerBuilderPreview } from "./blocks/SpacerBuilderBlock";
 import { ImageBuilderPreview } from "./blocks/ImageBuilderBlock";
 import { HtmlBuilderPreview } from "./blocks/HtmlBuilderBlock";
+import { FaqBuilderBlockPreview } from "./blocks/FaqBuilderBlock";
 
 const I = (source) => (
   <Icon source={source} />
@@ -83,6 +85,30 @@ const I = (source) => (
 // Registry
 // ---------------------------------------------------------------------------
 export const BlockRegistry = {
+  FaqBlock: {
+    label: "FAQ Accordion",
+    icon: <Icon source={InfoIcon} />,
+    category: "content",
+    getPreviewText: (b) => b.settings?.title || `FAQ — ${b.settings?.items?.length || 0} questions`,
+    allowsChildren: false,
+    defaultSettings: {
+      title: "Frequently Asked Questions",
+      titleAlign: "left",
+      layout: "accordion",
+      items: [
+        { id: "faq_1", question: "What is your return policy?", answer: "We offer a 30-day money-back guarantee on all eligible products. Items must be in original condition." },
+        { id: "faq_2", question: "How long does shipping take?", answer: "Standard shipping takes 3-5 business days. Express shipping takes 1-2 business days." },
+        { id: "faq_3", question: "Do you ship internationally?", answer: "Yes, we ship to over 50 countries worldwide. International shipping rates are calculated at checkout." }
+      ],
+      accentColor: "#008060",
+      backgroundColor: "#ffffff",
+      borderColor: "#e1e3e5",
+      borderRadius: 8,
+      firstOpen: true,
+      enableSchema: true,
+    },
+    PreviewComponent: FaqBuilderBlockPreview,
+  },
   // ── Layout ──────────────────────────────────────────────────────────────
   Section: {
     label: "Section",
@@ -524,7 +550,7 @@ export const BLOCK_CATEGORIES = [
   },
   {
     label: "Content",
-    types: ["RichText", "Heading", "Divider", "Spacer", "Callout", "Html", "Table"],
+    types: ["RichText", "Heading", "Divider", "Spacer", "Callout", "Html", "Table", "FaqBlock"],
   },
   {
     label: "Media",
@@ -620,6 +646,11 @@ export const TYPE_ALIAS_MAP = {
   heroBlock: "HeroSection",
   heroSection: "HeroSection",
   hero_section: "HeroSection",
+  faq: "FaqBlock",
+  faqBlock: "FaqBlock",
+  faq_block: "FaqBlock",
+  FAQ: "FaqBlock",
+  FaqBlock: "FaqBlock",
 };
 
 export function normalizeBlockType(type) {
@@ -692,6 +723,14 @@ export function normalizeBlock(rawBlock) {
   } else if (type === "ColumnLayout") {
     if (rawBlock.columns) settings.columns = parseInt(rawBlock.columns) || 2;
     if (rawBlock.gap) settings.gap = rawBlock.gap;
+  } else if (type === "FaqBlock") {
+    if (rawBlock.title !== undefined) settings.title = rawBlock.title;
+    if (Array.isArray(rawBlock.items)) settings.items = rawBlock.items;
+    if (rawBlock.layout) settings.layout = rawBlock.layout;
+    if (rawBlock.accentColor) settings.accentColor = rawBlock.accentColor;
+    if (rawBlock.backgroundColor) settings.backgroundColor = rawBlock.backgroundColor;
+    if (rawBlock.borderColor) settings.borderColor = rawBlock.borderColor;
+    if (rawBlock.borderRadius !== undefined) settings.borderRadius = rawBlock.borderRadius;
   }
 
   const children = Array.isArray(rawBlock.children)

@@ -466,6 +466,166 @@ export default function SettingsControls({ block, onChange }) {
     );
   }
 
+  if (type === "FaqBlock") {
+    const items = Array.isArray(settings.items) ? settings.items : [];
+
+    const addItem = () => {
+      const newItem = {
+        id: `faq_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        question: "New Question",
+        answer: "Provide a detailed answer here...",
+      };
+      update("items", [...items, newItem]);
+    };
+
+    const removeItem = (index) => {
+      if (items.length <= 1) return;
+      const nextItems = items.filter((_, i) => i !== index);
+      update("items", nextItems);
+    };
+
+    const moveItem = (index, direction) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= items.length) return;
+      const nextItems = [...items];
+      const temp = nextItems[index];
+      nextItems[index] = nextItems[targetIndex];
+      nextItems[targetIndex] = temp;
+      update("items", nextItems);
+    };
+
+    const updateItem = (index, field, value) => {
+      const nextItems = items.map((item, i) => (i === index ? { ...item, [field]: value } : item));
+      update("items", nextItems);
+    };
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <TextField
+          label="Section Title"
+          value={settings.title || ""}
+          onChange={(val) => update("title", val)}
+          autoComplete="off"
+        />
+
+        <Select
+          label="Title Alignment"
+          options={[
+            { label: "Left", value: "left" },
+            { label: "Center", value: "center" },
+            { label: "Right", value: "right" },
+          ]}
+          value={settings.titleAlign || "left"}
+          onChange={(val) => update("titleAlign", val)}
+        />
+
+        <Select
+          label="Layout Style"
+          options={[
+            { label: "Expandable Accordion", value: "accordion" },
+            { label: "Card Grid", value: "grid" },
+          ]}
+          value={settings.layout || "accordion"}
+          onChange={(val) => update("layout", val)}
+        />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", borderTop: "1px solid #e1e3e5", paddingTop: "12px" }}>
+          <InlineStack align="space-between" blockAlign="center">
+            <Text variant="headingSm" as="h4">Q&A Items ({items.length})</Text>
+            <Button icon={PlusIcon} size="slim" onClick={addItem}>Add Question</Button>
+          </InlineStack>
+
+          {items.map((item, idx) => (
+            <div
+              key={item.id || idx}
+              style={{
+                border: "1px solid #e1e3e5",
+                borderRadius: "8px",
+                padding: "12px",
+                backgroundColor: "#f9fafb",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}
+            >
+              <InlineStack align="space-between" blockAlign="center">
+                <Text variant="bodySm" fontWeight="bold" tone="subdued">Item #{idx + 1}</Text>
+                <InlineStack gap="100">
+                  <Button icon={ArrowUpIcon} size="micro" disabled={idx === 0} onClick={() => moveItem(idx, -1)} accessibilityLabel="Move up" />
+                  <Button icon={ArrowDownIcon} size="micro" disabled={idx === items.length - 1} onClick={() => moveItem(idx, 1)} accessibilityLabel="Move down" />
+                  <Button icon={DeleteIcon} tone="critical" size="micro" disabled={items.length <= 1} onClick={() => removeItem(idx)} accessibilityLabel="Remove item" />
+                </InlineStack>
+              </InlineStack>
+
+              <TextField
+                label="Question"
+                value={item.question || ""}
+                onChange={(val) => updateItem(idx, "question", val)}
+                autoComplete="off"
+              />
+
+              <TextField
+                label="Answer"
+                value={item.answer || ""}
+                onChange={(val) => updateItem(idx, "answer", val)}
+                multiline={3}
+                autoComplete="off"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div style={{ borderTop: "1px solid #e1e3e5", paddingTop: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
+          <Text variant="headingSm" as="h4">Styling & SEO</Text>
+
+          <TextField
+            label="Accent Color"
+            type="color"
+            value={settings.accentColor || "#008060"}
+            onChange={(val) => update("accentColor", val)}
+            autoComplete="off"
+          />
+
+          <TextField
+            label="Background Color"
+            type="color"
+            value={settings.backgroundColor || "#ffffff"}
+            onChange={(val) => update("backgroundColor", val)}
+            autoComplete="off"
+          />
+
+          <TextField
+            label="Border Color"
+            type="color"
+            value={settings.borderColor || "#e1e3e5"}
+            onChange={(val) => update("borderColor", val)}
+            autoComplete="off"
+          />
+
+          <TextField
+            label="Border Radius (px)"
+            type="number"
+            value={String(settings.borderRadius ?? 8)}
+            onChange={(val) => update("borderRadius", parseInt(val) || 0)}
+            autoComplete="off"
+          />
+
+          <Checkbox
+            label="Expand first question by default"
+            checked={settings.firstOpen !== false}
+            onChange={(val) => update("firstOpen", val)}
+          />
+
+          <Checkbox
+            label="Enable Google FAQ Schema Markup (JSON-LD for SEO)"
+            checked={settings.enableSchema !== false}
+            onChange={(val) => update("enableSchema", val)}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Fallback for blocks with no specific settings (e.g., RichText which is edited inline)
   return (
     <p style={{ color: "#6d7175", fontSize: "13px" }}>

@@ -12,6 +12,7 @@ export const useBuilderStore = create((set, get) => ({
   blocksById: {},
   rootIds: [],
   selectedBlockId: null,
+  selectedBlockIds: [],
   hoveredBlockId: null,
   past: [],
   future: [],
@@ -19,6 +20,8 @@ export const useBuilderStore = create((set, get) => ({
   zoomLevel: 1.0,
   activeDragId: null,
   lastDropTarget: null,
+  pendingDeleteBlockIds: [],
+  isDeleteModalOpen: false,
 
   _commit(recipe) {
     const current = { blocksById: get().blocksById, rootIds: get().rootIds };
@@ -59,34 +62,97 @@ export const useBuilderStore = create((set, get) => ({
         targetArr.splice(index, 0, newBlockId);
       }
     });
-    set({ selectedBlockId: newBlockId });
+    set({ selectedBlockId: newBlockId, selectedBlockIds: [newBlockId] });
     return newBlockId;
   },
 
-  deleteBlock(id) {
-    const { selectedBlockId } = get();
-    get()._commit((draft) => {
-      const block = draft.blocksById[id];
-      if (!block) return;
-      const parentId = block.parentId;
-      const targetArr = parentId ? draft.blocksById[parentId]?.childrenIds : draft.rootIds;
-      
-      if (targetArr) {
-        const idx = targetArr.indexOf(id);
-        if (idx !== -1) targetArr.splice(idx, 1);
-      }
+  deleteBlocks(ids) {
+    const targetIds = Array.isArray(ids) ? ids.filter(Boolean) : [ids].filter(Boolean);
+    if (targetIds.length === 0) return;
 
-      // Recursively delete children
-      const deleteRecursive = (blockId) => {
-        const b = draft.blocksById[blockId];
-        if (b && b.childrenIds) {
-          b.childrenIds.forEach(deleteRecursive);
+    const { selectedBlockIds, selectedBlockId } = get();
+
+    get()._commit((draft) => {
+      targetIds.forEach((id) => {
+        const block = draft.blocksById[id];
+        if (!block) return;
+        const parentId = block.parentId;
+        const targetArr = parentId ? draft.blocksById[parentId]?.childrenIds : draft.rootIds;
+
+        if (targetArr) {
+          const idx = targetArr.indexOf(id);
+          if (idx !== -1) targetArr.splice(idx, 1);
         }
-        delete draft.blocksById[blockId];
-      };
-      deleteRecursive(id);
+
+        // Recursively delete children
+        const deleteRecursive = (blockId) => {
+          const b = draft.blocksById[blockId];
+          if (b && b.childrenIds) {
+            b.childrenIds.forEach(deleteRecursive);
+          }
+          delete draft.blocksById[blockId];
+        };
+        deleteRecursive(id);
+      });
     });
-    if (selectedBlockId === id) set({ selectedBlockId: null });
+
+    const deletedSet = new Set(targetIds);
+    const newSelectedIds = selectedBlockIds.filter((id) => !deletedSet.has(id));
+    const newSelectedId = deletedSet.has(selectedBlockId) ? (newSelectedIds[newSelectedIds.length - 1] || null) : selectedBlockId;
+
+    set({
+      selectedBlockIds: newSelectedIds,
+      selectedBlockId: newSelectedId,
+    });
+  },
+
+  deleteBlock(id) {
+    get().deleteBlocks([id]);
+  },
+
+  deleteSelectedBlocks() {
+    const { selectedBlockIds, selectedBlockId } = get();
+    const idsToDelete = selectedBlockIds.length > 0 ? selectedBlockIds : (selectedBlockId ? [selectedBlockId] : []);
+    if (idsToDelete.length > 0) {
+      get().deleteBlocks(idsToDelete);
+    }
+  },
+
+  requestDeleteBlocks(ids) {
+    const targetIds = Array.isArray(ids) ? ids.filter(Boolean) : [ids].filter(Boolean);
+    if (!targetIds.length) return;
+    set({
+      pendingDeleteBlockIds: targetIds,
+      isDeleteModalOpen: true,
+    });
+  },
+
+  requestDeleteSelectedBlocks() {
+    const { selectedBlockIds, selectedBlockId } = get();
+    const ids = selectedBlockIds.length > 0 ? selectedBlockIds : selectedBlockId ? [selectedBlockId] : [];
+    if (!ids.length) return;
+    set({
+      pendingDeleteBlockIds: ids,
+      isDeleteModalOpen: true,
+    });
+  },
+
+  confirmDelete() {
+    const { pendingDeleteBlockIds } = get();
+    if (pendingDeleteBlockIds && pendingDeleteBlockIds.length > 0) {
+      get().deleteBlocks(pendingDeleteBlockIds);
+    }
+    set({
+      pendingDeleteBlockIds: [],
+      isDeleteModalOpen: false,
+    });
+  },
+
+  cancelDelete() {
+    set({
+      pendingDeleteBlockIds: [],
+      isDeleteModalOpen: false,
+    });
   },
 
   duplicateBlock(id) {
@@ -243,12 +309,50 @@ export const useBuilderStore = create((set, get) => ({
     });
   },
 
-  selectBlock(id) {
-    set({ selectedBlockId: id });
+  selectBlock(id, isMulti = false) {
+    if (!id) {
+      set({ selectedBlockId: null, selectedBlockIds: [] });
+      return;
+    }
+    const { selectedBlockIds } = get();
+    if (isMulti) {
+      const exists = selectedBlockIds.includes(id);
+      const nextIds = exists ? selectedBlockIds.filter((bId) => bId !== id) : [...selectedBlockIds, id];
+      set({
+        selectedBlockIds: nextIds,
+        selectedBlockId: nextIds[nextIds.length - 1] || null,
+      });
+    } else {
+      set({
+        selectedBlockId: id,
+        selectedBlockIds: [id],
+      });
+    }
+  },
+
+  toggleBlockSelection(id) {
+    get().selectBlock(id, true);
+  },
+
+  setSelectedBlockIds(ids) {
+    const arr = Array.isArray(ids) ? ids : [];
+    set({
+      selectedBlockIds: arr,
+      selectedBlockId: arr[arr.length - 1] || null,
+    });
+  },
+
+  selectAllBlocks() {
+    const { blocksById } = get();
+    const allIds = Object.keys(blocksById);
+    set({
+      selectedBlockIds: allIds,
+      selectedBlockId: allIds[allIds.length - 1] || null,
+    });
   },
 
   clearSelection() {
-    set({ selectedBlockId: null });
+    set({ selectedBlockId: null, selectedBlockIds: [] });
   },
 
   setHovered(id) {
@@ -274,6 +378,7 @@ export const useBuilderStore = create((set, get) => ({
       past: [],
       future: [],
       selectedBlockId: stillExists ? currentSelectedId : null,
+      selectedBlockIds: stillExists ? [currentSelectedId] : [],
     });
   },
 

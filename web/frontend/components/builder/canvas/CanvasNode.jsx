@@ -13,6 +13,7 @@ import { getActiveCenterY } from "../utils/treeUtils";
 const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   const block = useBuilderStore((s) => s.blocksById[id]);
   const selectedId = useBuilderStore((s) => s.selectedBlockId);
+  const selectedBlockIds = useBuilderStore((s) => s.selectedBlockIds) || [];
   const hoveredId = useBuilderStore((s) => s.hoveredBlockId);
   const selectBlock = useBuilderStore((s) => s.selectBlock);
   const setHovered = useBuilderStore((s) => s.setHovered);
@@ -31,7 +32,7 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   if (!block) return null;
 
   const type = normalizeBlockType(block.type);
-  const isSelected = selectedId === id;
+  const isSelected = selectedId === id || selectedBlockIds.includes(id);
   const isHovered = hoveredId === id;
 
   const registryEntry = BlockRegistry[type];
@@ -145,6 +146,8 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
     }
   }
 
+  const isMultiSelecting = selectedBlockIds.length > 1;
+
   // Use a class name to allow global CSS variables to override behavior
   let className = "canvas-node-wrapper";
   if (isSiblingDropTarget) className += " sibling-drop-target";
@@ -158,32 +161,35 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
       : isContainerDropTarget
       ? "2px solid #008060"
       : isSelected && !isGhost
-      ? "2px solid #008060"
+      ? isMultiSelecting ? "1.5px solid #008060" : "2px solid #008060"
       : isHovered && !isGhost
       ? "1px solid #008060"
       : isColumnNode
       ? "1px dashed #c9cccf"
       : "1px solid transparent",
-    outlineOffset: "-1px",
-    borderRadius: "4px",
-    marginBottom: isColumnNode ? "0" : "4px",
+    outlineOffset: "0px",
+    borderRadius: "6px",
+    margin: isColumnNode ? "0" : "6px 0",
     flex: isColumnNode ? 1 : undefined,
     minWidth: isColumnNode ? 0 : undefined,
     boxShadow: isGhost
       ? "0 20px 40px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)"
-      : isSelected
+      : isSelected && !isMultiSelecting
       ? "0 0 0 3px rgba(0, 128, 96, 0.15)"
       : "none",
     background: justDropped 
       ? "rgba(0, 128, 96, 0.05)" 
       : isContainerDropTarget
       ? "#f4f8f6"
+      : isSelected && isMultiSelecting
+      ? "rgba(0, 128, 96, 0.03)"
       : isPlaceholder
       ? "var(--p-color-bg-surface-secondary)"
       : isColumnNode 
       ? "#fafbfc" 
       : "transparent",
-    padding: isColumnNode ? "6px" : undefined,
+    padding: isColumnNode ? "8px" : "12px 16px",
+    boxSizing: "border-box",
   };
 
   const spacerStyle = {
@@ -217,7 +223,7 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   const handleClick = (e) => {
     if (isGhost) return;
     e.stopPropagation();
-    selectBlock(id);
+    selectBlock(id, e.ctrlKey || e.metaKey || e.shiftKey);
   };
 
   const handleMouseEnter = (e) => {

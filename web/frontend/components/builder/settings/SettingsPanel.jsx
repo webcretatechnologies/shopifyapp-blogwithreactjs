@@ -31,7 +31,8 @@ import {
   SettingsIcon, 
   DesktopIcon, 
   TabletIcon, 
-  MobileIcon 
+  MobileIcon,
+  DeleteIcon
 } from "@shopify/polaris-icons";
 
 function useDebouncedCommit(id, delayMs = 150) {
@@ -65,12 +66,38 @@ function useDebouncedCommit(id, delayMs = 150) {
 
 export default function SettingsPanel() {
   const selectedBlockId = useBuilderStore((s) => s.selectedBlockId);
+  const selectedBlockIds = useBuilderStore((s) => s.selectedBlockIds) || [];
   const selectedBlock = useBuilderStore((s) => (selectedBlockId ? s.blocksById[selectedBlockId] : null));
   const updateBlockSettings = useBuilderStore((s) => s.updateBlockSettings);
   const clearSelection = useBuilderStore((s) => s.clearSelection);
+  const requestDeleteSelectedBlocks = useBuilderStore((s) => s.requestDeleteSelectedBlocks);
   const deviceMode = useBuilderStore((s) => s.deviceMode);
 
   const { handleLive, handleCommit } = useDebouncedCommit(selectedBlockId);
+
+  if (selectedBlockIds.length > 1) {
+    return (
+      <Box padding="600" style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "center" }}>
+        <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--p-space-400)" }}>
+          <div style={{ background: "#fef2f2", borderRadius: "50%", padding: "var(--p-space-400)", color: "#d32f2f" }}>
+            <Icon source={DeleteIcon} />
+          </div>
+          <Text variant="headingMd" as="h3">{selectedBlockIds.length} Blocks Selected</Text>
+          <Text variant="bodyMd" tone="subdued">
+            You have selected {selectedBlockIds.length} blocks. You can delete all of them at the same time or clear selection.
+          </Text>
+          <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+            <Button variant="tertiary" onClick={clearSelection}>
+              Deselect All
+            </Button>
+            <Button tone="critical" variant="primary" icon={DeleteIcon} onClick={requestDeleteSelectedBlocks}>
+              Delete {selectedBlockIds.length} Blocks
+            </Button>
+          </div>
+        </div>
+      </Box>
+    );
+  }
 
   if (!selectedBlock) {
     return (
@@ -81,7 +108,7 @@ export default function SettingsPanel() {
           </div>
           <Text variant="headingSm" as="h3">No block selected</Text>
           <Text variant="bodySm" tone="subdued">
-            Click any block on the canvas to customize its settings, typography, and layout.
+            Click any block on the canvas or check items in the Layers panel to select and edit.
           </Text>
         </div>
       </Box>
