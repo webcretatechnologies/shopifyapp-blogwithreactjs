@@ -267,21 +267,7 @@ export const BlockRegistry = {
     ),
   },
 
-  VideoBlock: {
-    label: "Video Player",
-    icon: <Icon source={PlayCircleIcon} />,
-    category: "media",
-    allowsChildren: false,
-    defaultSettings: {
-      url: "",
-      caption: "",
-      aspectRatio: "56.25%",
-      maxWidth: "100%",
-    },
-    PreviewComponent: ({ block }) => (
-      <VideoBlockPreview block={block.settings} isSelected={false} />
-    ),
-  },
+
 
   Html: {
     label: "HTML",
