@@ -54,10 +54,6 @@ import {
   ProductSliderBlockSettings,
 } from "../editor/blocks/ProductSliderBlock";
 import {
-  CTAButtonBlockPreview,
-  CTAButtonBlockSettings,
-} from "../editor/blocks/CTAButtonBlock";
-import {
   HeroBlockPreview,
   HeroBlockSettings,
 } from "../editor/blocks/HeroBlock";
@@ -372,25 +368,6 @@ export const BlockRegistry = {
     ),
   },
 
-  CTAButton: {
-    label: "CTA Button",
-    icon: <Icon source={ButtonIcon} />,
-    category: "commerce",
-    allowsChildren: false,
-    defaultSettings: {
-      text: "Shop Now",
-      url: "",
-      align: "center",
-      color: "#008060",
-      textColor: "#ffffff",
-      size: "medium",
-      borderRadius: "6px",
-    },
-    PreviewComponent: ({ block }) => (
-      <CTAButtonBlockPreview block={block.settings} isSelected={false} />
-    ),
-  },
-
   HeroSection: {
     label: "Hero Section",
     icon: <Icon source={LayoutSectionIcon} />,
@@ -561,7 +538,6 @@ export const BLOCK_CATEGORIES = [
       "Collection",
       "ProductSlider",
       "ProductCard",
-      "CTAButton",
       "ButtonBlock",
       "HeroSection",
     ],
@@ -636,9 +612,9 @@ export const TYPE_ALIAS_MAP = {
   productSlider: "ProductSlider",
   product_slider: "ProductSlider",
   collection: "Collection",
-  ctaButton: "CTAButton",
-  cta_button: "CTAButton",
-  buttonBlock: "CTAButton",
+  ctaButton: "ButtonBlock",
+  cta_button: "ButtonBlock",
+  buttonBlock: "ButtonBlock",
   headingBlock: "Heading",
   hero: "HeroSection",
   heroBlock: "HeroSection",

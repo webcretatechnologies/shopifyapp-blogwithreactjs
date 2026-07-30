@@ -104,13 +104,21 @@ export function CollectionBlockPreview({ block }) {
 
 function CollectionProductCard({ product, showPrice, showButton, buttonColor, buttonText, storeCurrency }) {
   const currency = product.currency || storeCurrency;
+  const pImgUrl = typeof product.image === 'string' ? product.image : (product.image?.url || product.featuredImage?.url || product.images?.[0]?.originalSrc || product.images?.[0]?.src || null);
+
   return (
     <div style={{ borderRadius: '10px', border: '1px solid #e1e3e5', overflow: 'hidden', background: '#fff' }}>
-      {product.image ? (
-        <img src={product.image} alt={product.title} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }} />
-      ) : (
-        <div style={{ width: '100%', aspectRatio: '1', background: '#f1f2f3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>🖼</div>
-      )}
+      <div style={{ width: '100%', height: '180px', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderBottom: '1px solid #f1f2f3' }}>
+        {pImgUrl ? (
+          <img
+            src={pImgUrl}
+            alt={product.title || ''}
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', margin: '0 auto' }}
+          />
+        ) : (
+          <span style={{ fontSize: '24px' }}>🖼</span>
+        )}
+      </div>
       <div style={{ padding: '10px' }}>
         <div style={{ fontSize: '13px', fontWeight: '600', color: '#202223', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
           {product.title}

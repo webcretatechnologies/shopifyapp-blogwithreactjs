@@ -13,7 +13,6 @@ import { BuyButtonBlockSettings } from "../../editor/blocks/BuyButtonBlock";
 import { ProductGridBlockSettings } from "../../editor/blocks/ProductGridBlock";
 import { CollectionBlockSettings } from "../../editor/blocks/CollectionBlock";
 import { ProductSliderBlockSettings } from "../../editor/blocks/ProductSliderBlock";
-import { CTAButtonBlockSettings } from "../../editor/blocks/CTAButtonBlock";
 import { HeroBlockSettings } from "../../editor/blocks/HeroBlock";
 import { ImageBlockSettings } from "../../editor/blocks/ImageBlock/index.jsx";
 import { VideoBlockSettings } from "../../editor/blocks/VideoBlock";
@@ -164,7 +163,6 @@ export default function SettingsControls({ block, onChange }) {
   if (type === "ProductGrid") return <ProductGridBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "Collection") return <CollectionBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "ProductSlider") return <ProductSliderBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
-  if (type === "CTAButton") return <CTAButtonBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "HeroSection") return <HeroBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "Image") return <ImageBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "VideoEmbed" || type === "VideoBlock") return <VideoBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;

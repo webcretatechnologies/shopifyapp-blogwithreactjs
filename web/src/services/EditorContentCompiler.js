@@ -859,9 +859,10 @@ export class EditorContentCompiler {
         const pLink = p.handle ? `/products/${p.handle}` : "#";
 
         const escapedTitle = (p.title || "").replace(/"/g, '&quot;');
-        const pImg = p.image
-          ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
-          : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+        const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
+        const pImg = imageUrl
+          ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:180px; background:#f8f9fa; border-bottom:1px solid #f1f2f3; overflow:hidden; text-decoration:none;"><img src="${imageUrl}" alt="${escapedTitle}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>`
+          : `<div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom:1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
 
         const pCurrency = p.currency || _storeCurrency || 'USD';
         const pPrice = (showPrice && p.price)
@@ -904,9 +905,10 @@ export class EditorContentCompiler {
         const pLink = p.handle ? `/products/${p.handle}` : "#";
 
         const escapedTitle = (p.title || "").replace(/"/g, '&quot;');
-        const pImg = p.image
-          ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
-          : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+        const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
+        const pImg = imageUrl
+          ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:180px; background:#f8f9fa; border-bottom:1px solid #f1f2f3; overflow:hidden; text-decoration:none;"><img src="${imageUrl}" alt="${escapedTitle}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>`
+          : `<div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom:1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
 
         const pCurrency = p.currency || _storeCurrency || 'USD';
         const pPrice = (showPrice && p.price)
