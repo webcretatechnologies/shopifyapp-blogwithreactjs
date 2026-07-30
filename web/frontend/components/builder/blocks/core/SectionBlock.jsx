@@ -10,22 +10,7 @@
  */
 
 export function SectionBlockPreview({ block }) {
-  const s = block?.settings ?? {};
-  return (
-    <div
-      style={{
-        padding: "16px 0",
-        minHeight: "40px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "#8c9196",
-        fontSize: "13px",
-      }}
-    >
-      Section — drop blocks here
-    </div>
-  );
+  return null;
 }
 
 /**

@@ -336,7 +336,7 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
               background: isContainerDropTarget ? "transparent" : "#fafbfc",
               transition: isReducedMotion ? "none" : "all 200ms ease"
             }}>
-              Drop a block here
+              {block.type === "Section" ? "Section — Drop blocks here" : "Drop a block here"}
             </div>
           )}
         </div>
