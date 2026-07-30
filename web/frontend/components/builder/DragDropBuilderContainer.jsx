@@ -669,6 +669,9 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
               display: "flex",
               flexDirection: "column",
               transition: "width 0.2s ease",
+              zIndex: 10,
+              position: "relative",
+              boxShadow: "2px 0 8px rgba(0,0,0,0.04)",
             }}
           >
             <BlockPicker isRailMode={isMedium} />
@@ -678,8 +681,21 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
         {/* Center Pane: Breadcrumb + Canvas */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column", background: "var(--p-color-bg-surface-tertiary)" }}>
           <BreadcrumbBar />
-          <div style={{ flex: 1, height: "100%", overflow: "hidden", transform: `scale(${zoomLevel})`, transformOrigin: "top center", display: "flex", flexDirection: "column" }}>
-            <BuilderCanvas deviceMode={deviceMode} />
+          <div style={{ flex: 1, width: "100%", height: "100%", overflow: "auto", position: "relative" }}>
+            <div
+              style={{
+                transform: `scale(${zoomLevel})`,
+                transformOrigin: "top center",
+                width: zoomLevel > 1 ? `${100 / zoomLevel}%` : "100%",
+                minHeight: zoomLevel > 1 ? `${100 / zoomLevel}%` : "100%",
+                margin: "0 auto",
+                transition: "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <BuilderCanvas deviceMode={deviceMode} />
+            </div>
           </div>
 
           {/* Floating Action Buttons (FAB) on Narrow Screen (<768px) */}
@@ -735,6 +751,9 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
               display: "flex",
               flexDirection: "column",
               transition: "width 0.2s ease",
+              zIndex: 10,
+              position: "relative",
+              boxShadow: "-2px 0 8px rgba(0,0,0,0.04)",
             }}
           >
             <SettingsPanel />

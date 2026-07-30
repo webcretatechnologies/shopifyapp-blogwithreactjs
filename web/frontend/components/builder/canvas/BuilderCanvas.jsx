@@ -34,11 +34,12 @@ export default function BuilderCanvas({ deviceMode = "desktop" }) {
       style={{
         flex: 1,
         width: "100%",
-        height: "100%",
-        overflowY: "auto",
+        minHeight: "100%",
         backgroundColor: "var(--p-color-bg-surface-secondary)",
         padding: deviceMode === "desktop" ? "24px 32px" : "16px",
         boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
       }}
       onClick={() => clearSelection()} // click outside clears selection
     >
