@@ -706,6 +706,163 @@ export function normalizeBlock(rawBlock) {
   };
 }
 
+export function repairBlocksAst(blocks) {
+  if (!Array.isArray(blocks)) return [];
+  const repaired = [];
+
+  const generateId = () => `block_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+  blocks.forEach((block) => {
+    if (!block || typeof block !== "object") return;
+
+    if (Array.isArray(block.children) && block.children.length > 0) {
+      block.children = repairBlocksAst(block.children);
+    }
+
+    if (block.type === "RichText" && typeof block.settings?.content === "string") {
+      const html = block.settings.content.trim();
+      const hasBlockTags = /<(h[1-6]|img|figure|hr|table|blockquote)/i.test(html);
+
+      if (hasBlockTags && typeof window !== "undefined" && window.DOMParser) {
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, "text/html");
+          const extractedBlocks = [];
+
+          const processNode = (node) => {
+            if (node.nodeType === 3) {
+              const txt = node.textContent?.trim();
+              if (txt) {
+                extractedBlocks.push({
+                  id: generateId(),
+                  type: "RichText",
+                  settings: { content: `<p>${node.textContent}</p>` },
+                  children: [],
+                });
+              }
+              return;
+            }
+            if (node.nodeType !== 1) return;
+
+            const tag = node.tagName.toLowerCase();
+            if (/^h[1-6]$/.test(tag)) {
+              const level = parseInt(tag.charAt(1), 10);
+              const text = node.textContent?.trim();
+              if (text) {
+                extractedBlocks.push({
+                  id: generateId(),
+                  type: "Heading",
+                  settings: { text, level, align: node.style?.textAlign || "left" },
+                  children: [],
+                });
+              }
+              return;
+            }
+            if (tag === "img") {
+              const src = node.getAttribute("src");
+              if (src) {
+                extractedBlocks.push({
+                  id: generateId(),
+                  type: "Image",
+                  settings: { src, alt: node.getAttribute("alt") || "", width: "100%", alignment: "center" },
+                  children: [],
+                });
+              }
+              return;
+            }
+            if (tag === "figure") {
+              const img = node.querySelector("img");
+              const figcaption = node.querySelector("figcaption");
+              if (img && img.getAttribute("src")) {
+                extractedBlocks.push({
+                  id: generateId(),
+                  type: "Image",
+                  settings: {
+                    src: img.getAttribute("src"),
+                    alt: img.getAttribute("alt") || "",
+                    caption: figcaption ? figcaption.textContent.trim() : "",
+                    width: "100%",
+                    alignment: "center",
+                  },
+                  children: [],
+                });
+                return;
+              }
+            }
+            if (tag === "hr") {
+              extractedBlocks.push({
+                id: generateId(),
+                type: "Divider",
+                settings: { style: "solid", thickness: "1px", color: "#e1e3e5" },
+                children: [],
+              });
+              return;
+            }
+            if (tag === "table") {
+              const tableData = [];
+              const rows = Array.from(node.querySelectorAll("tr"));
+              rows.forEach((tr) => {
+                const row = Array.from(tr.querySelectorAll("th, td")).map((td) => td.textContent.trim());
+                if (row.length > 0) tableData.push(row);
+              });
+              extractedBlocks.push({
+                id: generateId(),
+                type: "Table",
+                settings: { tableData: tableData.length > 0 ? tableData : [["Header 1", "Header 2"], ["Data 1", "Data 2"]] },
+                children: [],
+              });
+              return;
+            }
+            if (tag === "blockquote") {
+              extractedBlocks.push({
+                id: generateId(),
+                type: "Callout",
+                settings: { title: "", body: node.textContent.trim(), emoji: "💡", backgroundColor: "#fdfbc8", borderColor: "#eab308" },
+                children: [],
+              });
+              return;
+            }
+            if (tag === "div" || tag === "section" || tag === "article") {
+              if (node.childNodes.length > 0) {
+                Array.from(node.childNodes).forEach((child) => processNode(child));
+                return;
+              }
+            }
+
+            if (node.querySelector && node.querySelector("img")) {
+              Array.from(node.childNodes).forEach((child) => processNode(child));
+              return;
+            }
+
+            const outerHtml = node.outerHTML;
+            if (outerHtml?.trim()) {
+              extractedBlocks.push({
+                id: generateId(),
+                type: "RichText",
+                settings: { content: outerHtml },
+                children: [],
+              });
+            }
+          };
+
+          Array.from(doc.body.childNodes).forEach((node) => processNode(node));
+
+          if (extractedBlocks.length > 0) {
+            extractedBlocks.forEach((eb) => repaired.push(eb));
+            return;
+          }
+        } catch (e) {
+          console.warn("AST auto-repair parsing error:", e);
+        }
+      }
+    }
+
+    repaired.push(block);
+  });
+
+  return repaired;
+}
+
 export function normalizeBlocksAst(blocks) {
   if (!blocks) return [];
   if (typeof blocks === "string") {
@@ -716,5 +873,6 @@ export function normalizeBlocksAst(blocks) {
     }
   }
   if (!Array.isArray(blocks)) return [];
-  return blocks.map(normalizeBlock).filter(Boolean);
+  const normalized = blocks.map(normalizeBlock).filter(Boolean);
+  return repairBlocksAst(normalized);
 }

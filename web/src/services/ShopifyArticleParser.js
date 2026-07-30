@@ -28,32 +28,15 @@ export class ShopifyArticleParser {
     const cleanedHtml = ($("body").html() || "").trim() || $.html();
     const blocks = [];
     let structureDegraded = false;
-    let lastTextBlock = null;
-
-    const appendTextBlock = (contentHtmlStr) => {
-      if (!contentHtmlStr || contentHtmlStr.trim() === "") return;
-      const cleanText = contentHtmlStr.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
-      const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(contentHtmlStr);
-      if (!cleanText && !containsMedia) return;
-
-      const lastBlock = blocks[blocks.length - 1];
-      if (lastBlock && lastBlock.type === "text") {
-        lastBlock.data = (lastBlock.data || "") + contentHtmlStr;
-        lastBlock.isHtml = true;
-      } else {
-        blocks.push({
-          id: this._generateId(),
-          type: "text",
-          data: contentHtmlStr,
-          isHtml: true,
-        });
-      }
-    };
 
     const processNode = (node, currentBlocksArray) => {
       if (node.type === "text") {
         if (node.data?.trim()) {
-          appendTextBlock(`<p>${node.data}</p>`);
+          currentBlocksArray.push({
+            id: this._generateId(),
+            type: "RichText",
+            settings: { content: `<p>${node.data}</p>` },
+          });
         }
         return;
       }
@@ -63,12 +46,14 @@ export class ShopifyArticleParser {
       const $el = $(node);
       const tagName = node.tagName.toLowerCase();
 
-      // Check for app block wrappers (div[data-type] or h2[data-type] etc)
+      if (["style", "script", "meta", "link"].includes(tagName)) return;
+
+      // 1. Check for app block wrappers (div[data-type] or h2[data-type] etc)
       const dataType = $el.attr("data-type");
       if (dataType) {
         const block = this._convertDataBlock($el, dataType);
         if (block) {
-          if (block.type === "ColumnLayout" || block.type === "Column") {
+          if (block.type === "ColumnLayout" || block.type === "Column" || block.type === "Section") {
             block.children = [];
             currentBlocksArray.push(block);
             $el.contents().each((_, child) => processNode(child, block.children));
@@ -80,24 +65,120 @@ export class ShopifyArticleParser {
         }
       }
 
-      if (["style", "script", "meta", "link"].includes(tagName)) return;
-
-      // If this element or any of its descendants is a builder block,
-      // we must process its children recursively so we don't lose the builder block.
-      const hasBuilderBlocks = $el.find("[data-type]").length > 0;
-      
-      if (!hasBuilderBlocks) {
-        // Safe to just keep the whole HTML structure (including tables, headings, spans, paragraphs!)
-        const outerHtml = $.html(node);
-        if (outerHtml?.trim()) {
-          appendTextBlock(outerHtml);
+      // 2. Unwrapped elements: inspect tag name
+      if (/^h[1-6]$/.test(tagName)) {
+        const level = parseInt(tagName.charAt(1), 10);
+        const text = $el.text()?.trim();
+        if (text) {
+          currentBlocksArray.push({
+            id: this._generateId(),
+            type: "Heading",
+            settings: { text, level, align: "left" },
+          });
         }
         return;
       }
 
-      // If it DOES contain builder blocks (e.g. it's a wrapper <div>),
-      // we process its children recursively.
-      $el.contents().each((_, child) => processNode(child, currentBlocksArray));
+      if (tagName === "img") {
+        const src = $el.attr("src");
+        if (src) {
+          currentBlocksArray.push({
+            id: this._generateId(),
+            type: "Image",
+            settings: { src, alt: $el.attr("alt") || "", width: "100%", alignment: "center" },
+          });
+        }
+        return;
+      }
+
+      if (tagName === "figure") {
+        const $img = $el.find("img");
+        const $caption = $el.find("figcaption");
+        if ($img.length && $img.attr("src")) {
+          currentBlocksArray.push({
+            id: this._generateId(),
+            type: "Image",
+            settings: {
+              src: $img.attr("src"),
+              alt: $img.attr("alt") || "",
+              caption: $caption.text()?.trim() || "",
+              width: "100%",
+              alignment: "center",
+            },
+          });
+          return;
+        }
+      }
+
+      if (tagName === "hr") {
+        currentBlocksArray.push({
+          id: this._generateId(),
+          type: "Divider",
+          settings: { style: "solid", thickness: "1px", color: "#e1e3e5" },
+        });
+        return;
+      }
+
+      if (tagName === "table") {
+        const tableData = [];
+        $el.find("tr").each((_, tr) => {
+          const row = [];
+          $(tr).find("th, td").each((_, td) => {
+            row.push($(td).text()?.trim() || "");
+          });
+          if (row.length) tableData.push(row);
+        });
+        currentBlocksArray.push({
+          id: this._generateId(),
+          type: "Table",
+          settings: { tableData: tableData.length ? tableData : [["Header 1", "Header 2"], ["Data 1", "Data 2"]] },
+        });
+        return;
+      }
+
+      if (tagName === "blockquote") {
+        currentBlocksArray.push({
+          id: this._generateId(),
+          type: "Callout",
+          settings: {
+            title: "",
+            body: $el.text()?.trim() || "",
+            emoji: "💡",
+            backgroundColor: "#fdfbc8",
+            borderColor: "#eab308",
+          },
+        });
+        return;
+      }
+
+      // If wrapper <div> or <section> or contains builder blocks, recurse into children
+      const hasBuilderBlocks = $el.find("[data-type]").length > 0;
+      const hasChildElements = $el.children().length > 0;
+      if (hasBuilderBlocks || tagName === "div" || tagName === "section" || tagName === "article") {
+        if (hasChildElements) {
+          $el.contents().each((_, child) => processNode(child, currentBlocksArray));
+          return;
+        }
+      }
+
+      // Default: Paragraphs <p>, <ul>, <ol>, or other text markup
+      if ($el.find("img").length > 0) {
+        $el.contents().each((_, child) => processNode(child, currentBlocksArray));
+        return;
+      }
+
+      const outerHtml = $.html(node);
+      if (outerHtml?.trim()) {
+        const cleanText = outerHtml.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
+        const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(outerHtml);
+        if (cleanText || containsMedia) {
+          currentBlocksArray.push({
+            id: this._generateId(),
+            type: "RichText",
+            settings: { content: outerHtml },
+          });
+        }
+      }
     };
 
     // Process top-level children

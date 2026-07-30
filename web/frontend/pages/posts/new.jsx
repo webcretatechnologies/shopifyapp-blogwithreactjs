@@ -51,7 +51,10 @@ const hasMeaningfulBlocks = (blocks) => {
     if (b.type === "RichText") {
       const c = b.settings?.content;
       if (!c) return false;
-      if (typeof c === "string") return c.replace(/<[^>]*>/g, "").trim().length > 0;
+      if (typeof c === "string") {
+        const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(c);
+        return c.replace(/<[^>]*>/g, "").trim().length > 0 || containsMedia;
+      }
       if (typeof c === "object" && Array.isArray(c.content)) {
         return c.content.some((n) => n.content?.length > 0 || (n.text && n.text.trim() !== "") || n.type !== "paragraph");
       }
@@ -68,28 +71,6 @@ const legacyHtmlToAst = (html) => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, "text/html");
   const blocks = [];
-  
-  const appendTextBlock = (contentHtmlStr) => {
-    if (!contentHtmlStr || contentHtmlStr.trim() === "") return;
-    const cleanText = contentHtmlStr.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
-    const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(contentHtmlStr);
-    if (!cleanText && !containsMedia) return;
-
-    const lastBlock = blocks[blocks.length - 1];
-    if (lastBlock && (lastBlock.type === "RichText" || lastBlock.type === "text")) {
-      lastBlock.type = "RichText";
-      lastBlock.settings = lastBlock.settings || {};
-      lastBlock.settings.content = (lastBlock.settings.content || "") + contentHtmlStr;
-    } else {
-      blocks.push({
-        id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        type: "RichText",
-        settings: {
-          content: contentHtmlStr
-        }
-      });
-    }
-  };
 
   let rootContainer = doc.body;
   if (
@@ -102,169 +83,278 @@ const legacyHtmlToAst = (html) => {
     rootContainer = doc.body.children[0];
   }
 
-  const children = Array.from(rootContainer.childNodes);
-  for (let i = 0; i < children.length; i++) {
-    const node = children[i];
-    
+  const generateId = () => `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  const TYPE_MAP = {
+    buyButton: 'BuyButton',
+    buy_button: 'BuyButton',
+    productGrid: 'ProductGrid',
+    product_grid: 'ProductGrid',
+    collection: 'Collection',
+    ctaButton: 'ButtonBlock',
+    cta_button: 'ButtonBlock',
+    heroBlock: 'HeroSection',
+    hero: 'HeroSection',
+    videoBlock: 'VideoEmbed',
+    video: 'VideoEmbed',
+    spacerBlock: 'Spacer',
+    spacer: 'Spacer',
+    dividerBlock: 'Divider',
+    divider: 'Divider',
+    imageBlock: 'Image',
+    image: 'Image',
+    heading: 'Heading',
+    calloutBlock: 'Callout',
+    callout: 'Callout',
+    buttonBlock: 'ButtonBlock',
+    htmlBlock: 'Html',
+    html: 'Html',
+    product_slider: 'ProductSlider',
+    productSlider: 'ProductSlider',
+    productCard: 'ProductCard',
+    product: 'ProductCard'
+  };
+
+  const ATTR_MAP = {
+    buttontext: 'buttonText',
+    buttoncolor: 'buttonColor',
+    imagesize: 'imageSize',
+    showprice: 'showPrice',
+    showdescription: 'showDescription',
+    showbadge: 'showBadge',
+    product: 'product',
+    layout: 'layout',
+    version: 'version',
+    title: 'title',
+    columns: 'columns',
+    maxproducts: 'maxProducts',
+    cardstyle: 'cardStyle',
+    gap: 'gap',
+    showbutton: 'showButton',
+    manualproducts: 'manualProducts',
+    searchquery: 'searchQuery',
+    collection: 'collection',
+    limit: 'limit',
+    text: 'text',
+    url: 'url',
+    align: 'align',
+    color: 'color',
+    textcolor: 'textColor',
+    size: 'size',
+    borderradius: 'borderRadius',
+    heading: 'heading',
+    subheading: 'subheading',
+    backgroundimage: 'backgroundImage',
+    backgroundoverlay: 'backgroundOverlay',
+    overlaycolor: 'overlayColor',
+    overlayopacity: 'overlayOpacity',
+    minheight: 'minHeight',
+    showcta: 'showCta',
+    ctatext: 'ctaText',
+    ctaurl: 'ctaUrl',
+    ctacolor: 'ctaColor',
+    ctatextcolor: 'ctaTextColor',
+    caption: 'caption',
+    aspectratio: 'aspectRatio',
+    maxwidth: 'maxWidth',
+    height: 'height',
+    style: 'style',
+    thickness: 'thickness',
+    margin: 'margin',
+    src: 'src',
+    alt: 'alt',
+    width: 'width',
+    linkurl: 'linkUrl',
+    titlealign: 'titleAlign'
+  };
+
+  const processNode = (node) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      if (node.textContent.trim() !== "") {
-        appendTextBlock(node.textContent); // Let Tiptap handle text nodes normally
+      const text = node.textContent.trim();
+      if (text) {
+        blocks.push({
+          id: generateId(),
+          type: "RichText",
+          settings: { content: `<p>${node.textContent}</p>` }
+        });
       }
-      continue;
+      return;
     }
 
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const dataType = node.getAttribute("data-type");
-      if (dataType) {
-        const TYPE_MAP = {
-          buyButton: 'BuyButton',
-          buy_button: 'BuyButton',
-          productGrid: 'ProductGrid',
-          product_grid: 'ProductGrid',
-          collection: 'Collection',
-          ctaButton: 'ButtonBlock',
-          cta_button: 'ButtonBlock',
-          heroBlock: 'HeroSection',
-          hero: 'HeroSection',
-          videoBlock: 'VideoEmbed',
-          video: 'VideoEmbed',
-          spacerBlock: 'Spacer',
-          spacer: 'Spacer',
-          dividerBlock: 'Divider',
-          divider: 'Divider',
-          imageBlock: 'Image',
-          image: 'Image',
-          heading: 'Heading',
-          calloutBlock: 'Callout',
-          callout: 'Callout',
-          buttonBlock: 'ButtonBlock',
-          htmlBlock: 'Html',
-          html: 'Html',
-          product_slider: 'ProductSlider',
-          productSlider: 'ProductSlider',
-          productCard: 'ProductCard',
-          product: 'ProductCard'
-        };
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
 
-        const ATTR_MAP = {
-          buttontext: 'buttonText',
-          buttoncolor: 'buttonColor',
-          imagesize: 'imageSize',
-          showprice: 'showPrice',
-          showdescription: 'showDescription',
-          showbadge: 'showBadge',
-          product: 'product',
-          layout: 'layout',
-          version: 'version',
-          title: 'title',
-          columns: 'columns',
-          maxproducts: 'maxProducts',
-          cardstyle: 'cardStyle',
-          gap: 'gap',
-          showbutton: 'showButton',
-          manualproducts: 'manualProducts',
-          searchquery: 'searchQuery',
-          collection: 'collection',
-          limit: 'limit',
-          text: 'text',
-          url: 'url',
-          align: 'align',
-          color: 'color',
-          textcolor: 'textColor',
-          size: 'size',
-          borderradius: 'borderRadius',
-          heading: 'heading',
-          subheading: 'subheading',
-          backgroundimage: 'backgroundImage',
-          backgroundoverlay: 'backgroundOverlay',
-          overlaycolor: 'overlayColor',
-          overlayopacity: 'overlayOpacity',
-          minheight: 'minHeight',
-          showcta: 'showCta',
-          ctatext: 'ctaText',
-          ctaurl: 'ctaUrl',
-          ctacolor: 'ctaColor',
-          ctatextcolor: 'ctaTextColor',
-          caption: 'caption',
-          aspectratio: 'aspectRatio',
-          maxwidth: 'maxWidth',
-          height: 'height',
-          style: 'style',
-          thickness: 'thickness',
-          margin: 'margin',
-          src: 'src',
-          alt: 'alt',
-          width: 'width',
-          linkurl: 'linkUrl',
-          titlealign: 'titleAlign'
-        };
+    const tagName = node.tagName.toLowerCase();
+    if (["style", "script", "meta", "link"].includes(tagName)) return;
 
-        const blockType = TYPE_MAP[dataType] || dataType;
-        const settings = {};
+    // 1. Check for explicit data-type attribute
+    const dataType = node.getAttribute("data-type");
+    if (dataType) {
+      const blockType = TYPE_MAP[dataType] || dataType;
+      const settings = {};
 
-        Array.from(node.attributes).forEach(attr => {
-          if (attr.name.startsWith("data-")) {
-            const key = attr.name.substring(5);
-            if (key === "type") return;
-            const camelKey = attr.name.substring(5).split('-').map((w, i) => i === 0 ? w : w[0].toUpperCase() + w.substring(1)).join('');
-            const mappedKey = ATTR_MAP[key] || camelKey;
-            let val = attr.value;
-            if (val === "true") val = true;
-            else if (val === "false") val = false;
-            else if (val && (val.startsWith("{") || val.startsWith("["))) {
-              try { val = JSON.parse(val); } catch (e) {}
-            } else if (!isNaN(val) && val.trim() !== "" && key === "overlayopacity") {
-              val = parseFloat(val);
-            }
-            settings[mappedKey] = val;
+      Array.from(node.attributes).forEach(attr => {
+        if (attr.name.startsWith("data-")) {
+          const key = attr.name.substring(5);
+          if (key === "type") return;
+          const camelKey = attr.name.substring(5).split('-').map((w, i) => i === 0 ? w : w[0].toUpperCase() + w.substring(1)).join('');
+          const mappedKey = ATTR_MAP[key] || camelKey;
+          let val = attr.value;
+          if (val === "true") val = true;
+          else if (val === "false") val = false;
+          else if (val && (val.startsWith("{") || val.startsWith("["))) {
+            try { val = JSON.parse(val); } catch (e) {}
+          } else if (!isNaN(val) && val.trim() !== "" && key === "overlayopacity") {
+            val = parseFloat(val);
+          }
+          settings[mappedKey] = val;
+        }
+      });
+
+      if (blockType === "Heading" && !settings.text) {
+        settings.text = node.textContent.trim();
+      }
+
+      blocks.push({
+        id: generateId(),
+        type: blockType,
+        settings: settings
+      });
+      return;
+    }
+
+    // 2. Element without data-type: Inspect tag and convert to native block
+
+    // A) Heading: <h1> - <h6>
+    if (/^h[1-6]$/.test(tagName)) {
+      const level = parseInt(tagName.charAt(1), 10);
+      const text = node.textContent.trim();
+      if (text) {
+        blocks.push({
+          id: generateId(),
+          type: "Heading",
+          settings: {
+            text: text,
+            level: level,
+            align: node.style?.textAlign || "left"
           }
         });
-
-        const block = {
-          id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          type: blockType,
-          settings: settings
-        };
-
-        blocks.push(block);
-        continue;
       }
+      return;
+    }
 
-      const tagName = node.tagName.toLowerCase();
-      if (["style", "script", "meta", "link"].includes(tagName)) continue;
-
-      const hasBuilderBlocks = node.querySelector("[data-type]");
-      if (!hasBuilderBlocks) {
-        appendTextBlock(node.outerHTML);
-        continue;
-      }
-
-      // If it has builder blocks nested inside, we just process children recursively
-      // (This is highly unlikely for pure HTML but safe to have)
-      Array.from(node.childNodes).forEach(child => {
-        // We'll just push it recursively, but since we are in a flat loop, 
-        // we can just recursively call a helper or let it be.
-        // For simplicity, if a wrapper contains builder blocks, we extract them.
-        const extractBlocks = (n) => {
-          if (n.nodeType === Node.ELEMENT_NODE && n.getAttribute("data-type")) {
-             // We could recursively parse, but for now let's just append the outer HTML if we can't.
-             // Actually, the loop above was flat. Let's just append the outerHTML to be safe
-             // since legacyHtmlToAst doesn't do deep recursion well without a dedicated function.
+    // B) Image: <img> or <figure> containing <img>
+    if (tagName === "img") {
+      const src = node.getAttribute("src");
+      if (src) {
+        blocks.push({
+          id: generateId(),
+          type: "Image",
+          settings: {
+            src: src,
+            alt: node.getAttribute("alt") || "",
+            width: node.getAttribute("width") || "100%",
+            alignment: "center"
           }
-        };
-        // Just append the node's outerHTML for now if we don't have deep traversal set up.
-        // Actually, if it has a data-type somewhere inside, we should probably just extract it.
-      });
-      // To keep it simple and robust, just use outerHTML if it's not a direct block. 
-      // Builder blocks shouldn't be deeply nested in legacy content anyway.
-      if (hasBuilderBlocks) {
-         // This is a rare edge case: a wrapper div without data-type containing a data-type block.
-         // We will just append the outerHTML. If they really want the block, they can recreate it.
-         appendTextBlock(node.outerHTML);
+        });
+      }
+      return;
+    }
+
+    if (tagName === "figure") {
+      const img = node.querySelector("img");
+      const figcaption = node.querySelector("figcaption");
+      if (img && img.getAttribute("src")) {
+        blocks.push({
+          id: generateId(),
+          type: "Image",
+          settings: {
+            src: img.getAttribute("src"),
+            alt: img.getAttribute("alt") || "",
+            caption: figcaption ? figcaption.textContent.trim() : "",
+            width: "100%",
+            alignment: "center"
+          }
+        });
+        return;
       }
     }
-  }
-  
+
+    // C) Horizontal Rule: <hr>
+    if (tagName === "hr") {
+      blocks.push({
+        id: generateId(),
+        type: "Divider",
+        settings: { style: "solid", thickness: "1px", color: "#e1e3e5" }
+      });
+      return;
+    }
+
+    // D) Table: <table>
+    if (tagName === "table") {
+      const tableData = [];
+      const rows = Array.from(node.querySelectorAll("tr"));
+      rows.forEach(tr => {
+        const row = Array.from(tr.querySelectorAll("th, td")).map(td => td.textContent.trim());
+        if (row.length > 0) tableData.push(row);
+      });
+      blocks.push({
+        id: generateId(),
+        type: "Table",
+        settings: { tableData: tableData.length > 0 ? tableData : [["Header 1", "Header 2"], ["Data 1", "Data 2"]] }
+      });
+      return;
+    }
+
+    // E) Callout: <blockquote>
+    if (tagName === "blockquote") {
+      blocks.push({
+        id: generateId(),
+        type: "Callout",
+        settings: {
+          title: "",
+          body: node.textContent.trim(),
+          emoji: "💡",
+          backgroundColor: "#fdfbc8",
+          borderColor: "#eab308"
+        }
+      });
+      return;
+    }
+
+    // F) Wrapper container <div> or <section> containing nested images/headings/blocks
+    if (tagName === "div" || tagName === "section" || tagName === "article") {
+      const hasChildElements = Array.from(node.childNodes).some(c => c.nodeType === Node.ELEMENT_NODE);
+      if (hasChildElements) {
+        Array.from(node.childNodes).forEach(child => processNode(child));
+        return;
+      }
+    }
+
+    // G) Paragraphs <p>, lists <ul>/<ol>, or other text markup
+    // If the node itself contains an <img> inside a <p>, extract the image!
+    if (node.querySelector && node.querySelector("img")) {
+      Array.from(node.childNodes).forEach(child => processNode(child));
+      return;
+    }
+
+    const htmlStr = node.outerHTML;
+    if (htmlStr && htmlStr.trim() !== "") {
+      const cleanText = htmlStr.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
+      const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(htmlStr);
+      if (!cleanText && !containsMedia) return;
+
+      blocks.push({
+        id: generateId(),
+        type: "RichText",
+        settings: {
+          content: htmlStr
+        }
+      });
+    }
+  };
+
+  Array.from(rootContainer.childNodes).forEach(child => processNode(child));
+
   return blocks;
 };
 

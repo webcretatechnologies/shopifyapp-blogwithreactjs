@@ -59,6 +59,23 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
     },
   });
 
+  // Auto-scroll canvas to selected block (e.g. when selected from Layers panel sidebar)
+  React.useEffect(() => {
+    if (isSelected && !isDragging) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+            inline: "nearest",
+          });
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isSelected, id, isDragging]);
+
   // Track drop settle
   React.useEffect(() => {
     if (isDragging) {
