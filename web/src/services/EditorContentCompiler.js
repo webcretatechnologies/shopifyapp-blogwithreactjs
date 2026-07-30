@@ -450,23 +450,24 @@ export class EditorContentCompiler {
       descHtml = `<p style="font-size: 13px; color: #6d7175; margin: 0 0 12px; line-height: 1.4; font-family: sans-serif;">${product.description}</p>`;
     }
 
+    const imageUrl = typeof product.image === 'string' ? product.image : (product.image?.url || product.featuredImage?.url || product.images?.[0]?.originalSrc || product.images?.[0]?.src || "");
     let imgHtml = "";
-    if (product.image) {
+    if (imageUrl) {
       const escapedTitle = (product.title || "").replace(/"/g, '&quot;');
-      imgHtml = `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${product.image}" alt="${escapedTitle}" style="width: 100%; height: 100%; object-fit: cover; display: block;" /></a>`;
+      imgHtml = `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; text-decoration:none;"><img src="${imageUrl}" alt="${escapedTitle}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>`;
     } else {
-      imgHtml = `<div style="width: 100%; height: 100%; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+      imgHtml = `<div style="width: 100%; height: 100%; background: #f4f6f8; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
     }
 
     let cardStyle = "";
     if (layout === "horizontal") {
-      cardStyle = `display: flex; flex-wrap: wrap; gap: 16px; align-items: center; border: 1px solid #e1e3e5; border-radius: 10px; padding: 16px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: ${maxWidth || "600px"}; margin: 20px 0; box-sizing: border-box;`;
+      cardStyle = `display: flex; gap: 16px; align-items: center; border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: ${maxWidth || "600px"}; margin: 16px 0; box-sizing: border-box;`;
       return `
         <div style="${cardStyle}">
-          <div style="width: ${imageSize}; height: ${imageSize}; flex-shrink: 0; flex-grow: 1; max-width: 100%; border-radius: 8px; overflow: hidden; border: 1px solid #f1f2f3; text-align: center;">
+          <div style="width: ${imageSize}; height: ${imageSize}; flex-shrink: 0; background: #f4f6f8; border-radius: 8px; overflow: hidden; border: 1px solid #f1f2f3; display: flex; align-items: center; justify-content: center;">
             ${imgHtml}
           </div>
-          <div style="flex: 1; min-width: 200px;">
+          <div style="flex: 1; min-width: 0;">
             ${badgeHtml}
             <h4 style="margin: 0 0 6px; font-size: 16px; font-weight: 600; color: #202223; font-family: sans-serif; line-height: 1.3;">
               <a href="${pLink}" style="color: inherit; text-decoration: none;">${product.title || "Product"}</a>
@@ -483,10 +484,10 @@ export class EditorContentCompiler {
         </div>
       `;
     } else {
-      cardStyle = `border: 1px solid #e1e3e5; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: ${maxWidth}; margin: 20px 0; box-sizing: border-box;`;
+      cardStyle = `border: 1px solid #e1e3e5; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: ${maxWidth || '320px'}; margin: 20px 0; box-sizing: border-box;`;
       return `
         <div style="${cardStyle}">
-          <div style="aspect-ratio: 1; width: 100%; border-bottom: 1px solid #e1e3e5;">
+          <div style="height: 220px; width: 100%; background: #f4f6f8; border-bottom: 1px solid #e1e3e5; display: flex; align-items: center; justify-content: center; overflow: hidden;">
             ${imgHtml}
           </div>
           <div style="padding: 16px;">
@@ -585,9 +586,10 @@ export class EditorContentCompiler {
       const pLink = p.handle ? `/products/${p.handle}` : "#";
 
       const escapedTitle = (p.title || "").replace(/"/g, '&quot;');
-      const pImg = p.image
-        ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
-        : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+      const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
+      const pImg = imageUrl
+        ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:180px; background:#f8f9fa; border-bottom:1px solid #f1f2f3; overflow:hidden; text-decoration:none;"><img src="${imageUrl}" alt="${escapedTitle}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>`
+        : `<div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom:1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
 
       const pCurrency = p.currency || _storeCurrency || 'USD';
       const pPrice = (showPrice && p.price)

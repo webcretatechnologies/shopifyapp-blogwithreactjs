@@ -373,16 +373,25 @@ function compileCoreBlockHtml(type, settings, children) {
       return `<div style="margin: 24px 0;">
         ${title ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: ${settings.titleAlign || 'left'};">${title}</h3>` : ''}
         <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'}; align-items: stretch;">
-          ${products.map(p => `
-            <div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; text-align: center; background: #fff; display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box;">
+          ${products.map(p => {
+            const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
+            const currency = p.currency || 'USD';
+            const formattedPrice = p.price ? (String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, currency)) : "";
+            const pLink = p.handle ? `/products/${p.handle}` : "#";
+
+            return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; overflow: hidden; background: #fff; display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box;">
               <div>
-                ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 180px; object-fit: contain; margin-bottom: 12px;" />` : ''}
-                <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
-                ${settings.showPrice && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 12px;">₹${p.price}</p>` : ''}
+                <div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom: 1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                  ${imageUrl ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; text-decoration:none;"><img src="${imageUrl}" alt="${p.title || ''}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>` : '<span style="font-size: 24px;">🖼</span>'}
+                </div>
+                <div style="padding: 12px;">
+                  <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 4px; color: #202223;"><a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title || 'Product'}</a></h4>
+                  ${settings.showPrice !== false && formattedPrice ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 8px;">${formattedPrice}</p>` : ''}
+                </div>
               </div>
-              ${settings.showButton ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer; margin-top: auto;">${settings.buttonText || 'Add to Cart'}</button>` : ''}
-            </div>
-          `).join('')}
+              ${settings.showButton !== false ? `<div style="padding: 0 12px 12px;"><a href="${pLink}" style="display: block; background: ${settings.buttonColor || '#008060'}; color: #fff; text-decoration: none; padding: 8px 12px; border-radius: 6px; font-weight: 600; text-align: center; font-size: 13px; margin-top: auto;">${settings.buttonText || 'Add to Cart'}</a></div>` : ''}
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
     }
@@ -434,12 +443,33 @@ function compileCoreBlockHtml(type, settings, children) {
       if (!p) return "";
       const currency = p.currency || "USD";
       const formattedPrice = p.price ? (String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, currency)) : "";
-      return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 16px; max-width: ${settings.maxWidth || '360px'}; margin: 16px 0; box-sizing: border-box;">
-        ${p.image || p.featuredImage?.url ? `<img src="${p.image || p.featuredImage?.url}" alt="${p.title || ''}" style="width: ${settings.imageSize || '80px'}; height: auto; object-fit: contain; flex-shrink: 0;" />` : ''}
+      const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
+      const isVertical = settings.layout === "vertical";
+      const pLink = p.handle ? `/products/${p.handle}` : "#";
+
+      if (isVertical) {
+        return `<div style="border: 1px solid #e1e3e5; border-radius: 10px; overflow: hidden; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: ${settings.maxWidth || '320px'}; margin: 16px auto; box-sizing: border-box;">
+          <div style="height: 220px; width: 100%; background: #f4f6f8; border-bottom: 1px solid #e1e3e5; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+            ${imageUrl ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; text-decoration:none;"><img src="${imageUrl}" alt="${p.title || ''}" style="max-width:100%; max-height:100%; object-fit:contain; display:block; margin:0 auto;" /></a>` : '<div style="font-size:24px;">🖼</div>'}
+          </div>
+          <div style="padding: 16px;">
+            ${settings.showBadge && settings.badge ? `<span style="display: inline-block; padding: 2px 8px; background: #ffd700; color: #202223; font-size: 11px; font-weight: 700; border-radius: 12px; margin-bottom: 8px;">${settings.badge}</span>` : ''}
+            <h4 style="font-size: 15px; font-weight: 600; margin: 0 0 6px; color: #202223;"><a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title || ''}</a></h4>
+            ${settings.showDescription && p.description ? `<p style="font-size: 13px; color: #6d7175; margin: 0 0 10px; line-height: 1.4;">${p.description}</p>` : ''}
+            ${settings.showPrice && formattedPrice ? `<p style="font-size: 16px; font-weight: 700; color: #008060; margin: 0 0 12px;">${formattedPrice}</p>` : ''}
+            <a href="${pLink}" style="display: block; width: 100%; background: ${settings.buttonColor || '#008060'}; color: #ffffff; text-decoration: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; text-align: center; box-sizing: border-box;">${settings.buttonText || 'Add to Cart'}</a>
+          </div>
+        </div>`;
+      }
+
+      return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 16px; max-width: ${settings.maxWidth || '600px'}; margin: 16px 0; box-sizing: border-box; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+        ${imageUrl ? `<div style="width: ${settings.imageSize || '120px'}; height: ${settings.imageSize || '120px'}; background: #f4f6f8; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid #f1f2f3;"><img src="${imageUrl}" alt="${p.title || ''}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;" /></div>` : ''}
         <div style="flex: 1; min-width: 0;">
-          <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 4px; color: #202223;">${p.title || ''}</h4>
-          ${settings.showPrice && formattedPrice ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 8px;">${formattedPrice}</p>` : ''}
-          <a href="${p.handle ? `/products/${p.handle}` : '#'}" style="display: inline-block; background: ${settings.buttonColor || '#008060'}; color: #ffffff; text-decoration: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center; box-sizing: border-box; width: 100%;">${settings.buttonText || 'Add to Cart'}</a>
+          ${settings.showBadge && settings.badge ? `<span style="display: inline-block; padding: 2px 8px; background: #ffd700; color: #202223; font-size: 10px; font-weight: 700; border-radius: 12px; margin-bottom: 6px;">${settings.badge}</span>` : ''}
+          <h4 style="font-size: 16px; font-weight: 600; margin: 0 0 4px; color: #202223;"><a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title || ''}</a></h4>
+          ${settings.showDescription && p.description ? `<p style="font-size: 13px; color: #6d7175; margin: 0 0 8px; line-height: 1.4;">${p.description}</p>` : ''}
+          ${settings.showPrice && formattedPrice ? `<p style="font-size: 16px; font-weight: 700; color: #008060; margin: 0 0 10px;">${formattedPrice}</p>` : ''}
+          <a href="${pLink}" style="display: inline-block; background: ${settings.buttonColor || '#008060'}; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; text-align: center; box-sizing: border-box;">${settings.buttonText || 'Add to Cart'}</a>
         </div>
       </div>`;
     }

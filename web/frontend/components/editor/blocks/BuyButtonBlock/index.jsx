@@ -35,16 +35,33 @@ export function BuyButtonBlockPreview({ block }) {
   }
 
   const currency = product.currency || storeCurrency;
+  const imageUrl = typeof product.image === 'string' ? product.image : (product.image?.url || product.featuredImage?.url || product.images?.[0]?.originalSrc || product.images?.[0]?.src || null);
 
   if (layout === 'vertical') {
     return (
       <div style={{
         maxWidth: block.maxWidth || '320px',
-        margin: '0 auto',
-        padding: '8px 0',
+        margin: '16px auto',
+        border: '1px solid #e1e3e5',
+        borderRadius: '10px',
+        overflow: 'hidden',
+        backgroundColor: '#ffffff',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+        boxSizing: 'border-box',
       }}>
-        {product.image && (
-          <img src={product.image} alt={product.title} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }} />
+        {imageUrl && (
+          <div style={{
+            width: '100%',
+            height: '220px',
+            backgroundColor: '#f4f6f8',
+            borderBottom: '1px solid #e1e3e5',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}>
+            <img src={imageUrl} alt={product.title} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
+          </div>
         )}
         <div style={{ padding: '16px' }}>
           {block.showBadge && block.badge && (
@@ -77,20 +94,37 @@ export function BuyButtonBlockPreview({ block }) {
   return (
     <div style={{
       display: 'flex',
-      gap: '20px',
+      gap: '16px',
       alignItems: 'center',
-      padding: '8px 0',
+      border: '1px solid #e1e3e5',
+      borderRadius: '8px',
+      padding: '16px',
+      backgroundColor: '#ffffff',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+      boxSizing: 'border-box',
     }}>
-      {product.image && (
-        <img src={product.image} alt={product.title}
-          style={{
-            width: block.imageSize || '120px',
-            height: block.imageSize || '120px',
-            objectFit: 'cover',
-            borderRadius: '8px',
-            flexShrink: 0,
-          }}
-        />
+      {imageUrl && (
+        <div style={{
+          width: block.imageSize || '120px',
+          height: block.imageSize || '120px',
+          backgroundColor: '#f4f6f8',
+          borderRadius: '8px',
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          border: '1px solid #e1e3e5',
+        }}>
+          <img src={imageUrl} alt={product.title}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+              display: 'block',
+            }}
+          />
+        </div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         {block.showBadge && block.badge && (

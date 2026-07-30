@@ -19,24 +19,12 @@ import { formatPrice } from '../../../../utils/priceUtils.js';
 
 export function ProductGridBlockPreview({ block }) {
   const s = block?.settings || block || {};
-  const query = s.searchQuery || '';
-  const limit = (s.columns ? parseInt(s.columns) : 3) * 3;
-  const { products, isLoading } = useShopifyProducts(query, Math.min(limit, 12));
   const { storeCurrency } = useShopifyStoreCurrency();
 
-  const displayProducts = s.manualProducts?.length > 0 ? s.manualProducts : products;
+  const displayProducts = s.manualProducts || [];
   const cols = parseInt(s.columns || '3') || 3;
   const showPrice = s.showPrice !== false;
   const showButton = s.showButton !== false;
-
-  if (isLoading && displayProducts.length === 0) {
-    return (
-      <div style={{ padding: '24px', textAlign: 'center' }}>
-        <Spinner size="small" />
-        <div style={{ marginTop: '8px', fontSize: '13px', color: '#6d7175' }}>Loading products…</div>
-      </div>
-    );
-  }
 
   if (displayProducts.length === 0) {
     return (
@@ -45,7 +33,7 @@ export function ProductGridBlockPreview({ block }) {
         backgroundColor: '#f4f6f8', border: '1px dashed #c9cccf', borderRadius: '4px', boxSizing: 'border-box'
       }}>
         <div style={{ fontSize: '32px', marginBottom: '8px' }}>🛍</div>
-        <Text variant="bodyMd" tone="subdued">No products yet — search in the settings panel</Text>
+        <Text variant="bodyMd" tone="subdued">No products selected — click "Pick Products from Shopify" in settings</Text>
       </div>
     );
   }
@@ -91,19 +79,21 @@ function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, b
     minimal: { padding: '4px' },
   };
   const currency = product.currency || storeCurrency;
+  const pImgUrl = typeof product.image === 'string' ? product.image : (product.image?.url || product.featuredImage?.url || product.images?.[0]?.originalSrc || product.images?.[0]?.src || null);
+
   return (
     <div style={styles[cardStyle] || styles.shadow}>
-      {product.image ? (
-        <img
-          src={product.image}
-          alt={product.title}
-          style={{ width: '100%', aspectRatio: '1', objectFit: 'contain', display: 'block', margin: 0, background: '#f8f9fa' }}
-        />
-      ) : (
-        <div style={{ width: '100%', aspectRatio: '1', background: '#f1f2f3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: '100%', height: '180px', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderBottom: '1px solid #f1f2f3' }}>
+        {pImgUrl ? (
+          <img
+            src={pImgUrl}
+            alt={product.title || ''}
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', margin: '0 auto' }}
+          />
+        ) : (
           <span style={{ fontSize: '24px' }}>🖼</span>
-        </div>
-      )}
+        )}
+      </div>
       <div style={{ padding: '12px' }}>
         <div style={{ fontSize: '14px', fontWeight: '600', color: '#202223', marginBottom: '4px', lineHeight: 1.3 }}>
           {product.title}
@@ -130,8 +120,6 @@ function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, b
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 export function ProductGridBlockSettings({ block, onUpdate }) {
-  const [searchQuery, setSearchQuery] = useState(block.searchQuery || '');
-  const { products, isLoading } = useShopifyProducts(searchQuery, 30);
   const { storeCurrency } = useShopifyStoreCurrency();
 
   const handlePickProducts = async () => {
@@ -153,12 +141,12 @@ export function ProductGridBlockSettings({ block, onUpdate }) {
         shopifyProductId: p.id,
         title: p.title,
         handle: p.handle,
-        image: p.images?.[0]?.originalSrc || null,
+        image: p.images?.[0]?.originalSrc || p.featuredImage?.url || null,
         price: p.variants?.[0]?.price || null,
         variantId: p.variants?.[0]?.id || null,
-        currency: storeCurrency || 'USD', // Resource picker doesn't return currency, use store default
+        currency: storeCurrency || 'USD',
       }));
-      onUpdate({ manualProducts: picked, searchQuery: '' });
+      onUpdate({ manualProducts: picked });
     }
   };
 
@@ -193,14 +181,6 @@ export function ProductGridBlockSettings({ block, onUpdate }) {
       {block.manualProducts?.length > 0 && (
         <Text variant="bodySm" tone="subdued">{block.manualProducts.length} product(s) selected</Text>
       )}
-      <TextField
-        label="Or search by query"
-        value={block.searchQuery || ''}
-        onChange={v => { setSearchQuery(v); onUpdate({ searchQuery: v, manualProducts: [] }); }}
-        placeholder="running shoes, summer sale…"
-        autoComplete="off"
-        helpText="Searches your Shopify catalog in real-time"
-      />
       <div style={{ borderTop: '1px solid #e1e3e5', paddingTop: '12px' }}>
         <Text variant="bodyMd" fontWeight="semibold">Layout</Text>
       </div>
