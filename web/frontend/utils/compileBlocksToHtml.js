@@ -173,13 +173,25 @@ function compileCoreBlockHtml(type, settings, children) {
       if (!src) return "";
       const alt = settings.alt || "";
       const width = settings.width || "100%";
-      const align = settings.alignment || "center";
-      const br = settings.borderRadius || 0;
+      const height = settings.height || "auto";
+      const objectFit = settings.objectFit || "cover";
+      const align = settings.align || settings.alignment || "center";
+      const br = settings.borderRadius || "0px";
       const caption = settings.caption || "";
-      const imgTag = `<img src="${src}" alt="${alt}" style="max-width: ${width}; border-radius: ${br}px; height: auto; display: inline-block;" />`;
-      const linkedImg = settings.linkUrl ? `<a href="${settings.linkUrl}" target="${settings.linkTarget || '_self'}">${imgTag}</a>` : imgTag;
+      const paddingMap = { none: '0', small: '16px', medium: '32px', large: '64px' };
+      const padding = paddingMap[settings.padding || 'none'] || '0';
+      const shadowMap = { 
+        none: 'none', 
+        soft: '0 4px 12px rgba(0,0,0,0.1)', 
+        medium: '0 8px 24px rgba(0,0,0,0.15)', 
+        strong: '0 12px 32px rgba(0,0,0,0.25)' 
+      };
+      const boxShadow = shadowMap[settings.dropShadow || 'none'] || 'none';
 
-      return `<div style="text-align: ${align}; margin: 16px 0;">
+      const imgTag = `<img src="${src}" alt="${alt}" style="max-width: 100%; width: ${width}; height: ${height}; object-fit: ${objectFit}; border-radius: ${br}; box-shadow: ${boxShadow}; display: inline-block;" />`;
+      const linkedImg = settings.linkUrl ? `<a href="${settings.linkUrl}" target="${settings.linkTarget || '_self'}" style="display: inline-block;">${imgTag}</a>` : imgTag;
+
+      return `<div style="text-align: ${align}; margin: 16px 0; padding: ${padding}; box-sizing: border-box;">
         ${linkedImg}
         ${caption ? `<p style="font-size: 13px; color: #6d7175; margin-top: 6px; text-align: center;">${caption}</p>` : ''}
       </div>`;

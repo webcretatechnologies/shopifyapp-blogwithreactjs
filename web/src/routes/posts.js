@@ -619,18 +619,25 @@ router.post("/upload", upload.single("file"), async (req, res) => {
         }
         
         if (finalUrl) {
-           const fs = await import("fs");
-           fs.unlinkSync(req.file.path); // remove local
            return res.json({ url: finalUrl, filename: req.file.filename });
+        } else {
+           throw new Error("Timeout polling for Shopify image URL.");
         }
       }
     }
+    throw new Error("Could not construct Shopify Graphql Client or Session.");
   } catch (e) {
-    console.error("Shopify Direct Upload failed, falling back:", e);
+    console.error("Shopify Direct Upload failed:", e);
+    res.status(500).json({ error: "Failed to upload image to Shopify CDN." });
+  } finally {
+    if (req.file && req.file.path) {
+      import("fs").then(fs => {
+        if (fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+      });
+    }
   }
-
-  const url = `/uploads/${req.file.filename}`;
-  res.json({ url, filename: req.file.filename });
 });
 
 // ─── GET /api/posts/shopify/blogs — Fetch Shopify blogs list ─────────────────

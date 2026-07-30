@@ -2,23 +2,27 @@
  * ImageBlock — Image block with optional caption, alignment, border radius, and link.
  * Integrates with ShopifyFilePicker for Shopify CDN images.
  */
-import { BlockStack, TextField, Select, Text, Checkbox, Button, InlineStack } from '@shopify/polaris';
+import { BlockStack, TextField, Select, Text, Button, InlineStack, DropZone, Spinner, Banner } from '@shopify/polaris';
 import ShopifyFilePicker from '../../../ShopifyFilePicker';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 export function ImageBlockPreview({ block }) {
-  const wrapperStyle = {
-    textAlign: block.align || 'center',
-  };
-
   const imgStyle = {
     maxWidth: block.width || '100%',
     width: block.width || '100%',
-    height: 'auto',
+    height: block.height || 'auto',
+    objectFit: block.objectFit || 'cover',
     borderRadius: block.borderRadius || '0px',
+    boxShadow: block.dropShadow === 'soft' ? '0 4px 12px rgba(0,0,0,0.1)' : block.dropShadow === 'medium' ? '0 8px 24px rgba(0,0,0,0.15)' : block.dropShadow === 'strong' ? '0 12px 32px rgba(0,0,0,0.25)' : 'none',
     display: 'block',
     margin: block.align === 'center' ? '0 auto' : block.align === 'right' ? '0 0 0 auto' : '0',
+  };
+
+  const paddingMap = { none: '0', small: '16px', medium: '32px', large: '64px' };
+  const wrapperStyle = {
+    textAlign: block.align || 'center',
+    padding: paddingMap[block.padding || 'none'],
   };
 
   if (!block.src) {
@@ -61,28 +65,82 @@ export function ImageBlockPreview({ block }) {
 // ── Settings ──────────────────────────────────────────────────────────────────
 export function ImageBlockSettings({ block, onUpdate }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+
+  const handleDropZoneDrop = useCallback(async (_dropFiles, acceptedFiles, _rejectedFiles) => {
+    if (acceptedFiles.length === 0) return;
+    const file = acceptedFiles[0];
+    setUploading(true);
+    setUploadError(null);
+
+    const form = new FormData();
+    form.append("file", file);
+
+    try {
+      const res = await fetch("/api/posts/upload", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      if (data.url) {
+        onUpdate({ src: data.url });
+      } else {
+        throw new Error("No URL returned from upload");
+      }
+    } catch (err) {
+      setUploadError(err.message);
+    } finally {
+      setUploading(false);
+    }
+  }, [onUpdate]);
 
   return (
     <BlockStack gap="300">
       {/* Image source */}
       <Text variant="bodyMd" fontWeight="semibold">Image</Text>
-      {block.src && (
-        <img
-          src={block.src}
-          alt={block.alt || ''}
-          style={{ width: '100%', borderRadius: '6px', maxHeight: '120px', objectFit: 'cover' }}
-        />
+      
+      {uploadError && (
+        <Banner tone="critical" onDismiss={() => setUploadError(null)}>
+          {uploadError}
+        </Banner>
       )}
-      <InlineStack gap="200" wrap={false}>
-        <Button onClick={() => setShowPicker(true)} fullWidth>
-          {block.src ? 'Change Image' : 'Add Image'}
-        </Button>
-        {block.src && (
-          <Button onClick={() => onUpdate({ src: '' })} tone="critical">
-            Remove
+
+      {block.src ? (
+        <BlockStack gap="200">
+          <img
+            src={block.src}
+            alt={block.alt || ''}
+            style={{ width: '100%', borderRadius: '6px', maxHeight: '120px', objectFit: 'cover' }}
+          />
+          <InlineStack gap="200" wrap={false}>
+            <Button onClick={() => setShowPicker(true)} fullWidth>
+              Change Image
+            </Button>
+            <Button onClick={() => onUpdate({ src: '' })} tone="critical">
+              Remove
+            </Button>
+          </InlineStack>
+        </BlockStack>
+      ) : (
+        <DropZone accept="image/*" type="image" onDrop={handleDropZoneDrop}>
+          {uploading ? (
+            <div style={{ padding: '2rem', textAlign: 'center' }}>
+              <Spinner size="large" />
+              <div style={{ marginTop: '1rem' }}>Uploading...</div>
+            </div>
+          ) : (
+            <DropZone.FileUpload actionHint="Accepts .gif, .jpg, .png, and .webp" />
+          )}
+        </DropZone>
+      )}
+
+      <InlineStack gap="200" align="center">
+        {!block.src && (
+          <Button onClick={() => setShowPicker(true)} fullWidth>
+            Browse Shopify Files
           </Button>
         )}
       </InlineStack>
+
       <TextField
         label="Image URL (or paste directly)"
         value={block.src || ''}
@@ -107,19 +165,36 @@ export function ImageBlockSettings({ block, onUpdate }) {
       />
 
       {/* Layout */}
-      <Text variant="bodyMd" fontWeight="semibold">Layout</Text>
+      <Text variant="bodyMd" fontWeight="semibold">Dimensions & Sizing</Text>
+      <InlineStack gap="300" wrap={false}>
+        <TextField
+          label="Width"
+          value={block.width || ''}
+          onChange={(v) => onUpdate({ width: v })}
+          placeholder="e.g. 100%, 400px"
+          autoComplete="off"
+        />
+        <TextField
+          label="Height"
+          value={block.height || ''}
+          onChange={(v) => onUpdate({ height: v })}
+          placeholder="e.g. auto, 300px"
+          autoComplete="off"
+        />
+      </InlineStack>
       <Select
-        label="Width"
+        label="Object Fit (if height is set)"
         options={[
-          { label: 'Full Width (100%)', value: '100%' },
-          { label: 'Large (80%)', value: '80%' },
-          { label: 'Medium (60%)', value: '60%' },
-          { label: 'Small (40%)', value: '40%' },
-          { label: 'Thumbnail (200px)', value: '200px' },
+          { label: 'Cover (fills space, crops)', value: 'cover' },
+          { label: 'Contain (fits inside, no crop)', value: 'contain' },
+          { label: 'Fill (stretches)', value: 'fill' },
+          { label: 'None (original size)', value: 'none' },
         ]}
-        value={block.width || '100%'}
-        onChange={(v) => onUpdate({ width: v })}
+        value={block.objectFit || 'cover'}
+        onChange={(v) => onUpdate({ objectFit: v })}
       />
+
+      <Text variant="bodyMd" fontWeight="semibold">Styling</Text>
       <Select
         label="Alignment"
         options={[
@@ -129,6 +204,17 @@ export function ImageBlockSettings({ block, onUpdate }) {
         ]}
         value={block.align || 'center'}
         onChange={(v) => onUpdate({ align: v })}
+      />
+      <Select
+        label="Padding"
+        options={[
+          { label: 'None', value: 'none' },
+          { label: 'Small', value: 'small' },
+          { label: 'Medium', value: 'medium' },
+          { label: 'Large', value: 'large' },
+        ]}
+        value={block.padding || 'none'}
+        onChange={(v) => onUpdate({ padding: v })}
       />
       <Select
         label="Corner Radius"
@@ -141,6 +227,17 @@ export function ImageBlockSettings({ block, onUpdate }) {
         ]}
         value={block.borderRadius || '0px'}
         onChange={(v) => onUpdate({ borderRadius: v })}
+      />
+      <Select
+        label="Drop Shadow"
+        options={[
+          { label: 'None', value: 'none' },
+          { label: 'Soft', value: 'soft' },
+          { label: 'Medium', value: 'medium' },
+          { label: 'Strong', value: 'strong' },
+        ]}
+        value={block.dropShadow || 'none'}
+        onChange={(v) => onUpdate({ dropShadow: v })}
       />
 
       {/* Link */}

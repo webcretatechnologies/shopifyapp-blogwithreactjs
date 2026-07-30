@@ -15,6 +15,7 @@ import { CollectionBlockSettings } from "../../editor/blocks/CollectionBlock";
 import { ProductSliderBlockSettings } from "../../editor/blocks/ProductSliderBlock";
 import { CTAButtonBlockSettings } from "../../editor/blocks/CTAButtonBlock";
 import { HeroBlockSettings } from "../../editor/blocks/HeroBlock";
+import { ImageBlockSettings } from "../../editor/blocks/ImageBlock/index.jsx";
 import { VideoBlockSettings } from "../../editor/blocks/VideoBlock";
 import { SpacerBlockSettings } from "../../editor/blocks/SpacerBlock";
 
@@ -165,6 +166,7 @@ export default function SettingsControls({ block, onChange }) {
   if (type === "ProductSlider") return <ProductSliderBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "CTAButton") return <CTAButtonBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "HeroSection") return <HeroBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
+  if (type === "Image") return <ImageBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   if (type === "VideoEmbed" || type === "VideoBlock") return <VideoBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
   // Note: SpacerBlockSettings is the classic one; we use it for both variants
   if (type === "Spacer") return <SpacerBlockSettings block={settings} onUpdate={onChange} setBlock={onChange} />;
@@ -360,44 +362,6 @@ export default function SettingsControls({ block, onChange }) {
           type="color"
           value={settings.borderColor || "#eab308"}
           onChange={(val) => update("borderColor", val)}
-          autoComplete="off"
-        />
-      </div>
-    );
-  }
-
-  if (type === "Image") {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        <TextField
-          label="Image URL"
-          value={settings.src || ""}
-          onChange={(val) => update("src", val)}
-          autoComplete="off"
-          helpText="Or select from Shopify via the image picker (coming soon)"
-        />
-        <TextField
-          label="Alt Text"
-          value={settings.alt || ""}
-          onChange={(val) => update("alt", val)}
-          autoComplete="off"
-        />
-        <TextField
-          label="Caption"
-          value={settings.caption || ""}
-          onChange={(val) => update("caption", val)}
-          autoComplete="off"
-        />
-        <Select
-          label="Alignment"
-          options={["left", "center", "right"]}
-          value={settings.alignment || "center"}
-          onChange={(val) => update("alignment", val)}
-        />
-        <TextField
-          label="Link URL (optional)"
-          value={settings.linkUrl || ""}
-          onChange={(val) => update("linkUrl", val)}
           autoComplete="off"
         />
       </div>

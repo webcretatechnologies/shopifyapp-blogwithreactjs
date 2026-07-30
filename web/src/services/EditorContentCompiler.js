@@ -948,34 +948,41 @@ export class EditorContentCompiler {
     const alt = attrs.alt || "";
     const caption = attrs.caption || "";
     const width = attrs.width || "100%";
+    const height = attrs.height || "auto";
+    const objectFit = attrs.objectFit || "cover";
     const align = attrs.align || "center";
     const borderRadius = attrs.borderRadius || "0px";
     const linkUrl = attrs.linkUrl || "";
+    
+    const paddingMap = { none: '0', small: '16px', medium: '32px', large: '64px' };
+    const padding = paddingMap[attrs.padding || 'none'] || '0';
+    
+    const shadowMap = { 
+      none: 'none', 
+      soft: '0 4px 12px rgba(0,0,0,0.1)', 
+      medium: '0 8px 24px rgba(0,0,0,0.15)', 
+      strong: '0 12px 32px rgba(0,0,0,0.25)' 
+    };
+    const boxShadow = shadowMap[attrs.dropShadow || 'none'] || 'none';
 
     if (!src) {
       return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">Image not selected</div>`;
     }
 
     const escapedAlt = (alt || "").replace(/"/g, '&quot;');
-    let imgHtml = `<img src="${src}" alt="${escapedAlt}" style="width: 100%; max-width: 100%; height: auto; display: block; border-radius: ${borderRadius};" />`;
+    let imgHtml = `<img src="${src}" alt="${escapedAlt}" style="max-width: 100%; width: ${width}; height: ${height}; object-fit: ${objectFit}; display: block; border-radius: ${borderRadius}; box-shadow: ${boxShadow};" />`;
     if (linkUrl) {
       imgHtml = `<a href="${linkUrl}" style="display: block; text-decoration: none;">${imgHtml}</a>`;
     }
 
     const containerStyle = `display: flex; flex-direction: column; align-items: ${
       align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center"
-    }; width: 100%; margin: 20px 0;`;
+    }; text-align: ${align}; padding: ${padding}; box-sizing: border-box;`;
 
-    const imgWrapperStyle = `width: ${width}; max-width: 100%;`;
-
-    return `
-      <div style="${containerStyle}">
-        <div style="${imgWrapperStyle}">
-          ${imgHtml}
-        </div>
-        ${caption ? `<div style="text-align: center; font-size: 14px; color: #6d7175; margin-top: 8px; font-family: sans-serif;">${caption}</div>` : ""}
-      </div>
-    `;
+    return `<div style="${containerStyle}">
+      ${imgHtml}
+      ${caption ? `<div style="text-align: center; font-size: 14px; color: #6d7175; margin-top: 8px; font-family: sans-serif;">${caption}</div>` : ""}
+    </div>`;
   }
 
   static renderProductCard(attrs) {
