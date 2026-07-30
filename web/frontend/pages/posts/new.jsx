@@ -71,6 +71,10 @@ const legacyHtmlToAst = (html) => {
   
   const appendTextBlock = (contentHtmlStr) => {
     if (!contentHtmlStr || contentHtmlStr.trim() === "") return;
+    const cleanText = contentHtmlStr.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
+    const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(contentHtmlStr);
+    if (!cleanText && !containsMedia) return;
+
     const lastBlock = blocks[blocks.length - 1];
     if (lastBlock && (lastBlock.type === "RichText" || lastBlock.type === "text")) {
       lastBlock.type = "RichText";
@@ -564,7 +568,7 @@ export default function PostEditor() {
 
   const buildPayload = () => {
     // Both modes save storefront HTML by compiling the AST
-    const builderBlocks = useBuilderStore.getState().blocks;
+    const builderBlocks = useBuilderStore.getState().getBlocksAst();
     const finalAst = builderBlocks && builderBlocks.length > 0 ? builderBlocks : post.contentJson || [];
 
     const finalContentHtml = compileBlocksToHtml(finalAst);

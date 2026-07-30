@@ -14,6 +14,7 @@
 
 import { generateHTML } from "@tiptap/html";
 import { builderRichTextExtensions } from "../components/editor/richTextExtensions";
+import { formatPrice } from "./priceUtils";
 
 /**
  * CSS emitted once at the top of compiled output when at least one block
@@ -71,10 +72,17 @@ function injectBlockIdentity(html, block) {
     const skipKeys = ["content", "text", "code", "tableData"];
     for (const [key, value] of Object.entries(block.settings)) {
       if (skipKeys.includes(key)) continue;
+      if (value === null || value === undefined) continue;
+
+      const kebabKey = key.replace(/([A-Z])/g, "-$1").toLowerCase();
       if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        const kebabKey = key.replace(/([A-Z])/g, "-$1").toLowerCase();
         const safeVal = String(value).replace(/"/g, '&quot;');
         dataAttrs += ` data-${kebabKey}="${safeVal}"`;
+      } else if (typeof value === "object") {
+        try {
+          const jsonVal = JSON.stringify(value).replace(/"/g, '&quot;');
+          dataAttrs += ` data-${kebabKey}="${jsonVal}"`;
+        } catch (e) {}
       }
     }
   }
@@ -107,35 +115,44 @@ function compileCoreBlockHtml(type, settings, children) {
 
     case "RichText": {
       if (!settings.content) return "";
-      if (typeof settings.content === "string") return settings.content;
-      try {
-        return generateHTML(settings.content, builderRichTextExtensions());
-      } catch {
-        return "<p></p>";
+      let html = "";
+      if (typeof settings.content === "string") {
+        html = settings.content;
+      } else {
+        try {
+          html = generateHTML(settings.content, builderRichTextExtensions());
+        } catch {
+          return "";
+        }
       }
+      const cleanText = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
+      const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(html);
+      if (!cleanText && !containsMedia) return "";
+      return html;
     }
 
     case "Section": {
-      const bg = settings.backgroundColor || "#ffffff";
-      const pt = settings.paddingTop || "40px";
-      const pb = settings.paddingBottom || "40px";
-      const pl = settings.paddingLeft || "24px";
-      const pr = settings.paddingRight || "24px";
+      const bg = settings.backgroundColor;
+      const pt = settings.paddingTop || "0px";
+      const pb = settings.paddingBottom || "0px";
+      const pl = settings.paddingLeft || "0px";
+      const pr = settings.paddingRight || "0px";
       const maxW = settings.maxWidth || "100%";
       const br = settings.borderRadius || "0px";
       const innerHtml = children.map(compileSingleBlockToHtml).join("");
-      return `<section style="background-color: ${bg}; padding: ${pt} ${pr} ${pb} ${pl}; max-width: ${maxW}; border-radius: ${br}; margin: 0 auto 20px; box-sizing: border-box;">${innerHtml}</section>`;
+      const bgStyle = bg && bg !== "#ffffff" && bg !== "transparent" ? `background-color: ${bg};` : "";
+      return `<section style="${bgStyle} padding: ${pt} ${pr} ${pb} ${pl}; max-width: ${maxW}; border-radius: ${br}; margin: 0 auto 20px; box-sizing: border-box;">${innerHtml}</section>`;
     }
 
     case "ColumnLayout": {
       const gap = settings.gap || "16px";
       const innerHtml = children.map(compileSingleBlockToHtml).join("");
-      return `<div style="display: flex; gap: ${gap}; width: 100%; margin: 16px 0; box-sizing: border-box;" class="builder-column-layout">${innerHtml}</div>`;
+      return `<div style="display: flex; gap: ${gap}; width: 100%; margin: 16px 0; box-sizing: border-box; align-items: stretch;" class="builder-column-layout">${innerHtml}</div>`;
     }
 
     case "Column": {
       const innerHtml = children.map(compileSingleBlockToHtml).join("");
-      return `<div style="flex: 1; min-width: 0; box-sizing: border-box;" class="builder-column">${innerHtml}</div>`;
+      return `<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; box-sizing: border-box;" class="builder-column">${innerHtml}</div>`;
     }
 
     case "Divider": {
@@ -355,13 +372,15 @@ function compileCoreBlockHtml(type, settings, children) {
       const cols = settings.columns || 3;
       return `<div style="margin: 24px 0;">
         ${title ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: ${settings.titleAlign || 'left'};">${title}</h3>` : ''}
-        <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'};">
+        <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'}; align-items: stretch;">
           ${products.map(p => `
-            <div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; text-align: center; background: #fff;">
-              ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 180px; object-fit: contain; margin-bottom: 12px;" />` : ''}
-              <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
-              ${settings.showPrice && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 12px;">₹${p.price}</p>` : ''}
-              ${settings.showButton ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Add to Cart'}</button>` : ''}
+            <div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; text-align: center; background: #fff; display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box;">
+              <div>
+                ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 180px; object-fit: contain; margin-bottom: 12px;" />` : ''}
+                <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
+                ${settings.showPrice && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 12px;">₹${p.price}</p>` : ''}
+              </div>
+              ${settings.showButton ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer; margin-top: auto;">${settings.buttonText || 'Add to Cart'}</button>` : ''}
             </div>
           `).join('')}
         </div>
@@ -398,14 +417,14 @@ function compileCoreBlockHtml(type, settings, children) {
         }
       }
 
-      return `<div style="border: 1px solid ${borderColor}; border-radius: ${br}px; background-color: ${bg}; overflow: hidden; display: flex; flex-direction: ${isHorizontal ? 'row' : 'column'}; align-items: ${isCompact ? 'center' : 'stretch'}; padding: ${isCompact ? '12px' : '0'}; margin: 16px 0; box-sizing: border-box;" class="builder-product-card">
+      return `<div style="border: 1px solid ${borderColor}; border-radius: ${br}px; background-color: ${bg}; overflow: hidden; display: flex; flex-direction: ${isHorizontal ? 'row' : 'column'}; align-items: ${isCompact ? 'center' : 'stretch'}; padding: ${isCompact ? '12px' : '0'}; margin: 16px 0; box-sizing: border-box; height: 100%; flex: 1;" class="builder-product-card">
         ${imageHtml}
-        <div style="flex: 1; padding: ${isCompact ? '0 12px' : '16px'}; display: ${isCompact ? 'flex' : 'block'}; align-items: center; justify-content: space-between;">
+        <div style="flex: 1; padding: ${isCompact ? '0 12px' : '16px'}; display: flex; flex-direction: column; justify-content: space-between;">
           <div style="flex: 1;">
             <h4 style="margin: 0 0 8px; font-size: 16px; font-weight: 600; color: #202223;">${title}</h4>
             ${showPrice && price ? `<p style="margin: 0 0 12px; font-weight: 700; color: #008060;">${price}</p>` : ''}
           </div>
-          ${showButton ? `<a href="${settings.handle ? `/products/${settings.handle}` : '#'}" style="display: inline-block; background-color: ${buttonColor}; color: #ffffff; text-decoration: none; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center; width: ${!isHorizontal && !isCompact ? '100%' : 'auto'}; box-sizing: border-box;">${buttonText}</a>` : ''}
+          ${showButton ? `<a href="${settings.handle ? `/products/${settings.handle}` : '#'}" style="display: inline-block; background-color: ${buttonColor}; color: #ffffff; text-decoration: none; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center; width: ${!isHorizontal && !isCompact ? '100%' : 'auto'}; box-sizing: border-box; margin-top: auto;">${buttonText}</a>` : ''}
         </div>
       </div>`;
     }
@@ -413,12 +432,14 @@ function compileCoreBlockHtml(type, settings, children) {
     case "BuyButton": {
       const p = settings.product;
       if (!p) return "";
-      return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 16px; max-width: ${settings.maxWidth || '360px'}; margin: 16px 0;">
-        ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="width: ${settings.imageSize || '80px'}; height: auto; object-fit: contain;" />` : ''}
-        <div style="flex: 1;">
-          <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 4px;">${p.title}</h4>
-          ${settings.showPrice && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 8px;">₹${p.price}</p>` : ''}
-          <button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Add to Cart'}</button>
+      const currency = p.currency || "USD";
+      const formattedPrice = p.price ? (String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, currency)) : "";
+      return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 16px; max-width: ${settings.maxWidth || '360px'}; margin: 16px 0; box-sizing: border-box;">
+        ${p.image || p.featuredImage?.url ? `<img src="${p.image || p.featuredImage?.url}" alt="${p.title || ''}" style="width: ${settings.imageSize || '80px'}; height: auto; object-fit: contain; flex-shrink: 0;" />` : ''}
+        <div style="flex: 1; min-width: 0;">
+          <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 4px; color: #202223;">${p.title || ''}</h4>
+          ${settings.showPrice && formattedPrice ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 8px;">${formattedPrice}</p>` : ''}
+          <a href="${p.handle ? `/products/${p.handle}` : '#'}" style="display: inline-block; background: ${settings.buttonColor || '#008060'}; color: #ffffff; text-decoration: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center; box-sizing: border-box; width: 100%;">${settings.buttonText || 'Add to Cart'}</a>
         </div>
       </div>`;
     }

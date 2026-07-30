@@ -117,13 +117,16 @@ export default function DragDropBuilderContainer({
     }
   };
 
-// Global pointer Y tracker for precise Y coordinates during drag events
-if (typeof window !== "undefined" && !window.__lastPointerYTracker) {
-  window.__lastPointerYTracker = true;
-  window.addEventListener("pointermove", (e) => { window.__lastPointerY = e.clientY; }, { passive: true });
+// Global pointer X/Y tracker for precise coordinates during drag events
+if (typeof window !== "undefined" && !window.__lastPointerTracker) {
+  window.__lastPointerTracker = true;
+  window.addEventListener("pointermove", (e) => { 
+    window.__lastPointerX = e.clientX; 
+    window.__lastPointerY = e.clientY; 
+  }, { passive: true });
 }
 
-  // Custom collision detection to guarantee a drop target for external blocks
+  // Custom collision detection to guarantee a drop target for external & internal blocks
   const customCollisionDetection = (args) => {
     // 1. Safely extract all droppable container objects into a JS Array
     const allContainers = Array.from(
@@ -135,34 +138,57 @@ if (typeof window !== "undefined" && !window.__lastPointerYTracker) {
       (c) => c && c.id !== "canvas-root" && !c.disabled
     );
 
-    // Get pointer Y coordinate with 3-tier fallback (args pointer -> active item center -> global pointer position)
+    // Get pointer X and Y coordinates with 3-tier fallbacks
+    const pointerX =
+      args.pointerCoordinates?.x ||
+      (typeof window !== "undefined" ? window.__lastPointerX : 0) || 0;
+
     const pointerY =
       args.pointerCoordinates?.y ||
       getActiveCenterY(args.active) ||
       (typeof window !== "undefined" ? window.__lastPointerY : 0) || 0;
 
-    if (blockContainers.length > 0 && pointerY > 0) {
-      // 3. Direct Y-hit: pointer is inside a block's bounding rect
+    if (blockContainers.length > 0 && (pointerX > 0 || pointerY > 0)) {
+      const directHits = [];
+
+      // 3. Direct 2D (X/Y) hit: check if pointer is inside a block's bounding rect
       for (const c of blockContainers) {
         const node = c.node?.current || document.getElementById(c.id);
         const domRect = node?.getBoundingClientRect?.() || c.rect?.current;
-        if (domRect && domRect.height > 0) {
-          if (pointerY >= domRect.top && pointerY <= domRect.bottom) {
-            useBuilderStore.getState().setLastDropTarget({ id: c.id, rect: domRect });
-            return [{ id: c.id }];
+        if (domRect && domRect.width > 0 && domRect.height > 0) {
+          if (
+            pointerX >= domRect.left &&
+            pointerX <= domRect.right &&
+            pointerY >= domRect.top &&
+            pointerY <= domRect.bottom
+          ) {
+            const area = domRect.width * domRect.height;
+            directHits.push({ container: c, rect: domRect, area });
           }
         }
       }
 
-      // 4. Closest vertical center fallback
+      // If we have direct 2D hits, pick the SMALLEST container (deepest nested child, e.g. Column over Section)
+      if (directHits.length > 0) {
+        directHits.sort((a, b) => a.area - b.area);
+        const best = directHits[0];
+        useBuilderStore.getState().setLastDropTarget({ id: best.container.id, rect: best.rect });
+        return [{ id: best.container.id }];
+      }
+
+      // 4. Closest 2D center fallback (Euclidean distance)
       let closestContainer = null;
       let closestRect = null;
       let minDistance = Infinity;
+
       for (const c of blockContainers) {
         const node = c.node?.current || document.getElementById(c.id);
         const domRect = node?.getBoundingClientRect?.() || c.rect?.current;
-        if (domRect && domRect.height > 0) {
-          const dist = Math.abs(pointerY - (domRect.top + domRect.height / 2));
+        if (domRect && domRect.width > 0 && domRect.height > 0) {
+          const centerX = domRect.left + domRect.width / 2;
+          const centerY = domRect.top + domRect.height / 2;
+          const dist = Math.hypot(pointerX - centerX, pointerY - centerY);
+
           if (dist < minDistance) {
             minDistance = dist;
             closestContainer = c;
@@ -170,6 +196,7 @@ if (typeof window !== "undefined" && !window.__lastPointerYTracker) {
           }
         }
       }
+
       if (closestContainer) {
         useBuilderStore.getState().setLastDropTarget({ id: closestContainer.id, rect: closestRect });
         return [{ id: closestContainer.id }];

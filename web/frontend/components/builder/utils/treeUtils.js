@@ -35,30 +35,59 @@ export function getTreeIds(blocksById, rootIds) {
 export function resolveDropTarget(blocksById, rootIds, activeId, overId, overIsSection, isBelow = false) {
   if (activeId === overId) return null;
 
-  if (overIsSection) {
-    // Drop as first child of the section
-    return { newParentId: overId, newIndex: 0 };
+  const overBlock = blocksById[overId];
+
+  // 1. Check if the over target is a container block (Section, Column, ColumnLayout)
+  const isContainer = 
+    overIsSection || 
+    overBlock?.type === "Section" || 
+    overBlock?.type === "Column" || 
+    overBlock?.type === "ColumnLayout";
+
+  if (isContainer && overBlock) {
+    // If dropping onto a ColumnLayout, automatically delegate to its first column child
+    if (overBlock.type === "ColumnLayout") {
+      const firstColId = overBlock.childrenIds?.[0];
+      if (firstColId) {
+        const colBlock = blocksById[firstColId];
+        return { 
+          newParentId: firstColId, 
+          newIndex: isBelow ? (colBlock?.childrenIds?.length || 0) : 0 
+        };
+      }
+    }
+
+    // Direct drop onto a Section or Column container
+    const children = overBlock.childrenIds || [];
+    return {
+      newParentId: overId,
+      newIndex: isBelow ? children.length : 0
+    };
   }
 
-  // Drop after the over block, at the same level
-  const overBlock = blocksById[overId];
+  // 2. Drop relative to a content block (sibling insertion)
   if (!overBlock) return null;
   
   const parentId = overBlock.parentId;
-  const siblings = parentId ? blocksById[parentId].childrenIds : rootIds;
-  let overIndex = siblings.indexOf(overId);
+  const parentBlock = parentId ? blocksById[parentId] : null;
 
-  // If dropping below the center of the block, we insert after it
-  // This is particularly critical for dropping new blocks at the end of a list.
+  // Prevent dropping non-Column blocks as direct siblings of a Column inside ColumnLayout
+  if (parentBlock?.type === "ColumnLayout" && overBlock.type === "Column") {
+    // Drop inside the target column instead
+    const colChildren = overBlock.childrenIds || [];
+    return {
+      newParentId: overId,
+      newIndex: isBelow ? colChildren.length : 0
+    };
+  }
+
+  const siblings = parentId ? blocksById[parentId]?.childrenIds || [] : rootIds;
+  let overIndex = siblings.indexOf(overId);
+  if (overIndex === -1) overIndex = siblings.length;
+
   if (isBelow) {
     overIndex += 1;
   }
 
-  // When we use overIndex directly:
-  // - If dragging down (activeIndex < overIndex), removing activeId shrinks the array before overIndex.
-  //   Inserting at overIndex then places it exactly where we want (effectively swapping or shifting).
-  // - If dragging up (activeIndex > overIndex), removing activeId doesn't affect indices before it.
-  //   Inserting at overIndex places it exactly where overId was, pushing overId down.
-  // This perfectly matches dnd-kit's SortableContext swap behavior.
   return { newParentId: parentId, newIndex: overIndex };
 }

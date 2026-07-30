@@ -32,6 +32,10 @@ export class ShopifyArticleParser {
 
     const appendTextBlock = (contentHtmlStr) => {
       if (!contentHtmlStr || contentHtmlStr.trim() === "") return;
+      const cleanText = contentHtmlStr.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
+      const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(contentHtmlStr);
+      if (!cleanText && !containsMedia) return;
+
       const lastBlock = blocks[blocks.length - 1];
       if (lastBlock && lastBlock.type === "text") {
         lastBlock.data = (lastBlock.data || "") + contentHtmlStr;

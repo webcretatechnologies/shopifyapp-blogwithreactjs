@@ -38,25 +38,29 @@ export const useBuilderStore = create((set, get) => ({
     } catch {
       created = { type, settings: {}, children: [] };
     }
-    const block = {
-      id: nanoid(),
-      type: created.type,
-      settings: { ...created.settings, ...defaultSettings },
-      childrenIds: [],
-      parentId: parentId,
-    };
     
+    // Override with any explicit settings
+    created.settings = { ...created.settings, ...defaultSettings };
+    // Ensure the root node gets a fresh ID if createBlock didn't supply one, or override it.
+    created.id = nanoid();
+
+    // Use normalizeAst to correctly flatten this block and all its default children
+    const { blocksById: newBlocks, rootIds } = normalizeAst([created], parentId);
+    const newBlockId = rootIds[0];
+
     get()._commit((draft) => {
-      draft.blocksById[block.id] = block;
+      // Merge all newly created blocks (the parent + its children) into the store
+      Object.assign(draft.blocksById, newBlocks);
+      
       const targetArr = parentId ? draft.blocksById[parentId].childrenIds : draft.rootIds;
       if (index === null || index === undefined || index >= targetArr.length) {
-        targetArr.push(block.id);
+        targetArr.push(newBlockId);
       } else {
-        targetArr.splice(index, 0, block.id);
+        targetArr.splice(index, 0, newBlockId);
       }
     });
-    set({ selectedBlockId: block.id });
-    return block.id;
+    set({ selectedBlockId: newBlockId });
+    return newBlockId;
   },
 
   deleteBlock(id) {

@@ -261,9 +261,9 @@ export class EditorContentCompiler {
         compiledHtml = `<div style="padding: 16px; border: 1px dashed red; color: red;">Error rendering section: ${type}</div>`;
       }
 
-      // Replace the inner HTML of the wrapper div
+      // Replace the wrapper div with the fully compiled block HTML to prevent double borders
       if (compiledHtml !== null) {
-        $el.html(compiledHtml);
+        $el.replaceWith(compiledHtml);
       }
     }
 
@@ -1032,14 +1032,14 @@ export class EditorContentCompiler {
       : "";
 
     const buttonHtml = showButton
-      ? `<a href="${productUrl}" style="display: ${layout === "vertical" ? "block" : "inline-block"}; background: ${buttonColor}; color: #ffffff; text-decoration: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center;">${escapeHtml(buttonText)}</a>`
+      ? `<a href="${productUrl}" style="display: ${layout === "vertical" ? "block" : "inline-block"}; background: ${buttonColor}; color: #ffffff; text-decoration: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center; margin-top: auto;">${escapeHtml(buttonText)}</a>`
       : "";
 
     return `
-      <div style="display: flex; flex-direction: ${isHorizontal ? "row" : "column"}; flex-wrap: wrap; ${isCompact ? "align-items: center;" : ""} border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; background: ${backgroundColor}; overflow: hidden; margin: 16px 0; font-family: sans-serif;">
+      <div style="display: flex; flex-direction: ${isHorizontal ? "row" : "column"}; height: 100%; flex: 1; ${isCompact ? "align-items: center;" : ""} border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; background: ${backgroundColor}; overflow: hidden; margin: 16px 0; font-family: sans-serif; box-sizing: border-box;">
         ${imageHtml}
-        <div style="flex: 1; min-width: 200px; padding: 16px; ${isCompact ? "display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;" : ""}">
-          <div>
+        <div style="flex: 1; min-width: 200px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between;">
+          <div style="flex: 1;">
             <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;"><a href="${productUrl}" style="color: inherit; text-decoration: none;">${escapeHtml(title)}</a></h3>
             ${priceHtml}
           </div>
