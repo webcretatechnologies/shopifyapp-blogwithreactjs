@@ -15,6 +15,10 @@ export function ImageBuilderPreview({ block }) {
           alignItems: "center",
           justifyContent: "center",
           color: "#6d7175",
+          backgroundColor: "#f4f6f8",
+          border: "1px dashed #c9cccf",
+          borderRadius: "4px",
+          boxSizing: "border-box",
           width: s.width || "100%",
           margin: s.alignment === "center" ? "0 auto" : s.alignment === "right" ? "0 0 0 auto" : "0",
         }}

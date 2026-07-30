@@ -30,6 +30,10 @@ export function VideoBlockPreview({ block }) {
         justifyContent: 'center',
         gap: '8px',
         color: '#6d7175',
+        backgroundColor: '#f4f6f8',
+        border: '1px dashed #c9cccf',
+        borderRadius: '4px',
+        boxSizing: 'border-box'
       }}>
         <span style={{ fontSize: '32px' }}>▶️</span>
         <span style={{ fontSize: '13px' }}>Paste a YouTube or Vimeo URL in settings</span>

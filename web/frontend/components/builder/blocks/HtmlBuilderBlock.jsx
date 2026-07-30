@@ -9,15 +9,22 @@ export function HtmlBuilderPreview({ block }) {
     return (
       <div
         style={{
-          padding: "8px 0",
+          padding: "24px",
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
+          justifyContent: "center",
           gap: "8px",
           color: "#6d7175",
+          backgroundColor: "#f4f6f8",
+          border: "1px dashed #c9cccf",
+          borderRadius: "4px",
+          width: "100%",
+          boxSizing: "border-box"
         }}
       >
         <Icon source={CodeAddIcon} color="subdued" />
-        <span style={{ fontSize: "13px" }}>Empty HTML block</span>
+        <span style={{ fontSize: "13px", fontWeight: 500 }}>Empty HTML block</span>
       </div>
     );
   }

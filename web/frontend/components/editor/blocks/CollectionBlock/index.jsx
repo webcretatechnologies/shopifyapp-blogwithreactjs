@@ -26,6 +26,7 @@ export function CollectionBlockPreview({ block }) {
     return (
       <div style={{
         padding: '24px 16px', textAlign: 'center',
+        backgroundColor: '#f4f6f8', border: '1px dashed #c9cccf', borderRadius: '4px', boxSizing: 'border-box'
       }}>
         <div style={{ fontSize: '32px', marginBottom: '8px' }}>📦</div>
         <Text variant="bodyMd" tone="subdued">Select a collection in the settings panel</Text>
