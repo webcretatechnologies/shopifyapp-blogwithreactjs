@@ -195,6 +195,8 @@ export class EditorContentCompiler {
             compiledHtml = this.renderSpacer(attrs);
             break;
           case "videoBlock":
+          case "VideoBlock":
+          case "VideoEmbed":
             compiledHtml = this.renderVideo(attrs);
             break;
           case "heroBlock":

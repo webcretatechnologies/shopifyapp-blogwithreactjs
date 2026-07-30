@@ -201,9 +201,18 @@ function compileCoreBlockHtml(type, settings, children) {
     case "VideoEmbed": {
       const url = settings.url || "";
       if (!url) return "";
+      
+      let embedUrl = url;
+      const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+      if (ytMatch) embedUrl = `https://www.youtube.com/embed/${ytMatch[1]}`;
+      else {
+        const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+        if (vimeoMatch) embedUrl = `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+      }
+
       const maxW = settings.maxWidth || "100%";
       return `<div style="max-width: ${maxW}; margin: 16px auto;">
-        <iframe src="${url}" style="width: 100%; aspect-ratio: 16/9; border: none; border-radius: 8px;" allowfullscreen></iframe>
+        <iframe src="${embedUrl}" style="width: 100%; aspect-ratio: 16/9; border: none; border-radius: 8px;" allowfullscreen></iframe>
       </div>`;
     }
 
