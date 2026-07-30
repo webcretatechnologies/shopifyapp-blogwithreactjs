@@ -408,7 +408,7 @@ export default function SettingsControls({ block, onChange }) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <TextField
-          label="HTML / Liquid Code"
+          label="HTML Code"
           value={settings.code || ""}
           onChange={(val) => update("code", val)}
           multiline={6}

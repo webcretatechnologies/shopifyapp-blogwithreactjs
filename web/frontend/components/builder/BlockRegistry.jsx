@@ -284,7 +284,7 @@ export const BlockRegistry = {
   },
 
   Html: {
-    label: "HTML / Liquid",
+    label: "HTML",
     icon: <Icon source={CodeAddIcon} />,
     category: "content",
     allowsChildren: false,
