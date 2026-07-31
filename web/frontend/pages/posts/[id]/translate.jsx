@@ -486,7 +486,7 @@ export default function PostTranslationPage() {
       const res = await fetch(`/api/posts/${id}/translations`);
       const data = await res.json();
       setTranslations(data.translations || []);
-    } catch {}
+    } catch { }
   }, [id]);
 
   const loadLocales = useCallback(async () => {
@@ -501,7 +501,7 @@ export default function PostTranslationPage() {
       if (mappedLocales.length > 0) {
         setSelectedLocale(mappedLocales[0].value);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
@@ -511,7 +511,7 @@ export default function PostTranslationPage() {
         const data = await res.json();
         const loadedPost = data.post;
         setPost(loadedPost);
-        
+
         // Extract original structured blocks
         const blocks = extractBlocksFromPost(loadedPost);
         setOriginalBlocks(blocks);
@@ -529,7 +529,7 @@ export default function PostTranslationPage() {
   const hydrateBlockTranslationsFromHtml = useCallback((translatedHtml, blocks) => {
     if (!translatedHtml || blocks.length === 0) return {};
     const parsedTranslatedBlocks = extractBlocksFromPost({ contentHtml: translatedHtml });
-    
+
     const initialMap = {};
     let transPIdx = 0;
     let transHIdx = 0;
@@ -617,7 +617,7 @@ export default function PostTranslationPage() {
   const handleBlockTranslationChange = (blockId, fieldPath, value) => {
     setBlockTranslations((prev) => {
       const current = prev[blockId] ? { ...prev[blockId] } : {};
-      
+
       if (fieldPath.includes(".")) {
         const [parentKey, indexStr, childKey] = fieldPath.split(".");
         const idx = parseInt(indexStr, 10);
@@ -714,9 +714,9 @@ export default function PostTranslationPage() {
 
     if (window.shopify?.saveBar) {
       if (isDirty) {
-        window.shopify.saveBar.show(saveBarId).catch(() => {});
+        window.shopify.saveBar.show(saveBarId).catch(() => { });
       } else {
-        window.shopify.saveBar.hide(saveBarId).catch(() => {});
+        window.shopify.saveBar.hide(saveBarId).catch(() => { });
       }
     }
   }, [isDirty]);
@@ -724,7 +724,7 @@ export default function PostTranslationPage() {
   useEffect(() => {
     return () => {
       if (window.shopify?.saveBar) {
-        window.shopify.saveBar.hide(saveBarId).catch(() => {});
+        window.shopify.saveBar.hide(saveBarId).catch(() => { });
       }
     };
   }, []);
@@ -748,7 +748,7 @@ export default function PostTranslationPage() {
       setToast({ content: "✅ Translation saved successfully" });
       await loadTranslations();
       if (window.shopify?.saveBar) {
-        window.shopify.saveBar.hide(saveBarId).catch(() => {});
+        window.shopify.saveBar.hide(saveBarId).catch(() => { });
       }
     } catch {
       setToast({ content: "❌ Failed to save translation", error: true });
@@ -897,7 +897,7 @@ export default function PostTranslationPage() {
                 </InlineStack>
 
                 {/* Progress Bar */}
-                <Box paddingBlockStart="100">
+                <Box paddingBlockStart="200">
                   <ProgressBar progress={completionStats.percentage} size="small" tone={completionStats.percentage === 100 ? "success" : "primary"} />
                 </Box>
 
@@ -912,31 +912,29 @@ export default function PostTranslationPage() {
 
           {/* Sticky Column Headers for Visual & Contextual Clarity */}
           <Layout.Section>
-            <Box
-              padding="300"
-              background="bg-surface-secondary"
-              borderRadius="200"
-              borderWidth="025"
-              borderColor="border-secondary"
-            >
+            <Card padding="300">
               <InlineGrid columns={["oneHalf", "oneHalf"]} gap="400" alignItems="center">
-                <InlineStack gap="200" blockAlign="center">
-                  <Icon source={CheckCircleIcon} tone="subdued" />
-                  <Text variant="headingSm" as="h3" fontWeight="bold">
-                    Original (English)
-                  </Text>
+                <InlineStack align="space-between" blockAlign="center">
+                  <InlineStack gap="200" blockAlign="center">
+                    <Icon source={CheckCircleIcon} tone="subdued" />
+                    <Text variant="headingSm" as="h3" fontWeight="bold">
+                      Original (English)
+                    </Text>
+                  </InlineStack>
                   <Badge tone="info">Read-only Reference</Badge>
                 </InlineStack>
 
-                <InlineStack gap="200" blockAlign="center">
-                  <Icon source={LanguageIcon} tone="success" />
-                  <Text variant="headingSm" as="h3" fontWeight="bold">
-                    Translated ({selectedLocaleObj?.label || selectedLocale || "Target Language"})
-                  </Text>
+                <InlineStack align="space-between" blockAlign="center">
+                  <InlineStack gap="200" blockAlign="center">
+                    <Icon source={LanguageIcon} tone="success" />
+                    <Text variant="headingSm" as="h3" fontWeight="bold">
+                      Translated ({selectedLocaleObj?.label || selectedLocale || "Target Language"})
+                    </Text>
+                  </InlineStack>
                   <Badge tone="success">Editable Fields</Badge>
                 </InlineStack>
               </InlineGrid>
-            </Box>
+            </Card>
           </Layout.Section>
 
           {/* Core Metadata Fields (Title & Excerpt) */}
