@@ -787,7 +787,7 @@ router.get("/shopify/locales", async (req, res) => {
       }
     `);
 
-    const locales = (result.data?.shopLocales || []).filter(l => l.published);
+    const locales = (result.data?.shopLocales || []).filter(l => l.published && !l.primary);
     res.json({ locales });
   } catch (err) {
     console.error("GET /api/posts/shopify/locales error:", err);

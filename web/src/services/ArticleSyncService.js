@@ -868,6 +868,9 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   // Write lightweight v2 sync marker metafield
   await writeSyncMarker(graphqlClient, shopifyLink.shopifyBlogId, articleId, baseline, post.id);
 
+  // Sync any saved translations for this post to Shopify
+  await syncPostTranslationsToShopify(post.id, validSession, graphqlClient);
+
   await logSyncEvent({
     shopId: post.shopId,
     postId: post.id,
@@ -879,6 +882,96 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   });
 
   return { success: true, articleId, syncedAt: new Date(), revision: nextRevision };
+}
+
+/**
+ * Sync saved post translations to Shopify via GraphQL translationsRegister mutation
+ */
+export async function syncPostTranslationsToShopify(postId, validSession, graphqlClient) {
+  try {
+    const shopifyArticle = await prisma.shopifyArticle.findUnique({
+      where: { postId },
+    });
+    if (!shopifyArticle || !shopifyArticle.shopifyArticleId) return;
+
+    const translations = await prisma.postTranslation.findMany({
+      where: { postId },
+    });
+    if (!translations || translations.length === 0) return;
+
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      include: {
+        shop: true,
+        products: { include: { product: true }, orderBy: { position: "asc" } },
+      },
+    });
+
+    const articleGid = `gid://shopify/Article/${shopifyArticle.shopifyArticleId}`;
+
+    const queryRes = await graphqlClient.request(`
+      query GetTranslatableResource($resourceId: ID!) {
+        translatableResource(resourceId: $resourceId) {
+          resourceId
+          translatableContent {
+            key
+            value
+            digest
+            locale
+          }
+        }
+      }
+    `, { variables: { resourceId: articleGid } });
+
+    const translatableContent = queryRes.data?.translatableResource?.translatableContent || [];
+    const getDigest = (key) => translatableContent.find(c => c.key === key)?.digest;
+
+    for (const translation of translations) {
+      const translationsInput = [];
+      const pushField = (key, val) => {
+        const digest = getDigest(key);
+        if (digest && val) {
+          translationsInput.push({
+            key,
+            value: val,
+            locale: translation.locale,
+            translatableContentDigest: digest,
+          });
+        }
+      };
+
+      let translatedStorefrontHtml = translation.contentHtml || "";
+      if (post) {
+        translatedStorefrontHtml = await buildStorefrontHtmlForPost(
+          post,
+          translation.contentHtml || "",
+          validSession,
+          graphqlClient
+        );
+      }
+
+      pushField("title", translation.title);
+      pushField("body_html", translatedStorefrontHtml);
+      pushField("summary_html", translation.excerpt);
+      pushField("meta_title", translation.metaTitle);
+      pushField("meta_description", translation.metaDescription);
+
+      if (translationsInput.length > 0) {
+        await graphqlClient.request(`
+          mutation registerTranslations($resourceId: ID!, $translations: [TranslationInput!]!) {
+            translationsRegister(resourceId: $resourceId, translations: $translations) {
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `, { variables: { resourceId: articleGid, translations: translationsInput } });
+      }
+    }
+  } catch (err) {
+    console.warn("[ArticleSyncService] Error syncing translations to Shopify:", err.message);
+  }
 }
 
 /**
@@ -1524,6 +1617,7 @@ function startReconciliationScheduler(intervalMinutes = RECONCILE_INTERVAL_MINUT
 export const ArticleSyncService = {
   buildStorefrontHtmlForPost,
   pushPostToShopify,
+  syncPostTranslationsToShopify,
   syncAfterLocalEdit,
   handleArticleWebhook,
   reconcilePost,
