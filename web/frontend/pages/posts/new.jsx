@@ -390,6 +390,9 @@ export default function PostEditor() {
   const [tagInput, setTagInput] = useState("");
   const [shopifyBlogId, setShopifyBlogId] = useState("");
   const [shopifyBlogs, setShopifyBlogs] = useState([]);
+  const [quickCreateModalOpen, setQuickCreateModalOpen] = useState(false);
+  const [newBlogTitle, setNewBlogTitle] = useState("");
+  const [isCreatingBlog, setIsCreatingBlog] = useState(false);
   const [features, setFeatures] = useState({});
   const [isLoading, setIsLoading] = useState(isEditing);
   const [isSaving, setIsSaving] = useState(false);
@@ -545,6 +548,7 @@ export default function PostEditor() {
     }
     if (!originalPost) return false;
     const o = originalPost;
+    const origBlogId = o.shopifyArticle?.shopifyBlogId || o.blogId || "";
     const isPostDirty =
       isFieldDirty(post.title, o.title) ||
       isFieldDirty(post.slug, o.slug) ||
@@ -552,7 +556,7 @@ export default function PostEditor() {
       isFieldDirty(post.author, o.author) ||
       isFieldDirty(post.featuredImage, o.featuredImage) ||
       isFieldDirty(post.customCss, o.customCss) ||
-      isFieldDirty(shopifyBlogId, o.shopifyArticle?.shopifyBlogId) ||
+      isFieldDirty(shopifyBlogId, origBlogId) ||
       isFieldDirty(seoData.metaTitle, o.metaTitle) ||
       isFieldDirty(seoData.metaDescription, o.metaDescription) ||
       isFieldDirty(seoData.canonicalUrl, o.canonicalUrl) ||
@@ -734,7 +738,14 @@ export default function PostEditor() {
          navigate(`/posts/${data.post.id}/edit`);
       } else {
          setHasUnsavedChanges(false);
-         setOriginalPost(payload);
+         setOriginalPost({
+           ...payload,
+           shopifyArticle: { shopifyBlogId }
+         });
+         setOriginalContentHtml(payload.contentHtml || "");
+         if (window.shopify?.saveBar) {
+           try { await window.shopify.saveBar.hide(saveBarId); } catch (e) {}
+         }
       }
       return data.post?.id || id;
     } catch (err) {
@@ -894,7 +905,46 @@ export default function PostEditor() {
   const blogOptions = [
     { label: "— Select a blog —", value: "" },
     ...shopifyBlogs.map((b) => ({ label: b.title, value: String(b.id) })),
+    { label: "+ Create a new blog", value: "CREATE_NEW" }
   ];
+
+  const handleBlogChange = (val) => {
+    if (val === "CREATE_NEW") {
+      setNewBlogTitle("");
+      setQuickCreateModalOpen(true);
+    } else {
+      setShopifyBlogId(val);
+    }
+  };
+
+  const handleQuickCreateBlog = async () => {
+    if (!newBlogTitle.trim()) return;
+    setIsCreatingBlog(true);
+    try {
+      const res = await fetch("/api/posts/shopify/blogs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newBlogTitle,
+          commentPolicy: "MODERATED",
+          templateSuffix: ""
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.blog?.id) {
+        setShopifyBlogs(prev => [...prev, { id: data.blog.id, title: newBlogTitle }]);
+        setShopifyBlogId(String(data.blog.id));
+        setToast({ content: `Created blog '${newBlogTitle}'` });
+        setQuickCreateModalOpen(false);
+      } else {
+        setToast({ content: data.error || "Failed to create blog", error: true });
+      }
+    } catch (err) {
+      setToast({ content: "Network error", error: true });
+    } finally {
+      setIsCreatingBlog(false);
+    }
+  };
 
 
   if (isLoading) {
@@ -918,16 +968,18 @@ export default function PostEditor() {
 
   return (
     <Frame>
-      <ui-save-bar id={saveBarId}>
-        <button
-          variant="primary"
-          onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}
-          loading={isSavingSaveBar ? "" : undefined}
-        >
-          Save
-        </button>
-        <button onClick={handleDiscard}>Discard</button>
-      </ui-save-bar>
+      {isDirty && (
+        <ui-save-bar id={saveBarId}>
+          <button
+            variant="primary"
+            onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}
+            loading={isSavingSaveBar ? "" : undefined}
+          >
+            Save
+          </button>
+          <button onClick={handleDiscard}>Discard</button>
+        </ui-save-bar>
+      )}
       <TitleBar title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}>
         <button variant="breadcrumb" onClick={() => navigate("/")}>
           Articles
@@ -973,8 +1025,37 @@ export default function PostEditor() {
         )}
       </TitleBar>
       {toast && (
-        <Toast content={toast.content} onDismiss={() => setToast(null)} />
+        <Toast content={toast.content} error={toast.error} onDismiss={() => setToast(null)} />
       )}
+
+      <Modal
+        open={quickCreateModalOpen}
+        onClose={() => setQuickCreateModalOpen(false)}
+        title="Create a new blog"
+        primaryAction={{
+          content: 'Create',
+          onAction: handleQuickCreateBlog,
+          loading: isCreatingBlog,
+          disabled: !newBlogTitle.trim()
+        }}
+        secondaryActions={[
+          {
+            content: 'Cancel',
+            onAction: () => setQuickCreateModalOpen(false),
+          },
+        ]}
+      >
+        <Modal.Section>
+          <TextField
+            label="Blog title"
+            value={newBlogTitle}
+            onChange={setNewBlogTitle}
+            autoComplete="off"
+            autoFocus
+          />
+        </Modal.Section>
+      </Modal>
+
       <Page
         fullWidth
         title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
@@ -1387,7 +1468,7 @@ export default function PostEditor() {
                       label="Blog"
                       options={blogOptions}
                       value={shopifyBlogId}
-                      onChange={setShopifyBlogId}
+                      onChange={handleBlogChange}
                     />
                     <BlockStack gap="200">
                       <Text variant="bodyMd" fontWeight="medium">Tags</Text>

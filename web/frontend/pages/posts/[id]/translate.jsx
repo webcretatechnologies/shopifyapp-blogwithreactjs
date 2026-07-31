@@ -825,23 +825,25 @@ export default function PostTranslationPage() {
         <Toast content={toast.content} error={toast.error} onDismiss={() => setToast(null)} />
       )}
 
-      <ui-save-bar id={saveBarId}>
-        <button variant="primary" onClick={handleSave} loading={isSaving ? "" : undefined}>
-          Save
-        </button>
-        <button
-          onClick={() => {
-            const found = translations.find((t) => t.locale === selectedLocale);
-            setTranslatedTitle(found?.title || "");
-            setTranslatedExcerpt(found?.excerpt || "");
-            setTranslatedContent(found?.contentHtml || "");
-            setTranslatedMetaTitle(found?.metaTitle || "");
-            setTranslatedMetaDesc(found?.metaDescription || "");
-          }}
-        >
-          Discard
-        </button>
-      </ui-save-bar>
+      {isDirty && (
+        <ui-save-bar id={saveBarId}>
+          <button variant="primary" onClick={handleSave} loading={isSaving ? "" : undefined}>
+            Save
+          </button>
+          <button
+            onClick={() => {
+              const found = translations.find((t) => t.locale === selectedLocale);
+              setTranslatedTitle(found?.title || "");
+              setTranslatedExcerpt(found?.excerpt || "");
+              setTranslatedContent(found?.contentHtml || "");
+              setTranslatedMetaTitle(found?.metaTitle || "");
+              setTranslatedMetaDesc(found?.metaDescription || "");
+            }}
+          >
+            Discard
+          </button>
+        </ui-save-bar>
+      )}
 
       <Page
         backAction={{
