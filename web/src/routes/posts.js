@@ -80,11 +80,11 @@ router.get("/", async (req, res) => {
       where.shopifyArticle = null;
     }
 
-    const orderBy = {};
+    const orderBy = [];
     if (sortKey) {
-      orderBy[sortKey] = sortDirection === "asc" ? "asc" : "desc";
+      orderBy.push({ [sortKey]: sortDirection === "asc" ? "asc" : "desc" });
     } else {
-      orderBy.createdAt = "desc";
+      orderBy.push({ createdAt: "desc" });
     }
 
     const [posts, total] = await Promise.all([

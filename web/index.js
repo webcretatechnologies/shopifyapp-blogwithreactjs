@@ -394,6 +394,10 @@ app.get("/api/shop/extension-status", async (_req, res) => {
 // Posts (blog articles)
 app.use("/api/posts", postRoutes);
 
+// Comments
+import commentRoutes from "./src/routes/comments.js";
+app.use("/api/comments", commentRoutes);
+
 // Settings
 app.use("/api/settings", settingsRoutes);
 

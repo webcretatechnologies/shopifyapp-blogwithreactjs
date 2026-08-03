@@ -75,6 +75,7 @@ const parseTags = (input) => {
 
 
 function PostActionPopover({ post, onDelete }) {
+  const navigate = useNavigate();
   const [popoverActive, setPopoverActive] = useState(false);
 
   const togglePopoverActive = useCallback(
@@ -91,6 +92,25 @@ function PostActionPopover({ post, onDelete }) {
     />
   );
 
+  const actionItems = [];
+  if (post?.shopifyArticle?.shopifyArticleId) {
+    actionItems.push({
+      content: "Manage comments",
+      onAction: () => {
+        togglePopoverActive();
+        navigate(`/comments?article_id=${post.shopifyArticle.shopifyArticleId}`);
+      },
+    });
+  }
+  actionItems.push({
+    content: "Delete",
+    destructive: true,
+    onAction: () => {
+      togglePopoverActive();
+      onDelete();
+    },
+  });
+
   return (
     <Popover
       active={popoverActive}
@@ -101,16 +121,7 @@ function PostActionPopover({ post, onDelete }) {
     >
       <ActionList
         actionRole="menuitem"
-        items={[
-          {
-            content: "Delete",
-            destructive: true,
-            onAction: () => {
-              togglePopoverActive();
-              onDelete();
-            },
-          },
-        ]}
+        items={actionItems}
       />
     </Popover>
   );
@@ -412,6 +423,10 @@ export default function Articles() {
           {
             content: "Manage blogs",
             onAction: () => navigate("/blogs"),
+          },
+          {
+            content: "Manage comments",
+            onAction: () => navigate("/comments"),
           },
           {
             content: "Import from Shopify",

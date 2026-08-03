@@ -43,6 +43,7 @@ import { useBuilderStore } from "../../components/builder/store/useBuilderStore"
 import { normalizeBlocksAst } from "../../components/builder/BlockRegistry";
 import ExcerptRichTextEditor from "../../components/editor/ExcerptRichTextEditor";
 import ShopifyRichTextEditor from "../../components/editor/ShopifyRichTextEditor";
+import ArticleComments from "../../components/comments/ArticleComments";
 
 const stripHtml = (html) => {
   if (!html) return "";
@@ -1108,6 +1109,11 @@ export default function PostEditor() {
             Translate Article
           </button>
         )}
+        {isEditing && post.shopifyArticle?.shopifyArticleId && (
+          <button onClick={() => navigate(`/comments?article_id=${post.shopifyArticle.shopifyArticleId}`)}>
+            Manage Comments
+          </button>
+        )}
         <button onClick={handlePreviewClick} disabled={isPreviewLoading}>
           {isPreviewLoading ? "Loading Preview..." : "Preview"}
         </button>
@@ -1171,6 +1177,7 @@ export default function PostEditor() {
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
       <Page
         fullWidth
+        backAction={{ content: "Articles", onAction: () => navigate("/posts") }}
         title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
         titleMetadata={statusBadge}
       >
@@ -1551,6 +1558,7 @@ export default function PostEditor() {
                   postTitle={post.title}
                   initialArticle={post.shopifyArticle}
                 />
+
 
                 {/* ── Delete Article ── */}
                 {isEditing && (
