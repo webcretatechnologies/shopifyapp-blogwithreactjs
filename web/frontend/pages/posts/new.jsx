@@ -1339,14 +1339,25 @@ export default function PostEditor() {
                             </BlockStack>
 
                             {/* URL Handle */}
-                            <TextField
-                              label="URL handle"
-                              value={post.slug || ""}
-                              onChange={handleField("slug")}
-                              prefix={`blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/`}
-                              helpText={`https://${window.shopify?.config?.shop || "rajiv-market-shop.myshopify.com"}/blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/${post.slug || ""}`}
-                              autoComplete="off"
-                            />
+                            <div className="url-handle-field">
+                              <style>{`
+                                .url-handle-field .Polaris-TextField__Prefix {
+                                  margin-inline-end: 0px !important;
+                                  padding-inline-end: 0px !important;
+                                }
+                                .url-handle-field input.Polaris-TextField__Input {
+                                  padding-inline-start: 0px !important;
+                                }
+                              `}</style>
+                              <TextField
+                                label="URL handle"
+                                value={post.slug || ""}
+                                onChange={handleField("slug")}
+                                prefix={`blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/`}
+                                helpText={`https://${window.shopify?.config?.shop || "rajiv-market-shop.myshopify.com"}/blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/${post.slug || ""}`}
+                                autoComplete="off"
+                              />
+                            </div>
                           </BlockStack>
                         </>
                       )}

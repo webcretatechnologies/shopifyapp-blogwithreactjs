@@ -166,14 +166,25 @@ export default function NewBlog() {
                       showCharacterCount
                       autoComplete="off"
                     />
-                    <TextField
-                      label="URL handle"
-                      value={blogData.handle}
-                      onChange={handleField("handle")}
-                      prefix="blogs/"
-                      helpText={`https://${window.shopify?.config?.shop || "your-store.myshopify.com"}/blogs/${blogData.handle || ""}`}
-                      autoComplete="off"
-                    />
+                    <div className="url-handle-field">
+                      <style>{`
+                        .url-handle-field .Polaris-TextField__Prefix {
+                          margin-inline-end: 0px !important;
+                          padding-inline-end: 0px !important;
+                        }
+                        .url-handle-field input.Polaris-TextField__Input {
+                          padding-inline-start: 0px !important;
+                        }
+                      `}</style>
+                      <TextField
+                        label="URL handle"
+                        value={blogData.handle}
+                        onChange={handleField("handle")}
+                        prefix="blogs/"
+                        helpText={`https://${window.shopify?.config?.shop || "your-store.myshopify.com"}/blogs/${blogData.handle || ""}`}
+                        autoComplete="off"
+                      />
+                    </div>
                   </BlockStack>
                 </Box>
               )}
