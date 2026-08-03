@@ -96,35 +96,63 @@ const legacyHtmlToAst = (html) => {
   const TYPE_MAP = {
     buyButton: 'BuyButton',
     buy_button: 'BuyButton',
+    BuyButton: 'BuyButton',
     productGrid: 'ProductGrid',
     product_grid: 'ProductGrid',
+    ProductGrid: 'ProductGrid',
     collection: 'Collection',
+    Collection: 'Collection',
     ctaButton: 'ButtonBlock',
     cta_button: 'ButtonBlock',
+    buttonBlock: 'ButtonBlock',
+    ButtonBlock: 'ButtonBlock',
     heroBlock: 'HeroSection',
     hero: 'HeroSection',
+    HeroSection: 'HeroSection',
+    Hero: 'HeroSection',
     videoBlock: 'VideoEmbed',
     video: 'VideoEmbed',
+    VideoEmbed: 'VideoEmbed',
     spacerBlock: 'Spacer',
     spacer: 'Spacer',
+    Spacer: 'Spacer',
     dividerBlock: 'Divider',
     divider: 'Divider',
+    Divider: 'Divider',
     imageBlock: 'Image',
     image: 'Image',
+    Image: 'Image',
     heading: 'Heading',
+    Heading: 'Heading',
     calloutBlock: 'Callout',
     callout: 'Callout',
-    buttonBlock: 'ButtonBlock',
+    Callout: 'Callout',
     htmlBlock: 'Html',
     html: 'Html',
+    Html: 'Html',
     product_slider: 'ProductSlider',
     productSlider: 'ProductSlider',
+    ProductSlider: 'ProductSlider',
     productCard: 'ProductCard',
     product: 'ProductCard',
+    ProductCard: 'ProductCard',
     toc: 'TableOfContents',
     tableOfContents: 'TableOfContents',
     table_of_contents: 'TableOfContents',
-    TableOfContents: 'TableOfContents'
+    TableOfContents: 'TableOfContents',
+    faqBlock: 'FaqBlock',
+    FaqBlock: 'FaqBlock',
+    faq: 'FaqBlock',
+    FAQ: 'FaqBlock',
+    RichText: 'RichText',
+    richtext: 'RichText',
+    Section: 'Section',
+    section: 'Section',
+    ColumnLayout: 'ColumnLayout',
+    columnLayout: 'ColumnLayout',
+    column_layout: 'ColumnLayout',
+    Column: 'Column',
+    column: 'Column'
   };
 
   const ATTR_MAP = {
@@ -177,14 +205,268 @@ const legacyHtmlToAst = (html) => {
     alt: 'alt',
     width: 'width',
     linkurl: 'linkUrl',
-    titlealign: 'titleAlign'
+    titlealign: 'titleAlign',
+    liststyle: 'listStyle',
+    accentcolor: 'accentColor',
+    backgroundcolor: 'backgroundColor',
+    bordercolor: 'borderColor',
+    paddingtop: 'paddingTop',
+    paddingbottom: 'paddingBottom',
+    paddingleft: 'paddingLeft',
+    paddingright: 'paddingRight',
+    firstopen: 'firstOpen',
+    enableschema: 'enableSchema'
   };
 
-  const processNode = (node) => {
+  const parseFallbackSettings = (node, blockType) => {
+    const settings = {};
+    const style = node.getAttribute("style") || "";
+
+    const parseStyle = (property) => {
+      const regex = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i');
+      const match = style.match(regex);
+      return match ? match[1].trim() : "";
+    };
+
+    switch (blockType) {
+      case "Heading": {
+        settings.text = node.textContent?.trim() || "";
+        const tag = node.tagName.toLowerCase();
+        settings.level = parseInt(tag.replace("h", ""), 10) || 2;
+        settings.align = parseStyle("text-align") || "left";
+        settings.color = parseStyle("color") || "#202223";
+        const fs = parseStyle("font-size");
+        if (fs) settings.fontSize = fs;
+        break;
+      }
+      case "RichText": {
+        settings.content = node.innerHTML || "";
+        break;
+      }
+      case "Section": {
+        settings.backgroundColor = parseStyle("background-color") || "transparent";
+        settings.maxWidth = parseStyle("max-width") || "100%";
+        settings.borderRadius = parseStyle("border-radius") || "0px";
+        const padding = parseStyle("padding") || "";
+        if (padding) {
+          const parts = padding.split(/\s+/);
+          if (parts.length === 1) {
+            settings.paddingTop = settings.paddingBottom = settings.paddingLeft = settings.paddingRight = parts[0];
+          } else if (parts.length === 2) {
+            settings.paddingTop = settings.paddingBottom = parts[0];
+            settings.paddingLeft = settings.paddingRight = parts[1];
+          } else if (parts.length === 4) {
+            settings.paddingTop = parts[0];
+            settings.paddingRight = parts[1];
+            settings.paddingBottom = parts[2];
+            settings.paddingLeft = parts[3];
+          }
+        }
+        break;
+      }
+      case "ColumnLayout": {
+        settings.gap = parseStyle("gap") || "16px";
+        break;
+      }
+      case "Divider": {
+        const hr = node.tagName.toLowerCase() === "hr" ? node : node.querySelector("hr");
+        const hrStyle = hr ? (hr.getAttribute("style") || "") : "";
+        const parseHrStyle = (property) => {
+          const regex = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i');
+          const match = hrStyle.match(regex);
+          return match ? match[1].trim() : "";
+        };
+        const borderTop = parseHrStyle("border-top") || "";
+        if (borderTop) {
+          const parts = borderTop.split(/\s+/);
+          if (parts.length >= 3) {
+            settings.thickness = parts[0];
+            settings.style = parts[1];
+            settings.color = parts.slice(2).join(" ");
+          }
+        }
+        settings.width = parseHrStyle("width") || "100%";
+        break;
+      }
+      case "Spacer": {
+        settings.height = parseStyle("height") || "40px";
+        break;
+      }
+      case "Callout": {
+        settings.backgroundColor = parseStyle("background-color") || "#fdfbc8";
+        const borderLeft = parseStyle("border-left") || "";
+        if (borderLeft) {
+          const parts = borderLeft.split(/\s+/);
+          settings.borderColor = parts.length >= 3 ? parts.slice(2).join(" ") : "";
+        }
+        const spans = Array.from(node.querySelectorAll("span"));
+        settings.emoji = spans[0] ? spans[0].textContent?.trim() : "💡";
+        settings.title = node.querySelector("strong")?.textContent?.trim() || "";
+        settings.body = spans[1] ? spans[1].textContent?.trim() : "";
+        break;
+      }
+      case "Image": {
+        const img = node.querySelector("img");
+        settings.src = img ? (img.getAttribute("src") || "") : "";
+        settings.alt = img ? (img.getAttribute("alt") || "") : "";
+        settings.width = img ? (img.style.width || "100%") : "100%";
+        settings.height = img ? (img.style.height || "auto") : "auto";
+        settings.align = parseStyle("text-align") || "center";
+        settings.caption = node.querySelector("p")?.textContent?.trim() || "";
+        settings.linkUrl = node.querySelector("a")?.getAttribute("href") || "";
+        break;
+      }
+      case "VideoEmbed": {
+        const iframe = node.querySelector("iframe");
+        settings.url = iframe ? (iframe.getAttribute("src") || "") : "";
+        settings.maxWidth = parseStyle("max-width") || "100%";
+        break;
+      }
+      case "ButtonBlock":
+      case "CTAButton": {
+        const a = node.querySelector("a");
+        const aStyle = a ? (a.getAttribute("style") || "") : "";
+        const parseAStyle = (property) => {
+          const regex = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i');
+          const match = aStyle.match(regex);
+          return match ? match[1].trim() : "";
+        };
+        settings.text = a ? (a.textContent?.trim() || "Click Here") : "Click Here";
+        settings.url = a ? (a.getAttribute("href") || "#") : "#";
+        settings.alignment = parseStyle("text-align") || "center";
+        settings.backgroundColor = parseAStyle("background-color") || "#008060";
+        settings.textColor = parseAStyle("color") || "#ffffff";
+        settings.borderRadius = parseInt(parseAStyle("border-radius"), 10) || 6;
+        break;
+      }
+      case "FaqBlock": {
+        const titleEl = node.querySelector("h2");
+        settings.title = titleEl ? titleEl.textContent.trim() : "";
+        settings.layout = node.querySelector("details.builder-faq-item") ? "accordion" : "grid";
+        settings.items = [];
+        if (settings.layout === "accordion") {
+          const details = Array.from(node.querySelectorAll("details.builder-faq-item"));
+          details.forEach(det => {
+            const qEl = det.querySelector(".faq-question-text") || det.querySelector("summary");
+            const aEl = det.querySelector("div p") || det.querySelector("p");
+            settings.items.push({
+              question: qEl ? qEl.textContent.trim() : "",
+              answer: aEl ? aEl.innerHTML.trim() : ""
+            });
+          });
+        } else {
+          const items = Array.from(node.querySelectorAll("div[style*='background-color']"));
+          items.forEach(item => {
+            const qEl = item.querySelector("h4");
+            const aEl = item.querySelector("p");
+            if (qEl || aEl) {
+              settings.items.push({
+                question: qEl ? qEl.textContent.trim() : "",
+                answer: aEl ? aEl.innerHTML.trim() : ""
+              });
+            }
+          });
+        }
+        break;
+      }
+      case "TableOfContents": {
+        const isDetails = node.classList.contains("sp-toc-details") || node.tagName.toLowerCase() === "details";
+        const tocContainer = isDetails ? node : node.querySelector(".sp-toc-block, .sp-toc-details");
+        settings.title = tocContainer ? (tocContainer.querySelector("summary, div")?.textContent?.trim() || "Table of Contents") : "Table of Contents";
+        settings.collapsible = isDetails;
+        settings.listStyle = tocContainer?.querySelector("ol") ? "numbered" : "bullet";
+        settings.levels = [2, 3];
+        break;
+      }
+      case "Html": {
+        settings.code = node.innerHTML || "";
+        break;
+      }
+      case "Table": {
+        const tableData = [];
+        node.querySelectorAll("tr").forEach(tr => {
+          const row = [];
+          tr.querySelectorAll("th, td").forEach(td => {
+            row.push(td.textContent?.trim() || "");
+          });
+          if (row.length) tableData.push(row);
+        });
+        settings.tableData = tableData;
+        settings.hasHeader = node.querySelector("thead") !== null;
+        break;
+      }
+      case "HeroSection": {
+        settings.heading = node.querySelector("h1")?.textContent?.trim() || "";
+        settings.subheading = node.querySelector("p")?.textContent?.trim() || "";
+        settings.textColor = parseStyle("color") || "#ffffff";
+        settings.minHeight = parseStyle("min-height") || "360px";
+        const bgImgStyle = parseStyle("background-image") || "";
+        if (bgImgStyle && bgImgStyle.includes("url(")) {
+          const match = bgImgStyle.match(/url\(['"]?([^'"]+)['"]?\)/);
+          settings.backgroundImage = match ? match[1] : "";
+        }
+        const a = node.querySelector("a");
+        settings.showCta = a !== null;
+        if (settings.showCta) {
+          settings.ctaText = a.textContent?.trim() || "";
+          settings.ctaUrl = a.getAttribute("href") || "";
+          const aStyle = a.getAttribute("style") || "";
+          const parseAStyle = (property) => {
+            const regex = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i');
+            const match = aStyle.match(regex);
+            return match ? match[1].trim() : "";
+          };
+          settings.ctaColor = parseAStyle("background") || parseAStyle("background-color") || "#008060";
+          settings.ctaTextColor = parseAStyle("color") || "#ffffff";
+        }
+        break;
+      }
+      case "Collection":
+      case "ProductSlider":
+      case "ProductGrid": {
+        settings.title = node.querySelector("h3")?.textContent?.trim() || "";
+        settings.heading = settings.title;
+        settings.manualProducts = [];
+        node.querySelectorAll("div[style*='border']").forEach(pEl => {
+          const title = pEl.querySelector("h4")?.textContent?.trim() || "";
+          const imageUrl = pEl.querySelector("img")?.getAttribute("src") || "";
+          const price = pEl.querySelector("p")?.textContent?.trim() || "";
+          if (title || imageUrl) {
+            settings.manualProducts.push({
+              title,
+              image: imageUrl,
+              price: price.replace(/[₹$]/g, "")
+            });
+          }
+        });
+        break;
+      }
+      case "ProductCard": {
+        settings.title = node.querySelector("h4")?.textContent?.trim() || "";
+        settings.price = node.querySelector("p")?.textContent?.trim() || "";
+        settings.imageUrl = node.querySelector("img")?.getAttribute("src") || "";
+        break;
+      }
+      case "BuyButton": {
+        const title = node.querySelector("h4")?.textContent?.trim() || "";
+        const price = node.querySelector("p")?.textContent?.trim() || "";
+        const image = node.querySelector("img")?.getAttribute("src") || "";
+        settings.product = {
+          title,
+          price: price.replace(/[₹$]/g, ""),
+          image
+        };
+        break;
+      }
+    }
+    return settings;
+  };
+
+  const processNode = (node, targetBlocksArray = blocks) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent.trim();
       if (text) {
-        blocks.push({
+        targetBlocksArray.push({
           id: generateId(),
           type: "RichText",
           settings: { content: `<p>${node.textContent}</p>` }
@@ -199,16 +481,68 @@ const legacyHtmlToAst = (html) => {
     if (["style", "script", "meta", "link"].includes(tagName)) return;
 
     // 1. Check for explicit data-type attribute
-    const dataType = node.getAttribute("data-type");
+    let dataType = node.getAttribute("data-type");
+    if (!dataType) {
+      if (node.classList.contains("builder-faq-block") || node.querySelector("details.builder-faq-item")) {
+        dataType = "FaqBlock";
+      } else if (node.classList.contains("sp-toc-block") || node.classList.contains("sp-toc-details") || node.querySelector(".sp-toc-block, .sp-toc-details")) {
+        dataType = "TableOfContents";
+      } else if (node.classList.contains("builder-richtext-wrapper")) {
+        dataType = "RichText";
+      } else if (node.classList.contains("builder-section")) {
+        dataType = "Section";
+      } else if (node.classList.contains("builder-column-layout")) {
+        dataType = "ColumnLayout";
+      } else if (node.classList.contains("builder-column")) {
+        dataType = "Column";
+      } else if (node.classList.contains("builder-divider") || node.tagName.toLowerCase() === "hr") {
+        dataType = "Divider";
+      } else if (node.classList.contains("builder-spacer")) {
+        dataType = "Spacer";
+      } else if (node.classList.contains("builder-callout")) {
+        dataType = "Callout";
+      } else if (node.classList.contains("builder-image-block")) {
+        dataType = "Image";
+      } else if (node.classList.contains("builder-video-embed")) {
+        dataType = "VideoEmbed";
+      } else if (node.classList.contains("builder-button-block")) {
+        dataType = "ButtonBlock";
+      } else if (node.classList.contains("builder-collection-block")) {
+        dataType = "Collection";
+      } else if (node.classList.contains("builder-product-slider")) {
+        dataType = "ProductSlider";
+      } else if (node.classList.contains("builder-product-grid")) {
+        dataType = "ProductGrid";
+      } else if (node.classList.contains("builder-product-card")) {
+        dataType = "ProductCard";
+      } else if (node.classList.contains("builder-cta-button")) {
+        dataType = "CTAButton";
+      } else if (node.classList.contains("builder-hero-section")) {
+        dataType = "HeroSection";
+      } else if (node.classList.contains("builder-buy-button")) {
+        dataType = "BuyButton";
+      } else if (node.classList.contains("builder-table-block")) {
+        dataType = "Table";
+      } else if (node.classList.contains("builder-heading-block")) {
+        dataType = "Heading";
+      } else if (node.classList.contains("builder-html-block") || node.classList.contains("custom-html-block")) {
+        dataType = "Html";
+      }
+    }
+
     if (dataType) {
       const blockType = TYPE_MAP[dataType] || dataType;
       const settings = {};
+
+      if (!node.getAttribute("data-type")) {
+        Object.assign(settings, parseFallbackSettings(node, blockType));
+      }
 
       Array.from(node.attributes).forEach(attr => {
         if (attr.name.startsWith("data-")) {
           const key = attr.name.substring(5);
           if (key === "type") return;
-          const camelKey = attr.name.substring(5).split('-').map((w, i) => i === 0 ? w : w[0].toUpperCase() + w.substring(1)).join('');
+          const camelKey = key.split('-').map((w, i) => i === 0 ? w : w[0].toUpperCase() + w.substring(1)).join('');
           const mappedKey = ATTR_MAP[key] || camelKey;
           let val = attr.value;
           if (val === "true") val = true;
@@ -225,12 +559,24 @@ const legacyHtmlToAst = (html) => {
       if (blockType === "Heading" && !settings.text) {
         settings.text = node.textContent.trim();
       }
+      if (blockType === "RichText" && !settings.content) {
+        settings.content = node.innerHTML || node.outerHTML;
+      }
 
-      blocks.push({
+      const createdBlock = {
         id: generateId(),
         type: blockType,
         settings: settings
-      });
+      };
+
+      if (blockType === "Section" || blockType === "ColumnLayout" || blockType === "Column") {
+        createdBlock.children = [];
+        targetBlocksArray.push(createdBlock);
+        Array.from(node.childNodes).forEach(child => processNode(child, createdBlock.children));
+        return;
+      }
+
+      targetBlocksArray.push(createdBlock);
       return;
     }
 

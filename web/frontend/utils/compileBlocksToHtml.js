@@ -61,16 +61,28 @@ function injectBlockIdentity(html, block) {
   if (!html) return html;
   
   const trimmedHtml = html.trim();
-  const tagMatch = trimmedHtml.match(/^<([a-zA-Z0-9\-]+)([^>]*)>/);
-  if (!tagMatch) return html;
-  
-  const tag = tagMatch[1];
-  const rest = tagMatch[2];
-  
+  const tagRegex = /<([a-zA-Z0-9\-]+)([^>]*)>/g;
+  let match;
+  let targetIndex = -1;
+  let targetTag = "";
+  let targetRest = "";
+
+  while ((match = tagRegex.exec(trimmedHtml)) !== null) {
+    const tagName = match[1].toLowerCase();
+    if (tagName !== "style" && tagName !== "script") {
+      targetIndex = match.index;
+      targetTag = match[1];
+      targetRest = match[2];
+      break;
+    }
+  }
+
+  if (targetIndex === -1) return html;
+
   let dataAttrs = ` data-type="${block.type}"`;
   
   if (block.settings) {
-    const skipKeys = ["content", "text", "code", "tableData"];
+    const skipKeys = ["content", "code", "tableData"];
     for (const [key, value] of Object.entries(block.settings)) {
       if (skipKeys.includes(key)) continue;
       if (value === null || value === undefined) continue;
@@ -87,8 +99,12 @@ function injectBlockIdentity(html, block) {
       }
     }
   }
-  
-  return `<${tag}${dataAttrs}${rest}>` + trimmedHtml.slice(tagMatch[0].length);
+
+  const prefix = trimmedHtml.slice(0, targetIndex);
+  const matchLength = match[0].length;
+  const suffix = trimmedHtml.slice(targetIndex + matchLength);
+
+  return prefix + `<${targetTag}${dataAttrs}${targetRest}>` + suffix;
 }
 
 export function compileSingleBlockToHtml(block, context = {}) {
@@ -143,8 +159,7 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
         const paddingLeft = isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px";
         const marginTop = isRoot ? "0" : "6px";
         const marginBottom = isRoot ? "0" : "2px";
-        const gap = isRoot ? "8px" : "6px";
-        const listType = listStyle === "numbered" ? "decimal" : (isRoot ? "disc" : "circle");
+        const listType = listStyle === "numbered" ? (isRoot ? "decimal" : "lower-alpha") : (isRoot ? "disc" : "circle");
 
         const lisHtml = items
           .map((item) => {
@@ -154,20 +169,83 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
             const childrenHtml = item.children && item.children.length > 0
               ? renderTocNodesHtml(item.children, false)
               : "";
-            return `<li style="font-size: 14px;">${link}${childrenHtml}</li>`;
+            return `<li style="font-size: 14px; margin: 6px 0; display: list-item;">${link}${childrenHtml}</li>`;
           })
           .join("\n");
 
-        return `<${Tag} style="margin: ${marginTop} 0 ${marginBottom} 0; padding-left: ${paddingLeft}; display: flex; flex-direction: column; gap: ${gap}; list-style-type: ${listType};">\n${lisHtml}\n</${Tag}>`;
+        return `<${Tag} style="margin: ${marginTop} 0 ${marginBottom} 0; padding-left: ${paddingLeft}; list-style-type: ${listType};">\n${lisHtml}\n</${Tag}>`;
       };
 
       const tree = buildTocNodes(matchingHeadings);
       const listContentHtml = renderTocNodesHtml(tree, true);
-      const styleTag = `<style>html { scroll-behavior: smooth; } [id] { scroll-margin-top: 24px; }</style>`;
+      const styleTag = `<style>
+        html { scroll-behavior: smooth; }
+        [id] { scroll-margin-top: 24px; }
+        .sp-toc-details ul, .sp-toc-block ul {
+          list-style-type: disc !important;
+          padding-left: 20px !important;
+          margin: 4px 0 !important;
+          display: block !important;
+        }
+        .sp-toc-details ul ul, .sp-toc-block ul ul {
+          list-style-type: circle !important;
+          padding-left: 20px !important;
+          margin: 4px 0 !important;
+          display: block !important;
+        }
+        .sp-toc-details ol, .sp-toc-block ol {
+          list-style-type: decimal !important;
+          padding-left: 20px !important;
+          margin: 4px 0 !important;
+          display: block !important;
+        }
+        .sp-toc-details ol ol, .sp-toc-block ol ol {
+          list-style-type: lower-alpha !important;
+          padding-left: 20px !important;
+          margin: 4px 0 !important;
+          display: block !important;
+        }
+        .sp-toc-details li, .sp-toc-block li {
+          list-style: inherit !important;
+          margin: 6px 0 !important;
+          padding: 0 !important;
+          display: list-item !important;
+        }
+        .sp-toc-details summary {
+          font-weight: 700;
+          font-size: 16px;
+          color: #202223;
+          outline: none;
+          cursor: pointer;
+          display: flex !important;
+          align-items: center;
+          justify-content: space-between;
+          list-style: none !important;
+          user-select: none;
+          gap: 8px;
+        }
+        .sp-toc-details summary::-webkit-details-marker {
+          display: none !important;
+        }
+        .sp-toc-details summary::marker {
+          display: none !important;
+        }
+        .sp-toc-details .toc-chevron {
+          flex-shrink: 0;
+          width: 20px;
+          height: 20px;
+          transition: transform 0.25s ease;
+          color: #202223;
+        }
+        .sp-toc-details[open] .toc-chevron {
+          transform: rotate(180deg);
+        }
+      </style>`;
 
       if (collapsible) {
-        return `${styleTag}\n<details class="sp-toc-details" open style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0; cursor: pointer;">
-  <summary style="font-weight: 700; font-size: 16px; color: #202223; outline: none;">${title}</summary>
+        const chevronSvg = `<svg class="toc-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 8 10 13 15 8"/></svg>`;
+        return `${styleTag}\n<details class="sp-toc-details" open style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
+  <summary><span>${title}</span>${chevronSvg}</summary>
   <div style="margin-top: 12px;">
 ${listContentHtml}
   </div>
@@ -188,7 +266,7 @@ ${listContentHtml}
       const fontSize = settings.fontSize ? `font-size: ${settings.fontSize};` : "";
       const blockHeadings = context.headingsByBlockId?.[blockId] || [];
       const idAttr = blockHeadings[0] ? ` id="${blockHeadings[0].id}"` : "";
-      return `<h${level}${idAttr} style="text-align: ${align}; color: ${color}; ${fontSize} margin: 16px 0 8px;">${text}</h${level}>`;
+      return `<h${level}${idAttr} class="builder-heading-block" style="text-align: ${align}; color: ${color}; ${fontSize} margin: 16px 0 8px;">${text}</h${level}>`;
     }
 
     case "RichText": {
@@ -211,7 +289,7 @@ ${listContentHtml}
       if (blockHeadings.length > 0) {
         html = injectHeadingIdsToHtml(html, blockHeadings);
       }
-      return html;
+      return `<div class="builder-richtext-wrapper">${html}</div>`;
     }
 
     case "Section": {
@@ -224,7 +302,7 @@ ${listContentHtml}
       const br = settings.borderRadius || "0px";
       const innerHtml = children.map((child) => compileSingleBlockToHtml(child, context)).join("");
       const bgStyle = bg && bg !== "#ffffff" && bg !== "transparent" ? `background-color: ${bg};` : "";
-      return `<section style="${bgStyle} padding: ${pt} ${pr} ${pb} ${pl}; max-width: ${maxW}; border-radius: ${br}; margin: 0 auto 20px; box-sizing: border-box;">${innerHtml}</section>`;
+      return `<section style="${bgStyle} padding: ${pt} ${pr} ${pb} ${pl}; max-width: ${maxW}; border-radius: ${br}; margin: 0 auto 20px; box-sizing: border-box;" class="builder-section">${innerHtml}</section>`;
     }
 
     case "ColumnLayout": {
@@ -245,12 +323,12 @@ ${listContentHtml}
       const width = settings.width || "100%";
       const mt = settings.marginTop || "16px";
       const mb = settings.marginBottom || "16px";
-      return `<hr style="border: none; border-top: ${thickness} ${style} ${color}; width: ${width}; margin: ${mt} auto ${mb};" />`;
+      return `<hr class="builder-divider" style="border: none; border-top: ${thickness} ${style} ${color}; width: ${width}; margin: ${mt} auto ${mb};" />`;
     }
 
     case "Spacer": {
       const height = settings.height || "40px";
-      return `<div style="height: ${height}; width: 100%;"></div>`;
+      return `<div class="builder-spacer" style="height: ${height}; width: 100%;"></div>`;
     }
 
     case "Callout": {
@@ -259,7 +337,7 @@ ${listContentHtml}
       const emoji = settings.emoji || "💡";
       const title = settings.title || "";
       const body = settings.body || "";
-      return `<div style="background-color: ${bg}; border-left: 4px solid ${border}; padding: 16px; border-radius: 6px; display: flex; gap: 12px; align-items: center; margin: 16px 0;">
+      return `<div class="builder-callout" style="background-color: ${bg}; border-left: 4px solid ${border}; padding: 16px; border-radius: 6px; display: flex; gap: 12px; align-items: center; margin: 16px 0;">
         <span style="font-size: 24px;">${emoji}</span>
         <div>
           <strong style="display: block; margin-bottom: 4px; color: #202223;">${title}</strong>
@@ -291,7 +369,7 @@ ${listContentHtml}
       const imgTag = `<img src="${src}" alt="${alt}" style="max-width: 100%; width: ${width}; height: ${height}; object-fit: ${objectFit}; border-radius: ${br}; box-shadow: ${boxShadow}; display: inline-block;" />`;
       const linkedImg = settings.linkUrl ? `<a href="${settings.linkUrl}" target="${settings.linkTarget || '_self'}" style="display: inline-block;">${imgTag}</a>` : imgTag;
 
-      return `<div style="text-align: ${align}; margin: 16px 0; padding: ${padding}; box-sizing: border-box;">
+      return `<div class="builder-image-block" style="text-align: ${align}; margin: 16px 0; padding: ${padding}; box-sizing: border-box;">
         ${linkedImg}
         ${caption ? `<p style="font-size: 13px; color: #6d7175; margin-top: 6px; text-align: center;">${caption}</p>` : ''}
       </div>`;
@@ -311,7 +389,7 @@ ${listContentHtml}
       }
 
       const maxW = settings.maxWidth || "100%";
-      return `<div style="max-width: ${maxW}; margin: 16px auto;">
+      return `<div class="builder-video-embed" style="max-width: ${maxW}; margin: 16px auto;">
         <iframe src="${embedUrl}" style="width: 100%; aspect-ratio: 16/9; border: none; border-radius: 8px;" allowfullscreen></iframe>
       </div>`;
     }
@@ -323,7 +401,7 @@ ${listContentHtml}
       const color = settings.backgroundColor || settings.color || "#008060";
       const textColor = settings.textColor || "#ffffff";
       const br = (settings.borderRadius !== undefined ? settings.borderRadius : 6) + "px";
-      return `<div style="text-align: ${align}; margin: 16px 0;">
+      return `<div class="builder-button-block" style="text-align: ${align}; margin: 16px 0;">
         <a href="${url}" style="display: inline-block; background-color: ${color}; color: ${textColor}; padding: 12px 24px; border-radius: ${br}; font-weight: 600; text-decoration: none;">${text}</a>
       </div>`;
     }
@@ -332,7 +410,7 @@ ${listContentHtml}
       const heading = settings.heading || "Featured Collection";
       const cols = settings.columns || 3;
       const products = settings.manualProducts || settings.products || [];
-      return `<div style="margin: 24px 0;">
+      return `<div class="builder-collection-block" style="margin: 24px 0;">
         ${settings.showTitle !== false && heading ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: left;">${heading}</h3>` : ''}
         <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'};">
           ${products.map(p => `
@@ -350,7 +428,7 @@ ${listContentHtml}
     case "ProductSlider": {
       const title = settings.title || "";
       const products = settings.manualProducts || settings.products || [];
-      return `<div style="margin: 24px 0; overflow-x: auto;">
+      return `<div class="builder-product-slider" style="margin: 24px 0; overflow-x: auto;">
         ${title ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: ${settings.titleAlign || 'left'};">${title}</h3>` : ''}
         <div style="display: flex; gap: ${settings.gap || '16px'}; overflow-x: auto; padding-bottom: 8px;">
           ${products.map(p => `
@@ -366,7 +444,7 @@ ${listContentHtml}
     }
 
     case "Html": {
-      return `<div class="custom-html-block">${settings.code || ""}</div>`;
+      return `<div class="builder-html-block custom-html-block">${settings.code || ""}</div>`;
     }
 
     case "Table": {
@@ -406,7 +484,7 @@ ${listContentHtml}
       `;
 
       return `
-        <div style="margin: 16px 0; overflow-x: auto;">
+        <div class="builder-table-block" style="margin: 16px 0; overflow-x: auto;">
           <table style="width: 100%; border-collapse: collapse; border: 1px solid #e1e3e5; text-align: left;">
             ${theadHtml}
             ${tbodyHtml}
@@ -422,7 +500,7 @@ ${listContentHtml}
       const color = settings.color || "#008060";
       const textColor = settings.textColor || "#ffffff";
       const br = settings.borderRadius || "6px";
-      return `<div style="text-align: ${align}; margin: 16px 0;">
+      return `<div class="builder-cta-button" style="text-align: ${align}; margin: 16px 0;">
         <a href="${url}" style="display: inline-block; background-color: ${color}; color: ${textColor}; padding: 12px 24px; border-radius: ${br}; font-weight: 600; text-decoration: none;">${text}</a>
       </div>`;
     }
@@ -440,7 +518,7 @@ ${listContentHtml}
       const ctaColor = settings.ctaColor || "#008060";
       const ctaTextColor = settings.ctaTextColor || "#ffffff";
 
-      return `<div style="position: relative; background-color: #1a1a1a; ${bgImg ? `background-image: url('${bgImg}'); background-size: cover; background-position: center;` : ''} min-height: ${minH}; display: flex; align-items: center; justify-content: ${align}; padding: 40px 24px; border-radius: 8px; color: ${textColor}; text-align: ${align}; margin: 20px 0;">
+      return `<div class="builder-hero-section" style="position: relative; background-color: #1a1a1a; ${bgImg ? `background-image: url('${bgImg}'); background-size: cover; background-position: center;` : ''} min-height: ${minH}; display: flex; align-items: center; justify-content: ${align}; padding: 40px 24px; border-radius: 8px; color: ${textColor}; text-align: ${align}; margin: 20px 0;">
         <div style="max-width: 600px; z-index: 2;">
           <h1 style="font-size: 32px; font-weight: 700; margin-bottom: 12px; color: inherit;">${heading}</h1>
           <p style="font-size: 16px; margin-bottom: 24px; opacity: 0.9; color: inherit;">${subheading}</p>
@@ -453,7 +531,7 @@ ${listContentHtml}
       const title = settings.title || "";
       const products = settings.manualProducts || [];
       const cols = settings.columns || 3;
-      return `<div style="margin: 24px 0;">
+      return `<div class="builder-product-grid" style="margin: 24px 0;">
         ${title ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: ${settings.titleAlign || 'left'};">${title}</h3>` : ''}
         <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'}; align-items: stretch;">
           ${products.map(p => {
@@ -531,7 +609,7 @@ ${listContentHtml}
       const pLink = p.handle ? `/products/${p.handle}` : "#";
 
       if (isVertical) {
-        return `<div style="border: 1px solid #e1e3e5; border-radius: 10px; overflow: hidden; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: ${settings.maxWidth || '320px'}; margin: 16px auto; box-sizing: border-box;">
+        return `<div class="builder-buy-button" style="border: 1px solid #e1e3e5; border-radius: 10px; overflow: hidden; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: ${settings.maxWidth || '320px'}; margin: 16px auto; box-sizing: border-box;">
           <div style="height: 220px; width: 100%; background: #f4f6f8; border-bottom: 1px solid #e1e3e5; display: flex; align-items: center; justify-content: center; overflow: hidden;">
             ${imageUrl ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; text-decoration:none;"><img src="${imageUrl}" alt="${p.title || ''}" style="max-width:100%; max-height:100%; object-fit:contain; display:block; margin:0 auto;" /></a>` : '<div style="font-size:24px;">🖼</div>'}
           </div>
@@ -545,7 +623,7 @@ ${listContentHtml}
         </div>`;
       }
 
-      return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 16px; max-width: ${settings.maxWidth || '600px'}; margin: 16px 0; box-sizing: border-box; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+      return `<div class="builder-buy-button" style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 16px; max-width: ${settings.maxWidth || '600px'}; margin: 16px 0; box-sizing: border-box; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
         ${imageUrl ? `<div style="width: ${settings.imageSize || '120px'}; height: ${settings.imageSize || '120px'}; background: #f4f6f8; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid #f1f2f3;"><img src="${imageUrl}" alt="${p.title || ''}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;" /></div>` : ''}
         <div style="flex: 1; min-width: 0;">
           ${settings.showBadge && settings.badge ? `<span style="display: inline-block; padding: 2px 8px; background: #ffd700; color: #202223; font-size: 10px; font-weight: 700; border-radius: 12px; margin-bottom: 6px;">${settings.badge}</span>` : ''}

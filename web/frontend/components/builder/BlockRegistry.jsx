@@ -752,6 +752,11 @@ export function normalizeBlock(rawBlock) {
     if (rawBlock.backgroundColor) settings.backgroundColor = rawBlock.backgroundColor;
     if (rawBlock.borderColor) settings.borderColor = rawBlock.borderColor;
     if (rawBlock.borderRadius !== undefined) settings.borderRadius = rawBlock.borderRadius;
+  } else if (type === "TableOfContents") {
+    if (rawBlock.title !== undefined) settings.title = rawBlock.title;
+    if (rawBlock.levels) settings.levels = rawBlock.levels;
+    if (rawBlock.listStyle) settings.listStyle = rawBlock.listStyle;
+    if (rawBlock.collapsible !== undefined) settings.collapsible = rawBlock.collapsible;
   }
 
   const children = Array.isArray(rawBlock.children)

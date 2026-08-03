@@ -38,16 +38,13 @@ function RenderTocList({ items, minLevel, listStyle, isRoot = true }) {
         paddingLeft: isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px",
         marginTop: isRoot ? 0 : "6px",
         marginBottom: isRoot ? 0 : "2px",
-        display: "flex",
-        flexDirection: "column",
-        gap: isRoot ? "8px" : "6px",
-        listStyleType: listStyle === "numbered" ? "decimal" : isRoot ? "disc" : "circle",
+        listStyleType: listStyle === "numbered" ? (isRoot ? "decimal" : "lower-alpha") : (isRoot ? "disc" : "circle"),
       }}
     >
       {items.map((item) => {
         const isMain = item.level === minLevel;
         return (
-          <li key={item.id} style={{ fontSize: "14px" }}>
+          <li key={item.id} style={{ fontSize: "14px", margin: "6px 0", display: "list-item" }}>
             <a
               href={`#${item.id}`}
               onClick={(e) => {
@@ -123,18 +120,13 @@ export function TableOfContentsPreview({ block }) {
     );
   }
 
-  const content = (
-    <div>
-      <div style={{ fontWeight: 700, fontSize: "16px", color: "#202223", marginBottom: "12px" }}>
-        {title}
-      </div>
-      <RenderTocList
-        items={rootNodes}
-        minLevel={minLevel}
-        listStyle={listStyle}
-        isRoot={true}
-      />
-    </div>
+  const listContent = (
+    <RenderTocList
+      items={rootNodes}
+      minLevel={minLevel}
+      listStyle={listStyle}
+      isRoot={true}
+    />
   );
 
   return (
@@ -149,11 +141,42 @@ export function TableOfContentsPreview({ block }) {
     >
       {collapsible ? (
         <details open style={{ cursor: "pointer" }}>
-          <summary style={{ outline: "none", userSelect: "none" }}>{title}</summary>
-          <div style={{ marginTop: "12px" }}>{content}</div>
+          <summary style={{
+            outline: "none",
+            userSelect: "none",
+            fontWeight: 700,
+            fontSize: "16px",
+            color: "#202223",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            listStyle: "none",
+            gap: "8px",
+          }}>
+            <span>{title}</span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              style={{ width: 20, height: 20, flexShrink: 0, transition: "transform 0.25s ease" }}
+            >
+              <polyline points="5 8 10 13 15 8" />
+            </svg>
+          </summary>
+          <div style={{ marginTop: "12px" }}>{listContent}</div>
         </details>
       ) : (
-        content
+        <div>
+          <div style={{ fontWeight: 700, fontSize: "16px", color: "#202223", marginBottom: "12px" }}>
+            {title}
+          </div>
+          {listContent}
+        </div>
       )}
     </div>
   );

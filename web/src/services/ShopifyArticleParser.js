@@ -49,10 +49,63 @@ export class ShopifyArticleParser {
       if (["style", "script", "meta", "link"].includes(tagName)) return;
 
       // 1. Check for app block wrappers (div[data-type] or h2[data-type] etc)
-      const dataType = $el.attr("data-type");
+      let dataType = $el.attr("data-type");
+      if (!dataType) {
+        if ($el.hasClass("builder-faq-block") || $el.find("details.builder-faq-item").length > 0) {
+          dataType = "FaqBlock";
+        } else if ($el.hasClass("sp-toc-block") || $el.hasClass("sp-toc-details") || $el.find(".sp-toc-block, .sp-toc-details").length > 0) {
+          dataType = "TableOfContents";
+        } else if ($el.hasClass("builder-richtext-wrapper")) {
+          dataType = "RichText";
+        } else if ($el.hasClass("builder-section")) {
+          dataType = "Section";
+        } else if ($el.hasClass("builder-column-layout")) {
+          dataType = "ColumnLayout";
+        } else if ($el.hasClass("builder-column")) {
+          dataType = "Column";
+        } else if ($el.hasClass("builder-divider") || node.tagName?.toLowerCase() === "hr") {
+          dataType = "Divider";
+        } else if ($el.hasClass("builder-spacer")) {
+          dataType = "Spacer";
+        } else if ($el.hasClass("builder-callout")) {
+          dataType = "Callout";
+        } else if ($el.hasClass("builder-image-block")) {
+          dataType = "Image";
+        } else if ($el.hasClass("builder-video-embed")) {
+          dataType = "VideoEmbed";
+        } else if ($el.hasClass("builder-button-block")) {
+          dataType = "ButtonBlock";
+        } else if ($el.hasClass("builder-collection-block")) {
+          dataType = "Collection";
+        } else if ($el.hasClass("builder-product-slider")) {
+          dataType = "ProductSlider";
+        } else if ($el.hasClass("builder-product-grid")) {
+          dataType = "ProductGrid";
+        } else if ($el.hasClass("builder-product-card")) {
+          dataType = "ProductCard";
+        } else if ($el.hasClass("builder-cta-button")) {
+          dataType = "CTAButton";
+        } else if ($el.hasClass("builder-hero-section")) {
+          dataType = "HeroSection";
+        } else if ($el.hasClass("builder-buy-button")) {
+          dataType = "BuyButton";
+        } else if ($el.hasClass("builder-table-block")) {
+          dataType = "Table";
+        } else if ($el.hasClass("builder-heading-block")) {
+          dataType = "Heading";
+        } else if ($el.hasClass("builder-html-block") || $el.hasClass("custom-html-block")) {
+          dataType = "Html";
+        }
+      }
+
       if (dataType) {
-        const block = this._convertDataBlock($el, dataType);
+        const block = this._convertDataBlock($el, dataType, $);
         if (block) {
+          // If fallback parsed block needs structure parsed manually (e.g. data-type attr was missing/stripped)
+          if (!$el.attr("data-type")) {
+            block.settings = ShopifyArticleParser._parseFallbackSettings($el, block.type, $);
+          }
+
           if (block.type === "ColumnLayout" || block.type === "Column" || block.type === "Section") {
             block.children = [];
             currentBlocksArray.push(block);
@@ -182,7 +235,8 @@ export class ShopifyArticleParser {
     };
 
     // Process top-level children
-    $("body").children().each((_, el) => processNode(el, blocks));
+    const $container = $("body").length > 0 ? $("body") : $.root();
+    $container.contents().each((_, el) => processNode(el, blocks));
 
     // If no blocks were found, create a single text block
     if (blocks.length === 0) {
@@ -223,34 +277,64 @@ export class ShopifyArticleParser {
   /**
    * Convert a div[data-type] custom block element into a structured block object.
    */
-  static _convertDataBlock($el, dataType) {
+  static _convertDataBlock($el, dataType, $) {
     const TYPE_MAP = {
       buyButton: "BuyButton",
       buy_button: "BuyButton",
+      BuyButton: "BuyButton",
       productGrid: "ProductGrid",
       product_grid: "ProductGrid",
+      ProductGrid: "ProductGrid",
       collection: "Collection",
-      ctaButton: "CTAButton",
-      cta_button: "CTAButton",
-      heroBlock: "Hero",
-      hero: "Hero",
-      videoBlock: "Video",
-      video: "Video",
+      Collection: "Collection",
+      ctaButton: "ButtonBlock",
+      cta_button: "ButtonBlock",
+      buttonBlock: "ButtonBlock",
+      ButtonBlock: "ButtonBlock",
+      heroBlock: "HeroSection",
+      hero: "HeroSection",
+      HeroSection: "HeroSection",
+      Hero: "HeroSection",
+      videoBlock: "VideoEmbed",
+      video: "VideoEmbed",
+      VideoEmbed: "VideoEmbed",
       spacerBlock: "Spacer",
       spacer: "Spacer",
+      Spacer: "Spacer",
       dividerBlock: "Divider",
       divider: "Divider",
+      Divider: "Divider",
       imageBlock: "Image",
       image: "Image",
+      Image: "Image",
       product: "ProductCard",
+      productCard: "ProductCard",
+      ProductCard: "ProductCard",
       product_sidebar: "ProductSidebar",
       featured_product: "FeaturedProduct",
       product_switcher: "ProductSwitcher",
       product_slider: "ProductSlider",
+      ProductSlider: "ProductSlider",
       faqBlock: "FaqBlock",
       FaqBlock: "FaqBlock",
       faq: "FaqBlock",
       FAQ: "FaqBlock",
+      toc: "TableOfContents",
+      tableOfContents: "TableOfContents",
+      table_of_contents: "TableOfContents",
+      TableOfContents: "TableOfContents",
+      RichText: "RichText",
+      richtext: "RichText",
+      Section: "Section",
+      section: "Section",
+      ColumnLayout: "ColumnLayout",
+      columnLayout: "ColumnLayout",
+      column_layout: "ColumnLayout",
+      Column: "Column",
+      column: "Column",
+      Callout: "Callout",
+      callout: "Callout",
+      calloutBlock: "Callout",
     };
 
     const ATTR_MAP = {
@@ -306,6 +390,16 @@ export class ShopifyArticleParser {
       titlealign: "titleAlign",
       level: "level",
       hasheader: "hasHeader",
+      liststyle: "listStyle",
+      accentcolor: "accentColor",
+      backgroundcolor: "backgroundColor",
+      bordercolor: "borderColor",
+      paddingtop: "paddingTop",
+      paddingbottom: "paddingBottom",
+      paddingleft: "paddingLeft",
+      paddingright: "paddingRight",
+      firstopen: "firstOpen",
+      enableschema: "enableSchema",
       type: "type",
     };
 
@@ -318,7 +412,8 @@ export class ShopifyArticleParser {
       if (attr.name.startsWith("data-")) {
         const key = attr.name.substring(5);
         if (key === "type") return;
-        const mappedKey = ATTR_MAP[key] || key;
+        const camelKey = key.split('-').map((w, i) => i === 0 ? w : w[0].toUpperCase() + w.substring(1)).join('');
+        const mappedKey = ATTR_MAP[key] || ATTR_MAP[key.replace(/-/g, "")] || camelKey;
         let val = attr.value;
         if (val === "true") val = true;
         else if (val === "false") val = false;
@@ -457,6 +552,243 @@ export class ShopifyArticleParser {
     }
 
     return `<div ${attrs}></div>`;
+  }
+
+  static _parseFallbackSettings($el, blockType, $) {
+    const settings = {};
+    const style = $el.attr("style") || "";
+
+    const parseStyle = (property) => {
+      const regex = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i');
+      const match = style.match(regex);
+      return match ? match[1].trim() : "";
+    };
+
+    switch (blockType) {
+      case "Heading": {
+        settings.text = $el.text()?.trim() || "";
+        const tag = $el.get(0)?.tagName?.toLowerCase() || "h2";
+        settings.level = parseInt(tag.replace("h", ""), 10) || 2;
+        settings.align = parseStyle("text-align") || "left";
+        settings.color = parseStyle("color") || "#202223";
+        const fs = parseStyle("font-size");
+        if (fs) settings.fontSize = fs;
+        break;
+      }
+      case "RichText": {
+        settings.content = $el.html() || "";
+        break;
+      }
+      case "Section": {
+        settings.backgroundColor = parseStyle("background-color") || "transparent";
+        settings.maxWidth = parseStyle("max-width") || "100%";
+        settings.borderRadius = parseStyle("border-radius") || "0px";
+        const padding = parseStyle("padding") || "";
+        if (padding) {
+          const parts = padding.split(/\s+/);
+          if (parts.length === 1) {
+            settings.paddingTop = settings.paddingBottom = settings.paddingLeft = settings.paddingRight = parts[0];
+          } else if (parts.length === 2) {
+            settings.paddingTop = settings.paddingBottom = parts[0];
+            settings.paddingLeft = settings.paddingRight = parts[1];
+          } else if (parts.length === 4) {
+            settings.paddingTop = parts[0];
+            settings.paddingRight = parts[1];
+            settings.paddingBottom = parts[2];
+            settings.paddingLeft = parts[3];
+          }
+        }
+        break;
+      }
+      case "ColumnLayout": {
+        settings.gap = parseStyle("gap") || "16px";
+        break;
+      }
+      case "Divider": {
+        const hr = $el.is("hr") ? $el : $el.find("hr").first();
+        const hrStyle = hr.attr("style") || "";
+        const parseHrStyle = (property) => {
+          const regex = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i');
+          const match = hrStyle.match(regex);
+          return match ? match[1].trim() : "";
+        };
+        const borderTop = parseHrStyle("border-top") || "";
+        if (borderTop) {
+          const parts = borderTop.split(/\s+/);
+          if (parts.length >= 3) {
+            settings.thickness = parts[0];
+            settings.style = parts[1];
+            settings.color = parts.slice(2).join(" ");
+          }
+        }
+        settings.width = parseHrStyle("width") || "100%";
+        break;
+      }
+      case "Spacer": {
+        settings.height = parseStyle("height") || "40px";
+        break;
+      }
+      case "Callout": {
+        settings.backgroundColor = parseStyle("background-color") || "#fdfbc8";
+        const borderLeft = parseStyle("border-left") || "";
+        if (borderLeft) {
+          const parts = borderLeft.split(/\s+/);
+          settings.borderColor = parts.length >= 3 ? parts.slice(2).join(" ") : "";
+        }
+        settings.emoji = $el.find("span").first().text()?.trim() || "💡";
+        settings.title = $el.find("strong").first().text()?.trim() || "";
+        settings.body = $el.find("span").eq(1).text()?.trim() || $el.find("div span").text()?.trim() || "";
+        break;
+      }
+      case "Image": {
+        const img = $el.find("img").first();
+        settings.src = img.attr("src") || "";
+        settings.alt = img.attr("alt") || "";
+        settings.width = img.css("width") || "100%";
+        settings.height = img.css("height") || "auto";
+        settings.align = parseStyle("text-align") || "center";
+        settings.caption = $el.find("p").first().text()?.trim() || "";
+        settings.linkUrl = $el.find("a").first().attr("href") || "";
+        break;
+      }
+      case "VideoEmbed": {
+        const iframe = $el.find("iframe").first();
+        settings.url = iframe.attr("src") || "";
+        settings.maxWidth = parseStyle("max-width") || "100%";
+        break;
+      }
+      case "ButtonBlock":
+      case "CTAButton": {
+        const a = $el.find("a").first();
+        const aStyle = a.attr("style") || "";
+        const parseAStyle = (property) => {
+          const regex = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i');
+          const match = aStyle.match(regex);
+          return match ? match[1].trim() : "";
+        };
+        settings.text = a.text()?.trim() || "Click Here";
+        settings.url = a.attr("href") || "#";
+        settings.alignment = parseStyle("text-align") || "center";
+        settings.backgroundColor = parseAStyle("background-color") || "#008060";
+        settings.textColor = parseAStyle("color") || "#ffffff";
+        settings.borderRadius = parseInt(parseAStyle("border-radius"), 10) || 6;
+        break;
+      }
+      case "FaqBlock": {
+        settings.title = $el.find("h2").first().text()?.trim() || "";
+        settings.layout = $el.find("details.builder-faq-item").length > 0 ? "accordion" : "grid";
+        settings.items = [];
+        if (settings.layout === "accordion") {
+          $el.find("details.builder-faq-item").each((_, details) => {
+            const $det = $(details);
+            const question = $det.find(".faq-question-text").first().text()?.trim() || $det.find("summary").first().text()?.trim() || "";
+            const answer = $det.find("div p").first().html()?.trim() || $det.find("p").first().html()?.trim() || "";
+            settings.items.push({ question, answer });
+          });
+        } else {
+          $el.find("div[style*='background-color']").each((_, itemEl) => {
+            const $item = $(itemEl);
+            const question = $item.find("h4").first().text()?.trim() || "";
+            const answer = $item.find("p").first().html()?.trim() || "";
+            if (question || answer) {
+              settings.items.push({ question, answer });
+            }
+          });
+        }
+        break;
+      }
+      case "TableOfContents": {
+        const isDetails = $el.hasClass("sp-toc-details") || $el.is("details");
+        const $tocContainer = isDetails ? $el : $el.find(".sp-toc-block, .sp-toc-details").first();
+        settings.title = $tocContainer.find("summary, div").first().text()?.trim() || "Table of Contents";
+        settings.collapsible = isDetails;
+        settings.listStyle = $tocContainer.find("ol").length > 0 ? "numbered" : "bullet";
+        settings.levels = [2, 3];
+        break;
+      }
+      case "Html": {
+        settings.code = $el.html() || "";
+        break;
+      }
+      case "Table": {
+        const tableData = [];
+        $el.find("tr").each((_, tr) => {
+          const row = [];
+          $(tr).find("th, td").each((_, td) => {
+            row.push($(td).text()?.trim() || "");
+          });
+          if (row.length) tableData.push(row);
+        });
+        settings.tableData = tableData.length ? tableData : [];
+        settings.hasHeader = $el.find("thead").length > 0;
+        break;
+      }
+      case "HeroSection": {
+        settings.heading = $el.find("h1").first().text()?.trim() || "";
+        settings.subheading = $el.find("p").first().text()?.trim() || "";
+        settings.textColor = parseStyle("color") || "#ffffff";
+        settings.minHeight = parseStyle("min-height") || "360px";
+        const bgImgStyle = parseStyle("background-image") || "";
+        if (bgImgStyle && bgImgStyle.includes("url(")) {
+          const match = bgImgStyle.match(/url\(['"]?([^'"]+)['"]?\)/);
+          settings.backgroundImage = match ? match[1] : "";
+        }
+        const a = $el.find("a").first();
+        settings.showCta = a.length > 0;
+        if (settings.showCta) {
+          settings.ctaText = a.text()?.trim() || "";
+          settings.ctaUrl = a.attr("href") || "";
+          const aStyle = a.attr("style") || "";
+          const parseAStyle = (property) => {
+            const regex = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i');
+            const match = aStyle.match(regex);
+            return match ? match[1].trim() : "";
+          };
+          settings.ctaColor = parseAStyle("background") || parseAStyle("background-color") || "#008060";
+          settings.ctaTextColor = parseAStyle("color") || "#ffffff";
+        }
+        break;
+      }
+      case "Collection":
+      case "ProductSlider":
+      case "ProductGrid": {
+        settings.title = $el.find("h3").first().text()?.trim() || "";
+        settings.heading = settings.title;
+        settings.manualProducts = [];
+        $el.find("div[style*='border']").each((_, pEl) => {
+          const $p = $(pEl);
+          const title = $p.find("h4").first().text()?.trim() || "";
+          const imageUrl = $p.find("img").first().attr("src") || "";
+          const price = $p.find("p").first().text()?.trim() || "";
+          if (title || imageUrl) {
+            settings.manualProducts.push({
+              title,
+              image: imageUrl,
+              price: price.replace(/[₹$]/g, "")
+            });
+          }
+        });
+        break;
+      }
+      case "ProductCard": {
+        settings.title = $el.find("h4").first().text()?.trim() || "";
+        settings.price = $el.find("p").first().text()?.trim() || "";
+        settings.imageUrl = $el.find("img").first().attr("src") || "";
+        break;
+      }
+      case "BuyButton": {
+        const title = $el.find("h4").first().text()?.trim() || "";
+        const price = $el.find("p").first().text()?.trim() || "";
+        const image = $el.find("img").first().attr("src") || "";
+        settings.product = {
+          title,
+          price: price.replace(/[₹$]/g, ""),
+          image
+        };
+        break;
+      }
+    }
+    return settings;
   }
 
   static _generateId() {
