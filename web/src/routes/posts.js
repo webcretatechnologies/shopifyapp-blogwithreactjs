@@ -356,8 +356,66 @@ router.put("/:id", async (req, res) => {
       await syncProducts(shop.id, post.id, productSliderProducts);
     }
 
-    // Create or update ShopifyArticle relation locally if blogId was provided
-    if (blogId) {
+    const shopifyRecord = await prisma.shopifyArticle.findUnique({ where: { postId: post.id } });
+    let wasMoved = false;
+
+    // Check if the blog is being changed for an already linked article
+    if (blogId && shopifyRecord && shopifyRecord.shopifyArticleId) {
+      let actualRemoteBlogId = shopifyRecord.shopifyBlogId;
+      try {
+        const session = res.locals.shopify?.session;
+        if (session) {
+          const client = new shopify.api.clients.Graphql({ session });
+          const remoteCheck = await client.request(`
+            query GetArticleBlog($id: ID!) {
+              article(id: $id) {
+                blog { id }
+              }
+            }
+          `, { variables: { id: ArticleSyncService.toArticleGid(shopifyRecord.shopifyArticleId) } });
+          
+          if (remoteCheck.data?.article?.blog?.id) {
+            actualRemoteBlogId = ArticleSyncService.numericIdFromGid(remoteCheck.data.article.blog.id);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Blog Move] Failed to fetch remote article's blog ID: ${err.message}`);
+      }
+
+      if (actualRemoteBlogId && actualRemoteBlogId !== String(blogId)) {
+        // Shopify does not support moving articles between blogs natively.
+        // We must delete the old article and create a new one in the target blog.
+        try {
+          const session = res.locals.shopify?.session;
+          if (session) {
+            const client = new shopify.api.clients.Graphql({ session });
+            await client.request(`
+              mutation DeleteArticle($id: ID!) {
+                articleDelete(id: $id) {
+                  deletedArticleId
+                }
+              }
+            `, { variables: { id: ArticleSyncService.toArticleGid(shopifyRecord.shopifyArticleId) } });
+          }
+        } catch (err) {
+          console.warn(`[Blog Move] Failed to delete old article: ${err.message}`);
+        }
+
+        // Update the local record to clear the Shopify Article ID and set the new Blog ID
+        await prisma.shopifyArticle.update({
+          where: { postId: post.id },
+          data: {
+            shopifyBlogId: String(blogId),
+            shopifyArticleId: null, // Force recreation
+            syncRevision: 0,
+          },
+        });
+        wasMoved = true;
+      }
+    }
+    
+    if (!wasMoved && blogId) {
+      // Create or update ShopifyArticle relation locally
       await prisma.shopifyArticle.upsert({
         where: { postId: post.id },
         create: {
@@ -373,11 +431,11 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    // Sync to Shopify using ArticleSyncService if linked to a blog
-    const shopifyRecord = await prisma.shopifyArticle.findUnique({ where: { postId: post.id } });
-    const targetBlogId = blogId || shopifyRecord?.shopifyBlogId;
+    const updatedShopifyRecord = await prisma.shopifyArticle.findUnique({ where: { postId: post.id } });
+    const targetBlogId = blogId || updatedShopifyRecord?.shopifyBlogId;
 
-    if (targetBlogId && (updated.status === "published" || shopifyRecord?.shopifyArticleId)) {
+    // Sync to Shopify if published, already linked, or explicitly moved
+    if (targetBlogId && (updated.status === "published" || updatedShopifyRecord?.shopifyArticleId || wasMoved)) {
       try {
         await ArticleSyncService.syncAfterLocalEdit(post.id, {
           publishMode: updated.status === "published",
