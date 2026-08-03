@@ -77,8 +77,8 @@ const legacyHtmlToAst = (html) => {
     doc.body.children.length === 1 &&
     doc.body.children[0].tagName === "DIV" &&
     (doc.body.children[0].classList.contains("tiptap-content") ||
-     doc.body.children[0].classList.contains("builder-post") ||
-     doc.body.children[0].classList.contains("article-content"))
+      doc.body.children[0].classList.contains("builder-post") ||
+      doc.body.children[0].classList.contains("article-content"))
   ) {
     rootContainer = doc.body.children[0];
   }
@@ -202,7 +202,7 @@ const legacyHtmlToAst = (html) => {
           if (val === "true") val = true;
           else if (val === "false") val = false;
           else if (val && (val.startsWith("{") || val.startsWith("["))) {
-            try { val = JSON.parse(val); } catch (e) {}
+            try { val = JSON.parse(val); } catch (e) { }
           } else if (!isNaN(val) && val.trim() !== "" && key === "overlayopacity") {
             val = parseFloat(val);
           }
@@ -358,6 +358,23 @@ const legacyHtmlToAst = (html) => {
   return blocks;
 };
 
+export const parseTags = (input) => {
+  if (!input) return [];
+  const tagArray = Array.isArray(input) ? input : String(input).split(",");
+  const result = [];
+  tagArray.forEach((item) => {
+    if (typeof item === "string") {
+      item.split(",").forEach((subItem) => {
+        const trimmed = subItem.trim();
+        if (trimmed && !result.includes(trimmed)) {
+          result.push(trimmed);
+        }
+      });
+    }
+  });
+  return result;
+};
+
 export default function PostEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -376,15 +393,15 @@ export default function PostEditor() {
     editorMode: "builder", // Default to builder instead of wysiwyg
   });
   const [originalPost, setOriginalPost] = useState(null);
-  
+
   // contentHtml is now purely for backend sync and legacy loads.
   const [contentHtml, setContentHtml] = useState("");
   const [originalContentHtml, setOriginalContentHtml] = useState("");
-  
-  
+
+
   // Track structural edits made in either editor mode
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  
+
   const isFirstRender = useRef(true);
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
@@ -422,7 +439,7 @@ export default function PostEditor() {
     ogImage: "",
   });
   const [seoExpanded, setSeoExpanded] = useState(false);
-  const [excerptExpanded, setExcerptExpanded] = useState(false);
+  const [themeTemplate, setThemeTemplate] = useState("default");
 
   // Load existing post
   const loadPost = useCallback(async () => {
@@ -430,7 +447,7 @@ export default function PostEditor() {
       const res = await fetch(`/api/posts/${id}`);
       if (!res.ok) throw new Error("Post not found");
       const data = await res.json();
-      
+
       // Safely parse contentJson if stringified
       let initialJson = data.post.contentJson;
       if (typeof initialJson === "string") {
@@ -441,7 +458,7 @@ export default function PostEditor() {
         }
       }
       let initialMode = data.post.editorMode || "builder";
-      
+
       let normalizedBlocks = normalizeBlocksAst(initialJson || []);
 
       if (!hasMeaningfulBlocks(normalizedBlocks) && data.post.contentHtml && data.post.contentHtml.trim() !== "") {
@@ -463,11 +480,14 @@ export default function PostEditor() {
         shopifyArticle: data.post.shopifyArticle || null,
       };
 
-      setPost(p);
-      setOriginalPost(p);
+      const loadedTags = parseTags(data.post.tags);
+      const postWithParsedTags = { ...p, tags: loadedTags };
+
+      setPost(postWithParsedTags);
+      setOriginalPost(postWithParsedTags);
       setContentHtml(data.post.contentHtml || "");
       setOriginalContentHtml(data.post.contentHtml || "");
-      setTags(data.post.tags || []);
+      setTags(loadedTags);
       setFeatures(data.features || {});
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
 
@@ -478,8 +498,8 @@ export default function PostEditor() {
       setHasUnsavedChanges(false);
       if (window.shopify?.saveBar) {
         try {
-          window.shopify.saveBar.hide("post-editor-save-bar").catch(() => {});
-        } catch (e) {}
+          window.shopify.saveBar.hide("post-editor-save-bar").catch(() => { });
+        } catch (e) { }
       }
 
       setSeoData({
@@ -490,8 +510,6 @@ export default function PostEditor() {
         ogDescription: data.post.ogDescription || "",
         ogImage: data.post.ogImage || "",
       });
-      // Auto-expand sections if they have content
-      if (data.post.excerpt) setExcerptExpanded(true);
       if (data.post.metaTitle || data.post.metaDescription) setSeoExpanded(true);
     } catch (err) {
       setError(err.message);
@@ -511,7 +529,7 @@ export default function PostEditor() {
       const featData = await featuresRes.json();
       setShopifyBlogs(blogsData.blogs || []);
       if (!isEditing) setFeatures(featData.features || {});
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -527,7 +545,7 @@ export default function PostEditor() {
 
   const isDirty = useMemo(() => {
     if (hasUnsavedChanges) return true;
-    
+
     if (!isEditing) {
       return (
         isFieldDirty(post.title, "") ||
@@ -577,9 +595,9 @@ export default function PostEditor() {
   useEffect(() => {
     if (window.shopify?.saveBar) {
       if (isDirty) {
-        window.shopify.saveBar.show(saveBarId).catch(() => {});
+        window.shopify.saveBar.show(saveBarId).catch(() => { });
       } else {
-        window.shopify.saveBar.hide(saveBarId).catch(() => {});
+        window.shopify.saveBar.hide(saveBarId).catch(() => { });
       }
     }
   }, [isDirty]);
@@ -587,7 +605,7 @@ export default function PostEditor() {
   useEffect(() => {
     return () => {
       if (window.shopify?.saveBar) {
-        window.shopify.saveBar.hide(saveBarId).catch(() => {});
+        window.shopify.saveBar.hide(saveBarId).catch(() => { });
       }
     };
   }, []);
@@ -620,9 +638,25 @@ export default function PostEditor() {
 
 
 
+  const handleTagInputChange = (val) => {
+    if (val.includes(",")) {
+      const parts = val.split(",");
+      const trailing = parts.pop();
+      const newTags = parseTags(parts);
+      if (newTags.length > 0) {
+        setTags((prev) => parseTags([...prev, ...newTags]));
+      }
+      setTagInput(trailing.trimStart());
+    } else {
+      setTagInput(val);
+    }
+  };
+
   const addTag = () => {
-    const t = tagInput.trim();
-    if (t && !tags.includes(t)) setTags((prev) => [...prev, t]);
+    const newTags = parseTags(tagInput);
+    if (newTags.length > 0) {
+      setTags((prev) => parseTags([...prev, ...newTags]));
+    }
     setTagInput("");
   };
 
@@ -734,18 +768,18 @@ export default function PostEditor() {
           navigate(`/posts/${data.post.id}/edit`);
         }
       } else if (!isEditing) {
-         setHasUnsavedChanges(false);
-         navigate(`/posts/${data.post.id}/edit`);
+        setHasUnsavedChanges(false);
+        navigate(`/posts/${data.post.id}/edit`);
       } else {
-         setHasUnsavedChanges(false);
-         setOriginalPost({
-           ...payload,
-           shopifyArticle: { shopifyBlogId }
-         });
-         setOriginalContentHtml(payload.contentHtml || "");
-         if (window.shopify?.saveBar) {
-           try { await window.shopify.saveBar.hide(saveBarId); } catch (e) {}
-         }
+        setHasUnsavedChanges(false);
+        setOriginalPost({
+          ...payload,
+          shopifyArticle: { shopifyBlogId }
+        });
+        setOriginalContentHtml(payload.contentHtml || "");
+        if (window.shopify?.saveBar) {
+          try { await window.shopify.saveBar.hide(saveBarId); } catch (e) { }
+        }
       }
       return data.post?.id || id;
     } catch (err) {
@@ -843,7 +877,7 @@ export default function PostEditor() {
       const savedPostId = await handleSave("published");
       const postId = id || savedPostId;
       if (!postId) return; // if save failed
-      
+
       const res = await fetch(`/api/posts/${postId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1077,13 +1111,14 @@ export default function PostEditor() {
             <BlockStack gap="400">
 
               {/* Title — no card header, just the input, like Shopify */}
+              {/* Title — matching native Shopify Title card */}
               <Card>
                 <Box padding="400">
                   <TextField
                     label="Title"
                     value={post.title}
                     onChange={handleTitleChange}
-                    placeholder="e.g. My first blog post"
+                    placeholder="e.g. What Makes Auram Dhoop Cones Truly Divine"
                     autoComplete="off"
                     size="large"
                   />
@@ -1095,31 +1130,31 @@ export default function PostEditor() {
                 <Box padding="0">
                   <Box paddingBlock="300" paddingInline="400">
                     <InlineStack align="space-between" blockAlign="center">
-                      <Text variant="headingSm" tone="subdued">Content</Text>
+                      <Text variant="headingSm" as="h2">Content</Text>
                     </InlineStack>
                   </Box>
                   <Divider />
                   <Box padding="0">
-                      <DragDropBuilderContainer
-                        initialBlocksAst={post.contentJson || []}
-                        onChange={(blocksAst) => {
-                          setPost((p) => {
-                            if (JSON.stringify(p.contentJson) === JSON.stringify(blocksAst)) return p;
-                            const origJsonStr = JSON.stringify(originalPost?.contentJson || []);
-                            const currJsonStr = JSON.stringify(blocksAst || []);
-                            if (origJsonStr !== currJsonStr) {
-                              setHasUnsavedChanges(true);
-                            }
-                            return { ...p, contentJson: blocksAst };
-                          });
-                        }}
-                        postTitle={post.title}
-                        onTitleChange={handleTitleChange}
-                        onSave={() => handleSave(post.status === "published" ? "published" : "draft", "header")}
-                        onPreview={handlePreviewClick}
-                        isSaving={isSaving}
-                        isPreviewLoading={isPreviewLoading}
-                      />
+                    <DragDropBuilderContainer
+                      initialBlocksAst={post.contentJson || []}
+                      onChange={(blocksAst) => {
+                        setPost((p) => {
+                          if (JSON.stringify(p.contentJson) === JSON.stringify(blocksAst)) return p;
+                          const origJsonStr = JSON.stringify(originalPost?.contentJson || []);
+                          const currJsonStr = JSON.stringify(blocksAst || []);
+                          if (origJsonStr !== currJsonStr) {
+                            setHasUnsavedChanges(true);
+                          }
+                          return { ...p, contentJson: blocksAst };
+                        });
+                      }}
+                      postTitle={post.title}
+                      onTitleChange={handleTitleChange}
+                      onSave={() => handleSave(post.status === "published" ? "published" : "draft", "header")}
+                      onPreview={handlePreviewClick}
+                      isSaving={isSaving}
+                      isPreviewLoading={isPreviewLoading}
+                    />
                   </Box>
                 </Box>
               </Card>
@@ -1135,415 +1170,336 @@ export default function PostEditor() {
             <Layout.Section style={{ flex: "1 1 0%", maxWidth: "none" }}>
               <BlockStack gap="400">
 
-              {/* Excerpt — collapsible like Shopify */}
-              <Card>
-                <Box padding="0">
-                  <Box
-                    paddingBlock="400"
-                    paddingInline="400"
-                    as="button"
-                    onClick={() => setExcerptExpanded((v) => !v)}
-                    style={{
-                      width: "100%",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text variant="headingSm">Excerpt</Text>
-                      <Text variant="bodySm" tone="subdued">
-                        {excerptExpanded ? "▲" : "▼"}
-                      </Text>
-                    </InlineStack>
-                  </Box>
-                  {excerptExpanded && (
-                    <>
-                      <Divider />
-                      <Box padding="400">
-                        <BlockStack gap="200">
-                          <Text variant="bodySm" tone="subdued">
-                            Add a summary of the post to appear on your home page or blog.
-                          </Text>
-                          <TextField
-                            label="Excerpt"
-                            labelHidden
-                            value={post.excerpt || ""}
-                            onChange={handleField("excerpt")}
-                            multiline={4}
-                            autoComplete="off"
-                            placeholder="Add a summary..."
-                          />
-                        </BlockStack>
-                      </Box>
-                    </>
-                  )}
-                </Box>
-              </Card>
-
-              {/* Search engine listing — matches Shopify's exact layout */}
-              <Card>
-                <Box padding="0">
-                  <Box
-                    paddingBlock="400"
-                    paddingInline="400"
-                    as="button"
-                    onClick={() => setSeoExpanded((v) => !v)}
-                    style={{
-                      width: "100%",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text variant="headingSm">Search engine listing</Text>
-                      <Text variant="bodySm" tone="subdued">
-                        {seoExpanded ? "▲" : "▼"}
-                      </Text>
-                    </InlineStack>
-                  </Box>
-
-                  {/* Always-visible URL preview, like Shopify */}
-                  <Divider />
-                  <Box paddingBlock="300" paddingInline="400">
-                    <BlockStack gap="100">
-                      <Text variant="bodySm" tone="subdued">
-                        {window.shopify?.config?.shop || "your-store.myshopify.com"}
-                      </Text>
-                      <Text variant="bodySm" tone="magic">
-                        https://{window.shopify?.config?.shop || "your-store.myshopify.com"}/blogs/{shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/{post.slug || ""}
-                      </Text>
-                      <Text variant="bodySm" tone="subdued">
-                        {seoData.metaTitle || post.title || ""}
-                      </Text>
-                      <Text variant="bodySm" tone="subdued">
-                        {seoData.metaDescription || post.excerpt || ""}
-                      </Text>
-                    </BlockStack>
-                  </Box>
-
-                  {seoExpanded && (
-                    <>
-                      <Divider />
-                      <Box padding="400">
-                        <BlockStack gap="400">
-                          <TextField
-                            label="Page title"
-                            value={seoData.metaTitle}
-                            onChange={(val) => setSeoData((s) => ({ ...s, metaTitle: val }))}
-                            maxLength={70}
-                            showCharacterCount
-                            autoComplete="off"
-                          />
-                          <TextField
-                            label="Meta description"
-                            value={seoData.metaDescription}
-                            onChange={(val) => setSeoData((s) => ({ ...s, metaDescription: val }))}
-                            multiline={3}
-                            maxLength={320}
-                            showCharacterCount
-                            autoComplete="off"
-                          />
-                          <TextField
-                            label="URL handle"
-                            value={post.slug}
-                            onChange={handleField("slug")}
-                            prefix="blogs/"
-                            helpText={`https://${window.shopify?.config?.shop || "your-store.myshopify.com"}/blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/${post.slug || ""}`}
-                            autoComplete="off"
-                          />
-                        </BlockStack>
-                      </Box>
-                    </>
-                  )}
-                </Box>
-              </Card>
-
-              {/* Custom CSS (plan-gated) */}
-              {features.custom_css?.enabled && (
+                {/* Excerpt — always expanded matching native Shopify reference */}
                 <Card>
                   <Box padding="400">
-                    <BlockStack gap="300">
-                      <Text variant="headingSm">Custom CSS</Text>
+                    <BlockStack gap="200">
+                      <Text variant="headingSm" as="h2">Excerpt</Text>
+                      <Text variant="bodySm" tone="subdued">
+                        Add a summary of the post to appear on your home page or blog.
+                      </Text>
                       <TextField
-                        label=""
-                        value={post.customCss || ""}
-                        onChange={handleField("customCss")}
-                        multiline={6}
-                        placeholder="/* Add custom styles for this article */"
-                        monospaced
+                        label="Excerpt"
+                        labelHidden
+                        value={post.excerpt || ""}
+                        onChange={handleField("excerpt")}
+                        multiline={4}
                         autoComplete="off"
+                        placeholder="Add a summary..."
                       />
                     </BlockStack>
                   </Box>
                 </Card>
-              )}
-            </BlockStack>
-          </Layout.Section>
 
-          {/* ══════════════════════════════════════════════════════
+                {/* Search engine listing — always expanded snippet preview, pencil edit affordance */}
+                <Card>
+                  <Box padding="400">
+                    <BlockStack gap="300">
+                      <InlineStack align="space-between" blockAlign="center">
+                        <Text variant="headingSm" as="h2">Search engine listing</Text>
+                        <Button
+                          icon={EditIcon}
+                          variant="tertiary"
+                          onClick={() => setSeoExpanded((v) => !v)}
+                          accessibilityLabel="Edit search engine listing"
+                        />
+                      </InlineStack>
+
+                      <BlockStack gap="100">
+                        <Text variant="bodySm" tone="subdued">
+                          {window.shopify?.config?.shop || "rajiv market shop"}
+                        </Text>
+                        <Text variant="bodySm" tone="subdued">
+                          https://{window.shopify?.config?.shop || "rajiv-market-shop.myshopify.com"}/blogs/{shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/{post.slug || ""}
+                        </Text>
+                        <Text variant="bodyMd" fontWeight="bold" tone="interactive">
+                          {seoData.metaTitle || post.title || "What Makes Auram Dhoop Cones Truly Divine"}
+                        </Text>
+                        <Text variant="bodySm" tone="subdued">
+                          {seoData.metaDescription || post.excerpt || "What Makes Auram Dhoop Cones Truly Divine Description"}
+                        </Text>
+                      </BlockStack>
+
+                      {seoExpanded && (
+                        <>
+                          <Divider />
+                          <BlockStack gap="400">
+                            <TextField
+                              label="Page title"
+                              value={seoData.metaTitle}
+                              onChange={(val) => setSeoData((s) => ({ ...s, metaTitle: val }))}
+                              maxLength={70}
+                              showCharacterCount
+                              autoComplete="off"
+                            />
+                            <TextField
+                              label="Meta description"
+                              value={seoData.metaDescription}
+                              onChange={(val) => setSeoData((s) => ({ ...s, metaDescription: val }))}
+                              multiline={3}
+                              maxLength={320}
+                              showCharacterCount
+                              autoComplete="off"
+                            />
+                            <TextField
+                              label="URL handle"
+                              value={post.slug}
+                              onChange={handleField("slug")}
+                              prefix="blogs/"
+                              helpText={`https://${window.shopify?.config?.shop || "your-store.myshopify.com"}/blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/${post.slug || ""}`}
+                              autoComplete="off"
+                            />
+                          </BlockStack>
+                        </>
+                      )}
+                    </BlockStack>
+                  </Box>
+                </Card>
+
+                {/* Custom CSS (plan-gated) */}
+                {features.custom_css?.enabled && (
+                  <Card>
+                    <Box padding="400">
+                      <BlockStack gap="300">
+                        <Text variant="headingSm" as="h2">Custom CSS</Text>
+                        <TextField
+                          label="Custom CSS"
+                          labelHidden
+                          value={post.customCss || ""}
+                          onChange={handleField("customCss")}
+                          multiline={6}
+                          placeholder="/* Add custom styles for this article */"
+                          monospaced
+                          autoComplete="off"
+                        />
+                      </BlockStack>
+                    </Box>
+                  </Card>
+                )}
+              </BlockStack>
+            </Layout.Section>
+
+            {/* ══════════════════════════════════════════════════════
                SIDEBAR (Compact Width for Maximum Canvas Space)
           ══════════════════════════════════════════════════════ */}
-          <Layout.Section variant="oneThird" style={{ flex: "0 0 300px", maxWidth: "300px" }}>
-            <BlockStack gap="400">
+            <Layout.Section variant="oneThird" style={{ flex: "0 0 300px", maxWidth: "300px" }}>
+              <BlockStack gap="400">
 
-              {/* ── Visibility ── */}
-              <Card>
-                <Box paddingBlockStart="400" paddingBlockEnd="300" paddingInline="400">
-                  <Text variant="headingMd" as="h2">Visibility</Text>
-                </Box>
-                <Divider />
-                <Box padding="400">
-                  <BlockStack gap="300">
-                    <BlockStack gap="0">
-                      <RadioButton
-                        label="Visible"
-                        helpText={
-                          post.status === "published" && post.publishedAt
-                            ? `As of ${new Date(post.publishedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} at ${new Date(post.publishedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })} GMT+5:30`
-                            : null
-                        }
-                        checked={post.status === "published"}
-                        id="visibility-visible"
-                        name="visibility"
-                        onChange={() => handleField("status")("published")}
-                      />
-                      <RadioButton
-                        label="Hidden"
-                        checked={post.status === "draft"}
-                        id="visibility-hidden"
-                        name="visibility"
-                        onChange={() => handleField("status")("draft")}
-                      />
-                    </BlockStack>
-                    <Divider />
-                    {post.status === "published" ? (
-                      <BlockStack gap="300">
-                        <Button
-                          variant="primary"
-                          onClick={() => handleSave("published", "sidebar")}
-                          loading={isSavingSidebar}
-                          disabled={isSaving && !isSavingSidebar}
-                          fullWidth
-                        >
-                          Save & Sync
-                        </Button>
-                        <Button
-                          tone="critical"
-                          variant="plain"
-                          onClick={handleUnpublish}
-                          loading={isUnpublishing}
-                          disabled={isSaving || isUnpublishing}
-                        >
-                          Unpublish
-                        </Button>
-                      </BlockStack>
-                    ) : (
-                      <BlockStack gap="300">
-                        <Button
-                          onClick={() => handleSave("draft", "sidebar")}
-                          loading={isSavingSidebar}
-                          disabled={isSaving && !isSavingSidebar}
-                          fullWidth
-                        >
-                          Save draft
-                        </Button>
-                        <Button
-                          variant="primary"
-                          onClick={handlePublish}
-                          loading={isPublishing}
-                          disabled={isSaving || isPublishing || !shopifyBlogId}
-                          fullWidth
-                        >
-                          Publish
-                        </Button>
-                      </BlockStack>
-                    )}
-                  </BlockStack>
-                </Box>
-              </Card>
-
-              {/* ── Image (Featured Image) ── */}
-              <Card>
-                <Box paddingBlockStart="400" paddingBlockEnd="300" paddingInline="400">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text variant="headingMd" as="h2">Image</Text>
-                    {post.featuredImage && (
-                      <Button
-                        variant="plain"
-                        disclosure
-                        onClick={() => setShowFilePicker(true)}
-                      >
-                        Edit
-                      </Button>
-                    )}
-                  </InlineStack>
-                </Box>
-                <Box padding="400" paddingBlockStart="0">
-                  {post.featuredImage ? (
-                    <BlockStack gap="300">
-                      <div
-                        style={{
-                          borderRadius: "var(--p-border-radius-300, 8px)",
-                          overflow: "hidden",
-                          border: "1px solid var(--p-color-border-subdued)",
-                        }}
-                      >
-                        <img
-                          src={post.featuredImage}
-                          alt="Featured image"
-                          style={{
-                            width: "100%",
-                            display: "block",
-                            maxHeight: "220px",
-                            objectFit: "cover",
-                          }}
-                        />
-                      </div>
-                      <Button
-                        tone="critical"
-                        variant="plain"
-                        onClick={() => handleField("featuredImage")("")}
-                        size="slim"
-                      >
-                        Remove image
-                      </Button>
-                    </BlockStack>
-                  ) : (
-                    <BlockStack gap="300">
-                      <DropZone
-                        onDrop={handleDropZoneDrop}
-                        allowMultiple={false}
-                        accept="image/*"
-                        variableHeight
-                      >
-                        {isUploadingImage ? (
-                          <Box padding="600">
-                            <BlockStack align="center" inlineAlign="center" gap="200">
-                              <Spinner size="small" />
-                              <Text variant="bodySm" tone="subdued">Uploading…</Text>
-                            </BlockStack>
-                          </Box>
-                        ) : (
-                          <Box padding="600">
-                            <BlockStack align="center" inlineAlign="center" gap="100">
-                              <Icon source={ImageIcon} tone="subdued" />
-                              <Text variant="bodySm" tone="subdued" alignment="center">
-                                Add image
-                              </Text>
-                            </BlockStack>
-                          </Box>
-                        )}
-                      </DropZone>
-                      <Button
-                        fullWidth
-                        onClick={() => setShowFilePicker(true)}
-                        variant="secondary"
-                      >
-                        Add from Shopify Files
-                      </Button>
-                    </BlockStack>
-                  )}
-                </Box>
-              </Card>
-
-              {/* ── Organization ── */}
-              <Card>
-                <Box paddingBlockStart="400" paddingBlockEnd="300" paddingInline="400">
-                  <Text variant="headingMd" as="h2">Organization</Text>
-                </Box>
-                <Divider />
-                <Box padding="400">
-                  <BlockStack gap="400">
-                    <TextField
-                      label="Author"
-                      value={post.author || ""}
-                      onChange={handleField("author")}
-                      autoComplete="off"
-                    />
-                    <Select
-                      label="Blog"
-                      options={blogOptions}
-                      value={shopifyBlogId}
-                      onChange={handleBlogChange}
-                    />
-                    <BlockStack gap="200">
-                      <Text variant="bodyMd" fontWeight="medium">Tags</Text>
-                      {tags.length > 0 && (
-                        <InlineStack gap="100" wrap>
-                          {tags.map((tag) => (
-                            <Tag key={tag} onRemove={() => removeTag(tag)}>
-                              {tag}
-                            </Tag>
-                          ))}
-                        </InlineStack>
-                      )}
-                      <InlineStack gap="200" blockAlign="start">
-                        <div style={{ flex: 1 }}>
-                          <TextField
-                            label="Add tags"
-                            labelHidden
-                            value={tagInput}
-                            onChange={setTagInput}
-                            placeholder="Vintage, cotton, summer"
-                            onKeyPress={(e) => e.key === "Enter" && addTag()}
-                            autoComplete="off"
-                          />
-                        </div>
-                        <Button onClick={addTag} variant="secondary">Add</Button>
-                      </InlineStack>
-                    </BlockStack>
-                  </BlockStack>
-                </Box>
-              </Card>
-
-              {/* ── Shopify Sync Status ── */}
-              <SyncStatusIndicator
-                postId={post.id}
-                postTitle={post.title}
-                initialArticle={post.shopifyArticle}
-              />
-
-              {/* ── Delete Article ── */}
-              {isEditing && (
+                {/* ── Visibility ── */}
                 <Card>
                   <Box padding="400">
                     <BlockStack gap="300">
-                      <Text variant="headingMd" tone="critical">Delete article</Text>
-                      <Text tone="subdued" variant="bodySm">
-                        Deleting this article will remove it permanently from the app. This action cannot be undone.
-                      </Text>
-                      {(post.status === "published" || post.shopifyArticle) && (
-                        <Checkbox
-                          label="Also delete from my Shopify store"
-                          checked={deleteFromShopify}
-                          onChange={setDeleteFromShopify}
+                      <Text variant="headingSm" as="h2">Visibility</Text>
+                      <BlockStack gap="200">
+                        <RadioButton
+                          label="Visible"
+                          helpText={
+                            post.status === "published" && post.publishedAt
+                              ? `As of ${new Date(post.publishedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} at ${new Date(post.publishedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })} GMT+5:30`
+                              : null
+                          }
+                          checked={post.status === "published"}
+                          id="visibility-visible"
+                          name="visibility"
+                          onChange={() => handleField("status")("published")}
                         />
-                      )}
-                      <Button
-                        tone="critical"
-                        variant="plain"
-                        loading={isDeleting}
-                        onClick={handleDelete}
-                      >
-                        Delete article
-                      </Button>
+                        <RadioButton
+                          label="Hidden"
+                          checked={post.status === "draft"}
+                          id="visibility-hidden"
+                          name="visibility"
+                          onChange={() => handleField("status")("draft")}
+                        />
+                      </BlockStack>
                     </BlockStack>
                   </Box>
                 </Card>
-              )}
 
-            </BlockStack>
-          </Layout.Section>
-        </Layout>
+                {/* ── Image (Featured Image) ── */}
+                <Card>
+                  <Box padding="400">
+                    <BlockStack gap="300">
+                      <InlineStack align="space-between" blockAlign="center">
+                        <Text variant="headingSm" as="h2">Image</Text>
+                        {post.featuredImage && (
+                          <Button
+                            variant="plain"
+                            disclosure
+                            onClick={() => setShowFilePicker(true)}
+                          >
+                            Edit
+                          </Button>
+                        )}
+                      </InlineStack>
+                      {post.featuredImage ? (
+                        <BlockStack gap="300">
+                          <div
+                            style={{
+                              borderRadius: "var(--p-border-radius-300, 8px)",
+                              overflow: "hidden",
+                              border: "1px solid var(--p-color-border-subdued)",
+                            }}
+                          >
+                            <img
+                              src={post.featuredImage}
+                              alt="Featured image"
+                              style={{
+                                width: "100%",
+                                display: "block",
+                                maxHeight: "220px",
+                                objectFit: "cover",
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <Button
+                              tone="critical"
+                              variant="plain"
+                              onClick={() => handleField("featuredImage")("")}
+                              size="slim"
+                            >
+                              Remove image
+                            </Button>
+                          </div>
+                        </BlockStack>
+                      ) : (
+                        <BlockStack gap="300">
+                          <DropZone
+                            onDrop={handleDropZoneDrop}
+                            allowMultiple={false}
+                            accept="image/*"
+                            variableHeight
+                          >
+                            {isUploadingImage ? (
+                              <Box padding="600">
+                                <BlockStack align="center" inlineAlign="center" gap="200">
+                                  <Spinner size="small" />
+                                  <Text variant="bodySm" tone="subdued">Uploading…</Text>
+                                </BlockStack>
+                              </Box>
+                            ) : (
+                              <Box padding="600">
+                                <BlockStack align="center" inlineAlign="center" gap="100">
+                                  <Icon source={ImageIcon} tone="subdued" />
+                                  <Text variant="bodySm" tone="subdued" alignment="center">
+                                    Add image
+                                  </Text>
+                                </BlockStack>
+                              </Box>
+                            )}
+                          </DropZone>
+                          <Button
+                            fullWidth
+                            onClick={() => setShowFilePicker(true)}
+                            variant="secondary"
+                          >
+                            Add from Shopify Files
+                          </Button>
+                        </BlockStack>
+                      )}
+                    </BlockStack>
+                  </Box>
+                </Card>
+
+                {/* ── Organization ── */}
+                <Card>
+                  <Box padding="400">
+                    <BlockStack gap="400">
+                      <Text variant="headingSm" as="h2">Organization</Text>
+                      <TextField
+                        label="Author"
+                        value={post.author || ""}
+                        onChange={handleField("author")}
+                        autoComplete="off"
+                      />
+                      <Select
+                        label="Blog"
+                        options={blogOptions}
+                        value={shopifyBlogId}
+                        onChange={handleBlogChange}
+                      />
+                      <BlockStack gap="200">
+                        <Text variant="bodyMd" fontWeight="medium">Tags</Text>
+                        {parseTags(tags).length > 0 && (
+                          <InlineStack gap="100" wrap>
+                            {parseTags(tags).map((tag) => (
+                              <Tag key={tag} onRemove={() => removeTag(tag)}>
+                                {tag}
+                              </Tag>
+                            ))}
+                          </InlineStack>
+                        )}
+                        <InlineStack gap="200" blockAlign="start">
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Add tags"
+                              labelHidden
+                              value={tagInput}
+                              onChange={handleTagInputChange}
+                              placeholder="Vintage, cotton, summer"
+                              onKeyPress={(e) => e.key === "Enter" && addTag()}
+                              autoComplete="off"
+                            />
+                          </div>
+                          <Button onClick={addTag} variant="secondary">Add</Button>
+                        </InlineStack>
+                      </BlockStack>
+                      <Select
+                        label="Theme template"
+                        options={[{ label: "Default blog post", value: "default" }]}
+                        value={themeTemplate}
+                        onChange={setThemeTemplate}
+                      />
+                    </BlockStack>
+                  </Box>
+                </Card>
+
+                {/* ── Shopify Sync Status ── */}
+                <SyncStatusIndicator
+                  postId={post.id}
+                  postTitle={post.title}
+                  initialArticle={post.shopifyArticle}
+                />
+
+                {/* ── Delete Article ── */}
+                {isEditing && (
+                  <Card>
+                    <Box padding="400">
+                      <BlockStack gap="300">
+                        <Text variant="headingSm" tone="critical" as="h2">Delete article</Text>
+                        <Text tone="subdued" variant="bodySm">
+                          Deleting this article will remove it permanently from the app. This action cannot be undone.
+                        </Text>
+                        {(post.status === "published" || post.shopifyArticle) && (
+                          <Checkbox
+                            label="Also delete from my Shopify store"
+                            checked={deleteFromShopify}
+                            onChange={setDeleteFromShopify}
+                          />
+                        )}
+                        <div>
+                          <Button
+                            tone="critical"
+                            variant="secondary"
+                            loading={isDeleting}
+                            onClick={handleDelete}
+                          >
+                            Delete article
+                          </Button>
+                        </div>
+                      </BlockStack>
+                    </Box>
+                  </Card>
+                )}
+
+              </BlockStack>
+            </Layout.Section>
+          </Layout>
         </div>
       </Page>
 
 
-        <ShopifyFilePicker
+      <ShopifyFilePicker
         open={showFilePicker}
         onClose={() => setShowFilePicker(false)}
         onSelect={(url) => setPost((p) => ({ ...p, featuredImage: url }))}
@@ -1568,17 +1524,17 @@ export default function PostEditor() {
         checkbox={
           post.status === "published" || post.shopifyArticle?.status === "published"
             ? {
-                label:
-                  "Also delete this article permanently from my Shopify store",
-                checked: deleteFromShopify,
-                onChange: setDeleteFromShopify,
-              }
+              label:
+                "Also delete this article permanently from my Shopify store",
+              checked: deleteFromShopify,
+              onChange: setDeleteFromShopify,
+            }
             : undefined
         }
       />
 
       {showPreview && (
-        <ArticlePreview  
+        <ArticlePreview
           open={showPreview}
           onClose={() => setShowPreview(false)}
           title={post.title}

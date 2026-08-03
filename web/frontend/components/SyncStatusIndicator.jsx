@@ -87,11 +87,11 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
   if (!article) {
     return (
       <Card>
-        <Box padding="500">
+        <Box padding="400">
           <BlockStack gap="200">
-            <Text variant="headingMd" as="h3">Shopify Sync</Text>
+            <Text variant="headingSm" as="h2">Shopify Sync</Text>
             <Text variant="bodySm" tone="subdued" as="p">
-              Not linked to a Shopify blog yet. Select a blog in Publishing to connect.
+              Not linked to a Shopify blog yet. Select a blog in Organization to connect.
             </Text>
           </BlockStack>
         </Box>
@@ -107,11 +107,11 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
 
   return (
     <Card>
-      <Box padding="500">
+      <Box padding="400">
         <BlockStack gap="250">
           {/* Header row */}
           <InlineStack gap="200" blockAlign="center" align="space-between">
-            <Text variant="headingMd" as="h3">Shopify Sync</Text>
+            <Text variant="headingSm" as="h2">Shopify Sync</Text>
             {loading && <Spinner size="small" />}
           </InlineStack>
 

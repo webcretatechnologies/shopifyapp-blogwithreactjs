@@ -55,6 +55,23 @@ function timeAgo(dateString) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+const parseTags = (input) => {
+  if (!input) return [];
+  const tagArray = Array.isArray(input) ? input : String(input).split(",");
+  const result = [];
+  tagArray.forEach((item) => {
+    if (typeof item === "string") {
+      item.split(",").forEach((subItem) => {
+        const trimmed = subItem.trim();
+        if (trimmed && !result.includes(trimmed)) {
+          result.push(trimmed);
+        }
+      });
+    }
+  });
+  return result;
+};
+
 
 
 function PostActionPopover({ post, onDelete }) {
@@ -346,9 +363,9 @@ export default function Articles() {
         )}
       </IndexTable.Cell>
       <IndexTable.Cell>
-        {post.tags && post.tags.length > 0 ? (
+        {post.tags && parseTags(post.tags).length > 0 ? (
           <InlineStack gap="100">
-            {post.tags.map((tag) => (
+            {parseTags(post.tags).map((tag) => (
               <Badge key={tag}>{tag}</Badge>
             ))}
           </InlineStack>
