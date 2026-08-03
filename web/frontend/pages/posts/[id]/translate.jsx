@@ -387,6 +387,21 @@ function formatTextValue(val) {
   return String(val);
 }
 
+/**
+ * Strip HTML tags from a string so plain-text fields (like Excerpt)
+ * are not rendered with raw markup. Uses a temporary DOM element
+ * so entities (e.g. &amp;) are also decoded correctly.
+ */
+function stripHtml(html) {
+  if (!html) return "";
+  if (typeof html !== "string") return String(html);
+  // If there's no HTML at all, return as-is
+  if (!html.includes("<")) return html.trim();
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return (tmp.textContent || tmp.innerText || "").trim();
+}
+
 // Helper component for side-by-side field pairs with matching Polaris chrome
 function TranslationRowPair({ title, originalValue, translatedValue, onChange, multiline, maxLength, placeholder }) {
   const safeOriginal = formatTextValue(originalValue);
@@ -592,7 +607,7 @@ export default function PostTranslationPage() {
     const found = translations.find((t) => t.locale === selectedLocale);
     if (found) {
       setTranslatedTitle(found.title || "");
-      setTranslatedExcerpt(found.excerpt || "");
+      setTranslatedExcerpt(stripHtml(found.excerpt || ""));
       const contentHtml = found.contentHtml || "";
       setTranslatedContent(contentHtml);
       setTranslatedMetaTitle(found.metaTitle || "");
@@ -776,7 +791,7 @@ export default function PostTranslationPage() {
 
       if (data.translation) {
         setTranslatedTitle(data.translation.title || "");
-        setTranslatedExcerpt(data.translation.excerpt || "");
+        setTranslatedExcerpt(stripHtml(data.translation.excerpt || ""));
         const contentHtml = data.translation.contentHtml || "";
         setTranslatedContent(contentHtml);
         setTranslatedMetaTitle(data.translation.metaTitle || "");
@@ -825,25 +840,31 @@ export default function PostTranslationPage() {
         <Toast content={toast.content} error={toast.error} onDismiss={() => setToast(null)} />
       )}
 
-      {isDirty && (
-        <ui-save-bar id={saveBarId}>
-          <button variant="primary" onClick={handleSave} loading={isSaving ? "" : undefined}>
-            Save
-          </button>
-          <button
-            onClick={() => {
-              const found = translations.find((t) => t.locale === selectedLocale);
-              setTranslatedTitle(found?.title || "");
-              setTranslatedExcerpt(found?.excerpt || "");
-              setTranslatedContent(found?.contentHtml || "");
-              setTranslatedMetaTitle(found?.metaTitle || "");
-              setTranslatedMetaDesc(found?.metaDescription || "");
-            }}
-          >
-            Discard
-          </button>
-        </ui-save-bar>
-      )}
+      {/* Always-mounted SaveBar — visibility controlled by window.shopify.saveBar.show/hide */}
+      <ui-save-bar id={saveBarId}>
+        <button variant="primary" onClick={handleSave} loading={isSaving ? "" : undefined}>
+          Save
+        </button>
+        <button
+          onClick={() => {
+            const found = translations.find((t) => t.locale === selectedLocale);
+            setTranslatedTitle(found?.title || "");
+            setTranslatedExcerpt(stripHtml(found?.excerpt || ""));
+            setTranslatedContent(found?.contentHtml || "");
+            setTranslatedMetaTitle(found?.metaTitle || "");
+            setTranslatedMetaDesc(found?.metaDescription || "");
+            // Reset block translations to match the saved state
+            if (found?.contentHtml && originalBlocks.length > 0) {
+              const blockMap = hydrateBlockTranslationsFromHtml(found.contentHtml, originalBlocks);
+              setBlockTranslations(blockMap);
+            } else {
+              setBlockTranslations({});
+            }
+          }}
+        >
+          Discard
+        </button>
+      </ui-save-bar>
 
       <Page
         backAction={{
@@ -959,7 +980,7 @@ export default function PostTranslationPage() {
 
                 <TranslationRowPair
                   title="Excerpt"
-                  originalValue={post.excerpt}
+                  originalValue={stripHtml(post.excerpt)}
                   translatedValue={translatedExcerpt}
                   onChange={(val) => setTranslatedExcerpt(val)}
                   multiline={3}

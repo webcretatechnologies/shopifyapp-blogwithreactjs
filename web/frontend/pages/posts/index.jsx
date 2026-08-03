@@ -21,13 +21,15 @@ import {
   BlockStack,
   Popover,
   ActionList,
-  TextField
+  TextField,
+  Modal,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import {
   PlusIcon,
   ImportIcon,
-  MenuHorizontalIcon
+  MenuHorizontalIcon,
+  DuplicateIcon,
 } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 
@@ -74,7 +76,43 @@ const parseTags = (input) => {
 
 
 
-function PostActionPopover({ post, onDelete }) {
+// ─── Clone Article Modal ───────────────────────────────────────────────────────
+function CloneArticleModal({ open, title, onTitleChange, onConfirm, onCancel, loading }) {
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title="Duplicate article"
+      primaryAction={{
+        content: "Duplicate article",
+        onAction: onConfirm,
+        loading,
+        disabled: !title.trim(),
+        icon: DuplicateIcon,
+      }}
+      secondaryActions={[{ content: "Cancel", onAction: onCancel }]}
+    >
+      <Modal.Section>
+        <BlockStack gap="300">
+          <Text variant="bodyMd" tone="subdued">
+            A draft copy will be created. No Shopify sync will happen automatically.
+          </Text>
+          <TextField
+            label="Article title"
+            value={title}
+            onChange={onTitleChange}
+            autoComplete="off"
+            autoFocus
+            helpText="You can rename this before or after duplicating."
+          />
+        </BlockStack>
+      </Modal.Section>
+    </Modal>
+  );
+}
+
+// ─── Post Action Popover ──────────────────────────────────────────────────────
+function PostActionPopover({ post, onDelete, onClone }) {
   const navigate = useNavigate();
   const [popoverActive, setPopoverActive] = useState(false);
 
@@ -93,6 +131,17 @@ function PostActionPopover({ post, onDelete }) {
   );
 
   const actionItems = [];
+
+  // Duplicate action — always first
+  actionItems.push({
+    content: "Duplicate",
+    icon: DuplicateIcon,
+    onAction: () => {
+      togglePopoverActive();
+      onClone();
+    },
+  });
+
   if (post?.shopifyArticle?.shopifyArticleId) {
     actionItems.push({
       content: "Manage comments",
@@ -141,6 +190,11 @@ export default function Articles() {
   const [deleteTargetPost, setDeleteTargetPost] = useState(null);
   const [deleteFromShopifyChoice, setDeleteFromShopifyChoice] = useState(false);
   const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
+
+  // Clone modal state
+  const [cloneTargetPost, setCloneTargetPost] = useState(null);
+  const [cloneTitle, setCloneTitle] = useState("");
+  const [isCloningLoading, setIsCloningLoading] = useState(false);
 
   const PER_PAGE = 20;
 
@@ -212,6 +266,39 @@ export default function Articles() {
   const handleDelete = (post) => {
     setDeleteTargetPost(post);
     setDeleteFromShopifyChoice(false);
+  };
+
+  const handleClone = (post) => {
+    setCloneTargetPost(post);
+    setCloneTitle(`Copy of ${post.title}`);
+  };
+
+  const confirmClone = async () => {
+    if (!cloneTargetPost) return;
+    setIsCloningLoading(true);
+    try {
+      const res = await fetch(`/api/posts/${cloneTargetPost.id}/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: cloneTitle }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setToastMessage({ content: data.error || "Failed to duplicate article", error: true });
+      } else {
+        const newId = data.post?.id;
+        setToastMessage({
+          content: "Article duplicated successfully",
+          action: newId ? { content: "Edit clone", onAction: () => navigate(`/posts/${newId}/edit`) } : undefined,
+        });
+        setCloneTargetPost(null);
+        fetchPosts();
+      }
+    } catch {
+      setToastMessage({ content: "Failed to duplicate article", error: true });
+    } finally {
+      setIsCloningLoading(false);
+    }
   };
 
   const confirmDeletePost = async () => {
@@ -391,7 +478,11 @@ export default function Articles() {
       </IndexTable.Cell>
       <IndexTable.Cell>
         <div onClick={(e) => e.stopPropagation()}>
-          <PostActionPopover post={post} onDelete={() => handleDelete(post)} />
+          <PostActionPopover
+            post={post}
+            onDelete={() => handleDelete(post)}
+            onClone={() => handleClone(post)}
+          />
         </div>
       </IndexTable.Cell>
     </IndexTable.Row>
@@ -516,6 +607,16 @@ export default function Articles() {
           </Layout.Section>
         </Layout>
       </Page>
+
+      {/* ─── Clone Article Modal ─── */}
+      <CloneArticleModal
+        open={Boolean(cloneTargetPost)}
+        title={cloneTitle}
+        onTitleChange={setCloneTitle}
+        onConfirm={confirmClone}
+        onCancel={() => { setCloneTargetPost(null); setCloneTitle(""); }}
+        loading={isCloningLoading}
+      />
 
       {/* ─── Delete Confirmation Modal ─── */}
       <ConfirmActionModal

@@ -496,6 +496,129 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+// ─── POST /api/posts/:id/clone — Duplicate an article ─────────────────────────
+router.post("/:id/clone", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    // 1. Plan limit check
+    const limit = getArticleLimit(shop.planKey);
+    if (limit !== null) {
+      const count = await prisma.post.count({ where: { shopId: shop.id } });
+      if (count >= limit) {
+        return res.status(403).json({
+          error: `You've reached your plan limit of ${limit} articles. Please upgrade to clone more.`,
+        });
+      }
+    }
+
+    // 2. Fetch source post with all relations
+    const sourcePost = await prisma.post.findFirst({
+      where: { id: parseInt(req.params.id), shopId: shop.id },
+      include: {
+        tags: { include: { tag: true } },
+        products: { include: { product: true } },
+        blocks: true,
+        translations: true,
+        shopifyArticle: true,   // needed to copy blog assignment
+      },
+    });
+    if (!sourcePost) return res.status(404).json({ error: "Post not found" });
+
+    // 3. User-confirmed title from modal (fallback: "Copy of ...")
+    const clonedTitle = ((req.body.title || "").trim()) || `Copy of ${sourcePost.title}`;
+
+    // 4. Create the cloned post record
+    const clonedPost = await prisma.post.create({
+      data: {
+        shopId: shop.id,
+        title: clonedTitle,
+        slug: generateSlug(clonedTitle),
+        status: "draft",
+        author: sourcePost.author,
+        vendor: sourcePost.vendor,
+        excerpt: sourcePost.excerpt,
+        featuredImage: sourcePost.featuredImage,
+        contentJson: sourcePost.contentJson,
+        contentHtml: sourcePost.contentHtml,
+        customCss: sourcePost.customCss,
+        customJs: sourcePost.customJs,
+        productSliderPosition: sourcePost.productSliderPosition,
+        productSliderSource: sourcePost.productSliderSource,
+        productSliderConfig: sourcePost.productSliderConfig,
+        categoryId: sourcePost.categoryId,
+        editorMode: sourcePost.editorMode,
+        metaTitle: sourcePost.metaTitle,
+        metaDescription: sourcePost.metaDescription,
+        canonicalUrl: null,       // SEO: canonical must be unique — clear it
+        ogTitle: sourcePost.ogTitle,
+        ogDescription: sourcePost.ogDescription,
+        ogImage: sourcePost.ogImage,
+        publishedAt: null,        // Clone is never auto-published
+        trackingKey: null,        // Will be generated fresh on first view
+      },
+    });
+
+    // 5. Clone PostTag associations
+    const tagNames = sourcePost.tags.map((pt) => pt.tag?.name).filter(Boolean);
+    if (tagNames.length > 0) await syncTags(shop.id, clonedPost.id, tagNames);
+
+    // 6. Clone PostProduct associations
+    const productList = sourcePost.products.map((pp) => pp.product).filter(Boolean);
+    if (productList.length > 0) await syncProducts(shop.id, clonedPost.id, productList);
+
+    // 7. Clone PostBlock rows
+    if (sourcePost.blocks.length > 0) {
+      await prisma.postBlock.createMany({
+        data: sourcePost.blocks.map((b) => ({
+          postId: clonedPost.id,
+          blockType: b.blockType,
+          orderIndex: b.orderIndex,
+          settings: b.settings,
+        })),
+      });
+    }
+
+    // 8. Clone PostTranslation rows (multi-language content)
+    if (sourcePost.translations.length > 0) {
+      await prisma.postTranslation.createMany({
+        data: sourcePost.translations.map((t) => ({
+          postId: clonedPost.id,
+          locale: t.locale,
+          title: t.title,
+          excerpt: t.excerpt,
+          contentHtml: t.contentHtml,
+          metaTitle: t.metaTitle,
+          metaDescription: t.metaDescription,
+        })),
+      });
+    }
+
+    // 9. Copy Shopify blog assignment (linked but not yet synced)
+    //    The clone is a local draft — it inherits the same blog so the user
+    //    doesn't have to re-select it, but it is NOT pushed to Shopify yet.
+    const sourceBlogId = sourcePost.shopifyArticle?.shopifyBlogId;
+    if (sourceBlogId) {
+      await prisma.shopifyArticle.create({
+        data: {
+          postId: clonedPost.id,
+          shopifyBlogId: sourceBlogId,
+          shopifyArticleId: null,  // not created on Shopify
+          status: "draft",
+          syncState: "linked",
+          syncMode: "external_html",
+        },
+      });
+    }
+
+    res.status(201).json({ post: { id: clonedPost.id }, success: true });
+  } catch (err) {
+    console.error("POST /api/posts/:id/clone error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/posts/:id/publish — Publish to Shopify ─────────────────────────
 router.post("/:id/publish", async (req, res) => {
   try {
