@@ -626,6 +626,70 @@ export default function SettingsControls({ block, onChange }) {
     );
   }
 
+  if (type === "TableOfContents") {
+    const currentLevels = Array.isArray(settings.levels) ? settings.levels : [2, 3];
+
+    const toggleLevel = (lvl) => {
+      let next;
+      if (currentLevels.includes(lvl)) {
+        // Don't allow unchecking all levels
+        if (currentLevels.length === 1) return;
+        next = currentLevels.filter((l) => l !== lvl);
+      } else {
+        next = [...currentLevels, lvl].sort();
+      }
+      update("levels", next);
+    };
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <TextField
+          label="Title"
+          value={settings.title || ""}
+          onChange={(val) => update("title", val)}
+          autoComplete="off"
+          placeholder="Table of Contents"
+        />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <Text variant="bodyMd" fontWeight="medium">Heading Levels to Include</Text>
+          <Checkbox
+            label="Include H1 Headings"
+            checked={currentLevels.includes(1)}
+            onChange={() => toggleLevel(1)}
+            helpText="H1 is usually the article main title"
+          />
+          <Checkbox
+            label="Include H2 Headings"
+            checked={currentLevels.includes(2)}
+            onChange={() => toggleLevel(2)}
+          />
+          <Checkbox
+            label="Include H3 Headings"
+            checked={currentLevels.includes(3)}
+            onChange={() => toggleLevel(3)}
+          />
+        </div>
+
+        <Select
+          label="List Style"
+          options={[
+            { label: "Bulleted list", value: "bullet" },
+            { label: "Numbered list", value: "numbered" },
+          ]}
+          value={settings.listStyle || "bullet"}
+          onChange={(val) => update("listStyle", val)}
+        />
+
+        <Checkbox
+          label="Collapsible (click-to-expand on storefront)"
+          checked={Boolean(settings.collapsible)}
+          onChange={(val) => update("collapsible", val)}
+        />
+      </div>
+    );
+  }
+
   // Fallback for blocks with no specific settings (e.g., RichText which is edited inline)
   return (
     <p style={{ color: "#6d7175", fontSize: "13px" }}>

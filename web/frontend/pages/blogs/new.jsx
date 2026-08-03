@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Page,
@@ -35,6 +35,8 @@ export default function NewBlog() {
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
+  const saveBarRef = useRef(null);
+
   const isDirty = blogData.title.trim().length > 0;
 
   const handleField = (field) => (value) => {
@@ -54,6 +56,41 @@ export default function NewBlog() {
       if (window.shopify?.saveBar) {
         window.shopify.saveBar.hide("blog-new-save-bar").catch(() => {});
       }
+    };
+  }, [isDirty]);
+
+  useEffect(() => {
+    const elem = saveBarRef.current;
+    if (!elem) return;
+
+    const onSave = () => { handleSave(); };
+    const onDiscard = () => {
+      setBlogData({
+        title: "",
+        handle: "",
+        commentPolicy: "MODERATED",
+        templateSuffix: "",
+        seoTitle: "",
+        seoDescription: ""
+      });
+    };
+    const onClick = (e) => {
+      const text = (e.target?.textContent || e.target?.innerText || "").toLowerCase();
+      if (text.includes("discard")) {
+        onDiscard();
+      } else if (text.includes("save")) {
+        handleSave();
+      }
+    };
+
+    elem.addEventListener("save", onSave);
+    elem.addEventListener("discard", onDiscard);
+    elem.addEventListener("click", onClick);
+
+    return () => {
+      elem.removeEventListener("save", onSave);
+      elem.removeEventListener("discard", onDiscard);
+      elem.removeEventListener("click", onClick);
     };
   }, [isDirty]);
 
@@ -227,7 +264,7 @@ export default function NewBlog() {
       </Layout>
 
       {isDirty && (
-        <ui-save-bar id="blog-new-save-bar">
+        <ui-save-bar id="blog-new-save-bar" ref={saveBarRef}>
           <button
             variant="primary"
             onClick={handleSave}

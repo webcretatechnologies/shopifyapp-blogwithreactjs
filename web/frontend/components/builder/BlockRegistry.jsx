@@ -35,6 +35,7 @@ import {
   DataTableIcon,
   TextAlignLeftIcon,
   InfoIcon,
+  ListBulletedIcon,
 } from "@shopify/polaris-icons";
 
 // -- Reuse existing block preview/settings components from the classic editor --
@@ -76,6 +77,7 @@ import { SpacerBuilderPreview } from "./blocks/SpacerBuilderBlock";
 import { ImageBuilderPreview } from "./blocks/ImageBuilderBlock";
 import { HtmlBuilderPreview } from "./blocks/HtmlBuilderBlock";
 import { FaqBuilderBlockPreview } from "./blocks/FaqBuilderBlock";
+import { TableOfContentsPreview } from "./blocks/TableOfContentsPreview";
 
 const I = (source) => (
   <Icon source={source} />
@@ -85,6 +87,20 @@ const I = (source) => (
 // Registry
 // ---------------------------------------------------------------------------
 export const BlockRegistry = {
+  TableOfContents: {
+    label: "Table of Contents",
+    icon: <Icon source={ListBulletedIcon} />,
+    category: "content",
+    getPreviewText: (b) => b.settings?.title || "Table of Contents",
+    allowsChildren: false,
+    defaultSettings: {
+      title: "Table of Contents",
+      levels: [2, 3],
+      listStyle: "bullet",
+      collapsible: false,
+    },
+    PreviewComponent: TableOfContentsPreview,
+  },
   FaqBlock: {
     label: "FAQ Accordion",
     icon: <Icon source={InfoIcon} />,
@@ -550,7 +566,7 @@ export const BLOCK_CATEGORIES = [
   },
   {
     label: "Content",
-    types: ["RichText", "Heading", "Divider", "Spacer", "Callout", "Html", "Table", "FaqBlock"],
+    types: ["RichText", "Heading", "TableOfContents", "Divider", "Spacer", "Callout", "Html", "Table", "FaqBlock"],
   },
   {
     label: "Media",
@@ -597,6 +613,11 @@ export function createBlock(type) {
 // ---------------------------------------------------------------------------
 
 export const TYPE_ALIAS_MAP = {
+  tableOfContents: "TableOfContents",
+  table_of_contents: "TableOfContents",
+  toc: "TableOfContents",
+  TOC: "TableOfContents",
+  TableOfContents: "TableOfContents",
   heading: "Heading",
   text: "RichText",
   paragraph: "RichText",

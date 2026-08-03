@@ -11,6 +11,7 @@ const MAX_HISTORY = 50;
 export const useBuilderStore = create((set, get) => ({
   blocksById: {},
   rootIds: [],
+  _liveSnapshots: {},
   selectedBlockId: null,
   selectedBlockIds: [],
   hoveredBlockId: null,
@@ -188,6 +189,22 @@ export const useBuilderStore = create((set, get) => ({
   },
 
   updateBlockSettings(id, settingsPatch) {
+    const liveSnapshot = get()._liveSnapshots?.[id];
+    if (liveSnapshot) {
+      set((state) => {
+        const b = state.blocksById[id];
+        if (!b) return {};
+        const { [id]: omitted, ...remainingSnapshots } = state._liveSnapshots || {};
+        return {
+          _liveSnapshots: remainingSnapshots,
+          blocksById: {
+            ...state.blocksById,
+            [id]: { ...b, settings: liveSnapshot },
+          },
+        };
+      });
+    }
+
     get()._commit((draft) => {
       const block = draft.blocksById[id];
       if (block) {
@@ -233,7 +250,14 @@ export const useBuilderStore = create((set, get) => ({
     set((state) => {
       const block = state.blocksById[id];
       if (!block) return {};
+      const currentSnapshots = state._liveSnapshots || {};
+      const existingSnapshot = currentSnapshots[id];
+      const newSnapshots = existingSnapshot
+        ? currentSnapshots
+        : { ...currentSnapshots, [id]: { ...block.settings } };
+
       return {
+        _liveSnapshots: newSnapshots,
         blocksById: {
           ...state.blocksById,
           [id]: { ...block, settings: { ...block.settings, ...settingsPatch } },
@@ -375,6 +399,7 @@ export const useBuilderStore = create((set, get) => ({
     set({
       blocksById,
       rootIds,
+      _liveSnapshots: {},
       past: [],
       future: [],
       selectedBlockId: stillExists ? currentSelectedId : null,

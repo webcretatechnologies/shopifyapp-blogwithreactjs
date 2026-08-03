@@ -120,7 +120,11 @@ const legacyHtmlToAst = (html) => {
     product_slider: 'ProductSlider',
     productSlider: 'ProductSlider',
     productCard: 'ProductCard',
-    product: 'ProductCard'
+    product: 'ProductCard',
+    toc: 'TableOfContents',
+    tableOfContents: 'TableOfContents',
+    table_of_contents: 'TableOfContents',
+    TableOfContents: 'TableOfContents'
   };
 
   const ATTR_MAP = {
@@ -408,9 +412,9 @@ export default function PostEditor() {
 
 
   // Track structural edits made in either editor mode
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const saveBarRef = useRef(null);
-  const storePastLength = useBuilderStore((state) => state.past.length);
+  const blocksById = useBuilderStore((state) => state.blocksById);
+  const rootIds = useBuilderStore((state) => state.rootIds);
 
   const isFirstRender = useRef(true);
   const [tags, setTags] = useState([]);
@@ -476,6 +480,10 @@ export default function PostEditor() {
         normalizedBlocks = normalizeBlocksAst(initialJson || []);
       }
 
+      // Hydrate builder store first so originalPost matches store AST representation
+      useBuilderStore.getState().hydrate(normalizedBlocks);
+      const hydratedBlocks = useBuilderStore.getState().getBlocksAst();
+
       const p = {
         title: data.post.title || "",
         slug: data.post.slug || "",
@@ -483,7 +491,7 @@ export default function PostEditor() {
         status: data.post.status || "draft",
         author: data.post.author || "",
         featuredImage: data.post.featuredImage || "",
-        contentJson: normalizedBlocks,
+        contentJson: hydratedBlocks,
         customCss: data.post.customCss || "",
         productSliderPosition: data.post.productSliderPosition || "none",
         editorMode: initialMode,
@@ -499,13 +507,9 @@ export default function PostEditor() {
       setOriginalContentHtml(data.post.contentHtml || "");
       setTags(loadedTags);
       setFeatures(data.features || {});
-      setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || "");
+      setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || data.post.blogId || "");
 
-      // Directly hydrate builder store & tiptap document so both modes load instantly
-      useBuilderStore.getState().hydrate(normalizedBlocks);
-
-      // Reset unsaved changes flag on fresh load
-      setHasUnsavedChanges(false);
+      // Reset save bar on fresh load
       if (window.shopify?.saveBar) {
         try {
           window.shopify.saveBar.hide("post-editor-save-bar").catch(() => { });
@@ -554,16 +558,16 @@ export default function PostEditor() {
   };
 
   const isBlocksDirty = useMemo(() => {
-    if (storePastLength > 0) return true;
+    const currentBlocks = useBuilderStore.getState().getBlocksAst();
     if (!isEditing) {
-      const currentBlocks = useBuilderStore.getState().getBlocksAst();
       return hasMeaningfulBlocks(currentBlocks);
     }
-    return false;
-  }, [storePastLength, isEditing]);
+    if (!originalPost) return false;
+    const origBlocks = originalPost.contentJson || [];
+    return JSON.stringify(currentBlocks || []) !== JSON.stringify(origBlocks || []);
+  }, [blocksById, rootIds, originalPost, isEditing]);
 
   const isDirty = useMemo(() => {
-    if (hasUnsavedChanges) return true;
     if (isBlocksDirty) return true;
 
     if (!isEditing) {
@@ -572,6 +576,7 @@ export default function PostEditor() {
         isFieldDirty(post.slug, "") ||
         isFieldDirty(post.excerpt, "") ||
         isFieldDirty(post.author, "") ||
+        isFieldDirty(post.status, "draft") ||
         isFieldDirty(post.featuredImage, "") ||
         isFieldDirty(post.customCss, "") ||
         tags.length > 0 ||
@@ -592,6 +597,7 @@ export default function PostEditor() {
       isFieldDirty(post.slug, o.slug) ||
       isFieldDirty(post.excerpt, o.excerpt) ||
       isFieldDirty(post.author, o.author) ||
+      isFieldDirty(post.status, o.status) ||
       isFieldDirty(post.featuredImage, o.featuredImage) ||
       isFieldDirty(post.customCss, o.customCss) ||
       isFieldDirty(shopifyBlogId, origBlogId) ||
@@ -608,7 +614,7 @@ export default function PostEditor() {
       !tags.every((t) => originalTags.includes(t));
 
     return isPostDirty || isTagsDirty;
-  }, [hasUnsavedChanges, isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData]);
+  }, [isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData]);
 
   const saveBarId = "post-editor-save-bar";
 
@@ -672,7 +678,15 @@ export default function PostEditor() {
       .trim();
 
   const handleTitleChange = (value) => {
-    setPost((p) => ({ ...p, title: value, slug: generateSlug(value) }));
+    setPost((p) => {
+      let newSlug = p.slug;
+      if (originalPost && value === originalPost.title) {
+        newSlug = originalPost.slug || generateSlug(value);
+      } else if (!isEditing || !p.slug || (originalPost && p.slug === generateSlug(originalPost.title))) {
+        newSlug = generateSlug(value);
+      }
+      return { ...p, title: value, slug: newSlug };
+    });
   };
 
   const handleContentChange = useCallback((newHtml) => {
@@ -789,7 +803,6 @@ export default function PostEditor() {
 
       setToast({ content: "Article saved successfully" });
       if (!isEditing && data.post?.id) {
-        setHasUnsavedChanges(false);
         if (data.isFirstPost) {
           setNewPostId(data.post.id);
           setShowCongratsModal(true);
@@ -818,14 +831,18 @@ export default function PostEditor() {
           navigate(`/posts/${data.post.id}/edit`);
         }
       } else if (!isEditing) {
-        setHasUnsavedChanges(false);
         navigate(`/posts/${data.post.id}/edit`);
       } else {
-        setHasUnsavedChanges(false);
-        setOriginalPost({
+        const currentSavedBlocks = useBuilderStore.getState().getBlocksAst();
+        const updatedOriginalPost = {
+          ...post,
           ...payload,
-          shopifyArticle: { shopifyBlogId }
-        });
+          tags: [...tags],
+          shopifyArticle: { shopifyBlogId },
+          contentJson: currentSavedBlocks,
+        };
+        setPost(updatedOriginalPost);
+        setOriginalPost(updatedOriginalPost);
         setOriginalContentHtml(payload.contentHtml || "");
         if (window.shopify?.saveBar) {
           try { await window.shopify.saveBar.hide(saveBarId); } catch (e) { }
@@ -844,7 +861,6 @@ export default function PostEditor() {
   };
 
   const handleDiscard = () => {
-    setHasUnsavedChanges(false);
     if (isEditing && originalPost) {
       setPost({ ...originalPost });
       useBuilderStore.getState().hydrate(originalPost.contentJson || []);
@@ -1226,11 +1242,6 @@ export default function PostEditor() {
                       onChange={(blocksAst) => {
                         setPost((p) => {
                           if (JSON.stringify(p.contentJson) === JSON.stringify(blocksAst)) return p;
-                          const origJsonStr = JSON.stringify(originalPost?.contentJson || []);
-                          const currJsonStr = JSON.stringify(blocksAst || []);
-                          if (origJsonStr !== currJsonStr) {
-                            setHasUnsavedChanges(true);
-                          }
                           return { ...p, contentJson: blocksAst };
                         });
                       }}

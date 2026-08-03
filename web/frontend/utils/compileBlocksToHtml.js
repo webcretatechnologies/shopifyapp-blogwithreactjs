@@ -15,6 +15,7 @@
 import { generateHTML } from "@tiptap/html";
 import { builderRichTextExtensions } from "../components/editor/richTextExtensions";
 import { formatPrice } from "./priceUtils";
+import { extractHeadingsFromAst, injectHeadingIdsToHtml } from "./headingSlugUtils.js";
 
 /**
  * CSS emitted once at the top of compiled output when at least one block
@@ -90,27 +91,104 @@ function injectBlockIdentity(html, block) {
   return `<${tag}${dataAttrs}${rest}>` + trimmedHtml.slice(tagMatch[0].length);
 }
 
-export function compileSingleBlockToHtml(block) {
+export function compileSingleBlockToHtml(block, context = {}) {
   if (!block || !block.type) return "";
 
-  const { type, settings = {}, children = [] } = block;
+  const { type, settings = {}, children = [], id: blockId } = block;
 
   // Compile the core HTML for this block type, then optionally wrap it
   // in a hide-on-device <div> if any visibility flags are set.
-  const html = compileCoreBlockHtml(type, settings, children);
+  const html = compileCoreBlockHtml(type, settings, children, blockId, context);
   const identifiedHtml = injectBlockIdentity(html, block);
   return applyVisibilityWrapper(identifiedHtml, settings);
 }
 
-function compileCoreBlockHtml(type, settings, children) {
+function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
   switch (type) {
+    case "TableOfContents": {
+      const title = settings.title || "Table of Contents";
+      const levels = settings.levels || [2, 3];
+      const listStyle = settings.listStyle || "bullet";
+      const collapsible = Boolean(settings.collapsible);
+
+      const allHeadings = context.allHeadings || [];
+      const allowedLevels = new Set(levels.map(Number));
+      const matchingHeadings = allHeadings.filter((h) => allowedLevels.has(h.level));
+
+      if (matchingHeadings.length === 0) return "";
+
+      const minLevel = Math.min(...matchingHeadings.map((h) => h.level));
+
+      const buildTocNodes = (headings) => {
+        const rootNodes = [];
+        const stack = [];
+        headings.forEach((h) => {
+          const node = { ...h, children: [] };
+          while (stack.length > 0 && stack[stack.length - 1].level >= h.level) {
+            stack.pop();
+          }
+          if (stack.length === 0) {
+            rootNodes.push(node);
+          } else {
+            stack[stack.length - 1].children.push(node);
+          }
+          stack.push(node);
+        });
+        return rootNodes;
+      };
+
+      const renderTocNodesHtml = (items, isRoot = true) => {
+        if (!items || items.length === 0) return "";
+        const Tag = listStyle === "numbered" ? "ol" : "ul";
+        const paddingLeft = isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px";
+        const marginTop = isRoot ? "0" : "6px";
+        const marginBottom = isRoot ? "0" : "2px";
+        const gap = isRoot ? "8px" : "6px";
+        const listType = listStyle === "numbered" ? "decimal" : (isRoot ? "disc" : "circle");
+
+        const lisHtml = items
+          .map((item) => {
+            const isMain = item.level === minLevel;
+            const clickHandler = `var el=document.getElementById('${item.id}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});if(history.pushState){history.pushState(null,null,'#${item.id}');}return false;}`;
+            const link = `<a href="#${item.id}" onclick="${clickHandler}" style="color: #008060; text-decoration: none; font-weight: ${isMain ? '600' : '400'}; transition: color 0.15s ease;">${item.text}</a>`;
+            const childrenHtml = item.children && item.children.length > 0
+              ? renderTocNodesHtml(item.children, false)
+              : "";
+            return `<li style="font-size: 14px;">${link}${childrenHtml}</li>`;
+          })
+          .join("\n");
+
+        return `<${Tag} style="margin: ${marginTop} 0 ${marginBottom} 0; padding-left: ${paddingLeft}; display: flex; flex-direction: column; gap: ${gap}; list-style-type: ${listType};">\n${lisHtml}\n</${Tag}>`;
+      };
+
+      const tree = buildTocNodes(matchingHeadings);
+      const listContentHtml = renderTocNodesHtml(tree, true);
+      const styleTag = `<style>html { scroll-behavior: smooth; } [id] { scroll-margin-top: 24px; }</style>`;
+
+      if (collapsible) {
+        return `${styleTag}\n<details class="sp-toc-details" open style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0; cursor: pointer;">
+  <summary style="font-weight: 700; font-size: 16px; color: #202223; outline: none;">${title}</summary>
+  <div style="margin-top: 12px;">
+${listContentHtml}
+  </div>
+</details>`;
+      }
+
+      return `${styleTag}\n<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
+  <div style="font-weight: 700; font-size: 16px; color: #202223; margin-bottom: 12px;">${title}</div>
+${listContentHtml}
+</div>`;
+    }
+
     case "Heading": {
       const level = settings.level || 2;
       const align = settings.align || "left";
       const color = settings.color || "#202223";
       const text = settings.text || "";
       const fontSize = settings.fontSize ? `font-size: ${settings.fontSize};` : "";
-      return `<h${level} style="text-align: ${align}; color: ${color}; ${fontSize} margin: 16px 0 8px;">${text}</h${level}>`;
+      const blockHeadings = context.headingsByBlockId?.[blockId] || [];
+      const idAttr = blockHeadings[0] ? ` id="${blockHeadings[0].id}"` : "";
+      return `<h${level}${idAttr} style="text-align: ${align}; color: ${color}; ${fontSize} margin: 16px 0 8px;">${text}</h${level}>`;
     }
 
     case "RichText": {
@@ -128,6 +206,11 @@ function compileCoreBlockHtml(type, settings, children) {
       const cleanText = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
       const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(html);
       if (!cleanText && !containsMedia) return "";
+
+      const blockHeadings = context.headingsByBlockId?.[blockId] || [];
+      if (blockHeadings.length > 0) {
+        html = injectHeadingIdsToHtml(html, blockHeadings);
+      }
       return html;
     }
 
@@ -139,19 +222,19 @@ function compileCoreBlockHtml(type, settings, children) {
       const pr = settings.paddingRight || "0px";
       const maxW = settings.maxWidth || "100%";
       const br = settings.borderRadius || "0px";
-      const innerHtml = children.map(compileSingleBlockToHtml).join("");
+      const innerHtml = children.map((child) => compileSingleBlockToHtml(child, context)).join("");
       const bgStyle = bg && bg !== "#ffffff" && bg !== "transparent" ? `background-color: ${bg};` : "";
       return `<section style="${bgStyle} padding: ${pt} ${pr} ${pb} ${pl}; max-width: ${maxW}; border-radius: ${br}; margin: 0 auto 20px; box-sizing: border-box;">${innerHtml}</section>`;
     }
 
     case "ColumnLayout": {
       const gap = settings.gap || "16px";
-      const innerHtml = children.map(compileSingleBlockToHtml).join("");
+      const innerHtml = children.map((child) => compileSingleBlockToHtml(child, context)).join("");
       return `<div style="display: flex; gap: ${gap}; width: 100%; margin: 16px 0; box-sizing: border-box; align-items: stretch;" class="builder-column-layout">${innerHtml}</div>`;
     }
 
     case "Column": {
-      const innerHtml = children.map(compileSingleBlockToHtml).join("");
+      const innerHtml = children.map((child) => compileSingleBlockToHtml(child, context)).join("");
       return `<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; box-sizing: border-box;" class="builder-column">${innerHtml}</div>`;
     }
 
@@ -549,7 +632,9 @@ function compileCoreBlockHtml(type, settings, children) {
         contentHtml = `${styleBlock}<div style="margin: 16px 0;">${accordionItemsHtml}</div>`;
       }
 
-      const titleHtml = title ? `<h2 style="text-align: ${titleAlign}; font-size: 22px; font-weight: 700; color: #202223; margin: 24px 0 16px 0;">${title}</h2>` : "";
+      const blockHeadings = context.headingsByBlockId?.[blockId] || [];
+      const idAttr = blockHeadings[0] ? ` id="${blockHeadings[0].id}"` : "";
+      const titleHtml = title ? `<h2${idAttr} style="text-align: ${titleAlign}; font-size: 22px; font-weight: 700; color: #202223; margin: 24px 0 16px 0;">${title}</h2>` : "";
 
       return `<div class="builder-faq-block" style="width: 100%; margin: 24px 0;">
         ${titleHtml}
@@ -559,14 +644,24 @@ function compileCoreBlockHtml(type, settings, children) {
     }
 
     default: {
-      return children.map(compileSingleBlockToHtml).join("");
+      return children.map((child) => compileSingleBlockToHtml(child, context)).join("");
     }
   }
 }
 
 export function compileBlocksToHtml(blocks) {
   if (!Array.isArray(blocks) || blocks.length === 0) return "";
-  const compiled = blocks.map(compileSingleBlockToHtml).join("\n");
+
+  const allHeadings = extractHeadingsFromAst(blocks);
+  const headingsByBlockId = {};
+  allHeadings.forEach((h) => {
+    if (!headingsByBlockId[h.blockId]) headingsByBlockId[h.blockId] = [];
+    headingsByBlockId[h.blockId].push(h);
+  });
+
+  const context = { allHeadings, headingsByBlockId };
+
+  const compiled = blocks.map((b) => compileSingleBlockToHtml(b, context)).join("\n");
   // Prepend the responsive visibility CSS once if any block has a hide flag.
   // This is O(1) in the output — one <style> block regardless of block count.
   const prefix = hasVisibilityFlags(blocks) ? VISIBILITY_CSS + "\n" : "";
