@@ -44,6 +44,11 @@ import { normalizeBlocksAst } from "../../components/builder/BlockRegistry";
 import ExcerptRichTextEditor from "../../components/editor/ExcerptRichTextEditor";
 import ShopifyRichTextEditor from "../../components/editor/ShopifyRichTextEditor";
 
+const stripHtml = (html) => {
+  if (!html) return "";
+  return html.replace(/<[^>]*>?/gm, "").trim();
+};
+
 
 
 const hasMeaningfulBlocks = (blocks) => {
@@ -403,6 +408,8 @@ export default function PostEditor() {
 
   // Track structural edits made in either editor mode
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const saveBarRef = useRef(null);
+  const storePastLength = useBuilderStore((state) => state.past.length);
 
   const isFirstRender = useRef(true);
   const [tags, setTags] = useState([]);
@@ -545,8 +552,18 @@ export default function PostEditor() {
     return clean1 !== clean2;
   };
 
+  const isBlocksDirty = useMemo(() => {
+    if (storePastLength > 0) return true;
+    if (!isEditing) {
+      const currentBlocks = useBuilderStore.getState().getBlocksAst();
+      return hasMeaningfulBlocks(currentBlocks);
+    }
+    return false;
+  }, [storePastLength, isEditing]);
+
   const isDirty = useMemo(() => {
     if (hasUnsavedChanges) return true;
+    if (isBlocksDirty) return true;
 
     if (!isEditing) {
       return (
@@ -590,7 +607,7 @@ export default function PostEditor() {
       !tags.every((t) => originalTags.includes(t));
 
     return isPostDirty || isTagsDirty;
-  }, [hasUnsavedChanges, post, tags, shopifyBlogId, originalPost, isEditing, seoData]);
+  }, [hasUnsavedChanges, isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData]);
 
   const saveBarId = "post-editor-save-bar";
 
@@ -603,6 +620,36 @@ export default function PostEditor() {
       }
     }
   }, [isDirty]);
+
+  useEffect(() => {
+    const elem = saveBarRef.current;
+    if (!elem) return;
+
+    const onSave = () => {
+      handleSave(post.status === "published" ? "published" : "draft", "savebar");
+    };
+    const onDiscard = () => {
+      handleDiscard();
+    };
+    const onClick = (e) => {
+      const text = (e.target?.textContent || e.target?.innerText || "").toLowerCase();
+      if (text.includes("discard")) {
+        handleDiscard();
+      } else if (text.includes("save")) {
+        handleSave(post.status === "published" ? "published" : "draft", "savebar");
+      }
+    };
+
+    elem.addEventListener("save", onSave);
+    elem.addEventListener("discard", onDiscard);
+    elem.addEventListener("click", onClick);
+
+    return () => {
+      elem.removeEventListener("save", onSave);
+      elem.removeEventListener("discard", onDiscard);
+      elem.removeEventListener("click", onClick);
+    };
+  }, [isDirty, post.status]);
 
   useEffect(() => {
     return () => {
@@ -799,6 +846,7 @@ export default function PostEditor() {
     setHasUnsavedChanges(false);
     if (isEditing && originalPost) {
       setPost({ ...originalPost });
+      useBuilderStore.getState().hydrate(originalPost.contentJson || []);
       setContentHtml(originalPost.contentHtml || "");
       setOriginalContentHtml(originalPost.contentHtml || "");
       setTags(originalPost.tags || []);
@@ -824,7 +872,7 @@ export default function PostEditor() {
         productSliderPosition: "none",
         editorMode: "builder",
       });
-      setTiptapJson(null);
+      useBuilderStore.getState().hydrate([]);
       setContentHtml("");
       setOriginalContentHtml("");
       setTags([]);
@@ -837,6 +885,9 @@ export default function PostEditor() {
         ogDescription: "",
         ogImage: "",
       });
+    }
+    if (window.shopify?.saveBar) {
+      try { window.shopify.saveBar.hide(saveBarId); } catch (e) {}
     }
   };
 
@@ -1004,17 +1055,42 @@ export default function PostEditor() {
 
   return (
     <Frame>
-      {isDirty && (
-        <ui-save-bar id={saveBarId}>
-          <button
-            variant="primary"
-            onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}
-            loading={isSavingSaveBar ? "" : undefined}
-          >
-            Save
-          </button>
-          <button onClick={handleDiscard}>Discard</button>
-        </ui-save-bar>
+      <ui-save-bar id={saveBarId} ref={saveBarRef}>
+        <button
+          variant="primary"
+          onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}
+          loading={isSavingSaveBar ? "" : undefined}
+        >
+          Save
+        </button>
+        <button onClick={handleDiscard}>Discard</button>
+      </ui-save-bar>
+
+      {isDirty && !window.shopify && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 999,
+          backgroundColor: "#1a1a1a",
+          color: "#ffffff",
+          padding: "12px 24px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+        }}>
+          <span style={{ fontWeight: 600, fontSize: "14px", color: "#ffffff" }}>
+            Unsaved changes
+          </span>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Button onClick={handleDiscard}>Discard</Button>
+            <Button variant="primary" loading={isSavingSaveBar} onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}>
+              Save
+            </Button>
+          </div>
+        </div>
       )}
       <TitleBar title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}>
         <button variant="breadcrumb" onClick={() => navigate("/")}>
@@ -1190,7 +1266,7 @@ export default function PostEditor() {
                   </Box>
                 </Card>
 
-                {/* Search engine listing — always expanded snippet preview, pencil edit affordance */}
+                {/* Search engine listing — exact native Shopify design */}
                 <Card>
                   <Box padding="400">
                     <BlockStack gap="300">
@@ -1204,48 +1280,64 @@ export default function PostEditor() {
                         />
                       </InlineStack>
 
+                      {/* Google Search Snippet Preview Box matching Shopify screenshot 1 */}
                       <BlockStack gap="100">
                         <Text variant="bodySm" tone="subdued">
-                          {window.shopify?.config?.shop || "rajiv market shop"}
+                          {window.shopify?.config?.shop ? window.shopify.config.shop.replace(".myshopify.com", "") : "rajiv market shop"}
                         </Text>
                         <Text variant="bodySm" tone="subdued">
-                          https://{window.shopify?.config?.shop || "rajiv-market-shop.myshopify.com"}/blogs/{shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/{post.slug || ""}
+                          https://{window.shopify?.config?.shop || "rajiv-market-shop.myshopify.com"} › blogs › {shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"} › {post.slug || ""}
                         </Text>
-                        <Text variant="bodyMd" fontWeight="bold" tone="interactive">
-                          {seoData.metaTitle || post.title || "What Makes Auram Dhoop Cones Truly Divine"}
-                        </Text>
-                        <Text variant="bodySm" tone="subdued">
-                          {seoData.metaDescription || post.excerpt || "What Makes Auram Dhoop Cones Truly Divine Description"}
-                        </Text>
+                        <div style={{ color: "#1a0dab", fontSize: "18px", lineHeight: "24px", fontWeight: "400", cursor: "pointer" }}>
+                          {seoData.metaTitle || post.title || "ABC Template"}
+                        </div>
+                        {seoData.metaDescription ? (
+                          <div style={{ color: "#4d5156", fontSize: "14px", lineHeight: "20px", wordBreak: "break-word" }}>
+                            {stripHtml(seoData.metaDescription)}
+                          </div>
+                        ) : null}
                       </BlockStack>
 
                       {seoExpanded && (
                         <>
                           <Divider />
                           <BlockStack gap="400">
-                            <TextField
-                              label="Page title"
-                              value={seoData.metaTitle}
-                              onChange={(val) => setSeoData((s) => ({ ...s, metaTitle: val }))}
-                              maxLength={70}
-                              showCharacterCount
-                              autoComplete="off"
-                            />
-                            <TextField
-                              label="Meta description"
-                              value={seoData.metaDescription}
-                              onChange={(val) => setSeoData((s) => ({ ...s, metaDescription: val }))}
-                              multiline={3}
-                              maxLength={320}
-                              showCharacterCount
-                              autoComplete="off"
-                            />
+                            {/* Page Title */}
+                            <BlockStack gap="100">
+                              <TextField
+                                label="Page title"
+                                value={seoData.metaTitle !== undefined && seoData.metaTitle !== "" ? seoData.metaTitle : (post.title || "")}
+                                onChange={(val) => setSeoData((s) => ({ ...s, metaTitle: val }))}
+                                maxLength={70}
+                                autoComplete="off"
+                              />
+                              <Text variant="bodySm" tone="subdued">
+                                {`${(seoData.metaTitle !== undefined && seoData.metaTitle !== "" ? seoData.metaTitle : (post.title || "")).length} of 70 characters used`}
+                              </Text>
+                            </BlockStack>
+
+                            {/* Meta Description */}
+                            <BlockStack gap="100">
+                              <TextField
+                                label="Meta description"
+                                value={seoData.metaDescription || ""}
+                                onChange={(val) => setSeoData((s) => ({ ...s, metaDescription: val }))}
+                                multiline={4}
+                                maxLength={160}
+                                autoComplete="off"
+                              />
+                              <Text variant="bodySm" tone="subdued">
+                                {`${(seoData.metaDescription || "").length} of 160 characters used`}
+                              </Text>
+                            </BlockStack>
+
+                            {/* URL Handle */}
                             <TextField
                               label="URL handle"
-                              value={post.slug}
+                              value={post.slug || ""}
                               onChange={handleField("slug")}
-                              prefix="blogs/"
-                              helpText={`https://${window.shopify?.config?.shop || "your-store.myshopify.com"}/blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/${post.slug || ""}`}
+                              prefix={`blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/`}
+                              helpText={`https://${window.shopify?.config?.shop || "rajiv-market-shop.myshopify.com"}/blogs/${shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.handle || "news"}/${post.slug || ""}`}
                               autoComplete="off"
                             />
                           </BlockStack>

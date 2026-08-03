@@ -1,8 +1,3 @@
-/**
- * SyncStatusIndicator — Real-time sync status indicator for the post editor.
- * Polls the backend and shows sync state badge and last synced time.
- * Uses baseline field-level merge with conflict detection.
- */
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
@@ -13,23 +8,35 @@ import {
   Spinner,
   Banner,
   Box,
+  Button,
+  Divider,
+  Icon,
+  Tooltip
 } from "@shopify/polaris";
+import {
+  RefreshIcon,
+  StoreIcon,
+  CheckCircleIcon,
+  AlertTriangleIcon,
+  ExternalIcon,
+  ClockIcon
+} from "@shopify/polaris-icons";
 
-const POLL_INTERVAL_MS = 10_000; // 10 seconds
+const POLL_INTERVAL_MS = 10_000;
 
 const SYNC_STATE_CONFIG = {
-  in_sync:              { label: "In Sync",           tone: "success" },
-  linked:               { label: "Linked",            tone: "info" },
-  pending_app_push:     { label: "Pending App Push",  tone: "warning" },
-  pending_shopify_pull: { label: "Pending Pull",      tone: "warning" },
-  conflict:             { label: "Conflict",          tone: "critical" },
-  error:                { label: "Error",             tone: "critical" },
-  external_edit:        { label: "External Edit",     tone: "warning" },
-  remote_missing:       { label: "Missing on Shopify",tone: "critical" },
+  in_sync:              { label: "In Sync",           tone: "success", description: "All changes are synced to Shopify." },
+  linked:               { label: "Linked",            tone: "info",    description: "Connected to Shopify article." },
+  pending_app_push:     { label: "Pending Push",      tone: "warning", description: "Local edits waiting to sync." },
+  pending_shopify_pull: { label: "Pending Pull",      tone: "warning", description: "Shopify updates waiting to sync." },
+  conflict:             { label: "Conflict",          tone: "critical",description: "Conflicting edits detected." },
+  error:                { label: "Sync Error",        tone: "critical",description: "Unable to reach Shopify." },
+  external_edit:        { label: "External Edit",     tone: "warning", description: "Edited directly on Shopify." },
+  remote_missing:       { label: "Missing on Shopify",tone: "critical",description: "Article not found on Shopify." },
 };
 
 function formatRelativeTime(dateStr) {
-  if (!dateStr) return "";
+  if (!dateStr) return "Never";
   const now = Date.now();
   const then = new Date(dateStr).getTime();
   const diffSec = Math.floor((now - then) / 1000);
@@ -48,7 +55,6 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
   const [lastPollTime, setLastPollTime] = useState(null);
   const intervalRef = useRef(null);
 
-  // ── Poll sync status ────────────────────────────────────────────────────
   const poll = useCallback(async () => {
     if (!postId) return;
     setLoading(true);
@@ -60,122 +66,210 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
         setLastPollTime(Date.now());
       }
     } catch {
-      // Silent — polling is best-effort
+      // Silent catch for best-effort polling
     } finally {
       setLoading(false);
     }
   }, [postId]);
 
-  // Periodic polling (also handles initial fetch)
   useEffect(() => {
     if (!postId) return;
-    poll(); // Immediate first poll
+    poll();
     intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [postId, poll]);
 
-  // Update when initialArticle changes (e.g. after save)
   useEffect(() => {
     if (initialArticle) setArticle(initialArticle);
   }, [initialArticle]);
 
-
-
-  // ── Determine display state ─────────────────────────────────────────────
+  // Unlinked state layout
   if (!article) {
     return (
-      <Card>
-        <Box padding="400">
-          <BlockStack gap="200">
-            <Text variant="headingSm" as="h2">Shopify Sync</Text>
+      <Card padding="400">
+        <BlockStack gap="300">
+          <InlineStack align="space-between" blockAlign="center">
+            <InlineStack gap="200" blockAlign="center">
+              <Box
+                padding="150"
+                borderRadius="200"
+                style={{ backgroundColor: "var(--p-color-bg-surface-tertiary)" }}
+              >
+                <Icon source={StoreIcon} tone="subdued" />
+              </Box>
+              <Text variant="headingSm" as="h2">Shopify Sync</Text>
+            </InlineStack>
+            <Badge tone="attention">Not Synced</Badge>
+          </InlineStack>
+
+          <Box
+            padding="300"
+            borderRadius="200"
+            style={{ backgroundColor: "var(--p-color-bg-surface-secondary)" }}
+          >
             <Text variant="bodySm" tone="subdued" as="p">
-              Not linked to a Shopify blog yet. Select a blog in Organization to connect.
+              This article is not linked to a Shopify blog yet. Select a target blog under Organization to enable sync.
             </Text>
-          </BlockStack>
-        </Box>
+          </Box>
+        </BlockStack>
       </Card>
     );
   }
 
   const syncState = article.syncState || "linked";
-  const stateConfig = SYNC_STATE_CONFIG[syncState] || { label: syncState, tone: "info", icon: null };
+  const stateConfig = SYNC_STATE_CONFIG[syncState] || {
+    label: syncState,
+    tone: "info",
+    description: "Status unknown"
+  };
+
   const isDegraded = article.structureDegraded;
   const hasError = article.lastError;
   const isConflict = syncState === "conflict" || syncState === "external_edit";
 
+  const shopUrl = window.shopify?.config?.shop || "";
+  const shopifyArticleUrl = article.shopifyArticleId && shopUrl
+    ? `https://${shopUrl}/admin/articles/${article.shopifyArticleId.replace(/[^0-9]/g, '')}`
+    : null;
+
   return (
-    <Card>
-      <Box padding="400">
-        <BlockStack gap="250">
-          {/* Header row */}
-          <InlineStack gap="200" blockAlign="center" align="space-between">
+    <Card padding="400">
+      <BlockStack gap="300">
+        {/* Card Header */}
+        <InlineStack align="space-between" blockAlign="center">
+          <InlineStack gap="200" blockAlign="center">
+            <Box
+              padding="150"
+              borderRadius="200"
+              style={{
+                backgroundColor: stateConfig.tone === "success"
+                  ? "var(--p-color-bg-fill-success-secondary, #eafbe7)"
+                  : "var(--p-color-bg-surface-tertiary)"
+              }}
+            >
+              <Icon
+                source={stateConfig.tone === "success" ? CheckCircleIcon : StoreIcon}
+                tone={stateConfig.tone === "success" ? "success" : "subdued"}
+              />
+            </Box>
             <Text variant="headingSm" as="h2">Shopify Sync</Text>
-            {loading && <Spinner size="small" />}
           </InlineStack>
 
-          {/* Sync state badge */}
-          <InlineStack gap="200" blockAlign="center">
-            <Badge tone={stateConfig.tone}>{stateConfig.label}</Badge>
+          <InlineStack gap="150" blockAlign="center">
+            <Tooltip content="Refresh status">
+              <Button
+                variant="tertiary"
+                icon={RefreshIcon}
+                loading={loading}
+                onClick={poll}
+                accessibilityLabel="Refresh sync status"
+              />
+            </Tooltip>
+          </InlineStack>
+        </InlineStack>
 
-            {/* Sync mode badge */}
-            {article.syncMode && (
-              <Badge tone={article.syncMode === "managed_by_app" ? "success" : "info"} size="small">
-                {article.syncMode === "managed_by_app" ? "Managed" : "External"}
+        {/* Primary Status Banner Box */}
+        <Box
+          padding="300"
+          borderRadius="200"
+          style={{
+            backgroundColor: "var(--p-color-bg-surface-secondary)",
+            border: "1px solid var(--p-color-border-subdued)"
+          }}
+        >
+          <BlockStack gap="150">
+            <InlineStack align="space-between" blockAlign="center">
+              <InlineStack gap="150" blockAlign="center">
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
+                    backgroundColor: stateConfig.tone === "success"
+                      ? "#2e7d32"
+                      : stateConfig.tone === "warning"
+                      ? "#ed6c02"
+                      : "#d32f2f"
+                  }}
+                />
+                <Text variant="bodyMd" fontWeight="semibold">
+                  {stateConfig.label}
+                </Text>
+              </InlineStack>
+              <Badge tone={article.status === "published" ? "success" : "attention"} size="small">
+                {article.status === "published" ? "Published" : "Draft"}
               </Badge>
-            )}
-          </InlineStack>
-
-          {/* Shopify status */}
-          <InlineStack gap="200" blockAlign="center">
-            <Text variant="bodySm" tone="subdued" as="span">
-              Shopify status:
+            </InlineStack>
+            <Text variant="bodySm" tone="subdued">
+              {stateConfig.description}
             </Text>
-            <Badge tone={article.status === "published" ? "success" : "attention"} size="small">
-              {article.status}
+          </BlockStack>
+        </Box>
+
+        <Divider />
+
+        {/* Sync Details Grid */}
+        <BlockStack gap="200">
+          <InlineStack align="space-between" blockAlign="center">
+            <Text variant="bodySm" tone="subdued">Sync Mode</Text>
+            <Badge tone={article.syncMode === "managed_by_app" ? "success" : "info"} size="small">
+              {article.syncMode === "managed_by_app" ? "Managed by App" : "External Sync"}
             </Badge>
           </InlineStack>
 
-          {/* Last synced time */}
-          {article.syncedAt && (
-            <Text variant="bodySm" tone="subdued" as="p">
-              Last synced {formatRelativeTime(article.syncedAt)}
-              {lastPollTime && (
-                <span> · checked {formatRelativeTime(lastPollTime)}</span>
-              )}
-            </Text>
-          )}
-
-          {/* Degraded / External Edit warning for Builder posts */}
-          {(isDegraded || isConflict) && (
-            <Banner tone="warning" title="External Edit Detected">
-              <Text variant="bodySm" as="p">
-                This article was edited on Shopify directly. Saving from the Visual Builder will re-compile your layout to Shopify.
-              </Text>
-            </Banner>
-          )}
-
-          {/* Error */}
-          {hasError && (
-            <Text variant="bodySm" tone="critical" as="p">
-              {hasError}
-            </Text>
-          )}
-
-          {/* Sync direction indicator */}
           {article.lastSyncDirection && (
-            <InlineStack gap="100" blockAlign="center">
-              <Text variant="bodyXs" tone="subdued" as="span">
-                Last sync:
-              </Text>
-              <Badge tone={article.lastSyncDirection === "app_to_shopify" ? "info" : "highlight"} size="small">
+            <InlineStack align="space-between" blockAlign="center">
+              <Text variant="bodySm" tone="subdued">Direction</Text>
+              <Text variant="bodySm" fontWeight="medium">
                 {article.lastSyncDirection === "app_to_shopify" ? "App → Shopify" : "Shopify → App"}
-              </Badge>
+              </Text>
             </InlineStack>
           )}
+
+          <InlineStack align="space-between" blockAlign="center">
+            <Text variant="bodySm" tone="subdued">Last Synced</Text>
+            <InlineStack gap="100" blockAlign="center">
+              <Icon source={ClockIcon} tone="subdued" />
+              <Text variant="bodySm" fontWeight="medium">
+                {formatRelativeTime(article.syncedAt)}
+              </Text>
+            </InlineStack>
+          </InlineStack>
         </BlockStack>
-      </Box>
+
+        {/* Warning Banner for External Edits */}
+        {(isDegraded || isConflict) && (
+          <Banner tone="warning" title="External Edits Detected">
+            <Text variant="bodySm">
+              Direct modifications were detected on Shopify. Saving will overwrite theme changes with your visual layout.
+            </Text>
+          </Banner>
+        )}
+
+        {/* Error Banner */}
+        {hasError && (
+          <Banner tone="critical" title="Sync Issue">
+            <Text variant="bodySm">{hasError}</Text>
+          </Banner>
+        )}
+
+        {/* Action button if Shopify article exists */}
+        {shopifyArticleUrl && (
+          <Box paddingBlockStart="100">
+            <Button
+              fullWidth
+              variant="tertiary"
+              icon={ExternalIcon}
+              onClick={() => window.open(shopifyArticleUrl, "_blank")}
+            >
+              View in Shopify Admin
+            </Button>
+          </Box>
+        )}
+      </BlockStack>
     </Card>
   );
 }
