@@ -41,6 +41,8 @@ import SyncStatusIndicator from "../../components/SyncStatusIndicator.jsx";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 import { useBuilderStore } from "../../components/builder/store/useBuilderStore";
 import { normalizeBlocksAst } from "../../components/builder/BlockRegistry";
+import ExcerptRichTextEditor from "../../components/editor/ExcerptRichTextEditor";
+import ShopifyRichTextEditor from "../../components/editor/ShopifyRichTextEditor";
 
 
 
@@ -1090,6 +1092,7 @@ export default function PostEditor() {
         </Modal.Section>
       </Modal>
 
+    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
       <Page
         fullWidth
         title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
@@ -1170,21 +1173,17 @@ export default function PostEditor() {
             <Layout.Section style={{ flex: "1 1 0%", maxWidth: "none" }}>
               <BlockStack gap="400">
 
-                {/* Excerpt — always expanded matching native Shopify reference */}
+                {/* Excerpt — matching native Shopify Rich Text Editor Excerpt card */}
                 <Card>
                   <Box padding="400">
-                    <BlockStack gap="200">
+                    <BlockStack gap="300">
                       <Text variant="headingSm" as="h2">Excerpt</Text>
                       <Text variant="bodySm" tone="subdued">
                         Add a summary of the post to appear on your home page or blog.
                       </Text>
-                      <TextField
-                        label="Excerpt"
-                        labelHidden
+                      <ExcerptRichTextEditor
                         value={post.excerpt || ""}
                         onChange={handleField("excerpt")}
-                        multiline={4}
-                        autoComplete="off"
                         placeholder="Add a summary..."
                       />
                     </BlockStack>
@@ -1497,6 +1496,7 @@ export default function PostEditor() {
           </Layout>
         </div>
       </Page>
+    </div>
 
 
       <ShopifyFilePicker

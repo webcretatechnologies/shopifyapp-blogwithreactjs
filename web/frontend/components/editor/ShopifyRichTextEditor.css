@@ -1,0 +1,198 @@
+.shopify-rich-editor {
+  border: 1px solid #c9cccf;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+
+.shopify-rich-editor:focus-within {
+  border-color: #005bd3;
+  box-shadow: 0 0 0 1px #005bd3;
+}
+
+.shopify-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  background: #f6f6f7;
+  border-bottom: 1px solid #e1e3e5;
+}
+
+.shopify-editor-select {
+  border: 1px solid #c9cccf;
+  border-radius: 4px;
+  background: #ffffff;
+  padding: 3px 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #303030;
+  cursor: pointer;
+  outline: none;
+  height: 28px;
+}
+
+.shopify-editor-select:hover:not(:disabled) {
+  background: #f1f2f3;
+  border-color: #8c9196;
+}
+
+.shopify-editor-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.shopify-editor-toolbar__separator {
+  width: 1px;
+  height: 20px;
+  background: #d2d5d8;
+  margin: 0 4px;
+}
+
+.shopify-editor-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #303030;
+  font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  transition: background 0.15s, color 0.15s;
+}
+
+.shopify-editor-btn:hover:not(:disabled) {
+  background: #e4e5e7;
+}
+
+.shopify-editor-btn--active {
+  background: #e4e5e7;
+  color: #005bd3;
+}
+
+.shopify-editor-btn:disabled,
+.shopify-editor-btn--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Content Typography Matching Native Shopify Admin ── */
+.shopify-editor-content {
+  padding: 12px 14px;
+  min-height: 120px;
+  font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  color: #303030;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.shopify-editor-content .ProseMirror {
+  min-height: 100px;
+  outline: none;
+  font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  color: #303030;
+}
+
+.shopify-editor-content .ProseMirror p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: #303030;
+}
+
+.shopify-editor-content .ProseMirror p:last-child {
+  margin-bottom: 0;
+}
+
+.shopify-editor-content .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #8c9196;
+  pointer-events: none;
+  height: 0;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.shopify-editor-content .ProseMirror h1 {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 24px;
+  color: #303030;
+  margin: 14px 0 6px 0;
+}
+
+.shopify-editor-content .ProseMirror h2 {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 20px;
+  color: #303030;
+  margin: 12px 0 6px 0;
+}
+
+.shopify-editor-content .ProseMirror h3 {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: #303030;
+  margin: 10px 0 4px 0;
+}
+
+.shopify-editor-content .ProseMirror blockquote {
+  border-left: 3px solid #c9cccf;
+  padding-left: 12px;
+  margin: 10px 0;
+  color: #616161;
+  font-style: italic;
+  font-size: 14px;
+}
+
+.shopify-editor-content .ProseMirror a {
+  color: #005bd3;
+  text-decoration: underline;
+}
+
+.shopify-editor-content .ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 20px;
+  margin: 6px 0 8px 0;
+}
+
+.shopify-editor-content .ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 20px;
+  margin: 6px 0 8px 0;
+}
+
+.shopify-editor-content .ProseMirror li {
+  margin-bottom: 4px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.shopify-editor-html-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 14px;
+  border: none;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  background: #fafafa;
+  color: #1a1a1a;
+  outline: none;
+  resize: vertical;
+}
