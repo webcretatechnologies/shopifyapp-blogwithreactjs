@@ -35,6 +35,21 @@ export default function EditBlog() {
   const [toastMessage, setToastMessage] = useState(null);
 
   const saveBarRef = useRef(null);
+  const saveBarId = "blog-edit-save-bar";
+  // Skip the first run of the dirty-sync effect so the save bar can never
+  // appear on a fresh page load — it only shows once the user actually edits.
+  const isFirstRender = useRef(true);
+  // Keep the latest handlers in refs so the save bar's raw DOM listeners
+  // never call stale closures.
+  const handleSaveRef = useRef(null);
+  const handleDiscardRef = useRef(null);
+  // Latest loaded data, for the bfcache restore handler (avoids re-subscribing
+  // the window listener on every edit).
+  const blogDataRef = useRef(null);
+  blogDataRef.current = blogData;
+  // Guards against duplicate save requests (e.g. the React onClick and the raw
+  // DOM click listener both firing for a single click).
+  const isSavingRef = useRef(false);
 
   // Delete modal state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -47,8 +62,11 @@ export default function EditBlog() {
       const res = await fetch(`/api/posts/shopify/blogs/${id}`);
       const data = await res.json();
       if (res.ok && data.blog) {
-        setBlogData(data.blog);
-        setOriginalData(JSON.parse(JSON.stringify(data.blog)));
+        // Store independent snapshots so blogData and originalData can never
+        // drift apart (which would falsely mark the form as dirty on load).
+        const snapshot = JSON.parse(JSON.stringify(data.blog));
+        setBlogData(snapshot);
+        setOriginalData(JSON.parse(JSON.stringify(snapshot)));
       } else {
         setToastMessage({ content: "Blog not found", error: true });
         navigate("/blogs");
@@ -66,34 +84,90 @@ export default function EditBlog() {
 
   const isDirty = originalData && blogData && JSON.stringify(originalData) !== JSON.stringify(blogData);
 
-  useEffect(() => {
+  const hideSaveBar = () => {
     if (window.shopify?.saveBar) {
-      if (isDirty) {
-        window.shopify.saveBar.show("blog-edit-save-bar").catch(() => {});
-      } else {
-        window.shopify.saveBar.hide("blog-edit-save-bar").catch(() => {});
-      }
+      try {
+        window.shopify.saveBar.hide(saveBarId);
+      } catch (e) {}
     }
-    // Cleanup on unmount
-    return () => {
-      if (window.shopify?.saveBar) {
-        window.shopify.saveBar.hide("blog-edit-save-bar").catch(() => {});
-      }
-    };
+  };
+
+  const showSaveBar = () => {
+    if (window.shopify?.saveBar) {
+      try {
+        window.shopify.saveBar.show(saveBarId);
+      } catch (e) {}
+    }
+  };
+
+  const handleDiscard = () => {
+    if (originalData) {
+      setBlogData(JSON.parse(JSON.stringify(originalData)));
+    }
+    hideSaveBar();
+  };
+  handleDiscardRef.current = handleDiscard;
+
+  // Sync the save bar visibility with the dirty state. The first render is
+  // skipped so the bar never appears on mount / refresh — it is only shown
+  // once the user actually makes a change.
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (isDirty) {
+      showSaveBar();
+    } else {
+      hideSaveBar();
+    }
   }, [isDirty]);
 
+  // Reset the save bar once the blog has finished loading. On a refresh the
+  // App Bridge may not have been ready for the very first hide() calls, so we
+  // explicitly reset after the fetch settles to guarantee it stays hidden.
+  useEffect(() => {
+    if (!isLoading) {
+      hideSaveBar();
+    }
+  }, [isLoading]);
+
+  // Cleanup on unmount — never leave a save bar behind when navigating away.
+  useEffect(() => {
+    return () => {
+      hideSaveBar();
+    };
+  }, []);
+
+  // If the browser restores this page from its back/forward cache during a
+  // refresh, re-fetch fresh data and hide the save bar so the page always
+  // loads clean — the bar only reappears after the user actually edits.
+  useEffect(() => {
+    const onPageShow = (e) => {
+      hideSaveBar();
+      if (e.persisted && blogDataRef.current) {
+        fetchBlog();
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [fetchBlog]);
+
+  // Wire up the save/discard events dispatched by the Shopify admin chrome.
+  // The element only exists while isDirty, so (re)attach whenever it appears.
+  // Handlers are always read from refs so they never go stale.
   useEffect(() => {
     const elem = saveBarRef.current;
     if (!elem) return;
 
-    const onSave = () => { handleSave(); };
-    const onDiscard = () => { if (originalData) setBlogData(JSON.parse(JSON.stringify(originalData))); };
+    const onSave = () => { handleSaveRef.current(); };
+    const onDiscard = () => { handleDiscardRef.current(); };
     const onClick = (e) => {
       const text = (e.target?.textContent || e.target?.innerText || "").toLowerCase();
       if (text.includes("discard")) {
-        if (originalData) setBlogData(JSON.parse(JSON.stringify(originalData)));
+        handleDiscardRef.current();
       } else if (text.includes("save")) {
-        handleSave();
+        handleSaveRef.current();
       }
     };
 
@@ -106,7 +180,7 @@ export default function EditBlog() {
       elem.removeEventListener("discard", onDiscard);
       elem.removeEventListener("click", onClick);
     };
-  }, [isDirty, originalData]);
+  }, [isDirty]);
 
   const handleField = (field) => (value) => {
     setBlogData((prev) => ({ ...prev, [field]: value }));
@@ -121,6 +195,8 @@ export default function EditBlog() {
   }, []);
 
   const handleSave = async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsSaving(true);
     try {
       const res = await fetch(`/api/posts/shopify/blogs/${id}`, {
@@ -132,24 +208,20 @@ export default function EditBlog() {
       if (res.ok) {
         showToast("Blog updated successfully");
         setOriginalData(JSON.parse(JSON.stringify(blogData)));
-        if (window.shopify?.saveBar) {
-          window.shopify.saveBar.hide("blog-edit-save-bar").catch(() => {});
-        }
+        hideSaveBar();
       } else {
         showToast(data.error || "Failed to update blog", true);
-        if (window.shopify?.saveBar) {
-          window.shopify.saveBar.hide("blog-edit-save-bar").catch(() => {});
-        }
+        hideSaveBar();
       }
     } catch (err) {
       showToast("Network error", true);
-      if (window.shopify?.saveBar) {
-        window.shopify.saveBar.hide("blog-edit-save-bar").catch(() => {});
-      }
+      hideSaveBar();
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
+  handleSaveRef.current = handleSave;
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -199,6 +271,24 @@ export default function EditBlog() {
 
   return (
     <Frame>
+      {/* SaveBar is rendered ONLY while there are unsaved changes. Because the
+          element does not exist in the DOM otherwise, it can never appear on a
+          fresh page load or refresh. window.shopify.saveBar.show/hide stays in
+          sync for the admin chrome. */}
+      {isDirty && (
+        <ui-save-bar id={saveBarId} ref={saveBarRef}>
+          <button
+            variant="primary"
+            onClick={handleSave}
+            loading={isSaving ? "" : undefined}
+            disabled={isSaving ? "" : undefined}
+          >
+            Save
+          </button>
+          <button onClick={handleDiscard}>Discard</button>
+        </ui-save-bar>
+      )}
+
       <Page
       backAction={{ content: "Blogs", onAction: () => navigate("/blogs") }}
       title={blogData?.title || originalData?.title || "Edit blog"}
@@ -351,22 +441,6 @@ export default function EditBlog() {
           </BlockStack>
         </Layout.Section>
       </Layout>
-
-      {isDirty && (
-        <ui-save-bar id="blog-edit-save-bar" ref={saveBarRef}>
-          <button
-            variant="primary"
-            onClick={handleSave}
-            loading={isSaving ? "" : undefined}
-            disabled={isSaving ? "" : undefined}
-          >
-            Save
-          </button>
-          <button onClick={() => {
-            if (originalData) setBlogData(JSON.parse(JSON.stringify(originalData)));
-          }}>Discard</button>
-        </ui-save-bar>
-      )}
 
       <Modal
         open={isDeleteModalOpen}

@@ -842,6 +842,12 @@ export default function PostEditor() {
         productSliderPosition: data.post.productSliderPosition || "none",
         editorMode: initialMode,
         shopifyArticle: data.post.shopifyArticle || null,
+        metaTitle: data.post.metaTitle || "",
+        metaDescription: data.post.metaDescription || "",
+        canonicalUrl: data.post.canonicalUrl || "",
+        ogTitle: data.post.ogTitle || "",
+        ogDescription: data.post.ogDescription || "",
+        ogImage: data.post.ogImage || "",
       };
 
       const loadedTags = parseTags(data.post.tags);
@@ -914,6 +920,7 @@ export default function PostEditor() {
   }, [blocksById, rootIds, originalPost, isEditing]);
 
   const isDirty = useMemo(() => {
+    if (isLoading) return false;
     if (isBlocksDirty) return true;
 
     if (!isEditing) {
@@ -960,11 +967,18 @@ export default function PostEditor() {
       !tags.every((t) => originalTags.includes(t));
 
     return isPostDirty || isTagsDirty;
-  }, [isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData]);
+  }, [isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData, isLoading]);
 
   const saveBarId = "post-editor-save-bar";
 
+  // Sync the save bar visibility with the dirty state. The first render is
+  // skipped so the bar never appears on mount / refresh — it is only shown
+  // once the user actually makes a change.
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     if (window.shopify?.saveBar) {
       if (isDirty) {
         window.shopify.saveBar.show(saveBarId).catch(() => { });
@@ -973,6 +987,19 @@ export default function PostEditor() {
       }
     }
   }, [isDirty]);
+
+  // Reset the save bar once the post has finished loading. On a refresh the
+  // App Bridge may not have been ready for the very first hide() calls, so we
+  // explicitly reset after the fetch settles to guarantee it stays hidden.
+  useEffect(() => {
+    if (!isLoading) {
+      if (window.shopify?.saveBar) {
+        try {
+          window.shopify.saveBar.hide(saveBarId).catch(() => { });
+        } catch (e) {}
+      }
+    }
+  }, [isLoading]);
 
   useEffect(() => {
     const elem = saveBarRef.current;
@@ -1418,16 +1445,18 @@ export default function PostEditor() {
 
   return (
     <Frame>
-      <ui-save-bar id={saveBarId} ref={saveBarRef}>
-        <button
-          variant="primary"
-          onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}
-          loading={isSavingSaveBar ? "" : undefined}
-        >
-          Save
-        </button>
-        <button onClick={handleDiscard}>Discard</button>
-      </ui-save-bar>
+      {isDirty && (
+        <ui-save-bar id={saveBarId} ref={saveBarRef}>
+          <button
+            variant="primary"
+            onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}
+            loading={isSavingSaveBar ? "" : undefined}
+          >
+            Save
+          </button>
+          <button onClick={handleDiscard}>Discard</button>
+        </ui-save-bar>
+      )}
 
       {isDirty && !window.shopify && (
         <div style={{

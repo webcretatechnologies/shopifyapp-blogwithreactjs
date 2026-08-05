@@ -36,6 +36,17 @@ export default function NewBlog() {
   const [toastMessage, setToastMessage] = useState(null);
 
   const saveBarRef = useRef(null);
+  const saveBarId = "blog-new-save-bar";
+  // Skip the first run of the dirty-sync effect so the save bar can never
+  // appear on a fresh page load — it only shows once the user actually edits.
+  const isFirstRender = useRef(true);
+  // Keep the latest handlers in refs so the save bar's raw DOM listeners
+  // never call stale closures.
+  const handleSaveRef = useRef(null);
+  const handleDiscardRef = useRef(null);
+  // Guards against duplicate save requests (e.g. the React onClick and the raw
+  // DOM click listener both firing for a single click).
+  const isSavingRef = useRef(false);
 
   const isDirty = blogData.title.trim().length > 0;
 
@@ -43,43 +54,72 @@ export default function NewBlog() {
     setBlogData((prev) => ({ ...prev, [field]: value }));
   };
 
-  useEffect(() => {
+  const hideSaveBar = () => {
     if (window.shopify?.saveBar) {
-      if (isDirty) {
-        window.shopify.saveBar.show("blog-new-save-bar").catch(() => {});
-      } else {
-        window.shopify.saveBar.hide("blog-new-save-bar").catch(() => {});
-      }
+      try {
+        window.shopify.saveBar.hide(saveBarId);
+      } catch (e) {}
     }
-    // Cleanup on unmount
-    return () => {
-      if (window.shopify?.saveBar) {
-        window.shopify.saveBar.hide("blog-new-save-bar").catch(() => {});
-      }
-    };
+  };
+
+  const showSaveBar = () => {
+    if (window.shopify?.saveBar) {
+      try {
+        window.shopify.saveBar.show(saveBarId);
+      } catch (e) {}
+    }
+  };
+
+  const handleDiscard = () => {
+    setBlogData({
+      title: "",
+      handle: "",
+      commentPolicy: "MODERATED",
+      templateSuffix: "",
+      seoTitle: "",
+      seoDescription: ""
+    });
+    hideSaveBar();
+  };
+  handleDiscardRef.current = handleDiscard;
+
+  // Sync the save bar visibility with the dirty state. The first render is
+  // skipped so the bar never appears on mount / refresh — it is only shown
+  // once the user actually makes a change.
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (isDirty) {
+      showSaveBar();
+    } else {
+      hideSaveBar();
+    }
   }, [isDirty]);
 
+  // Cleanup on unmount — never leave a save bar behind when navigating away.
+  useEffect(() => {
+    return () => {
+      hideSaveBar();
+    };
+  }, []);
+
+  // Wire up the save/discard events dispatched by the Shopify admin chrome.
+  // The element only exists while isDirty, so (re)attach whenever it appears.
+  // Handlers are always read from refs so they never go stale.
   useEffect(() => {
     const elem = saveBarRef.current;
     if (!elem) return;
 
-    const onSave = () => { handleSave(); };
-    const onDiscard = () => {
-      setBlogData({
-        title: "",
-        handle: "",
-        commentPolicy: "MODERATED",
-        templateSuffix: "",
-        seoTitle: "",
-        seoDescription: ""
-      });
-    };
+    const onSave = () => { handleSaveRef.current(); };
+    const onDiscard = () => { handleDiscardRef.current(); };
     const onClick = (e) => {
       const text = (e.target?.textContent || e.target?.innerText || "").toLowerCase();
       if (text.includes("discard")) {
-        onDiscard();
+        handleDiscardRef.current();
       } else if (text.includes("save")) {
-        handleSave();
+        handleSaveRef.current();
       }
     };
 
@@ -103,6 +143,8 @@ export default function NewBlog() {
   }, []);
 
   const handleSave = async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsSaving(true);
     try {
       const res = await fetch("/api/posts/shopify/blogs", {
@@ -112,29 +154,43 @@ export default function NewBlog() {
       });
       const data = await res.json();
       if (res.ok) {
-        if (window.shopify?.saveBar) {
-          try { await window.shopify.saveBar.hide("blog-new-save-bar"); } catch (e) {}
-        }
+        hideSaveBar();
         showToast("Blog created successfully");
         navigate(`/blogs`);
       } else {
-        if (window.shopify?.saveBar) {
-          try { await window.shopify.saveBar.hide("blog-new-save-bar"); } catch (e) {}
-        }
+        hideSaveBar();
         showToast(data.error || "Failed to create blog", true);
       }
     } catch (err) {
-      if (window.shopify?.saveBar) {
-        try { await window.shopify.saveBar.hide("blog-new-save-bar"); } catch (e) {}
-      }
+      hideSaveBar();
       showToast("Network error", true);
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
+  handleSaveRef.current = handleSave;
 
   return (
     <Frame>
+      {/* SaveBar is rendered ONLY while there are unsaved changes. Because the
+          element does not exist in the DOM otherwise, it can never appear on a
+          fresh page load or refresh. window.shopify.saveBar.show/hide stays in
+          sync for the admin chrome. */}
+      {isDirty && (
+        <ui-save-bar id={saveBarId} ref={saveBarRef}>
+          <button
+            variant="primary"
+            onClick={handleSave}
+            loading={isSaving ? "" : undefined}
+            disabled={isSaving ? "" : undefined}
+          >
+            Save
+          </button>
+          <button onClick={handleDiscard}>Discard</button>
+        </ui-save-bar>
+      )}
+
       <Page
       backAction={{ content: "Blogs", onAction: () => navigate("/blogs") }}
       title="Add blog"
@@ -262,29 +318,6 @@ export default function NewBlog() {
           </BlockStack>
         </Layout.Section>
       </Layout>
-
-      {isDirty && (
-        <ui-save-bar id="blog-new-save-bar" ref={saveBarRef}>
-          <button
-            variant="primary"
-            onClick={handleSave}
-            loading={isSaving ? "" : undefined}
-            disabled={isSaving ? "" : undefined}
-          >
-            Save
-          </button>
-          <button onClick={() => {
-            setBlogData({
-              title: "",
-              handle: "",
-              commentPolicy: "MODERATED",
-              templateSuffix: "",
-              seoTitle: "",
-              seoDescription: ""
-            });
-          }}>Discard</button>
-        </ui-save-bar>
-      )}
 
       {toastMessage && (
         <Toast
