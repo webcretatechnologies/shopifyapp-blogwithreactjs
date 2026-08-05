@@ -29,6 +29,8 @@ import {
   DropZone,
   RadioButton,
   Collapsible,
+  Combobox,
+  Listbox,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon } from "@shopify/polaris-icons";
@@ -770,6 +772,7 @@ export default function PostEditor() {
   const [quickCreateModalOpen, setQuickCreateModalOpen] = useState(false);
   const [newBlogTitle, setNewBlogTitle] = useState("");
   const [isCreatingBlog, setIsCreatingBlog] = useState(false);
+  const [blogSearchValue, setBlogSearchValue] = useState("");
   const [features, setFeatures] = useState({});
   const [isLoading, setIsLoading] = useState(isEditing);
   const [isSaving, setIsSaving] = useState(false);
@@ -1907,12 +1910,96 @@ export default function PostEditor() {
                         onChange={handleField("author")}
                         autoComplete="off"
                       />
-                      <Select
-                        label="Blog"
-                        options={blogOptions}
-                        value={shopifyBlogId}
-                        onChange={handleBlogChange}
-                      />
+                      {/* Blog — Shopify-style searchable Combobox */}
+                      <BlockStack gap="100">
+                        <Text variant="bodyMd" fontWeight="medium" as="label">
+                          Blog
+                        </Text>
+                        <Combobox
+                          activator={
+                            <Combobox.TextField
+                              prefix={null}
+                              onChange={(val) => setBlogSearchValue(val)}
+                              label="Blog"
+                              labelHidden
+                              value={blogSearchValue !== "" ? blogSearchValue : (shopifyBlogs.find((b) => String(b.id) === String(shopifyBlogId))?.title || "")}
+                              placeholder="Search blogs"
+                              autoComplete="off"
+                              onFocus={() => setBlogSearchValue("")}
+                            />
+                          }
+                        >
+                          {shopifyBlogs.length > 0 && (
+                            <Listbox
+                              onSelect={(val) => {
+                                if (val === "CREATE_NEW") {
+                                  setBlogSearchValue("");
+                                  setNewBlogTitle("");
+                                  setQuickCreateModalOpen(true);
+                                } else {
+                                  handleBlogChange(val);
+                                  const selected = shopifyBlogs.find((b) => String(b.id) === val);
+                                  setBlogSearchValue(selected?.title || "");
+                                }
+                              }}
+                            >
+                              {/* Blogs section header */}
+                              <Listbox.Header>Blogs</Listbox.Header>
+
+                              {/* Filtered blog list */}
+                              {shopifyBlogs
+                                .filter((b) =>
+                                  !blogSearchValue ||
+                                  b.title.toLowerCase().includes(blogSearchValue.toLowerCase())
+                                )
+                                .map((b) => (
+                                  <Listbox.Option
+                                    key={b.id}
+                                    value={String(b.id)}
+                                    selected={String(b.id) === String(shopifyBlogId)}
+                                    accessibilityLabel={b.title}
+                                  >
+                                    <Listbox.TextOption selected={String(b.id) === String(shopifyBlogId)}>
+                                      {b.title}
+                                    </Listbox.TextOption>
+                                  </Listbox.Option>
+                                ))}
+
+                              {/* Actions section */}
+                              <Listbox.Header>Actions</Listbox.Header>
+                              <Listbox.Option
+                                value="CREATE_NEW"
+                                accessibilityLabel="Create a new blog"
+                              >
+                                <Listbox.TextOption>
+                                  + Create a new blog
+                                </Listbox.TextOption>
+                              </Listbox.Option>
+                            </Listbox>
+                          )}
+                          {shopifyBlogs.length === 0 && (
+                            <Listbox
+                              onSelect={(val) => {
+                                if (val === "CREATE_NEW") {
+                                  setBlogSearchValue("");
+                                  setNewBlogTitle("");
+                                  setQuickCreateModalOpen(true);
+                                }
+                              }}
+                            >
+                              <Listbox.Header>Actions</Listbox.Header>
+                              <Listbox.Option
+                                value="CREATE_NEW"
+                                accessibilityLabel="Create a new blog"
+                              >
+                                <Listbox.TextOption>
+                                  + Create a new blog
+                                </Listbox.TextOption>
+                              </Listbox.Option>
+                            </Listbox>
+                          )}
+                        </Combobox>
+                      </BlockStack>
                       <BlockStack gap="200">
                         <Text variant="bodyMd" fontWeight="medium">Tags</Text>
                         {parseTags(tags).length > 0 && (
