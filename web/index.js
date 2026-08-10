@@ -404,8 +404,22 @@ app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 app.get("/api/shop", async (_req, res) => {
   try {
     const session = res.locals.shopify?.session;
-    const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
+    let shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
     if (!shop) return res.status(404).json({ error: "Shop not found" });
+
+    // Lazily backfill the shop's IANA timezone (used for scheduling date/time conversion) —
+    // fetched once and cached, no separate migration/backfill script needed.
+    if (!shop.timezone) {
+      try {
+        const client = new shopify.api.clients.Graphql({ session });
+        const result = await client.request(`query { shop { ianaTimezone } }`);
+        const tz = result.data?.shop?.ianaTimezone;
+        if (tz) shop = await prisma.shop.update({ where: { id: shop.id }, data: { timezone: tz } });
+      } catch (err) {
+        console.warn("[Shop] Failed to fetch ianaTimezone:", err.message);
+      }
+    }
+
     res.json({ shop });
   } catch (err) {
     res.status(500).json({ error: err.message });

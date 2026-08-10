@@ -655,10 +655,21 @@ router.post("/:id/publish", async (req, res) => {
     });
     if (!post) return res.status(404).json({ error: "Post not found" });
 
-    const { blogId } = req.body;
+    const { blogId, scheduledAt } = req.body;
     const targetBlogId = blogId || post.shopifyArticle?.shopifyBlogId;
     if (!targetBlogId) {
       return res.status(422).json({ error: "No Shopify blog selected. Please select a blog first." });
+    }
+
+    let scheduledDate = null;
+    if (scheduledAt) {
+      scheduledDate = new Date(scheduledAt);
+      if (Number.isNaN(scheduledDate.getTime())) {
+        return res.status(422).json({ error: "Invalid scheduled date." });
+      }
+      if (scheduledDate <= new Date()) {
+        return res.status(422).json({ error: "Scheduled date must be in the future." });
+      }
     }
 
     // Ensure the post is linked before push
@@ -672,6 +683,17 @@ router.post("/:id/publish", async (req, res) => {
           syncMode: "external_html",
         },
       });
+    }
+
+    if (scheduledDate) {
+      // pushPostToShopify reads status/publishedAt from the DB, so the local record must
+      // reflect the schedule before syncAfterLocalEdit runs.
+      await prisma.post.update({
+        where: { id: post.id },
+        data: { status: "scheduled", publishedAt: scheduledDate },
+      });
+      const result = await ArticleSyncService.syncAfterLocalEdit(post.id, { publishMode: false });
+      return res.json({ success: true, scheduled: true, scheduledAt: scheduledDate, shopify_article_id: result.articleId });
     }
 
     // Use ArticleSyncService to push with publish mode

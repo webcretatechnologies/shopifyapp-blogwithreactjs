@@ -8,6 +8,10 @@ import { Modal, Text, Banner, BlockStack, Checkbox, Box, Button } from "@shopify
  * - open, title, body (string or JSX), confirmText, confirmTone ("critical"|"warning"|"primary")
  * - onConfirm, onCancel, loading
  * - optional checkbox: { label, checked, onChange, helpText? }
+ * - optional error: string — shown as a banner inside the modal. Important: a page-level error
+ *   banner behind the modal overlay is invisible while the modal is open, so any error from an
+ *   onConfirm action that keeps the modal open (rather than closing it) must be surfaced here,
+ *   not just via a parent-level setError, or a failure silently looks like "nothing happened."
  */
 export default function ConfirmActionModal({
   open,
@@ -19,6 +23,7 @@ export default function ConfirmActionModal({
   onCancel,
   loading = false,
   checkbox,
+  error,
 }) {
   const isDestructive = confirmTone === "critical";
 
@@ -44,6 +49,11 @@ export default function ConfirmActionModal({
     >
       <Modal.Section>
         <BlockStack gap="300">
+          {error && (
+            <Banner tone="critical">
+              <Text as="p" variant="bodyMd">{error}</Text>
+            </Banner>
+          )}
           {confirmTone === "critical" && (
             <Banner tone="critical">
               <Text as="p" variant="bodyMd">

@@ -32,6 +32,7 @@ model Shop {
   domain        String        @unique
   accessToken   String        @db.Text
   planKey       String        @default("free")
+  timezone      String?
   installedAt   DateTime      @default(now())
   uninstalledAt DateTime?
   createdAt     DateTime      @default(now())

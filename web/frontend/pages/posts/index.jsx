@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { DateTime } from "luxon";
 import {
   Page,
   Layout,
@@ -35,8 +36,15 @@ import ConfirmActionModal from "../../components/ConfirmActionModal";
 
 const STATUS_BADGE_MAP = {
   published: "success",
+  scheduled: "attention",
   draft: "info",
   failed: "critical",
+};
+
+const STATUS_LABEL_MAP = {
+  published: "Published",
+  scheduled: "Scheduled",
+  draft: "Draft",
 };
 
 function timeAgo(dateString) {
@@ -340,6 +348,7 @@ export default function Articles() {
           titleHidden
           choices={[
             { label: "Draft", value: "draft" },
+            { label: "Scheduled", value: "scheduled" },
             { label: "Published", value: "published" },
           ]}
           selected={statusFilter || []}
@@ -449,9 +458,16 @@ export default function Articles() {
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Badge tone={STATUS_BADGE_MAP[post.status] || "info"}>
-          {post.status === "published" ? "Published" : "Draft"}
-        </Badge>
+        <BlockStack gap="050">
+          <Badge tone={STATUS_BADGE_MAP[post.status] || "info"}>
+            {STATUS_LABEL_MAP[post.status] || "Draft"}
+          </Badge>
+          {post.status === "scheduled" && post.publishedAt && (
+            <Text variant="bodySm" tone="subdued">
+              {DateTime.fromJSDate(new Date(post.publishedAt)).toFormat("MMM d, yyyy 'at' h:mm a")}
+            </Text>
+          )}
+        </BlockStack>
       </IndexTable.Cell>
       <IndexTable.Cell>
         {post.shopifyArticle?.status === "published" ? (

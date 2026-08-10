@@ -31,9 +31,12 @@ import {
   Collapsible,
   Combobox,
   Listbox,
+  DatePicker,
+  Popover,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon } from "@shopify/polaris-icons";
+import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon, CalendarIcon } from "@shopify/polaris-icons";
+import { DateTime } from "luxon";
 import confetti from "canvas-confetti";
 import DragDropBuilderContainer from "../../components/builder/DragDropBuilderContainer";
 import { compileBlocksToHtml } from "../../utils/compileBlocksToHtml";
@@ -837,6 +840,68 @@ export default function PostEditor() {
       .catch(() => setMetaRobotsActive(false));
   }, []);
 
+  // ── Scheduling ──────────────────────────────────────────────
+  const [shopTimezone, setShopTimezone] = useState(
+    Intl.DateTimeFormat().resolvedOptions().timeZone
+  );
+  const [visibilityMode, setVisibilityMode] = useState("draft"); // draft | publish_now | schedule
+  const [isSchedulePickerOpen, setIsSchedulePickerOpen] = useState(false);
+  const [scheduleMonth, setScheduleMonth] = useState(new Date().getMonth());
+  const [scheduleYear, setScheduleYear] = useState(new Date().getFullYear());
+  const [scheduleDate, setScheduleDate] = useState(null); // JS Date, wall-clock in shop tz (date part only)
+  const [scheduleTime, setScheduleTime] = useState("09:00"); // "HH:mm"
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [isCancellingSchedule, setIsCancellingSchedule] = useState(false);
+  const [showScheduleLiveWarning, setShowScheduleLiveWarning] = useState(false);
+  const [scheduleModalError, setScheduleModalError] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/shop")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.shop?.timezone) setShopTimezone(data.shop.timezone);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Keep the draft/publish_now/schedule radio in sync with the loaded post's actual status.
+  useEffect(() => {
+    if (post.status === "scheduled") setVisibilityMode("schedule");
+    else if (post.status === "published") setVisibilityMode("publish_now");
+    else setVisibilityMode("draft");
+  }, [post.status]);
+
+  const scheduledAtUtc = useMemo(() => {
+    if (!scheduleDate) return null;
+    const [hour, minute] = scheduleTime.split(":").map(Number);
+    const dt = DateTime.fromObject(
+      { year: scheduleDate.getFullYear(), month: scheduleDate.getMonth() + 1, day: scheduleDate.getDate(), hour, minute },
+      { zone: shopTimezone }
+    );
+    return dt.isValid ? dt.toUTC().toISO() : null;
+  }, [scheduleDate, scheduleTime, shopTimezone]);
+
+  const isScheduledInPast = scheduledAtUtc ? new Date(scheduledAtUtc) <= new Date() : false;
+
+  const formatInShopTz = (isoOrDate) => {
+    if (!isoOrDate) return "";
+    const dt = DateTime.fromJSDate(new Date(isoOrDate)).setZone(shopTimezone);
+    return dt.isValid ? dt.toFormat("MMMM d, yyyy 'at' h:mm a") : "";
+  };
+
+  // Pre-fill the picker with the post's current schedule (e.g. when reopening to reschedule).
+  useEffect(() => {
+    if (post.status === "scheduled" && post.publishedAt) {
+      const dt = DateTime.fromJSDate(new Date(post.publishedAt)).setZone(shopTimezone);
+      if (dt.isValid) {
+        setScheduleDate(new Date(dt.year, dt.month - 1, dt.day));
+        setScheduleTime(dt.toFormat("HH:mm"));
+        setScheduleMonth(dt.month - 1);
+        setScheduleYear(dt.year);
+      }
+    }
+  }, [post.status, post.publishedAt, shopTimezone]);
+
   // Load existing post
   const loadPost = useCallback(async () => {
     try {
@@ -871,6 +936,7 @@ export default function PostEditor() {
         slug: data.post.slug || "",
         excerpt: data.post.excerpt || "",
         status: data.post.status || "draft",
+        publishedAt: data.post.publishedAt || null,
         author: data.post.author || "",
         featuredImage: data.post.featuredImage || "",
         contentJson: hydratedBlocks,
@@ -1186,8 +1252,12 @@ export default function PostEditor() {
 
     const finalContentHtml = compileBlocksToHtml(finalAst);
 
+    // publishedAt must never ride along on an ordinary save — it's only ever written by the
+    // dedicated /publish endpoint (immediate publish or schedule), never as a side effect here.
+    const { publishedAt: _publishedAt, ...postWithoutPublishedAt } = post;
+
     return {
-      ...post,
+      ...postWithoutPublishedAt,
       contentHtml: finalContentHtml,
       contentJson: finalAst,
       tags,
@@ -1384,12 +1454,67 @@ export default function PostEditor() {
       if (!res.ok) throw new Error(data.error || "Publish failed");
 
       setToast({ content: "Article published to Shopify! 🎉" });
-      setPost((p) => ({ ...p, status: "published" }));
+      setPost((p) => ({ ...p, status: "published", publishedAt: new Date().toISOString() }));
     } catch (err) {
       setError(err.message);
     } finally {
       setIsPublishing(false);
     }
+  };
+
+  // Shopify has no "stays live now, gets a new publish date later" state — an article is either
+  // visible now, or hidden until a future instant. Scheduling an already-published article takes
+  // it offline immediately (verified live against a real store), so that transition specifically
+  // needs an explicit merchant confirmation rather than silently going dark.
+  const doSchedule = async () => {
+    setIsScheduling(true);
+    setError(null);
+    setScheduleModalError(null);
+    try {
+      const savedPostId = await handleSave("scheduled");
+      const postId = id || savedPostId;
+      if (!postId) {
+        throw new Error("Couldn't save the article before scheduling. Please try again.");
+      }
+
+      const res = await fetch(`/api/posts/${postId}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blogId: shopifyBlogId, scheduledAt: scheduledAtUtc }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Scheduling failed");
+
+      setToast({ content: `Article scheduled for ${formatInShopTz(scheduledAtUtc)}` });
+      setPost((p) => ({ ...p, status: "scheduled", publishedAt: scheduledAtUtc }));
+      setIsSchedulePickerOpen(false);
+      setShowScheduleLiveWarning(false);
+    } catch (err) {
+      setError(err.message);
+      setScheduleModalError(err.message);
+    } finally {
+      setIsScheduling(false);
+    }
+  };
+
+  const handleSchedule = async () => {
+    if (!shopifyBlogId) {
+      setError("Please select a Shopify blog to publish to.");
+      return;
+    }
+    if (!scheduledAtUtc) {
+      setError("Please choose a date and time to schedule this article.");
+      return;
+    }
+    if (new Date(scheduledAtUtc) <= new Date()) {
+      setError("Scheduled date must be in the future.");
+      return;
+    }
+    if (post.status === "published") {
+      setShowScheduleLiveWarning(true);
+      return;
+    }
+    await doSchedule();
   };
 
   const handleUnpublish = async () => {
@@ -1566,6 +1691,15 @@ export default function PostEditor() {
           <button onClick={handleUnpublish} disabled={isUnpublishing}>
             {isUnpublishing ? "Unpublishing..." : "Unpublish"}
           </button>
+        ) : post.status === "scheduled" ? (
+          <>
+            <button onClick={handlePublish} disabled={isPublishing || !shopifyBlogId}>
+              {isPublishing ? "Publishing..." : "Publish now"}
+            </button>
+            <button onClick={handleUnpublish} disabled={isUnpublishing}>
+              {isUnpublishing ? "Cancelling..." : "Cancel schedule"}
+            </button>
+          </>
         ) : (
           <button onClick={handlePublish} disabled={isPublishing || !shopifyBlogId}>
             {isPublishing ? "Publishing..." : "Publish to Shopify"}
@@ -1892,25 +2026,89 @@ export default function PostEditor() {
                       <Text variant="headingSm" as="h2">Visibility</Text>
                       <BlockStack gap="200">
                         <RadioButton
-                          label="Visible"
-                          helpText={
-                            post.status === "published" && post.publishedAt
-                              ? `As of ${new Date(post.publishedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} at ${new Date(post.publishedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })} GMT+5:30`
-                              : null
-                          }
-                          checked={post.status === "published"}
-                          id="visibility-visible"
+                          label="Hidden (Draft)"
+                          checked={visibilityMode === "draft"}
+                          id="visibility-draft"
                           name="visibility"
-                          onChange={() => handleField("status")("published")}
+                          onChange={() => { setVisibilityMode("draft"); handleField("status")("draft"); }}
                         />
                         <RadioButton
-                          label="Hidden"
-                          checked={post.status === "draft"}
-                          id="visibility-hidden"
+                          label="Publish immediately"
+                          helpText={
+                            post.status === "published" && post.publishedAt
+                              ? `As of ${formatInShopTz(post.publishedAt)} (${shopTimezone})`
+                              : null
+                          }
+                          checked={visibilityMode === "publish_now"}
+                          id="visibility-publish-now"
                           name="visibility"
-                          onChange={() => handleField("status")("draft")}
+                          onChange={() => { setVisibilityMode("publish_now"); handleField("status")("published"); }}
+                        />
+                        <RadioButton
+                          label="Schedule for later"
+                          helpText={
+                            post.status === "scheduled" && post.publishedAt
+                              ? `Scheduled for ${formatInShopTz(post.publishedAt)} (${shopTimezone})`
+                              : null
+                          }
+                          checked={visibilityMode === "schedule"}
+                          id="visibility-schedule"
+                          name="visibility"
+                          onChange={() => setVisibilityMode("schedule")}
                         />
                       </BlockStack>
+
+                      {visibilityMode === "schedule" && (
+                        <BlockStack gap="200">
+                          <Popover
+                            active={isSchedulePickerOpen}
+                            activator={
+                              <Button
+                                onClick={() => setIsSchedulePickerOpen((v) => !v)}
+                                icon={CalendarIcon}
+                                disclosure
+                              >
+                                {scheduleDate ? DateTime.fromJSDate(scheduleDate).toFormat("MMMM d, yyyy") : "Pick a date"}
+                              </Button>
+                            }
+                            onClose={() => setIsSchedulePickerOpen(false)}
+                          >
+                            <Box padding="300">
+                              <DatePicker
+                                month={scheduleMonth}
+                                year={scheduleYear}
+                                selected={scheduleDate}
+                                onMonthChange={(month, year) => { setScheduleMonth(month); setScheduleYear(year); }}
+                                onChange={({ start }) => { setScheduleDate(start); setIsSchedulePickerOpen(false); }}
+                                disableDatesBefore={(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })()}
+                              />
+                            </Box>
+                          </Popover>
+                          <TextField
+                            label="Time"
+                            type="time"
+                            value={scheduleTime}
+                            onChange={setScheduleTime}
+                            autoComplete="off"
+                            error={isScheduledInPast ? "This time has already passed." : undefined}
+                          />
+                          <Text variant="bodySm" tone={isScheduledInPast ? "critical" : "subdued"}>
+                            {isScheduledInPast
+                              ? "Pick a date and time that's still in the future — this one has already passed."
+                              : scheduledAtUtc
+                                ? `Will go live ${formatInShopTz(scheduledAtUtc)} (${shopTimezone})`
+                                : "Pick a date and time above."}
+                          </Text>
+                          <Button
+                            variant="primary"
+                            onClick={handleSchedule}
+                            loading={isScheduling}
+                            disabled={!scheduledAtUtc || !shopifyBlogId || isScheduledInPast}
+                          >
+                            {post.status === "scheduled" ? "Update schedule" : "Schedule"}
+                          </Button>
+                        </BlockStack>
+                      )}
                     </BlockStack>
                   </Box>
                 </Card>
@@ -2217,6 +2415,25 @@ export default function PostEditor() {
             }
             : undefined
         }
+      />
+
+      {/* ─── Schedule-a-live-article Warning Modal ─── */}
+      <ConfirmActionModal
+        open={showScheduleLiveWarning}
+        title="This article is currently live"
+        body={
+          <Text as="p" variant="bodyMd">
+            Scheduling it will take it <strong>offline immediately</strong> until{" "}
+            {scheduledAtUtc ? formatInShopTz(scheduledAtUtc) : "the new date"} ({shopTimezone}) —
+            Shopify doesn't support keeping an article live while a new publish date is pending.
+          </Text>
+        }
+        confirmText="Take offline and schedule"
+        confirmTone="critical"
+        onConfirm={doSchedule}
+        error={scheduleModalError}
+        onCancel={() => { setShowScheduleLiveWarning(false); setScheduleModalError(null); }}
+        loading={isScheduling}
       />
 
       {showPreview && (

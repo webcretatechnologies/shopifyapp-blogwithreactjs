@@ -87,13 +87,17 @@ function articleFromGraphQL(article) {
     tags: Array.isArray(article.tags) ? article.tags.join(", ") : "",
     image: article.image?.url ? { src: article.image.url } : null,
     handle: article.handle || "",
-    published_at: article.isPublished ? (article.publishedAt || null) : null,
+    // Not gated on isPublished: a scheduled-but-not-yet-live article has isPublished:false
+    // but a future publishedAt (the scheduled instant) — losing that here would make
+    // scheduling invisible to the reconciliation/merge engine.
+    published_at: article.publishedAt || null,
+    isScheduled: !article.isPublished && !!article.publishedAt && new Date(article.publishedAt) > new Date(),
     updated_at: article.updatedAt || null,
     blog_id: article.blog?.id ? numericIdFromGid(article.blog.id) : null,
   };
 }
 
-function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image, summary, meta_title, meta_description, meta_robots }) {
+function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image, summary, meta_title, meta_description, meta_robots, publishAt }) {
   const input = {
     title,
     body: body_html,
@@ -101,7 +105,13 @@ function toArticleGraphQLInput({ title, body_html, author, published, tags, hand
     isPublished: !!published,
     handle,
   };
-  
+
+  // Native Shopify scheduling: isPublished:true + a future publishDate keeps the article
+  // hidden until that instant, then Shopify reveals it automatically — no cron needed here.
+  if (publishAt) {
+    input.publishDate = publishAt;
+  }
+
   if (summary !== undefined) {
     input.summary = summary || "";
   }
@@ -256,7 +266,9 @@ function normalizeLocalState(post, tagNames) {
   return {
     title: post.title || "",
     author: post.author || "",
-    status: (post.status === "published") ? "published" : "draft",
+    status: post.status === "published" ? "published"
+          : post.status === "scheduled" ? "scheduled"
+          : "draft",
     tags: tagNames || "",
     featuredImage: post.featuredImage || null,
     slug: post.slug || "",
@@ -280,7 +292,9 @@ function normalizeRemoteState(payload) {
   return {
     title: payload.title || "",
     author: payload.author || "",
-    status: payload.published_at ? "published" : "draft",
+    status: payload.isScheduled ? "scheduled"
+          : payload.published_at ? "published"
+          : "draft",
     tags: remoteTags,
     featuredImage: payload.image?.src || null,
     slug: payload.handle || "",
@@ -784,7 +798,13 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   const tagNames = post.tags
     ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ")
     : "";
-  const published = publishMode ? true : post.status === "published";
+  // Scheduling: Shopify rejects isPublished:true combined with a future publishDate
+  // ("Can't set isPublished to true and also set a future publish date" — verified against
+  // a live store). The correct combination is isPublished:false + a future publishDate;
+  // Shopify flips isPublished to true itself once that instant passes.
+  const isScheduled = !publishMode && post.status === "scheduled" && post.publishedAt && post.publishedAt > new Date();
+  const published = publishMode ? true : (post.status === "published");
+  const publishAt = isScheduled ? post.publishedAt.toISOString() : null;
 
   // Compute outbound hash for echo suppression
   const outboundHash = computeContentHash({
@@ -807,6 +827,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     body_html: storefrontHtml,
     author: post.author || "Admin",
     published,
+    publishAt,
     tags: tagNames,
     handle: post.slug,
     image: post.featuredImage ? { src: post.featuredImage } : null,
@@ -868,7 +889,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
       postId: post.id,
       shopifyArticleId: String(articleId),
       shopifyBlogId: String(shopifyLink.shopifyBlogId),
-      status: published ? "published" : "draft",
+      status: isScheduled ? "scheduled" : (published ? "published" : "draft"),
       syncedAt: new Date(),
       syncState: "in_sync",
       syncMode: "managed_by_app",
@@ -881,7 +902,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     },
     update: {
       shopifyArticleId: String(articleId),
-      status: published ? "published" : "draft",
+      status: isScheduled ? "scheduled" : (published ? "published" : "draft"),
       syncedAt: new Date(),
       syncState: "in_sync",
       syncMode: "managed_by_app",
@@ -1189,7 +1210,7 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
           shopId: shop.id,
           title: payload.title,
           slug: payload.handle || String(payload.id),
-          status: payload.published_at ? "published" : "draft",
+          status: payload.isScheduled ? "scheduled" : (payload.published_at ? "published" : "draft"),
           author: payload.author || null,
           contentHtml: parsed.rawEditorHtml || payload.body_html || "",
           contentJson: parsed.blocks,
@@ -1213,7 +1234,7 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
           postId: post.id,
           shopifyArticleId,
           shopifyBlogId: String(payload.blog_id),
-          status: payload.published_at ? "published" : "draft",
+          status: payload.isScheduled ? "scheduled" : (payload.published_at ? "published" : "draft"),
           syncedAt: new Date(),
           syncState: "in_sync",
           syncMode: "external_html",
@@ -1554,10 +1575,39 @@ async function reconcilePost(postId) {
  * Reconcile all linked posts for a given shop.
  * Fetches each Shopify article and compares with local state.
  */
+/**
+ * Safety net for scheduled posts whose initial schedule-push to Shopify failed (network error,
+ * transient Shopify error, etc). Rides the same reconciliation cadence — no dedicated scheduler.
+ */
+async function retryFailedSchedulePushes(shopId) {
+  const failedScheduled = await prisma.post.findMany({
+    where: {
+      shopId,
+      status: "scheduled",
+      shopifyArticle: { syncState: "error" },
+    },
+    take: 20,
+  });
+
+  for (const post of failedScheduled) {
+    try {
+      await pushPostToShopify(post.id, { publishMode: false });
+      console.log(`[Reconciliation] Retried failed schedule-push for post ${post.id}`);
+    } catch (err) {
+      console.error(`[Reconciliation] Retry of failed schedule-push for post ${post.id} still failing:`, err.message);
+    }
+    await delay(RECONCILE_DELAY_MS);
+  }
+}
+
 async function reconcileAllLinkedPosts(shopDomain) {
   try {
     const shop = await prisma.shop.findUnique({ where: { domain: shopDomain } });
     if (!shop) return { status: "shop_not_found" };
+
+    await retryFailedSchedulePushes(shop.id).catch((err) => {
+      console.error(`[Reconciliation] retryFailedSchedulePushes failed for shop ${shopDomain}:`, err.message);
+    });
 
     const linkedPosts = await prisma.post.findMany({
       where: {
