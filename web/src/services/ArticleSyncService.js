@@ -20,6 +20,7 @@ import { EditorContentCompiler } from "./EditorContentCompiler.js";
 import { ShopifyArticleParser } from "./ShopifyArticleParser.js";
 import BlockRenderer from "./BlockRenderer.js";
 import { ensureTrackingKey } from "./AnalyticsTrackingService.js";
+import JsonLdService from "./JsonLdService.js";
 
 const prisma = new PrismaClient();
 
@@ -40,6 +41,12 @@ const _pollReconcileLastRun = new Map();
 const METAFIELD_NAMESPACE = "blog_app";
 const METAFIELD_KEY = "source";
 const METAFIELD_TYPE = "json";
+const META_ROBOTS_METAFIELD_KEY = "meta_robots";
+
+/** Combines noindex/nofollow flags into a robots directive string. Always explicit — whatever the merchant selects is what renders. */
+function computeMetaRobotsDirective(noindex, nofollow) {
+  return `${noindex ? "noindex" : "index"}, ${nofollow ? "nofollow" : "follow"}`;
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  GRAPHQL ID / SHAPE ADAPTERS
@@ -86,7 +93,7 @@ function articleFromGraphQL(article) {
   };
 }
 
-function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image, summary, meta_title, meta_description }) {
+function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image, summary, meta_title, meta_description, meta_robots }) {
   const input = {
     title,
     body: body_html,
@@ -121,6 +128,14 @@ function toArticleGraphQLInput({ title, body_html, author, published, tags, hand
       key: "description_tag",
       value: meta_description || "",
       type: "string",
+    });
+  }
+  if (meta_robots) {
+    metafields.push({
+      namespace: METAFIELD_NAMESPACE,
+      key: META_ROBOTS_METAFIELD_KEY,
+      value: meta_robots,
+      type: "single_line_text_field",
     });
   }
   if (metafields.length > 0) {
@@ -624,7 +639,7 @@ async function logSyncEvent({
 // ══════════════════════════════════════════════════════════════════════════════
 //  HTML COMPILATION
 // ══════════════════════════════════════════════════════════════════════════════
-export async function buildStorefrontHtmlForPost(post, rawHtml, validSession, graphqlClient) {
+export async function buildStorefrontHtmlForPost(post, rawHtml, validSession, graphqlClient, jsonLdOverrides = {}) {
   let storefrontHtml = await EditorContentCompiler.compileForStorefront(
     rawHtml, validSession, graphqlClient, post.shop.domain
   );
@@ -719,6 +734,17 @@ ${analyticsBlockEnd}`;
     }
   }
 
+  // ── Inject JSON-LD structured data (BlogPosting/Article/NewsArticle schema) ──
+  // jsonLdOverrides carries translation-specific title/description when compiling a
+  // translated locale, so the schema's headline/description match the rendered language.
+  const jsonLdScript = JsonLdService.renderPostSchema(
+    { ...post, ...jsonLdOverrides, products: postProducts },
+    shopDomain
+  );
+  if (jsonLdScript) {
+    storefrontHtml = `<!-- BLOG_JSONLD_START -->\n${jsonLdScript}\n<!-- BLOG_JSONLD_END -->\n` + storefrontHtml;
+  }
+
   return storefrontHtml;
 }
 
@@ -774,6 +800,8 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   let articleId = shopifyLink.shopifyArticleId;
   let remoteUpdatedAt = null;
 
+  const metaRobotsDirective = computeMetaRobotsDirective(post.metaRobotsNoindex, post.metaRobotsNofollow);
+
   const articleInput = toArticleGraphQLInput({
     title: post.title,
     body_html: storefrontHtml,
@@ -785,6 +813,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     summary: post.excerpt,
     meta_title: post.metaTitle,
     meta_description: post.metaDescription,
+    meta_robots: metaRobotsDirective,
   });
 
   if (articleId) {
@@ -946,7 +975,13 @@ export async function syncPostTranslationsToShopify(postId, validSession, graphq
           post,
           translation.contentHtml || "",
           validSession,
-          graphqlClient
+          graphqlClient,
+          {
+            title: translation.title || post.title,
+            metaTitle: translation.metaTitle || post.metaTitle,
+            metaDescription: translation.metaDescription || post.metaDescription,
+            excerpt: translation.excerpt || post.excerpt,
+          }
         );
       }
 

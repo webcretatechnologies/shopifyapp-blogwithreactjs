@@ -1,0 +1,11 @@
+{% schema %}
+{
+  "name": "Blog Meta Robots",
+  "target": "head",
+  "settings": []
+}
+{% endschema %}
+
+{% if article and article.metafields.blog_app.meta_robots.value != blank %}
+  <meta name="robots" content="{{ article.metafields.blog_app.meta_robots.value }}">
+{% endif %}

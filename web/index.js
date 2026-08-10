@@ -9,16 +9,83 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "../.env") });
 
 import fs from "fs";
-const logStream = fs.createWriteStream(join(__dirname, "debug.log"), { flags: "a" });
+
+// Debug log to a file. Hardened against the failure mode that previously grew
+// this file to 85GB: an EPIPE on stdout became an uncaughtException, whose
+// handler called console.error, which tried to write to the same broken
+// stdout, throwing EPIPE again — forever. Three independent safeguards below
+// each stop that class of loop on their own:
+//   1. A re-entrancy guard so a log call can never trigger another log call.
+//   2. try/catch around every write so a logging failure can never itself
+//      throw (the actual trigger of the original incident).
+//   3. A hard size cap that rotates the file away long before it could ever
+//      reach a size that matters, regardless of what's writing to it.
+const LOG_PATH = join(__dirname, "debug.log");
+const MAX_LOG_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_REPEATS_PER_WINDOW = 20;
+const REPEAT_WINDOW_MS = 1000;
+
+let logStream = fs.createWriteStream(LOG_PATH, { flags: "a" });
+logStream.on("error", () => { /* a broken log stream must never crash or recurse the app */ });
+
 const originalLog = console.log;
 const originalError = console.error;
+
+let writingLog = false;
+let sizeCheckPending = false;
+let lastMessage = "";
+let lastMessageCount = 0;
+let lastMessageWindowStart = 0;
+
+function rotateIfOversized() {
+  if (sizeCheckPending) return;
+  sizeCheckPending = true;
+  fs.stat(LOG_PATH, (err, stats) => {
+    sizeCheckPending = false;
+    if (err || !stats || stats.size < MAX_LOG_BYTES) return;
+    try { logStream.end(); } catch (_) { }
+    try {
+      fs.writeFileSync(LOG_PATH, `[LOG ${new Date().toISOString()}] debug.log rotated after exceeding ${MAX_LOG_BYTES} bytes\n`);
+    } catch (_) { }
+    try {
+      logStream = fs.createWriteStream(LOG_PATH, { flags: "a" });
+      logStream.on("error", () => { });
+    } catch (_) { }
+  });
+}
+
+function writeLogLine(prefix, args) {
+  if (writingLog) return;
+  writingLog = true;
+  try {
+    const message = args.map(x => typeof x === 'object' ? (x instanceof Error ? x.stack : JSON.stringify(x)) : String(x)).join(" ");
+
+    const now = Date.now();
+    if (message === lastMessage && now - lastMessageWindowStart < REPEAT_WINDOW_MS) {
+      lastMessageCount++;
+      if (lastMessageCount > MAX_REPEATS_PER_WINDOW) return;
+    } else {
+      lastMessage = message;
+      lastMessageCount = 1;
+      lastMessageWindowStart = now;
+    }
+
+    logStream.write(`[${prefix} ${new Date().toISOString()}] ${message}\n`);
+    rotateIfOversized();
+  } catch (_) {
+    // A logging failure must never throw — that's exactly what caused the runaway log before.
+  } finally {
+    writingLog = false;
+  }
+}
+
 console.log = (...args) => {
-  logStream.write(`[LOG ${new Date().toISOString()}] ${args.map(x => typeof x === 'object' ? (x instanceof Error ? x.stack : JSON.stringify(x)) : String(x)).join(" ")}\n`);
-  originalLog.apply(console, args);
+  writeLogLine("LOG", args);
+  try { originalLog.apply(console, args); } catch (_) { }
 };
 console.error = (...args) => {
-  logStream.write(`[ERROR ${new Date().toISOString()}] ${args.map(x => typeof x === 'object' ? (x instanceof Error ? x.stack : JSON.stringify(x)) : String(x)).join(" ")}\n`);
-  originalError.apply(console, args);
+  writeLogLine("ERROR", args);
+  try { originalError.apply(console, args); } catch (_) { }
 };
 
 

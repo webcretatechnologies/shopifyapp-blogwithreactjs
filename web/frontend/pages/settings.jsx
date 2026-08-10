@@ -22,6 +22,7 @@ import {
 } from "@shopify/polaris";
 import { SaveIcon } from "@shopify/polaris-icons";
 import { useState, useEffect, useCallback } from "react";
+import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 
 const FONT_OPTIONS = [
   { label: "System Default", value: "system-ui" },
@@ -76,6 +77,7 @@ export default function Settings() {
   const [isFetching, setIsFetching] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState(null);
+  const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
 
   const set = (key) => (value) => setSettings((s) => ({ ...s, [key]: value }));
 
@@ -87,6 +89,13 @@ export default function Settings() {
       })
       .catch(() => {})
       .finally(() => setIsFetching(false));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/settings/meta-robots-status")
+      .then((r) => r.json())
+      .then((data) => setMetaRobotsActive(!!data.active))
+      .catch(() => setMetaRobotsActive(false));
   }, []);
 
   const handleSave = async () => {
@@ -472,6 +481,38 @@ export default function Settings() {
                     helpText="Added at the end of every blog article's content."
                     monospaced
                   />
+                </BlockStack>
+              </Box>
+            </Card>
+          </Layout.Section>
+
+          {/* ─── Meta Robots (SEO) ─────────────────────────────── */}
+          <Layout.Section>
+            <Card>
+              <Box padding="400">
+                <BlockStack gap="300">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text variant="headingMd">🤖 Meta Robots</Text>
+                    {metaRobotsActive === null && <Badge>Checking…</Badge>}
+                    {metaRobotsActive === true && <Badge tone="success">Active</Badge>}
+                    {metaRobotsActive === false && <Badge tone="attention">Not activated</Badge>}
+                  </InlineStack>
+                  <Text variant="bodyMd" tone="subdued">
+                    Lets each article's editor control search engine indexing (Index/Noindex,
+                    Follow/Nofollow). Activate this once for your store — every article's
+                    setting then applies automatically, no further setup.
+                  </Text>
+                  {metaRobotsActive === false && (
+                    <InlineStack align="end">
+                      <Button
+                        variant="primary"
+                        url={metaRobotsActivateUrl(window.shopify?.config?.shop || "")}
+                        target="_blank"
+                      >
+                        Activate now
+                      </Button>
+                    </InlineStack>
+                  )}
                 </BlockStack>
               </Box>
             </Card>

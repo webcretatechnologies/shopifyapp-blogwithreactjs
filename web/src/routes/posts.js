@@ -23,6 +23,8 @@ import { getShopAnalytics } from "../services/AnalyticsTrackingService.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
+
+const RICH_SNIPPET_TYPES = ["BlogPosting", "Article", "NewsArticle", "None"];
 const prisma = new PrismaClient();
 
 // ─── Multer (file uploads) ─────────────────────────────────────────────────────
@@ -175,6 +177,9 @@ router.post("/", async (req, res) => {
       ogTitle,
       ogDescription,
       ogImage,
+      metaRobotsNoindex,
+      metaRobotsNofollow,
+      richSnippetType,
     } = req.body;
 
     if (!title) return res.status(422).json({ error: "Title is required" });
@@ -218,6 +223,9 @@ router.post("/", async (req, res) => {
         ogTitle: ogTitle || null,
         ogDescription: ogDescription || null,
         ogImage: ogImage || null,
+        metaRobotsNoindex: !!metaRobotsNoindex,
+        metaRobotsNofollow: !!metaRobotsNofollow,
+        richSnippetType: RICH_SNIPPET_TYPES.includes(richSnippetType) ? richSnippetType : "BlogPosting",
       },
     });
 
@@ -291,6 +299,9 @@ router.put("/:id", async (req, res) => {
       ogTitle,
       ogDescription,
       ogImage,
+      metaRobotsNoindex,
+      metaRobotsNofollow,
+      richSnippetType,
       blogId,
     } = req.body;
 
@@ -344,6 +355,11 @@ router.put("/:id", async (req, res) => {
         ogTitle: ogTitle !== undefined ? ogTitle : post.ogTitle,
         ogDescription: ogDescription !== undefined ? ogDescription : post.ogDescription,
         ogImage: ogImage !== undefined ? ogImage : post.ogImage,
+        metaRobotsNoindex: metaRobotsNoindex !== undefined ? !!metaRobotsNoindex : post.metaRobotsNoindex,
+        metaRobotsNofollow: metaRobotsNofollow !== undefined ? !!metaRobotsNofollow : post.metaRobotsNofollow,
+        richSnippetType: richSnippetType !== undefined
+          ? (RICH_SNIPPET_TYPES.includes(richSnippetType) ? richSnippetType : "BlogPosting")
+          : post.richSnippetType,
         updatedAt: new Date(),
       },
     });
@@ -555,6 +571,9 @@ router.post("/:id/clone", async (req, res) => {
         ogTitle: sourcePost.ogTitle,
         ogDescription: sourcePost.ogDescription,
         ogImage: sourcePost.ogImage,
+        metaRobotsNoindex: sourcePost.metaRobotsNoindex,
+        metaRobotsNofollow: sourcePost.metaRobotsNofollow,
+        richSnippetType: sourcePost.richSnippetType,
         publishedAt: null,        // Clone is never auto-published
         trackingKey: null,        // Will be generated fresh on first view
       },
@@ -1466,6 +1485,9 @@ function serializePost(post) {
     ogTitle: post.ogTitle,
     ogDescription: post.ogDescription,
     ogImage: post.ogImage,
+    metaRobotsNoindex: post.metaRobotsNoindex,
+    metaRobotsNofollow: post.metaRobotsNofollow,
+    richSnippetType: post.richSnippetType,
     publishedAt: post.publishedAt,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,

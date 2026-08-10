@@ -12,14 +12,18 @@ export default class JsonLdService {
    * @returns {string} HTML <script type="application/ld+json"> tag
    */
   static generatePostSchema(post, shopDomain, options = {}) {
+    if (post.richSnippetType === "None") return null;
+
     const baseUrl = shopDomain ? `https://${shopDomain}` : "";
     const url = post.slug
       ? `${baseUrl}/blogs/blog/${post.slug}`
       : baseUrl;
 
+    const schemaType = post.richSnippetType || "BlogPosting";
+
     const schema = {
       "@context": "https://schema.org",
-      "@type": "BlogPosting",
+      "@type": schemaType,
       headline: post.metaTitle || post.title || "",
       description: post.metaDescription || post.excerpt || "",
       url,
@@ -75,6 +79,7 @@ export default class JsonLdService {
    */
   static renderPostSchema(post, shopDomain, options = {}) {
     const schema = JsonLdService.generatePostSchema(post, shopDomain, options);
+    if (!schema) return "";
     return `<script type="application/ld+json">\n${JSON.stringify(schema, null, 2)}\n</script>`;
   }
 }

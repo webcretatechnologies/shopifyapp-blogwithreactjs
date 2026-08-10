@@ -1,7 +1,37 @@
 import express from "express";
-import { prisma } from "../../shopify.js";
+import shopify, { prisma } from "../../shopify.js";
 
 const router = express.Router();
+
+// GET /api/settings/meta-robots-status — is the "Blog Meta Robots" app embed active on the main theme?
+// Same read-only approach as /api/shop/extension-status in index.js, scoped to this specific block.
+router.get("/meta-robots-status", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+
+    const client = new shopify.api.clients.Rest({ session });
+    const themesReq = await client.get({ path: "themes" });
+    const mainTheme = themesReq.body.themes.find((t) => t.role === "main");
+    if (!mainTheme) return res.json({ active: false });
+
+    const assetReq = await client.get({
+      path: `themes/${mainTheme.id}/assets`,
+      query: { "asset[key]": "config/settings_data.json" },
+    });
+    const settingsData = JSON.parse(assetReq.body.asset.value);
+    const blocks = settingsData.current?.blocks || {};
+
+    const active = Object.values(blocks).some(
+      (block) => block.type?.includes("/blocks/meta-robots/") && block.disabled !== true
+    );
+
+    res.json({ active });
+  } catch (err) {
+    console.error("GET /api/settings/meta-robots-status error:", err);
+    res.json({ active: false });
+  }
+});
 
 // Get all settings for the shop
 router.get("/", async (req, res) => {

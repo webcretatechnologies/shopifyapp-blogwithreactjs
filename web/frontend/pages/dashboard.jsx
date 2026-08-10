@@ -69,6 +69,8 @@ export default function Dashboard() {
   const [shopInfo, setShopInfo] = useState(null);
   const [extensionActive, setExtensionActive] = useState(false);
   const [extensionLoading, setExtensionLoading] = useState(true);
+  const [metaRobotsActive, setMetaRobotsActive] = useState(false);
+  const [metaRobotsLoading, setMetaRobotsLoading] = useState(true);
   const [range, setRange] = useState("30");
   // Mirrors SetupGuide's dismissal flag: while the guide is visible it already
   // contains the enable-tracking step, so the banner would be a duplicate prompt.
@@ -114,10 +116,22 @@ export default function Dashboard() {
     }
   };
 
+  const fetchMetaRobotsStatus = async () => {
+    setMetaRobotsLoading(true);
+    try {
+      const res = await fetch("/api/settings/meta-robots-status");
+      const data = await res.json();
+      setMetaRobotsActive(data.active);
+    } catch {} finally {
+      setMetaRobotsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchAnalytics();
     fetchShop();
     fetchExtensionStatus();
+    fetchMetaRobotsStatus();
   }, []);
 
   const { t } = useTranslation();
@@ -144,11 +158,12 @@ export default function Dashboard() {
       >
         <Layout>
           {/* ── Setup Guide ─────────────────────────────────────────── */}
-          {!analyticsLoading && !extensionLoading && (
+          {!analyticsLoading && !extensionLoading && !metaRobotsLoading && (
             <Layout.Section>
               <SetupGuide
                 shop={shopInfo?.domain}
                 isExtensionActive={extensionActive}
+                isMetaRobotsActive={metaRobotsActive}
                 hasPosts={stats?.totalPosts > 0}
               />
             </Layout.Section>

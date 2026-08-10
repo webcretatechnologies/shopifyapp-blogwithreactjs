@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { Card, Box, Text, BlockStack, InlineStack, ProgressBar, Button, Icon } from "@shopify/polaris";
 import { CheckCircleIcon, XIcon } from "@shopify/polaris-icons";
 import { useNavigate } from "react-router-dom";
+import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 
-export default function SetupGuide({ shop, isExtensionActive, hasPosts }) {
+export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive, hasPosts }) {
   const navigate = useNavigate();
   const [isDismissed, setIsDismissed] = useState(true); // default true to prevent flicker before useEffect runs
 
@@ -29,6 +30,16 @@ export default function SetupGuide({ shop, isExtensionActive, hasPosts }) {
     },
     {
       id: 2,
+      title: "Activate Meta Robots on your storefront",
+      description: "Enable the Blog Meta Robots app embed so each article's Index/Noindex setting takes effect on the live page.",
+      actionLabel: "Activate now",
+      action: () => {
+        window.open(metaRobotsActivateUrl(shop), '_blank');
+      },
+      isCompleted: isMetaRobotsActive
+    },
+    {
+      id: 3,
       title: "Create your first blog post",
       description: "Write and publish your first article to start engaging with your customers.",
       actionLabel: "Create post",

@@ -46,10 +46,32 @@ import { normalizeBlocksAst } from "../../components/builder/BlockRegistry";
 import ExcerptRichTextEditor from "../../components/editor/ExcerptRichTextEditor";
 import ShopifyRichTextEditor from "../../components/editor/ShopifyRichTextEditor";
 import ArticleComments from "../../components/comments/ArticleComments";
+import { metaRobotsActivateUrl } from "../../utils/themeEmbedUtils";
 
 const stripHtml = (html) => {
   if (!html) return "";
   return html.replace(/<[^>]*>?/gm, "").trim();
+};
+
+const RICH_SNIPPET_OPTIONS = [
+  { label: "Blog posting", value: "BlogPosting" },
+  { label: "Article", value: "Article" },
+  { label: "News article", value: "NewsArticle" },
+  { label: "None", value: "None" },
+];
+
+const META_ROBOTS_OPTIONS = [
+  { label: "Index, Follow", value: "INDEX_FOLLOW" },
+  { label: "Noindex, Follow", value: "NOINDEX_FOLLOW" },
+  { label: "Index, Nofollow", value: "INDEX_NOFOLLOW" },
+  { label: "Noindex, Nofollow", value: "NOINDEX_NOFOLLOW" },
+];
+
+const metaRobotsValueFromFlags = (noindex, nofollow) => {
+  if (noindex && nofollow) return "NOINDEX_NOFOLLOW";
+  if (noindex) return "NOINDEX_FOLLOW";
+  if (nofollow) return "INDEX_NOFOLLOW";
+  return "INDEX_FOLLOW";
 };
 
 
@@ -800,9 +822,20 @@ export default function PostEditor() {
     ogTitle: "",
     ogDescription: "",
     ogImage: "",
+    metaRobotsNoindex: false,
+    metaRobotsNofollow: false,
+    richSnippetType: "BlogPosting",
   });
   const [seoExpanded, setSeoExpanded] = useState(false);
   const [themeTemplate, setThemeTemplate] = useState("default");
+  const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
+
+  useEffect(() => {
+    fetch("/api/settings/meta-robots-status")
+      .then((r) => r.json())
+      .then((data) => setMetaRobotsActive(!!data.active))
+      .catch(() => setMetaRobotsActive(false));
+  }, []);
 
   // Load existing post
   const loadPost = useCallback(async () => {
@@ -851,6 +884,9 @@ export default function PostEditor() {
         ogTitle: data.post.ogTitle || "",
         ogDescription: data.post.ogDescription || "",
         ogImage: data.post.ogImage || "",
+        metaRobotsNoindex: !!data.post.metaRobotsNoindex,
+        metaRobotsNofollow: !!data.post.metaRobotsNofollow,
+        richSnippetType: data.post.richSnippetType || "BlogPosting",
       };
 
       const loadedTags = parseTags(data.post.tags);
@@ -878,8 +914,11 @@ export default function PostEditor() {
         ogTitle: data.post.ogTitle || "",
         ogDescription: data.post.ogDescription || "",
         ogImage: data.post.ogImage || "",
+        metaRobotsNoindex: !!data.post.metaRobotsNoindex,
+        metaRobotsNofollow: !!data.post.metaRobotsNofollow,
+        richSnippetType: data.post.richSnippetType || "BlogPosting",
       });
-      if (data.post.metaTitle || data.post.metaDescription) setSeoExpanded(true);
+      if (data.post.metaTitle || data.post.metaDescription || data.post.metaRobotsNoindex || data.post.metaRobotsNofollow || (data.post.richSnippetType && data.post.richSnippetType !== "BlogPosting")) setSeoExpanded(true);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -942,7 +981,10 @@ export default function PostEditor() {
         isFieldDirty(seoData.canonicalUrl, "") ||
         isFieldDirty(seoData.ogTitle, "") ||
         isFieldDirty(seoData.ogDescription, "") ||
-        isFieldDirty(seoData.ogImage, "")
+        isFieldDirty(seoData.ogImage, "") ||
+        seoData.metaRobotsNoindex ||
+        seoData.metaRobotsNofollow ||
+        isFieldDirty(seoData.richSnippetType, "BlogPosting")
       );
     }
     if (!originalPost) return false;
@@ -962,7 +1004,10 @@ export default function PostEditor() {
       isFieldDirty(seoData.canonicalUrl, o.canonicalUrl) ||
       isFieldDirty(seoData.ogTitle, o.ogTitle) ||
       isFieldDirty(seoData.ogDescription, o.ogDescription) ||
-      isFieldDirty(seoData.ogImage, o.ogImage);
+      isFieldDirty(seoData.ogImage, o.ogImage) ||
+      !!seoData.metaRobotsNoindex !== !!o.metaRobotsNoindex ||
+      !!seoData.metaRobotsNofollow !== !!o.metaRobotsNofollow ||
+      isFieldDirty(seoData.richSnippetType, o.richSnippetType || "BlogPosting");
 
     const originalTags = o.tags || [];
     const isTagsDirty =
@@ -1251,6 +1296,9 @@ export default function PostEditor() {
         ogTitle: originalPost.ogTitle || "",
         ogDescription: originalPost.ogDescription || "",
         ogImage: originalPost.ogImage || "",
+        metaRobotsNoindex: !!originalPost.metaRobotsNoindex,
+        metaRobotsNofollow: !!originalPost.metaRobotsNofollow,
+        richSnippetType: originalPost.richSnippetType || "BlogPosting",
       });
     } else {
       setPost({
@@ -1277,6 +1325,9 @@ export default function PostEditor() {
         ogTitle: "",
         ogDescription: "",
         ogImage: "",
+        metaRobotsNoindex: false,
+        metaRobotsNofollow: false,
+        richSnippetType: "BlogPosting",
       });
     }
     if (window.shopify?.saveBar) {
@@ -1747,6 +1798,57 @@ export default function PostEditor() {
                                 autoComplete="off"
                               />
                             </div>
+
+                            {/* Rich snippet / structured data */}
+                            <BlockStack gap="100">
+                              <Select
+                                label="Rich snippet/structured data"
+                                options={RICH_SNIPPET_OPTIONS}
+                                value={seoData.richSnippetType}
+                                onChange={(val) => setSeoData((s) => ({ ...s, richSnippetType: val }))}
+                              />
+                              <Text variant="bodySm" tone="subdued">
+                                Controls the JSON-LD schema type published with this article for Google rich results. Choose "None" to disable structured data for this article.
+                              </Text>
+                            </BlockStack>
+
+                            {/* Meta Robots */}
+                            <BlockStack gap="100">
+                              <Select
+                                label="Meta robots"
+                                options={META_ROBOTS_OPTIONS}
+                                value={metaRobotsValueFromFlags(seoData.metaRobotsNoindex, seoData.metaRobotsNofollow)}
+                                onChange={(val) => setSeoData((s) => ({
+                                  ...s,
+                                  metaRobotsNoindex: val.startsWith("NOINDEX"),
+                                  metaRobotsNofollow: val.endsWith("NOFOLLOW"),
+                                }))}
+                              />
+                              {metaRobotsActive === false ? (
+                                <Banner tone="warning" title="One-time setup needed">
+                                  <BlockStack gap="200">
+                                    <Text variant="bodySm" as="p">
+                                      Activate the "Blog Meta Robots" app embed so this selection
+                                      renders on the live page. One click, applies to every
+                                      article from then on.
+                                    </Text>
+                                    <InlineStack>
+                                      <Button
+                                        size="slim"
+                                        url={metaRobotsActivateUrl(window.shopify?.config?.shop || "")}
+                                        target="_blank"
+                                      >
+                                        Activate now
+                                      </Button>
+                                    </InlineStack>
+                                  </BlockStack>
+                                </Banner>
+                              ) : (
+                                <Text variant="bodySm" tone="subdued">
+                                  Renders a matching &lt;meta name="robots"&gt; tag on the live article page.
+                                </Text>
+                              )}
+                            </BlockStack>
                           </BlockStack>
                         </>
                       )}

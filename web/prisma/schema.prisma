@@ -142,6 +142,9 @@ model Post {
   ogDescription         String?           @db.Text
   ogImage               String?           @db.Text
   ogTitle               String?           @db.VarChar(120)
+  metaRobotsNoindex     Boolean           @default(false)
+  metaRobotsNofollow    Boolean           @default(false)
+  richSnippetType       String            @default("BlogPosting")
   trackingKey           String?           @unique
   category              Category?         @relation(fields: [categoryId], references: [id])
   shop                  Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
