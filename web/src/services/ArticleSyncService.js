@@ -94,6 +94,12 @@ function articleFromGraphQL(article) {
     isScheduled: !article.isPublished && !!article.publishedAt && new Date(article.publishedAt) > new Date(),
     updated_at: article.updatedAt || null,
     blog_id: article.blog?.id ? numericIdFromGid(article.blog.id) : null,
+    // Additive only — not wired into SCALAR_FIELDS/reconciliation merge, so this doesn't
+    // change any existing sync behavior. Exists so callers can compare/detect drift between
+    // Shopify's live Search-engine-listing metafields and our local metaTitle/metaDescription
+    // (these were previously never re-fetched, so drift there was invisible to the app).
+    meta_title: article.titleTag?.value ?? null,
+    meta_description: article.descriptionTag?.value ?? null,
   };
 }
 
@@ -171,6 +177,8 @@ async function fetchArticleByGid(graphqlClient, articleId) {
         publishedAt
         updatedAt
         blog { id }
+        titleTag: metafield(namespace: "global", key: "title_tag") { value }
+        descriptionTag: metafield(namespace: "global", key: "description_tag") { value }
       }
     }
   `, { variables: { id: toArticleGid(articleId) } });
