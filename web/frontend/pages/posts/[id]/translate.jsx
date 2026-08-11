@@ -105,42 +105,65 @@ function extractBlocksFromPost(post) {
   // 1. If post has contentJson AST with blocks, process & unpack them
   if (Array.isArray(post.contentJson) && post.contentJson.length > 0) {
     const blocks = [];
-    post.contentJson.forEach((block, idx) => {
-      const type = block.type || block.blockType || "RichText";
-      const s = block.settings || block.data || {};
+    // Purely structural/decorative types with no free text of their own — never worth showing
+    // as their own translation card. Their CHILDREN (handled by the recursion below) still are.
+    const NO_TEXT_TYPES = new Set(["Divider", "Spacer", "Html", "HtmlBlock"]);
+    const CONTAINER_TYPES = new Set(["Section", "ColumnLayout", "Column"]);
 
-      if (type === "RichText" || type === "text") {
-        const content = s.content;
-        if (content && typeof content === "object" && Array.isArray(content.content)) {
-          // Unpack Tiptap JSON document into individual granular blocks
-          content.content.forEach((node) => unpackTiptapNode(node, blocks));
-        } else if (typeof content === "string" && content.trim()) {
-          // Unpack HTML string inside RichText block via DOMParser
-          const subBlocks = extractBlocksFromPost({ contentHtml: content });
-          if (subBlocks.length > 0) {
-            blocks.push(...subBlocks);
+    const walk = (list) => {
+      (list || []).forEach((block, idx) => {
+        const type = block.type || block.blockType || "RichText";
+        const s = block.settings || block.data || {};
+
+        if (CONTAINER_TYPES.has(type)) {
+          walk(block.children);
+          return;
+        }
+        if (NO_TEXT_TYPES.has(type)) {
+          return;
+        }
+
+        if (type === "RichText" || type === "text") {
+          const content = s.content;
+          if (content && typeof content === "object" && Array.isArray(content.content)) {
+            // Unpack Tiptap JSON document into individual granular blocks
+            content.content.forEach((node) => unpackTiptapNode(node, blocks));
+          } else if (typeof content === "string" && content.trim()) {
+            // Unpack HTML string inside RichText block via DOMParser
+            const subBlocks = extractBlocksFromPost({ contentHtml: content });
+            if (subBlocks.length > 0) {
+              blocks.push(...subBlocks);
+            } else {
+              blocks.push({
+                id: block.id || `block_${idx}`,
+                type: "RichText",
+                settings: { content: content },
+              });
+            }
           } else {
             blocks.push({
               id: block.id || `block_${idx}`,
               type: "RichText",
-              settings: { content: content },
+              settings: { content: typeof s === "object" ? String(s.content || "") : String(s) },
             });
           }
         } else {
           blocks.push({
             id: block.id || `block_${idx}`,
-            type: "RichText",
-            settings: { content: typeof s === "object" ? String(s.content || "") : String(s) },
+            type,
+            settings: typeof s === "object" ? { ...s } : { content: String(s) },
           });
         }
-      } else {
-        blocks.push({
-          id: block.id || `block_${idx}`,
-          type,
-          settings: typeof s === "object" ? { ...s } : { content: String(s) },
-        });
-      }
-    });
+
+        // Recurse into any children even on a non-container type, in case it unexpectedly
+        // carries nested blocks — harmless no-op when it doesn't.
+        if (Array.isArray(block.children) && block.children.length > 0 && !CONTAINER_TYPES.has(type)) {
+          walk(block.children);
+        }
+      });
+    };
+
+    walk(post.contentJson);
     return blocks;
   }
 
@@ -180,6 +203,147 @@ function extractBlocksFromPost(post) {
 
     // Check for app custom data-type elements or builder block classes
     const dataType = el.getAttribute("data-type");
+
+    // The actual current storage format: blocks are empty <div data-type="X" data-field="...">
+    // wrappers with no visible child HTML at all — every field lives in a data-* attribute
+    // (see _blockToDataHtml/injectBlockIdentity on the compiler side). The structural
+    // child-HTML matchers below (h2/details/blockquote-based) were written for a fully
+    // rendered/expanded HTML shape and never match this, so they always found nothing —
+    // read straight from the dataset first; it takes priority when present.
+    if (dataType) {
+      const ds = el.dataset;
+      if (dataType === "Heading" && ds.text !== undefined) {
+        blocks.push({
+          id: `block_h_${blocks.length}`,
+          type: "Heading",
+          settings: { text: ds.text, level: parseInt(ds.level, 10) || 2 },
+        });
+        return;
+      }
+      if ((dataType === "FaqBlock" || dataType === "faq") && ds.items !== undefined) {
+        let items = [];
+        try { items = JSON.parse(ds.items); } catch { /* leave empty */ }
+        blocks.push({
+          id: `block_faq_${blocks.length}`,
+          type: "FaqBlock",
+          settings: { title: ds.title || "Frequently Asked Questions", items },
+        });
+        return;
+      }
+      if (dataType === "RichText" && ds.content !== undefined) {
+        // A RichText block's own `content` is very often itself a real HTML blob (typed
+        // directly in the rich-text editor) containing multiple genuine <h2>/<p>/etc tags —
+        // NOT just a plain string. Path #1 (the contentJson-based extractor used for
+        // `originalBlocks`) already unpacks this into individual granular sub-blocks via a
+        // recursive call; this path must do exactly the same, or the two sides' block counts
+        // diverge the moment a RichText block is reached, permanently desyncing every
+        // per-type positional match after it (headings/paragraphs past this point end up
+        // matched to the wrong translated block, or to nothing at all).
+        const subBlocks = ds.content.includes("<") ? extractBlocksFromPost({ contentHtml: ds.content }) : [];
+        if (subBlocks.length > 0) {
+          blocks.push(...subBlocks);
+        } else {
+          blocks.push({
+            id: `block_text_${blocks.length}`,
+            type: "RichText",
+            settings: { content: ds.content },
+          });
+        }
+        return;
+      }
+      if (dataType === "Callout" && (ds.title !== undefined || ds.body !== undefined)) {
+        blocks.push({
+          id: `block_callout_${blocks.length}`,
+          type: "Callout",
+          settings: { title: ds.title || "", body: ds.body || "" },
+        });
+        return;
+      }
+      if ((dataType === "Hero" || dataType === "HeroSection" || dataType === "heroBlock") && ds.heading !== undefined) {
+        blocks.push({
+          id: `block_hero_${blocks.length}`,
+          type: "Hero",
+          settings: { heading: ds.heading || "", subheading: ds.subheading || "", ctaText: ds.ctaText || "" },
+        });
+        return;
+      }
+      if (dataType === "TableOfContents" && ds.title !== undefined) {
+        blocks.push({
+          id: `block_toc_${blocks.length}`,
+          type: "TableOfContents",
+          settings: { title: ds.title || "" },
+        });
+        return;
+      }
+      if (dataType === "Image" && (ds.alt !== undefined || ds.caption !== undefined)) {
+        blocks.push({
+          id: `block_image_${blocks.length}`,
+          type: "Image",
+          settings: { alt: ds.alt || "", caption: ds.caption || "" },
+        });
+        return;
+      }
+      if (dataType === "VideoEmbed" && ds.caption !== undefined) {
+        blocks.push({
+          id: `block_video_${blocks.length}`,
+          type: "VideoEmbed",
+          settings: { caption: ds.caption || "" },
+        });
+        return;
+      }
+      if (dataType === "ButtonBlock" && ds.text !== undefined) {
+        blocks.push({
+          id: `block_button_${blocks.length}`,
+          type: "ButtonBlock",
+          settings: { text: ds.text || "" },
+        });
+        return;
+      }
+      if (dataType === "BuyButton" && (ds.buttonText !== undefined || ds.badge !== undefined)) {
+        blocks.push({
+          id: `block_buybutton_${blocks.length}`,
+          type: "BuyButton",
+          settings: { buttonText: ds.buttonText || "", badge: ds.badge || "" },
+        });
+        return;
+      }
+      if ((dataType === "ProductGrid" || dataType === "Collection" || dataType === "ProductSlider") && (ds.title !== undefined || ds.buttonText !== undefined)) {
+        blocks.push({
+          id: `block_products_${blocks.length}`,
+          type: dataType,
+          settings: { title: ds.title || ds.heading || "", buttonText: ds.buttonText || "" },
+        });
+        return;
+      }
+      if (dataType === "ProductCard" && ds.buttonText !== undefined) {
+        blocks.push({
+          id: `block_productcard_${blocks.length}`,
+          type: "ProductCard",
+          settings: { buttonText: ds.buttonText || "" },
+        });
+        return;
+      }
+      if (dataType === "Table" && ds.tableData !== undefined) {
+        let tableData = [];
+        try { tableData = JSON.parse(ds.tableData); } catch { /* leave empty */ }
+        blocks.push({
+          id: `block_table_${blocks.length}`,
+          type: "Table",
+          settings: { tableData },
+        });
+        return;
+      }
+      // Structural/decorative types with no free text of their own (Section, ColumnLayout,
+      // Column, Divider, Spacer, Html) — nothing to translate, but still need to recurse into
+      // children so nested blocks (e.g. a RichText paragraph inside a Section) aren't skipped.
+      if (["Section", "ColumnLayout", "Column"].includes(dataType)) {
+        Array.from(el.children).forEach((child) => processNode(child));
+        return;
+      }
+      if (["Divider", "Spacer", "Html", "HtmlBlock"].includes(dataType)) {
+        return;
+      }
+    }
 
     if (dataType === "FaqBlock" || dataType === "faq" || el.classList.contains("builder-faq-block")) {
       const titleEl = el.querySelector("h2, h3, .faq-title");
@@ -291,7 +455,16 @@ function extractBlocksFromPost(post) {
 }
 
 /**
- * Sync edited block text fields into translated content HTML while preserving tag structures.
+ * Sync edited block text fields into translated content HTML.
+ *
+ * originalHtml is the raw storage format — empty <div data-type="X" data-field="..."> wrapper
+ * divs with no visible child HTML at all (see _blockToDataHtml/injectBlockIdentity on the
+ * compiler side). This previously tried to write translations via querySelector into CHILD
+ * elements (h2/details/summary/etc) that never exist in this format, so edits silently never
+ * made it into the saved HTML for any block type. Fixed to write straight into the matching
+ * data-* attributes on the wrapper div itself, matched positionally per-type (same convention
+ * as hydrateBlockTranslationsFromHtml) since these elements carry no other stable identifier
+ * once parsed from raw HTML.
  */
 function applyBlockTranslationsToHtml(originalHtml, originalBlocks, blockTranslations) {
   if (!originalHtml) return "";
@@ -299,59 +472,85 @@ function applyBlockTranslationsToHtml(originalHtml, originalBlocks, blockTransla
   const parser = new DOMParser();
   const doc = parser.parseFromString(originalHtml, "text/html");
 
-  let pIdx = 0;
-  let hIdx = 0;
+  const typeCounters = new Map();
+  const nextElementOfType = (type) => {
+    const list = doc.querySelectorAll(`[data-type="${type}"]`);
+    const i = typeCounters.get(type) || 0;
+    typeCounters.set(type, i + 1);
+    return list[i] || null;
+  };
 
   originalBlocks.forEach((block) => {
     const trans = blockTranslations[block.id];
-    if (!trans) return;
+    const el = nextElementOfType(block.type);
+    if (!trans || !el) return;
 
-    if (block.type === "Heading" || block.type === "heading") {
-      const headings = doc.querySelectorAll("h1, h2, h3, h4, h5, h6");
-      if (headings[hIdx] && trans.text !== undefined) {
-        headings[hIdx].textContent = trans.text;
-      }
-      hIdx++;
-    } else if (block.type === "FaqBlock" || block.type === "faq") {
-      const faqBlocks = doc.querySelectorAll("[data-type='FaqBlock'], .builder-faq-block");
-      faqBlocks.forEach((faqEl) => {
-        const titleEl = faqEl.querySelector("h2, h3, .faq-title");
-        if (titleEl && trans.title !== undefined) titleEl.textContent = trans.title;
+    const setAttr = (attr, value) => {
+      if (value !== undefined && value !== null) el.setAttribute(attr, value);
+    };
 
-        const items = faqEl.querySelectorAll("details, .builder-faq-item");
-        items.forEach((itemEl, idx) => {
-          const itemTrans = trans.items?.[idx];
-          if (!itemTrans) return;
-          const qEl = itemEl.querySelector("summary, .faq-question-text");
-          const aEl = itemEl.querySelector("p, div, .faq-answer-text");
-          if (qEl && itemTrans.question !== undefined) qEl.textContent = itemTrans.question;
-          if (aEl && itemTrans.answer !== undefined) aEl.textContent = itemTrans.answer;
-        });
-      });
-    } else if (block.type === "Callout") {
-      const callouts = doc.querySelectorAll("[data-type='Callout'], .callout-block");
-      callouts.forEach((cEl) => {
-        const tEl = cEl.querySelector("h3, h4, .callout-title");
-        const bEl = cEl.querySelector("p, .callout-body");
-        if (tEl && trans.title !== undefined) tEl.textContent = trans.title;
-        if (bEl && trans.body !== undefined) bEl.textContent = trans.body;
-      });
-    } else if (block.type === "Hero" || block.type === "HeroSection") {
-      const heroes = doc.querySelectorAll("[data-type='Hero'], .hero-block");
-      heroes.forEach((hEl) => {
-        const h1 = hEl.querySelector("h1, h2, .hero-title");
-        const p = hEl.querySelector("p, .hero-subtitle");
-        const a = hEl.querySelector("a, button, .btn");
-        if (h1 && trans.heading !== undefined) h1.textContent = trans.heading;
-        if (p && trans.subheading !== undefined) p.textContent = trans.subheading;
-        if (a && trans.ctaText !== undefined) a.textContent = trans.ctaText;
-      });
-    } else if (block.type === "RichText" || block.type === "text") {
-      const textNodes = doc.querySelectorAll("p, li");
-      if (textNodes[pIdx] && trans.content !== undefined) {
-        textNodes[pIdx].textContent = trans.content;
+    switch (block.type) {
+      case "Heading":
+      case "heading":
+        setAttr("data-text", trans.text);
+        break;
+      case "FaqBlock":
+      case "faq": {
+        setAttr("data-title", trans.title);
+        if (Array.isArray(trans.items)) {
+          let items = [];
+          try { items = JSON.parse(el.getAttribute("data-items") || "[]"); } catch { /* start empty */ }
+          trans.items.forEach((itemTrans, idx) => {
+            items[idx] = { ...items[idx], question: itemTrans.question, answer: itemTrans.answer };
+          });
+          el.setAttribute("data-items", JSON.stringify(items));
+        }
+        break;
       }
-      pIdx++;
+      case "Callout":
+        setAttr("data-title", trans.title);
+        setAttr("data-body", trans.body);
+        break;
+      case "Hero":
+      case "HeroSection":
+        setAttr("data-heading", trans.heading);
+        setAttr("data-subheading", trans.subheading);
+        setAttr("data-cta-text", trans.ctaText);
+        break;
+      case "TableOfContents":
+        setAttr("data-title", trans.title);
+        break;
+      case "Image":
+        setAttr("data-alt", trans.alt);
+        setAttr("data-caption", trans.caption);
+        break;
+      case "VideoEmbed":
+        setAttr("data-caption", trans.caption);
+        break;
+      case "ButtonBlock":
+        setAttr("data-text", trans.text);
+        break;
+      case "BuyButton":
+        setAttr("data-button-text", trans.buttonText);
+        setAttr("data-badge", trans.badge);
+        break;
+      case "ProductGrid":
+      case "Collection":
+      case "ProductSlider":
+        setAttr("data-title", trans.title);
+        setAttr("data-button-text", trans.buttonText);
+        break;
+      case "ProductCard":
+        setAttr("data-button-text", trans.buttonText);
+        break;
+      case "Table":
+        if (Array.isArray(trans.tableData)) {
+          el.setAttribute("data-table-data", JSON.stringify(trans.tableData));
+        }
+        break;
+      default:
+        setAttr("data-content", trans.content);
+        break;
     }
   });
 
@@ -545,25 +744,35 @@ export default function PostTranslationPage() {
     if (!translatedHtml || blocks.length === 0) return {};
     const parsedTranslatedBlocks = extractBlocksFromPost({ contentHtml: translatedHtml });
 
-    const initialMap = {};
-    let transPIdx = 0;
-    let transHIdx = 0;
+    // Positional-per-type matching: blocks of the same type are matched in the order they
+    // appear (Nth Heading in the original <-> Nth Heading in the translated output), since
+    // neither side carries a shared stable ID once parsed from raw HTML. Grouping by type
+    // (instead of one big index) keeps unrelated block types — e.g. an Image inserted
+    // between two Headings — from throwing off each other's alignment.
+    const byType = new Map();
+    for (const b of parsedTranslatedBlocks) {
+      const list = byType.get(b.type) || [];
+      list.push(b);
+      byType.set(b.type, list);
+    }
+    const typeCounters = new Map();
+    const nextOfType = (type) => {
+      const list = byType.get(type) || [];
+      const i = typeCounters.get(type) || 0;
+      typeCounters.set(type, i + 1);
+      return list[i];
+    };
 
-    const translatedParagraphs = parsedTranslatedBlocks.filter((b) => b.type === "RichText");
-    const translatedHeadings = parsedTranslatedBlocks.filter((b) => b.type === "Heading");
-    const translatedFaqs = parsedTranslatedBlocks.filter((b) => b.type === "FaqBlock" || b.type === "faq");
+    const initialMap = {};
 
     blocks.forEach((origBlock, idx) => {
       const origSettings = origBlock.settings || {};
+      const matchingTransBlock = nextOfType(origBlock.type) || parsedTranslatedBlocks[idx];
+      const transSettings = matchingTransBlock?.settings || {};
 
       if (origBlock.type === "Heading" || origBlock.type === "heading") {
-        const matchingTransBlock = translatedHeadings[transHIdx] || parsedTranslatedBlocks[idx];
-        transHIdx++;
-        const transSettings = matchingTransBlock?.settings || {};
         initialMap[origBlock.id] = { text: formatTextValue(transSettings.text || origSettings.text) };
       } else if (origBlock.type === "FaqBlock" || origBlock.type === "faq") {
-        const matchingTransBlock = translatedFaqs[0] || parsedTranslatedBlocks[idx];
-        const transSettings = matchingTransBlock?.settings || {};
         const origItems = Array.isArray(origSettings.items) ? origSettings.items : [];
         const transItems = Array.isArray(transSettings.items) ? transSettings.items : [];
         initialMap[origBlock.id] = {
@@ -574,25 +783,47 @@ export default function PostTranslationPage() {
           })),
         };
       } else if (origBlock.type === "Callout") {
-        const matchingTransBlock = parsedTranslatedBlocks.find((b) => b.type === "Callout") || parsedTranslatedBlocks[idx];
-        const transSettings = matchingTransBlock?.settings || {};
         initialMap[origBlock.id] = {
           title: formatTextValue(transSettings.title || origSettings.title),
           body: formatTextValue(transSettings.body || origSettings.body),
         };
       } else if (origBlock.type === "Hero" || origBlock.type === "HeroSection") {
-        const matchingTransBlock = parsedTranslatedBlocks.find((b) => b.type === "Hero") || parsedTranslatedBlocks[idx];
-        const transSettings = matchingTransBlock?.settings || {};
         initialMap[origBlock.id] = {
           heading: formatTextValue(transSettings.heading || origSettings.heading),
           subheading: formatTextValue(transSettings.subheading || origSettings.subheading),
           ctaText: formatTextValue(transSettings.ctaText || origSettings.ctaText),
         };
+      } else if (origBlock.type === "TableOfContents") {
+        initialMap[origBlock.id] = { title: formatTextValue(transSettings.title || origSettings.title) };
+      } else if (origBlock.type === "Image") {
+        initialMap[origBlock.id] = {
+          alt: formatTextValue(transSettings.alt || origSettings.alt),
+          caption: formatTextValue(transSettings.caption || origSettings.caption),
+        };
+      } else if (origBlock.type === "VideoEmbed") {
+        initialMap[origBlock.id] = { caption: formatTextValue(transSettings.caption || origSettings.caption) };
+      } else if (origBlock.type === "ButtonBlock") {
+        initialMap[origBlock.id] = { text: formatTextValue(transSettings.text || origSettings.text) };
+      } else if (origBlock.type === "BuyButton") {
+        initialMap[origBlock.id] = {
+          buttonText: formatTextValue(transSettings.buttonText || origSettings.buttonText),
+          badge: formatTextValue(transSettings.badge || origSettings.badge),
+        };
+      } else if (["ProductGrid", "Collection", "ProductSlider"].includes(origBlock.type)) {
+        initialMap[origBlock.id] = {
+          title: formatTextValue(transSettings.title || origSettings.title || origSettings.heading),
+          buttonText: formatTextValue(transSettings.buttonText || origSettings.buttonText),
+        };
+      } else if (origBlock.type === "ProductCard") {
+        initialMap[origBlock.id] = { buttonText: formatTextValue(transSettings.buttonText || origSettings.buttonText) };
+      } else if (origBlock.type === "Table") {
+        const origRows = Array.isArray(origSettings.tableData) ? origSettings.tableData : [];
+        const transRows = Array.isArray(transSettings.tableData) ? transSettings.tableData : [];
+        initialMap[origBlock.id] = {
+          tableData: origRows.map((row, r) => row.map((cell, c) => formatTextValue(transRows[r]?.[c] ?? cell))),
+        };
       } else {
-        // RichText paragraph block: match sequentially from translatedParagraphs
-        const matchingTransBlock = translatedParagraphs[transPIdx] || parsedTranslatedBlocks[idx];
-        transPIdx++;
-        const transSettings = matchingTransBlock?.settings || {};
+        // RichText paragraph / generic fallback
         initialMap[origBlock.id] = {
           content: formatTextValue(transSettings.content || transSettings.text || origSettings.content || origSettings.text),
         };
@@ -611,7 +842,7 @@ export default function PostTranslationPage() {
       const contentHtml = found.contentHtml || "";
       setTranslatedContent(contentHtml);
       setTranslatedMetaTitle(found.metaTitle || "");
-      setTranslatedMetaDesc(found.metaDescription || "");
+      setTranslatedMetaDesc(stripHtml(found.metaDescription || ""));
 
       // Populate block translations map
       if (originalBlocks.length > 0) {
@@ -637,7 +868,16 @@ export default function PostTranslationPage() {
         const [parentKey, indexStr, childKey] = fieldPath.split(".");
         const idx = parseInt(indexStr, 10);
         const list = Array.isArray(current[parentKey]) ? [...current[parentKey]] : [];
-        list[idx] = { ...list[idx], [childKey]: value };
+        if (parentKey === "tableData") {
+          // 2D array (rows of cells), not an array of named-field objects like FAQ items —
+          // childKey here is a column index, not an object key.
+          const colIdx = parseInt(childKey, 10);
+          const row = Array.isArray(list[idx]) ? [...list[idx]] : [];
+          row[colIdx] = value;
+          list[idx] = row;
+        } else {
+          list[idx] = { ...list[idx], [childKey]: value };
+        }
         current[parentKey] = list;
       } else {
         current[fieldPath] = value;
@@ -795,7 +1035,7 @@ export default function PostTranslationPage() {
         const contentHtml = data.translation.contentHtml || "";
         setTranslatedContent(contentHtml);
         setTranslatedMetaTitle(data.translation.metaTitle || "");
-        setTranslatedMetaDesc(data.translation.metaDescription || "");
+        setTranslatedMetaDesc(stripHtml(data.translation.metaDescription || ""));
 
         // Hydrate block translations
         if (originalBlocks.length > 0) {
@@ -852,7 +1092,7 @@ export default function PostTranslationPage() {
             setTranslatedExcerpt(stripHtml(found?.excerpt || ""));
             setTranslatedContent(found?.contentHtml || "");
             setTranslatedMetaTitle(found?.metaTitle || "");
-            setTranslatedMetaDesc(found?.metaDescription || "");
+            setTranslatedMetaDesc(stripHtml(found?.metaDescription || ""));
             // Reset block translations to match the saved state
             if (found?.contentHtml && originalBlocks.length > 0) {
               const blockMap = hydrateBlockTranslationsFromHtml(found.contentHtml, originalBlocks);
@@ -1135,15 +1375,119 @@ export default function PostTranslationPage() {
                             </BlockStack>
                           )}
 
-                          {block.type !== "Heading" &&
-                            block.type !== "FaqBlock" &&
-                            block.type !== "faq" &&
-                            block.type !== "Callout" &&
-                            block.type !== "Hero" &&
-                            block.type !== "HeroSection" && (
+                          {block.type === "TableOfContents" && (
+                            <TranslationRowPair
+                              title="Table of Contents Title"
+                              originalValue={s.title}
+                              translatedValue={trans.title || ""}
+                              onChange={(val) => handleBlockTranslationChange(block.id, "title", val)}
+                            />
+                          )}
+
+                          {block.type === "Image" && (
+                            <BlockStack gap="300">
+                              <TranslationRowPair
+                                title="Image Alt Text"
+                                originalValue={s.alt}
+                                translatedValue={trans.alt || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "alt", val)}
+                              />
+                              <TranslationRowPair
+                                title="Image Caption"
+                                originalValue={s.caption}
+                                translatedValue={trans.caption || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "caption", val)}
+                              />
+                            </BlockStack>
+                          )}
+
+                          {block.type === "VideoEmbed" && (
+                            <TranslationRowPair
+                              title="Video Caption"
+                              originalValue={s.caption}
+                              translatedValue={trans.caption || ""}
+                              onChange={(val) => handleBlockTranslationChange(block.id, "caption", val)}
+                            />
+                          )}
+
+                          {block.type === "ButtonBlock" && (
+                            <TranslationRowPair
+                              title="Button Text"
+                              originalValue={s.text}
+                              translatedValue={trans.text || ""}
+                              onChange={(val) => handleBlockTranslationChange(block.id, "text", val)}
+                            />
+                          )}
+
+                          {block.type === "BuyButton" && (
+                            <BlockStack gap="300">
+                              <TranslationRowPair
+                                title="Button Text"
+                                originalValue={s.buttonText}
+                                translatedValue={trans.buttonText || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "buttonText", val)}
+                              />
+                              <TranslationRowPair
+                                title="Badge Text"
+                                originalValue={s.badge}
+                                translatedValue={trans.badge || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "badge", val)}
+                              />
+                            </BlockStack>
+                          )}
+
+                          {["ProductGrid", "Collection", "ProductSlider"].includes(block.type) && (
+                            <BlockStack gap="300">
+                              <TranslationRowPair
+                                title="Section Title"
+                                originalValue={s.title || s.heading}
+                                translatedValue={trans.title || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "title", val)}
+                              />
+                              <TranslationRowPair
+                                title="Button Text"
+                                originalValue={s.buttonText}
+                                translatedValue={trans.buttonText || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "buttonText", val)}
+                              />
+                            </BlockStack>
+                          )}
+
+                          {block.type === "ProductCard" && (
+                            <TranslationRowPair
+                              title="Button Text"
+                              originalValue={s.buttonText}
+                              translatedValue={trans.buttonText || ""}
+                              onChange={(val) => handleBlockTranslationChange(block.id, "buttonText", val)}
+                            />
+                          )}
+
+                          {block.type === "Table" && Array.isArray(s.tableData) && (
+                            <BlockStack gap="200">
+                              {s.tableData.map((row, rIdx) => (
+                                <InlineStack key={rIdx} gap="200" wrap>
+                                  {row.map((cell, cIdx) => (
+                                    <TranslationRowPair
+                                      key={cIdx}
+                                      title={`Row ${rIdx + 1}, Col ${cIdx + 1}`}
+                                      originalValue={cell}
+                                      translatedValue={trans.tableData?.[rIdx]?.[cIdx] || ""}
+                                      onChange={(val) => handleBlockTranslationChange(block.id, `tableData.${rIdx}.${cIdx}`, val)}
+                                    />
+                                  ))}
+                                </InlineStack>
+                              ))}
+                            </BlockStack>
+                          )}
+
+                          {![
+                            "Heading", "FaqBlock", "faq", "Callout", "Hero", "HeroSection",
+                            "TableOfContents", "Image", "VideoEmbed", "ButtonBlock", "BuyButton",
+                            "ProductGrid", "Collection", "ProductSlider", "ProductCard", "Table",
+                          ].includes(block.type) && (
                               <TranslationRowPair
                                 title="Content Text"
-                                originalValue={s.content || s.text || (typeof s === "string" ? s : "")}
+                                originalValue={stripHtml(formatTextValue(s.content || s.text || (typeof s === "string" ? s : "")))}
                                 translatedValue={trans.content || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "content", val)}
                                 multiline={4}
@@ -1179,7 +1523,7 @@ export default function PostTranslationPage() {
 
                 <TranslationRowPair
                   title="Meta Description"
-                  originalValue={post.metaDescription || post.excerpt}
+                  originalValue={stripHtml(post.metaDescription || "")}
                   translatedValue={translatedMetaDesc}
                   onChange={(val) => setTranslatedMetaDesc(val)}
                   maxLength={160}

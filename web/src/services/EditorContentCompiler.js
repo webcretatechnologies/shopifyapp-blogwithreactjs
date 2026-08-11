@@ -405,10 +405,19 @@ export class EditorContentCompiler {
   // changes, this needs the same generateHTML() call compileBlocksToHtml.js makes.
   static renderRichText(attrs) {
     const content = attrs.content;
-    if (!content || typeof content !== "string") return "";
+    // No data-content attribute means this div's real content is already the client-compiled
+    // visible child HTML (compileBlocksToHtml.js never emits data-content — it's in
+    // injectBlockIdentity's skipKeys — and instead renders real HTML children directly). That
+    // happens on every normal Save/Save & Sync, since this function's caller (compile()) re-wraps
+    // every div[data-type] it walks unconditionally when given a non-null return. Returning ""
+    // here used to replace that already-correct HTML with an empty wrapper, silently deleting
+    // the block's content on every save. Returning null instead leaves the div (and its real
+    // children) untouched. Only a genuine data-content attribute (the ShopifyArticleParser
+    // echo/reconcile path) should cause this to render anything at all.
+    if (!content || typeof content !== "string") return null;
     const cleanText = content.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
     const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(content);
-    if (!cleanText && !containsMedia) return "";
+    if (!cleanText && !containsMedia) return null;
     return `<div class="builder-richtext-wrapper">${content}</div>`;
   }
 
@@ -431,6 +440,12 @@ export class EditorContentCompiler {
   // Mirrors compileBlocksToHtml.js's "Table" case.
   static renderTableBlock(attrs) {
     const data = Array.isArray(attrs.tableData) ? attrs.tableData : [];
+    // Same reasoning as renderRichText above: "tableData" is also in injectBlockIdentity's
+    // skipKeys, so a client-compiled Table div carries its real <table> as visible child HTML,
+    // never a data-table-data attribute. Without attrs.tableData there's nothing to render from
+    // here — bail out with null so compile() leaves the existing (correct) table untouched
+    // instead of replacing it with an empty one.
+    if (data.length === 0) return null;
     const hasHeader = attrs.hasHeader;
 
     let theadRows = [];
