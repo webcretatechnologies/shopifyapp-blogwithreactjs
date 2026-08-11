@@ -25,7 +25,7 @@ import JsonLdService from "./JsonLdService.js";
 const prisma = new PrismaClient();
 
 // ─── App public URL for tracking pixel ───────────────────────────────────────
-const APP_URL = process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
+const APP_URL = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
 
 const MAX_WEBHOOK_DEPTH = 3;
 let _webhookDepth = 0;
@@ -697,8 +697,11 @@ export async function buildStorefrontHtmlForPost(post, rawHtml, validSession, gr
 
   // ── Inject tracking pixel ──────────────────────────────────────────────
   const trackingKey = await ensureTrackingKey(post.id);
-  const appHost = process.env.SHOPIFY_APP_HOST || "localhost:3000";
-  const appUrl = process.env.APP_URL || `https://${appHost}`;
+  // HOST already includes the protocol and is the actual configured variable in this app
+  // (confirmed via .env/vite.config.js) — APP_URL/SHOPIFY_APP_HOST aren't set in this
+  // environment and were silently falling back to "https://localhost:3000", unreachable from
+  // a real storefront visitor's browser. Same fix as EditorContentCompiler.js's APP_URL.
+  const appUrl = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
   const shopDomain = post.shop?.domain || "";
 
   // Replace existing analytics block or append new one

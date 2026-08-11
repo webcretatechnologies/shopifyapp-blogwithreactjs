@@ -32,7 +32,16 @@ export class ShopifyArticleParser {
       return { blocks: [], rawEditorHtml: "", structureDegraded: false };
     }
 
-    const $ = cheerio.load(html, null, false);
+    // Strip the injected view-tracking block (ArticleSyncService's analytics pixel + script,
+    // delimited by BLOG_ANALYTICS_START/END comments) before cheerio ever sees it — it's app
+    // infrastructure injected at push time, never merchant content. Without this, its tracking
+    // <img> tag (a 1x1 pixel pointing at /track/view.gif) gets walked like any other <img> and
+    // reconstructed as a real, user-editable Image block, which then persists in contentJson/
+    // contentHtml and shows up as junk "Image" blocks in the builder — worse, it then survives
+    // into the NEXT sync's output too, compounding on every subsequent echo/reconcile cycle.
+    const withoutTracking = html.replace(/<!--\s*BLOG_ANALYTICS_START\s*-->[\s\S]*?<!--\s*BLOG_ANALYTICS_END\s*-->/g, "");
+
+    const $ = cheerio.load(withoutTracking, null, false);
 
     // Strip any app-generated wrapper noise using cheerio
     this._stripAppWrapper($);
@@ -277,6 +286,14 @@ export class ShopifyArticleParser {
   static _stripAppWrapper($) {
     // Remove blogger-custom-styles style blocks
     $("style#blogger-custom-styles").remove();
+
+    // Defense in depth for the view-tracking pixel: the BLOG_ANALYTICS_START/END comment
+    // markers are already stripped in parse() before cheerio parses the HTML, but content
+    // that was already mis-parsed into a real Image block on a previous (pre-fix) pass no
+    // longer has those markers around it at all — it's now indistinguishable from real
+    // content except for its src. Catch that case directly so already-polluted content
+    // self-heals the next time it round-trips, instead of requiring a manual repair.
+    $('img[src*="/track/view.gif"]').remove();
 
     // Remove blogger-article-container wrapper but keep inner content
     $(".blogger-article-container").each((_, el) => {
