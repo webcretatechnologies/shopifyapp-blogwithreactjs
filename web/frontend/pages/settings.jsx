@@ -28,18 +28,6 @@ import {
 import { useState, useEffect } from "react";
 import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 
-const FONT_OPTIONS = [
-  { label: "System Default", value: "system-ui" },
-  { label: "Inter", value: "'Inter', sans-serif" },
-  { label: "Roboto", value: "'Roboto', sans-serif" },
-  { label: "Open Sans", value: "'Open Sans', sans-serif" },
-  { label: "Lato", value: "'Lato', sans-serif" },
-  { label: "Poppins", value: "'Poppins', sans-serif" },
-  { label: "Merriweather (Serif)", value: "'Merriweather', serif" },
-  { label: "Playfair Display (Serif)", value: "'Playfair Display', serif" },
-  { label: "Source Code Pro (Mono)", value: "'Source Code Pro', monospace" },
-];
-
 const LAYOUT_OPTIONS = [
   { label: "Full width", value: "full" },
   { label: "Centered (max 800px)", value: "centered" },
@@ -98,9 +86,7 @@ const DEFAULT_SETTINGS = {
   primaryColor: "#008060",
   secondaryColor: "#005bd3",
   textColor: "#202223",
-  fontFamily: "system-ui",
   buttonRadius: "4",
-  useThemeShadows: false,
   blogLayout: "centered",
   language: "en",
   showToc: false,
@@ -162,17 +148,10 @@ export default function Settings() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Couldn't read your theme's colors.");
 
-      // fontFamily is best-effort (Shopify font IDs don't map 1:1 to CSS font names) — only
-      // applied if its humanized name matches one of the selectable options by label, so we
-      // never silently set an unusable/unlisted CSS value.
-      const matchedFont = data.fontFamily
-        ? FONT_OPTIONS.find((f) => f.label.toLowerCase() === data.fontFamily.toLowerCase())
-        : null;
-
-      // Shape (button/card corner radius + shadow) — same fail-soft posture as colors: only
-      // applied when the theme's schema confirmed the value, otherwise the existing setting
-      // is left untouched. The shadow checkbox is only meaningful (and only offered) when the
-      // theme is confirmed shadowless — a theme that does use shadows needs no override.
+      // Shape (button corner radius) — same fail-soft posture as colors: only applied when
+      // the theme's schema confirmed the value, otherwise the existing setting is left untouched.
+      // Font is no longer synced here at all — it's fetched live from the theme at publish
+      // time (EditorContentCompiler.compileForStorefront), not a stored/editable setting.
       const shape = data.shape || {};
 
       setSettings((s) => ({
@@ -180,9 +159,7 @@ export default function Settings() {
         primaryColor: data.colors?.primary || s.primaryColor,
         secondaryColor: data.colors?.secondary || s.secondaryColor,
         textColor: data.colors?.text || s.textColor,
-        fontFamily: matchedFont ? matchedFont.value : s.fontFamily,
         buttonRadius: typeof shape.buttonRadius === "number" ? String(shape.buttonRadius) : s.buttonRadius,
-        useThemeShadows: shape.hasShadow === false ? true : s.useThemeShadows,
       }));
       setToast({
         content: `Pulled colors and shape from "${data.themeName}" — review below, then Save Settings to apply`,
@@ -472,14 +449,6 @@ export default function Settings() {
                           helpText="Applied to new Button, FAQ, and Product Card blocks"
                         />
                       </div>
-                      <div style={{ flex: 1, minWidth: 0, paddingTop: "22px" }}>
-                        <Checkbox
-                          label="Match theme's flat/shadowless style"
-                          checked={settings.useThemeShadows}
-                          onChange={set("useThemeShadows")}
-                          helpText="Only meaningful if your theme uses no shadows on buttons/cards"
-                        />
-                      </div>
                     </InlineStack>
 
                     <Box
@@ -544,13 +513,6 @@ export default function Settings() {
 
                 <Layout.Section>
                   <SectionCard title="Typography & layout">
-                    <Select
-                      label="Blog font family"
-                      options={FONT_OPTIONS}
-                      value={settings.fontFamily}
-                      onChange={set("fontFamily")}
-                      helpText="Applied to article content on the storefront"
-                    />
                     <Box
                       padding="300"
                       background="bg-subdued"
@@ -558,21 +520,15 @@ export default function Settings() {
                       borderWidth="025"
                       borderColor="border"
                     >
-                      <Text as="p" tone="subdued" variant="bodySm" fontWeight="medium">
-                        Preview
+                      <Text as="p" variant="bodySm" fontWeight="semibold">
+                        Blog font family
                       </Text>
-                      <Box paddingBlockStart="150">
-                        <p
-                          style={{
-                            fontFamily: settings.fontFamily,
-                            fontSize: "15px",
-                            margin: 0,
-                            lineHeight: "1.7",
-                          }}
-                        >
-                          The quick brown fox jumps over the lazy dog.{" "}
-                          <strong>Bold text.</strong> <em>Italic text.</em>
-                        </p>
+                      <Box paddingBlockStart="100">
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          Automatically matched to your store's active theme — no setup needed.
+                          Change your theme's font in the theme editor and your blog content
+                          picks it up on the next save.
+                        </Text>
                       </Box>
                     </Box>
                     <Select

@@ -6,14 +6,19 @@
  * writes anything to Shopify or the DB.
  */
 
-/** "poppins_n4" -> "Poppins". Font picker values are internal IDs, not CSS font-family
- * names — there's no reliable way to resolve the real web font without theme-side Liquid
- * filters, so this is a best-effort starting point, not a guaranteed-accurate value. */
+/** "poppins_n4" -> "Poppins", "playfair_display_n4" -> "Playfair Display". Font picker
+ * values are internal IDs (family, snake_cased if multi-word, plus an "_<style><weight>"
+ * suffix like "n4"/"i7") — not literal CSS font-family names, so this is a best-effort
+ * reconstruction, not a guaranteed-accurate value. Drops only the trailing style/weight
+ * segment; every other underscore-separated word is kept and capitalized, so multi-word
+ * family names survive intact instead of being truncated to their first word. */
 function humanizeFontId(fontId) {
   if (!fontId || typeof fontId !== "string") return null;
-  const base = fontId.split("_")[0];
-  if (!base) return null;
-  return base.charAt(0).toUpperCase() + base.slice(1);
+  const parts = fontId.split("_");
+  if (parts.length < 2) return null;
+  const nameParts = parts.slice(0, -1).filter(Boolean);
+  if (nameParts.length === 0) return null;
+  return nameParts.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
 /** Dawn and most Dawn-derived OS 2.0 themes name their color schemes accent-1/accent-2/
@@ -77,10 +82,9 @@ function schemaSettingIds(settingsSchema) {
   return ids;
 }
 
-/** Dawn/OS 2.0 themes expose button and card corner-radius/shadow as top-level numeric
- * settings (`buttons_radius`, `card_corner_radius`, `buttons_shadow_opacity`,
- * `card_shadow_opacity`) — a convention, not a guarantee, so each value is only trusted when
- * the schema confirms the theme actually declares that exact setting id. */
+/** Dawn/OS 2.0 themes expose button and card corner-radius as top-level numeric settings
+ * (`buttons_radius`, `card_corner_radius`) — a convention, not a guarantee, so each value is
+ * only trusted when the schema confirms the theme actually declares that exact setting id. */
 function extractShapeFromSchema(settingsSchema, settingsData) {
   const current = settingsData?.current || {};
   const ids = schemaSettingIds(settingsSchema);
@@ -89,15 +93,8 @@ function extractShapeFromSchema(settingsSchema, settingsData) {
 
   const buttonRadius = readNumber("buttons_radius");
   const cardRadius = readNumber("card_corner_radius");
-  const buttonShadowOpacity = readNumber("buttons_shadow_opacity");
-  const cardShadowOpacity = readNumber("card_shadow_opacity");
 
-  const hasShadow =
-    buttonShadowOpacity === null && cardShadowOpacity === null
-      ? null
-      : (buttonShadowOpacity || 0) > 0 || (cardShadowOpacity || 0) > 0;
-
-  return { buttonRadius, cardRadius, hasShadow };
+  return { buttonRadius, cardRadius };
 }
 
 /**

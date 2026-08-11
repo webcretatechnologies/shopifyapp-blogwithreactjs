@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
-import { prisma } from "../../shopify.js";
+import shopify, { prisma } from "../../shopify.js";
 import { formatPrice } from "../utils/priceUtils.js";
+import ThemeStyleService from "./ThemeStyleService.js";
 
 // In-memory cache for store currency (per compile run)
 let _storeCurrency = null;
@@ -123,6 +124,26 @@ function escapeHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/**
+ * The chosen blog font is only useful if it's actually loaded on the page — merely setting
+ * `font-family: 'Poppins'` in CSS does nothing unless that font happens to already be present
+ * (e.g. the merchant's theme coincidentally loads it for its own use). This works for ANY
+ * theme/store by requesting the font directly from Google Fonts. Generic on purpose: every
+ * entry in the Settings page's FONT_OPTIONS list is a real Google Fonts family name wrapped in
+ * single quotes (e.g. `'Poppins', sans-serif`) — extracting that name means new fonts added to
+ * that list later get loading support automatically, no hardcoded per-font map to keep in sync.
+ * "System Default" (system-ui) and any value not matching the quoted-name convention are
+ * intentionally skipped — nothing to fetch for a system font stack.
+ */
+function buildGoogleFontsLinkTag(fontFamilyValue) {
+  if (!fontFamilyValue || fontFamilyValue === "system-ui") return "";
+  const match = /^'([^']+)'/.exec(String(fontFamilyValue).trim());
+  if (!match) return "";
+  const familyParam = match[1].trim().replace(/\s+/g, "+");
+  if (!familyParam) return "";
+  return `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${familyParam}:wght@400;600;700&display=swap">`;
 }
 
 export class EditorContentCompiler {
@@ -319,7 +340,7 @@ export class EditorContentCompiler {
     const maxWidth = attrs.maxWidth || "100%";
 
     if (!url) {
-      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">Video URL not provided</div>`;
+      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175;">Video URL not provided</div>`;
     }
 
     const embedUrl = getEmbedUrl(url);
@@ -328,7 +349,7 @@ export class EditorContentCompiler {
     return `<div style="position: relative; padding-bottom: ${aspectRatio}; height: 0; overflow: hidden; max-width: ${maxWidth}; margin: 20px auto;">` +
       iframeHtml +
       `</div>` +
-      (caption ? `<div style="text-align: center; font-size: 14px; color: #6d7175; margin-top: 8px; font-family: sans-serif;">${caption}</div>` : "");
+      (caption ? `<div style="text-align: center; font-size: 14px; color: #6d7175; margin-top: 8px;">${caption}</div>` : "");
   }
 
   static renderHero(attrs) {
@@ -382,7 +403,6 @@ export class EditorContentCompiler {
         "font-size: 14px",
         "text-decoration: none",
         "transition: opacity 0.2s",
-        "font-family: sans-serif",
         "border: none"
       ].join("; ");
       ctaHtml = `<a href="${ctaUrl}" style="${ctaStyle}">${ctaText}</a>`;
@@ -396,8 +416,8 @@ export class EditorContentCompiler {
       "width: 100%"
     ].join("; ");
 
-    const headingStyle = `margin: 0 0 12px; font-size: 28px; font-weight: 700; color: ${textColor}; line-height: 1.2; font-family: sans-serif;`;
-    const subheadingStyle = `margin: 0 0 24px; font-size: 16px; color: ${textColor}; opacity: 0.85; line-height: 1.6; font-family: sans-serif;`;
+    const headingStyle = `margin: 0 0 12px; font-size: 28px; font-weight: 700; color: ${textColor}; line-height: 1.2;`;
+    const subheadingStyle = `margin: 0 0 24px; font-size: 16px; color: ${textColor}; opacity: 0.85; line-height: 1.6;`;
 
     return `<div style="${containerStyle}">` +
       backgroundHtml +
@@ -432,7 +452,6 @@ export class EditorContentCompiler {
       `font-size: ${fontSize}`,
       "text-decoration: none",
       "transition: opacity 0.2s",
-      "font-family: sans-serif",
       "border: none"
     ].join("; ");
 
@@ -454,7 +473,7 @@ export class EditorContentCompiler {
     const buttonColor = attrs.buttonColor || "#008060";
 
     if (!product) {
-      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">No product selected</div>`;
+      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175;">No product selected</div>`;
     }
 
     const variantIdRaw = product.variantId || "";
@@ -463,18 +482,18 @@ export class EditorContentCompiler {
 
     let badgeHtml = "";
     if (showBadge && badge) {
-      badgeHtml = `<span style="display: inline-block; padding: 2px 8px; background: #e1e3e5; color: #202223; font-size: 11px; font-weight: 600; border-radius: 4px; margin-bottom: 8px; text-transform: uppercase; font-family: sans-serif;">${badge}</span>`;
+      badgeHtml = `<span style="display: inline-block; padding: 2px 8px; background: #e1e3e5; color: #202223; font-size: 11px; font-weight: 600; border-radius: 4px; margin-bottom: 8px; text-transform: uppercase;">${badge}</span>`;
     }
 
     const currency = resolveCurrency(product, _storeCurrency);
     let priceHtml = "";
     if (showPrice && product.price) {
-      priceHtml = `<div style="font-size: 18px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 12px; font-family: sans-serif;">${formatPrice(product.price, currency)}</div>`;
+      priceHtml = `<div style="font-size: 18px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 12px;">${formatPrice(product.price, currency)}</div>`;
     }
 
     let descHtml = "";
     if (showDescription && product.description) {
-      descHtml = `<p style="font-size: 13px; color: #6d7175; margin: 0 0 12px; line-height: 1.4; font-family: sans-serif;">${product.description}</p>`;
+      descHtml = `<p style="font-size: 13px; color: #6d7175; margin: 0 0 12px; line-height: 1.4;">${product.description}</p>`;
     }
 
     const imageUrl = typeof product.image === 'string' ? product.image : (product.image?.url || product.featuredImage?.url || product.images?.[0]?.originalSrc || product.images?.[0]?.src || "");
@@ -483,7 +502,7 @@ export class EditorContentCompiler {
       const escapedTitle = (product.title || "").replace(/"/g, '&quot;');
       imgHtml = `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; text-decoration:none;"><img src="${imageUrl}" alt="${escapedTitle}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>`;
     } else {
-      imgHtml = `<div style="width: 100%; height: 100%; background: #f4f6f8; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+      imgHtml = `<div style="width: 100%; height: 100%; background: #f4f6f8; display: flex; align-items: center; justify-content: center; font-size: 24px;">🖼</div>`;
     }
 
     let cardStyle = "";
@@ -496,14 +515,14 @@ export class EditorContentCompiler {
           </div>
           <div style="flex: 1; min-width: 0;">
             ${badgeHtml}
-            <h4 style="margin: 0 0 6px; font-size: 16px; font-weight: 600; color: #202223; font-family: sans-serif; line-height: 1.3;">
+            <h4 style="margin: 0 0 6px; font-size: 16px; font-weight: 600; color: #202223; line-height: 1.3;">
               <a href="${pLink}" style="color: inherit; text-decoration: none;">${product.title || "Product"}</a>
             </h4>
             ${descHtml}
             ${priceHtml}
             <form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
               <input type="hidden" name="id" value="${numericVariantId}" />
-              <button type="submit" style="display: inline-block; padding: 8px 16px; background: ${buttonColor}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif; width: auto;">
+              <button type="submit" style="display: inline-block; padding: 8px 16px; background: ${buttonColor}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; width: auto;">
                 ${buttonText}
               </button>
             </form>
@@ -519,14 +538,14 @@ export class EditorContentCompiler {
           </div>
           <div style="padding: 16px;">
             ${badgeHtml}
-            <h4 style="margin: 0 0 6px; font-size: 15px; font-weight: 600; color: #202223; font-family: sans-serif; line-height: 1.3;">
+            <h4 style="margin: 0 0 6px; font-size: 15px; font-weight: 600; color: #202223; line-height: 1.3;">
               <a href="${pLink}" style="color: inherit; text-decoration: none;">${product.title || "Product"}</a>
             </h4>
             ${descHtml}
             ${priceHtml}
             <form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
               <input type="hidden" name="id" value="${numericVariantId}" />
-              <button type="submit" style="display: block; width: 100%; padding: 10px 16px; background: ${buttonColor}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+              <button type="submit" style="display: block; width: 100%; padding: 10px 16px; background: ${buttonColor}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer;">
                 ${buttonText}
               </button>
             </form>
@@ -588,7 +607,7 @@ export class EditorContentCompiler {
     }
 
     if (list.length === 0) {
-      return `<div style="padding: 32px 16px; text-align: center; border: 2px dashed #e1e3e5; border-radius: 8px; color: #6d7175; font-family: sans-serif;">` +
+      return `<div style="padding: 32px 16px; text-align: center; border: 2px dashed #e1e3e5; border-radius: 8px; color: #6d7175;">` +
         `<div style="font-size: 32px; margin-bottom: 8px;">🛍</div>` +
         `<div style="font-size: 14px;">No products to display</div>` +
         `</div>`;
@@ -604,7 +623,7 @@ export class EditorContentCompiler {
 
     let headerHtml = "";
     if (title) {
-      headerHtml = `<h3 style="margin: 0 0 16px; font-size: 20px; font-weight: 700; color: #202223; text-align: ${titleAlign}; font-family: sans-serif;">${title}</h3>`;
+      headerHtml = `<h3 style="margin: 0 0 16px; font-size: 20px; font-weight: 700; color: #202223; text-align: ${titleAlign};">${title}</h3>`;
     }
 
     let cardsHtml = "";
@@ -617,17 +636,17 @@ export class EditorContentCompiler {
       const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
       const pImg = imageUrl
         ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:180px; background:#f8f9fa; border-bottom:1px solid #f1f2f3; overflow:hidden; text-decoration:none;"><img src="${imageUrl}" alt="${escapedTitle}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>`
-        : `<div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom:1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+        : `<div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom:1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px;">🖼</div>`;
 
       const pCurrency = p.currency || _storeCurrency || 'USD';
       const pPrice = (showPrice && p.price)
-        ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 8px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
+        ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 8px;">${formatPrice(p.price, pCurrency)}</div>`
         : "";
 
       const pBtn = showButton
         ? `<form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
             <input type="hidden" name="id" value="${numericVId}" />
-            <button type="submit" style="display: block; width: 100%; padding: 8px 12px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+            <button type="submit" style="display: block; width: 100%; padding: 8px 12px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer;">
               ${buttonText}
             </button>
           </form>`
@@ -637,7 +656,7 @@ export class EditorContentCompiler {
         <div style="${activeStyle}">
           ${pImg}
           <div style="padding: 12px;">
-            <div style="font-size: 14px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3; font-family: sans-serif;">
+            <div style="font-size: 14px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3;">
               <a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title}</a>
             </div>
             ${pPrice}
@@ -709,7 +728,7 @@ export class EditorContentCompiler {
     }
 
     if (list.length === 0) {
-      return `<div style="padding: 32px 16px; text-align: center; border: 2px dashed #e1e3e5; border-radius: 8px; color: #6d7175; font-family: sans-serif;">` +
+      return `<div style="padding: 32px 16px; text-align: center; border: 2px dashed #e1e3e5; border-radius: 8px; color: #6d7175;">` +
         `<div style="font-size: 32px; margin-bottom: 8px;">🎠</div>` +
         `<div style="font-size: 14px;">No products to display</div>` +
         `</div>`;
@@ -724,7 +743,7 @@ export class EditorContentCompiler {
 
     let headerHtml = "";
     if (title) {
-      headerHtml = `<h3 style="margin: 0 0 16px; font-size: 20px; font-weight: 700; color: #202223; text-align: ${titleAlign}; font-family: sans-serif;">${title}</h3>`;
+      headerHtml = `<h3 style="margin: 0 0 16px; font-size: 20px; font-weight: 700; color: #202223; text-align: ${titleAlign};">${title}</h3>`;
     }
 
     let cardsHtml = "";
@@ -736,17 +755,17 @@ export class EditorContentCompiler {
       const escapedTitle = (p.title || "").replace(/"/g, '&quot;');
       const pImg = p.image
         ? `<a href="${pLink}" style="display:block; text-decoration:none;"><img src="${p.image}" alt="${escapedTitle}" style="width: 100%; aspect-ratio: 1; object-fit: cover; display: block;" /></a>`
-        : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+        : `<div style="width: 100%; aspect-ratio: 1; background: #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px;">🖼</div>`;
 
       const pCurrency = p.currency || _storeCurrency || 'USD';
       const pPrice = (showPrice && p.price)
-        ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 8px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
+        ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 8px;">${formatPrice(p.price, pCurrency)}</div>`
         : "";
 
       const pBtn = showButton
         ? `<form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
             <input type="hidden" name="id" value="${numericVId}" />
-            <button type="submit" style="display: block; width: 100%; padding: 8px 12px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+            <button type="submit" style="display: block; width: 100%; padding: 8px 12px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer;">
               ${buttonText}
             </button>
           </form>`
@@ -757,7 +776,7 @@ export class EditorContentCompiler {
           <div style="${activeStyle}">
             ${pImg}
             <div style="padding: 12px;">
-              <div style="font-size: 14px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3; font-family: sans-serif; height: 36px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+              <div style="font-size: 14px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3; height: 36px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
                 <a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title}</a>
               </div>
               ${pPrice}
@@ -769,7 +788,7 @@ export class EditorContentCompiler {
     });
 
     return `
-      <div class="shopify-blog-slider-container" style="position: relative; margin: 24px 0; font-family: sans-serif; box-sizing: border-box; width: 100%;">
+      <div class="shopify-blog-slider-container" style="position: relative; margin: 24px 0; box-sizing: border-box; width: 100%;">
         ${headerHtml}
         <div style="position: relative; display: flex; align-items: center; width: 100%;">
           <button type="button" 
@@ -811,7 +830,7 @@ export class EditorContentCompiler {
     const buttonRadius = attrs.buttonRadius ?? 5;
 
     if (!collectionHandle) {
-      return `<div style="padding: 32px 16px; text-align: center; border: 2px dashed #e1e3e5; border-radius: 8px; color: #6d7175; font-family: sans-serif;">` +
+      return `<div style="padding: 32px 16px; text-align: center; border: 2px dashed #e1e3e5; border-radius: 8px; color: #6d7175;">` +
         `<div style="font-size: 32px; margin-bottom: 8px;">📦</div>` +
         `<div style="font-size: 14px;">Select a collection in the settings panel</div>` +
         `</div>`;
@@ -865,11 +884,11 @@ export class EditorContentCompiler {
     let headerHtml = "";
     if (showTitle) {
       const viewAllBtn = showViewAll
-        ? `<a href="${viewAllLink}" style="font-size: 13px; color: #2c6ecb; font-weight: 500; text-decoration: none; padding: 6px 12px; border: 1px solid #2c6ecb; border-radius: 6px; font-family: sans-serif;">View All →</a>`
+        ? `<a href="${viewAllLink}" style="font-size: 13px; color: #2c6ecb; font-weight: 500; text-decoration: none; padding: 6px 12px; border: 1px solid #2c6ecb; border-radius: 6px;">View All →</a>`
         : "";
       headerHtml = `
         <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%;">
-          <h3 style="margin: 0; font-size: 20px; font-weight: 700; color: #202223; font-family: sans-serif;">${displayTitle}</h3>
+          <h3 style="margin: 0; font-size: 20px; font-weight: 700; color: #202223;">${displayTitle}</h3>
           ${viewAllBtn}
         </div>
       `;
@@ -892,17 +911,17 @@ export class EditorContentCompiler {
         const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
         const pImg = imageUrl
           ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:180px; background:#f8f9fa; border-bottom:1px solid #f1f2f3; overflow:hidden; text-decoration:none;"><img src="${imageUrl}" alt="${escapedTitle}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>`
-          : `<div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom:1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+          : `<div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom:1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px;">🖼</div>`;
 
         const pCurrency = p.currency || _storeCurrency || 'USD';
         const pPrice = (showPrice && p.price)
-          ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
+          ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 6px;">${formatPrice(p.price, pCurrency)}</div>`
           : "";
 
         const pBtn = showButton
           ? `<form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
               <input type="hidden" name="id" value="${numericVId}" />
-              <button type="submit" style="display: block; width: 100%; padding: 6px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+              <button type="submit" style="display: block; width: 100%; padding: 6px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer;">
                 ${buttonText}
               </button>
             </form>`
@@ -913,7 +932,7 @@ export class EditorContentCompiler {
             <div style="${cardStyle}">
               ${pImg}
               <div style="padding: 10px;">
-                <div style="font-size: 13px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3; font-family: sans-serif; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+                <div style="font-size: 13px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
                   <a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title}</a>
                 </div>
                 ${pPrice}
@@ -938,17 +957,17 @@ export class EditorContentCompiler {
         const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
         const pImg = imageUrl
           ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:180px; background:#f8f9fa; border-bottom:1px solid #f1f2f3; overflow:hidden; text-decoration:none;"><img src="${imageUrl}" alt="${escapedTitle}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>`
-          : `<div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom:1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px; font-family: sans-serif;">🖼</div>`;
+          : `<div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom:1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; font-size: 24px;">🖼</div>`;
 
         const pCurrency = p.currency || _storeCurrency || 'USD';
         const pPrice = (showPrice && p.price)
-          ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
+          ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 6px;">${formatPrice(p.price, pCurrency)}</div>`
           : "";
 
         const pBtn = showButton
           ? `<form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
               <input type="hidden" name="id" value="${numericVId}" />
-              <button type="submit" style="display: block; width: 100%; padding: 6px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+              <button type="submit" style="display: block; width: 100%; padding: 6px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer;">
                 ${buttonText}
               </button>
             </form>`
@@ -958,7 +977,7 @@ export class EditorContentCompiler {
           <div style="${cardStyle}">
             ${pImg}
             <div style="padding: 10px;">
-              <div style="font-size: 13px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3; font-family: sans-serif; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+              <div style="font-size: 13px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
                 <a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title}</a>
               </div>
               ${pPrice}
@@ -1002,7 +1021,7 @@ export class EditorContentCompiler {
     const boxShadow = shadowMap[attrs.dropShadow || 'none'] || 'none';
 
     if (!src) {
-      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">Image not selected</div>`;
+      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175;">Image not selected</div>`;
     }
 
     const escapedAlt = (alt || "").replace(/"/g, '&quot;');
@@ -1017,7 +1036,7 @@ export class EditorContentCompiler {
 
     return `<div style="${containerStyle}">
       ${imgHtml}
-      ${caption ? `<div style="text-align: center; font-size: 14px; color: #6d7175; margin-top: 8px; font-family: sans-serif;">${caption}</div>` : ""}
+      ${caption ? `<div style="text-align: center; font-size: 14px; color: #6d7175; margin-top: 8px;">${caption}</div>` : ""}
     </div>`;
   }
 
@@ -1039,7 +1058,7 @@ export class EditorContentCompiler {
     const backgroundColor = attrs.backgroundColor || attrs.backgroundcolor || "#ffffff";
 
     if (!title) {
-      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">Product not selected</div>`;
+      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175;">Product not selected</div>`;
     }
 
     const productUrl = handle ? `/products/${encodeURIComponent(handle)}` : "#";
@@ -1071,7 +1090,7 @@ export class EditorContentCompiler {
       : "";
 
     return `
-      <div style="display: flex; flex-direction: ${isHorizontal ? "row" : "column"}; height: 100%; flex: 1; ${isCompact ? "align-items: center;" : ""} border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; background: ${backgroundColor}; overflow: hidden; margin: 16px 0; font-family: sans-serif; box-sizing: border-box;">
+      <div style="display: flex; flex-direction: ${isHorizontal ? "row" : "column"}; height: 100%; flex: 1; ${isCompact ? "align-items: center;" : ""} border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; background: ${backgroundColor}; overflow: hidden; margin: 16px 0; box-sizing: border-box;">
         ${imageHtml}
         <div style="flex: 1; min-width: 200px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between;">
           <div style="flex: 1;">
@@ -1098,7 +1117,7 @@ export class EditorContentCompiler {
   static renderVideoEmbed(attrs) {
     const url = attrs.url || "";
     if (!url) {
-      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175; font-family: sans-serif;">Video URL not provided</div>`;
+      return `<div style="padding: 24px; text-align: center; border: 1px dashed #e1e3e5; color: #6d7175;">Video URL not provided</div>`;
     }
     const embedUrl = getEmbedUrl(url);
     const paddingBottom = attrs.aspectRatio === "4:3" ? "75%" : "56.25%";
@@ -1108,7 +1127,7 @@ export class EditorContentCompiler {
   }
 
   static generateStyles(settings) {
-    return `
+    return `${buildGoogleFontsLinkTag(settings.fontFamily)}
 <style id="blogger-custom-styles">
   :root {
     --blogger-primary-color: ${settings.primaryColor || "#008060"};
@@ -1382,7 +1401,26 @@ export class EditorContentCompiler {
         console.error("compileForStorefront: Error loading settings:", err);
       }
     }
-    
+
+    // Font is never a stored/editable setting — always fetched live from the shop's current
+    // theme so it stays correct for any store without merchant setup, and automatically
+    // follows theme changes. Fails soft to the system font stack if the fetch fails for any
+    // reason (no session, API error, theme has no detectable font), same posture as the rest
+    // of ThemeStyleService.
+    let liveFontFamily = null;
+    if (session) {
+      try {
+        const tokens = await ThemeStyleService.fetchThemeStyleTokens(shopify, session);
+        liveFontFamily = tokens.fontFamily;
+      } catch (err) {
+        console.error("compileForStorefront: Error fetching live theme font:", err);
+      }
+    }
+    settings = {
+      ...settings,
+      fontFamily: liveFontFamily ? `'${liveFontFamily}', sans-serif` : "system-ui",
+    };
+
     const styles = this.generateStyles(settings);
     const headerCode = settings.customHeaderCode ? `\n${settings.customHeaderCode}\n` : "";
     const footerCode = settings.customFooterCode ? `\n${settings.customFooterCode}\n` : "";
