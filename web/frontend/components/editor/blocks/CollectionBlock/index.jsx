@@ -81,14 +81,14 @@ export function CollectionBlockPreview({ block }) {
         <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '8px' }}>
           {products.map(p => (
             <div key={p.shopifyProductId} style={{ minWidth: '180px', maxWidth: '200px', flexShrink: 0 }}>
-              <CollectionProductCard product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} storeCurrency={storeCurrency} />
+              <CollectionProductCard product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} buttonRadius={block.buttonRadius ?? 5} storeCurrency={storeCurrency} />
             </div>
           ))}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '16px' }}>
           {products.map(p => (
-            <CollectionProductCard key={p.shopifyProductId} product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} storeCurrency={storeCurrency} />
+            <CollectionProductCard key={p.shopifyProductId} product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} buttonRadius={block.buttonRadius ?? 5} storeCurrency={storeCurrency} />
           ))}
         </div>
       )}
@@ -102,12 +102,12 @@ export function CollectionBlockPreview({ block }) {
   );
 }
 
-function CollectionProductCard({ product, showPrice, showButton, buttonColor, buttonText, storeCurrency }) {
+function CollectionProductCard({ product, showPrice, showButton, buttonColor, buttonText, buttonRadius, storeCurrency }) {
   const currency = product.currency || storeCurrency;
   const pImgUrl = typeof product.image === 'string' ? product.image : (product.image?.url || product.featuredImage?.url || product.images?.[0]?.originalSrc || product.images?.[0]?.src || null);
 
   return (
-    <div style={{ borderRadius: '10px', border: '1px solid #e1e3e5', overflow: 'hidden', background: '#fff' }}>
+    <div style={{ borderRadius: '8px', border: '1px solid #e1e3e5', overflow: 'hidden', background: '#fff' }}>
       <div style={{ width: '100%', height: '180px', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderBottom: '1px solid #f1f2f3' }}>
         {pImgUrl ? (
           <img
@@ -124,12 +124,12 @@ function CollectionProductCard({ product, showPrice, showButton, buttonColor, bu
           {product.title}
         </div>
         {showPrice && product.price && (
-          <div style={{ fontSize: '13px', color: '#008060', fontWeight: '700', marginBottom: '6px' }}>
+          <div style={{ fontSize: '14px', color: 'var(--blogger-primary-color, #008060)', fontWeight: '700', marginBottom: '6px' }}>
             {formatPrice(product.price, currency)}
           </div>
         )}
         {showButton && (
-          <div style={{ padding: '6px', background: buttonColor, color: '#fff', borderRadius: '5px', fontSize: '12px', fontWeight: '600', textAlign: 'center' }}>
+          <div style={{ padding: '6px', background: buttonColor, color: '#fff', borderRadius: `${buttonRadius ?? 5}px`, fontSize: '12px', fontWeight: '600', textAlign: 'center' }}>
             {buttonText}
           </div>
         )}
@@ -212,7 +212,16 @@ export function CollectionBlockSettings({ block, onUpdate }) {
       <Checkbox label="Show price" checked={block.showPrice !== false} onChange={v => onUpdate({ showPrice: v })} />
       <Checkbox label="Show button" checked={block.showButton !== false} onChange={v => onUpdate({ showButton: v })} />
       {block.showButton !== false && (
-        <TextField label="Button Text" value={block.buttonText || 'Shop Now'} onChange={v => onUpdate({ buttonText: v })} autoComplete="off" />
+        <>
+          <TextField label="Button Text" value={block.buttonText || 'Shop Now'} onChange={v => onUpdate({ buttonText: v })} autoComplete="off" />
+          <TextField
+            label="Button Corner Radius"
+            type="number"
+            value={String(block.buttonRadius ?? 5)}
+            onChange={v => onUpdate({ buttonRadius: parseInt(v) || 0 })}
+            autoComplete="off"
+          />
+        </>
       )}
     </BlockStack>
   );

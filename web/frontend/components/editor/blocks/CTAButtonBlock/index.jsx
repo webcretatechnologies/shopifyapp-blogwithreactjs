@@ -12,7 +12,7 @@ export function CTAButtonBlockPreview({ block }) {
         padding: '10px 24px',
         background: block.color || '#008060',
         color: block.textColor || '#fff',
-        borderRadius: '6px',
+        borderRadius: block.borderRadius || '6px',
         fontSize: '14px',
         fontWeight: '600',
         cursor: 'default',

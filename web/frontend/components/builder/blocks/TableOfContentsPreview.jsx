@@ -26,7 +26,7 @@ function buildTocTree(headings) {
   return { rootNodes, minLevel };
 }
 
-function RenderTocList({ items, minLevel, listStyle, isRoot = true }) {
+function RenderTocList({ items, minLevel, listStyle, textColor, isRoot = true }) {
   if (!items || items.length === 0) return null;
 
   const ListTag = listStyle === "numbered" ? "ol" : "ul";
@@ -55,7 +55,7 @@ function RenderTocList({ items, minLevel, listStyle, isRoot = true }) {
                 }
               }}
               style={{
-                color: "#008060",
+                color: textColor,
                 textDecoration: "none",
                 fontWeight: isMain ? 600 : 400,
                 transition: "color 0.15s ease",
@@ -70,6 +70,7 @@ function RenderTocList({ items, minLevel, listStyle, isRoot = true }) {
                 items={item.children}
                 minLevel={minLevel}
                 listStyle={listStyle}
+                textColor={textColor}
                 isRoot={false}
               />
             )}
@@ -86,6 +87,7 @@ export function TableOfContentsPreview({ block }) {
   const levels = settings.levels || [2, 3];
   const listStyle = settings.listStyle || "bullet";
   const collapsible = Boolean(settings.collapsible);
+  const textColor = settings.textColor || "#202223";
 
   const blocksById = useBuilderStore((s) => s.blocksById);
   const rootIds = useBuilderStore((s) => s.rootIds);
@@ -125,6 +127,7 @@ export function TableOfContentsPreview({ block }) {
       items={rootNodes}
       minLevel={minLevel}
       listStyle={listStyle}
+      textColor={textColor}
       isRoot={true}
     />
   );
@@ -146,7 +149,7 @@ export function TableOfContentsPreview({ block }) {
             userSelect: "none",
             fontWeight: 700,
             fontSize: "16px",
-            color: "#202223",
+            color: textColor,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -172,7 +175,7 @@ export function TableOfContentsPreview({ block }) {
         </details>
       ) : (
         <div>
-          <div style={{ fontWeight: 700, fontSize: "16px", color: "#202223", marginBottom: "12px" }}>
+          <div style={{ fontWeight: 700, fontSize: "16px", color: textColor, marginBottom: "12px" }}>
             {title}
           </div>
           {listContent}

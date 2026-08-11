@@ -74,7 +74,7 @@ export function BuyButtonBlockPreview({ block }) {
             <div style={{ fontSize: '13px', color: '#6d7175', marginBottom: '10px', lineHeight: 1.5 }}>{product.description}</div>
           )}
           {block.showPrice && product.price && (
-            <div style={{ fontSize: '18px', fontWeight: '700', color: '#008060', marginBottom: '12px' }}>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--blogger-primary-color, #008060)', marginBottom: '12px' }}>
               {formatPrice(product.price, currency)}
             </div>
           )}
@@ -139,7 +139,7 @@ export function BuyButtonBlockPreview({ block }) {
           </div>
         )}
         {block.showPrice && product.price && (
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#008060', marginBottom: '10px' }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--blogger-primary-color, #008060)', marginBottom: '10px' }}>
             {formatPrice(product.price, currency)}
           </div>
         )}

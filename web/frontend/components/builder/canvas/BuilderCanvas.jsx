@@ -5,6 +5,7 @@
  * Sets up dnd-kit context, sensors, and SortableContext.
  */
 
+import { useEffect, useState } from "react";
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -24,6 +25,24 @@ export default function BuilderCanvas({ deviceMode = "desktop" }) {
     if (deviceMode === "tablet") return "640px";
     return "100%";
   };
+
+  // Mirrors the --blogger-* CSS variables that EditorContentCompiler.generateStyles()
+  // injects into published output, so block previews using var(--blogger-...) resolve
+  // to the shop's real configured colors while editing, not just at publish time.
+  const [themeVars, setThemeVars] = useState(null);
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then(({ settings }) => {
+        if (!settings) return;
+        setThemeVars({
+          "--blogger-primary-color": settings.primaryColor || "#008060",
+          "--blogger-secondary-color": settings.secondaryColor || "#005bd3",
+          "--blogger-text-color": settings.textColor || "#202223",
+        });
+      })
+      .catch(() => {});
+  }, []);
 
   const { setNodeRef, isOver } = useDroppable({
     id: "canvas-root",
@@ -59,6 +78,7 @@ export default function BuilderCanvas({ deviceMode = "desktop" }) {
           display: "flex",
           flexDirection: "column",
           border: (isOver && rootIds.length === 0) ? "2px dashed #008060" : "none",
+          ...themeVars,
         }}
       >
         <SortableContext items={flatIds} strategy={() => null}>

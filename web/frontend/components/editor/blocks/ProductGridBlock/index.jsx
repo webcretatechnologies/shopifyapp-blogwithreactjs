@@ -64,6 +64,7 @@ export function ProductGridBlockPreview({ block }) {
             cardStyle={s.cardStyle || 'shadow'}
             buttonColor={s.buttonColor || '#008060'}
             buttonText={s.buttonText || 'Add to Cart'}
+            buttonRadius={s.buttonRadius ?? 6}
             storeCurrency={storeCurrency}
           />
         ))}
@@ -72,7 +73,7 @@ export function ProductGridBlockPreview({ block }) {
   );
 }
 
-function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, buttonText, storeCurrency }) {
+function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, buttonText, buttonRadius, storeCurrency }) {
   const styles = {
     shadow: { borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', overflow: 'hidden', background: '#fff' },
     border: { borderRadius: '8px', border: '1px solid #e1e3e5', overflow: 'hidden', background: '#fff' },
@@ -99,14 +100,14 @@ function ProductCard({ product, showPrice, showButton, cardStyle, buttonColor, b
           {product.title}
         </div>
         {showPrice && product.price && (
-          <div style={{ fontSize: '14px', color: '#008060', fontWeight: '700', marginBottom: '8px' }}>
+          <div style={{ fontSize: '14px', color: 'var(--blogger-primary-color, #008060)', fontWeight: '700', marginBottom: '8px' }}>
             {formatPrice(product.price, currency)}
           </div>
         )}
         {showButton && (
           <div style={{
             padding: '8px 12px', background: buttonColor, color: '#fff',
-            borderRadius: '6px', fontSize: '13px', fontWeight: '600', textAlign: 'center',
+            borderRadius: `${buttonRadius ?? 6}px`, fontSize: '13px', fontWeight: '600', textAlign: 'center',
             cursor: 'default',
           }}>
             {buttonText}
@@ -238,6 +239,13 @@ export function ProductGridBlockSettings({ block, onUpdate }) {
                 style={{ flex: 1, padding: '6px 10px', border: '1px solid #c9cccf', borderRadius: '6px', fontSize: '13px' }} />
             </div>
           </div>
+          <TextField
+            label="Button Corner Radius"
+            type="number"
+            value={String(block.buttonRadius ?? 6)}
+            onChange={v => onUpdate({ buttonRadius: parseInt(v) || 0 })}
+            autoComplete="off"
+          />
         </>
       )}
     </BlockStack>

@@ -1,5 +1,6 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
+import ThemeStyleService from "../services/ThemeStyleService.js";
 
 const router = express.Router();
 
@@ -30,6 +31,21 @@ router.get("/meta-robots-status", async (req, res) => {
   } catch (err) {
     console.error("GET /api/settings/meta-robots-status error:", err);
     res.json({ active: false });
+  }
+});
+
+// GET /api/settings/theme-style-tokens — real colors/font read from the shop's main theme,
+// for the Settings page's "Sync from theme" action. Read-only, never writes anything.
+router.get("/theme-style-tokens", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+
+    const tokens = await ThemeStyleService.fetchThemeStyleTokens(shopify, session);
+    res.json(tokens);
+  } catch (err) {
+    console.error("GET /api/settings/theme-style-tokens error:", err);
+    res.status(500).json({ error: "Couldn't read colors from your theme. Please try again." });
   }
 });
 
@@ -86,7 +102,10 @@ router.post("/", async (req, res) => {
     const supportedKeys = [
       "primaryColor",
       "secondaryColor",
+      "textColor",
       "fontFamily",
+      "buttonRadius",
+      "useThemeShadows",
       "blogLayout",
       "language",
       "showToc",

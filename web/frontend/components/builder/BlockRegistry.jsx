@@ -98,6 +98,7 @@ export const BlockRegistry = {
       levels: [2, 3],
       listStyle: "bullet",
       collapsible: false,
+      textColor: "#202223",
     },
     PreviewComponent: TableOfContentsPreview,
   },
@@ -358,6 +359,7 @@ export const BlockRegistry = {
       showButton: true,
       buttonText: "Add to Cart",
       buttonColor: "#008060",
+      buttonRadius: 6,
     },
     PreviewComponent: ({ block }) => (
       <ProductGridBlockPreview block={block.settings} isSelected={false} />
@@ -382,6 +384,7 @@ export const BlockRegistry = {
       showButton: true,
       buttonText: "Shop Now",
       buttonColor: "#008060",
+      buttonRadius: 5,
     },
     PreviewComponent: ({ block }) => (
       <CollectionBlockPreview block={block.settings} isSelected={false} />
@@ -404,6 +407,7 @@ export const BlockRegistry = {
       showButton: true,
       buttonText: "Add to Cart",
       buttonColor: "#008060",
+      buttonRadius: 6,
     },
     PreviewComponent: ({ block }) => (
       <ProductSliderBlockPreview block={block.settings} isSelected={false} />
@@ -452,6 +456,7 @@ export const BlockRegistry = {
       showButton: true,
       buttonText: "Add to Cart",
       buttonColor: "#008060",
+      buttonRadius: 4,
       borderRadius: 8,
       borderColor: "#e1e3e5",
     },
@@ -460,7 +465,7 @@ export const BlockRegistry = {
         {block.settings.showImage && <div style={{ height: "150px", background: block.settings.imageUrl ? `url(${block.settings.imageUrl}) center/contain no-repeat` : "#f4f6f8", marginBottom: "16px" }} />}
         <h3 style={{ margin: "0 0 8px" }}>{block.settings.title}</h3>
         {block.settings.showPrice && <p style={{ fontWeight: "bold", margin: "0 0 16px" }}>${block.settings.price}</p>}
-        {block.settings.showButton && <button style={{ background: block.settings.buttonColor, color: "#fff", border: "none", padding: "8px 16px", borderRadius: "4px", cursor: "pointer", width: block.settings.layout === 'vertical' ? '100%' : 'auto' }}>{block.settings.buttonText}</button>}
+        {block.settings.showButton && <button style={{ background: block.settings.buttonColor, color: "#fff", border: "none", padding: "8px 16px", borderRadius: `${block.settings.buttonRadius ?? 4}px`, cursor: "pointer", width: block.settings.layout === 'vertical' ? '100%' : 'auto' }}>{block.settings.buttonText}</button>}
       </div>
     ),
   },
@@ -585,6 +590,112 @@ export const BLOCK_CATEGORIES = [
     ],
   },
 ];
+
+// Maps block type -> the single settings field that represents its "brand color", for
+// theme-style sync. Only these fields are ever touched — every other setting (padding,
+// border radius, overlay colors, etc.) is left exactly as authored.
+// PRIMARY covers every actual "Add to Cart"/CTA button across the builder — live-verified
+// against the connected store's theme, whose native Add to Cart button is primary-toned
+// (near-black), not a distinct color, so all of these must track Primary to actually match.
+// SECONDARY is reserved for genuinely decorative, non-CTA accents (FAQ accordion), which is
+// what gives the shop's Secondary Color a real, visible effect without mismatching the theme.
+const BRAND_COLOR_FIELDS = {
+  BuyButton: "buttonColor",
+  HeroSection: "ctaColor",
+  ButtonBlock: "backgroundColor",
+  ProductGrid: "buttonColor",
+  Collection: "buttonColor",
+  ProductSlider: "buttonColor",
+  ProductCard: "buttonColor",
+};
+
+const SECONDARY_COLOR_FIELDS = {
+  FaqBlock: "accentColor",
+};
+
+// Same idea, for the shop's font/text color — separate map since it's a different setting
+// (textColor, not primaryColor).
+const TEXT_COLOR_FIELDS = {
+  Heading: "color",
+  TableOfContents: "textColor",
+};
+
+/**
+ * Points new blocks' default brand color (and, separately, font color) at the shop's actual
+ * configured settings (manually set or synced from the theme — same mechanism either way),
+ * instead of the static hardcoded fallbacks. Only affects blocks created *after* this runs —
+ * already placed blocks keep their own already-stored settings untouched, since createBlock()
+ * only reads defaultSettings at creation time, never after. Each mapping is applied
+ * independently and only when its corresponding value is available, so a shop that's never
+ * touched Settings sees zero change from today's behavior.
+ */
+export function applyThemeColorDefaults({ primaryColor, secondaryColor, textColor } = {}) {
+  if (primaryColor) {
+    for (const [type, field] of Object.entries(BRAND_COLOR_FIELDS)) {
+      const entry = BlockRegistry[type];
+      if (entry?.defaultSettings && field in entry.defaultSettings) {
+        entry.defaultSettings[field] = primaryColor;
+      }
+    }
+  }
+  if (secondaryColor) {
+    for (const [type, field] of Object.entries(SECONDARY_COLOR_FIELDS)) {
+      const entry = BlockRegistry[type];
+      if (entry?.defaultSettings && field in entry.defaultSettings) {
+        entry.defaultSettings[field] = secondaryColor;
+      }
+    }
+  }
+  if (textColor) {
+    for (const [type, field] of Object.entries(TEXT_COLOR_FIELDS)) {
+      const entry = BlockRegistry[type];
+      if (entry?.defaultSettings && field in entry.defaultSettings) {
+        entry.defaultSettings[field] = textColor;
+      }
+    }
+  }
+}
+
+// Maps block type -> its existing "border radius" settings field, for theme-shape sync.
+// ButtonBlock/FaqBlock/ProductCard's is their whole container's radius; the *Grid/*Slider/
+// *Card entries below are each block's own "Add to Cart"/"Shop Now" button radius, now that
+// each block has a dedicated buttonRadius setting for it.
+const RADIUS_FIELDS = {
+  ButtonBlock: "borderRadius",
+  FaqBlock: "borderRadius",
+  ProductCard: "borderRadius",
+};
+
+const BUTTON_RADIUS_FIELDS = {
+  ProductGrid: "buttonRadius",
+  ProductSlider: "buttonRadius",
+  Collection: "buttonRadius",
+  ProductCard: "buttonRadius",
+};
+
+/**
+ * Points new blocks' default corner radius at the shop's actual configured/theme-synced
+ * button radius, using the exact same "patch defaultSettings for existing fields only, new
+ * blocks only" mechanism as applyThemeColorDefaults(). No-op for any block type that doesn't
+ * already have the relevant field.
+ */
+export function applyThemeShapeDefaults({ buttonRadius } = {}) {
+  if (buttonRadius === undefined || buttonRadius === null || buttonRadius === "") return;
+  const radius = Number(buttonRadius);
+  if (!Number.isFinite(radius)) return;
+  for (const [type, field] of Object.entries(RADIUS_FIELDS)) {
+    const entry = BlockRegistry[type];
+    if (entry?.defaultSettings && field in entry.defaultSettings) {
+      entry.defaultSettings[field] = radius;
+    }
+  }
+  for (const [type, field] of Object.entries(BUTTON_RADIUS_FIELDS)) {
+    const entry = BlockRegistry[type];
+    if (entry?.defaultSettings && field in entry.defaultSettings) {
+      entry.defaultSettings[field] = radius;
+    }
+  }
+}
 
 /** Create a fresh block object for a given type. */
 export function createBlock(type) {

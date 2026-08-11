@@ -145,6 +145,13 @@ function ProductCardBlockSettings({ block, onUpdate }) {
         onChange={(val) => onUpdate({ borderColor: val })}
         autoComplete="off"
       />
+      <TextField
+        label="Button Corner Radius"
+        type="number"
+        value={String(block.buttonRadius ?? 4)}
+        onChange={(val) => onUpdate({ buttonRadius: parseInt(val) || 0 })}
+        autoComplete="off"
+      />
     </div>
   );
 }
@@ -685,6 +692,14 @@ export default function SettingsControls({ block, onChange }) {
           label="Collapsible (click-to-expand on storefront)"
           checked={Boolean(settings.collapsible)}
           onChange={(val) => update("collapsible", val)}
+        />
+
+        <TextField
+          label="Font Color"
+          type="color"
+          value={settings.textColor || "#202223"}
+          onChange={(val) => update("textColor", val)}
+          autoComplete="off"
         />
       </div>
     );

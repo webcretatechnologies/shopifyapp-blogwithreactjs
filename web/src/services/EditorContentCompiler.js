@@ -271,9 +271,26 @@ export class EditorContentCompiler {
         compiledHtml = `<div style="padding: 16px; border: 1px dashed red; color: red;">Error rendering section: ${type}</div>`;
       }
 
-      // Replace the wrapper div with the fully compiled block HTML to prevent double borders
+      // Replace the wrapper div with the fully compiled block HTML to prevent double borders.
+      // Always re-wrap the compiled output in a fresh div carrying the original data-type/data-*
+      // identity attributes — otherwise this server-side re-render silently strips the markers
+      // that let a later Shopify webhook echo (ShopifyArticleParser) recognize the block and
+      // reconstruct it losslessly, instead of falling back to guessing structure from CSS
+      // classes (which breaks apart compound blocks like ProductSlider into raw Image/Text/
+      // Button primitives once that guess fails). Wrapping unconditionally — rather than tagging
+      // just the compiled HTML's first element — also covers render functions that return more
+      // than one top-level element (e.g. renderVideo's iframe + separate caption div), so the
+      // whole block round-trips as one unit no matter its internal shape. Reconstruction reads
+      // settings entirely from these data-* attributes (see ShopifyArticleParser._convertDataBlock),
+      // never from the wrapped markup itself, so the extra wrapper never affects re-editing.
       if (compiledHtml !== null) {
-        $el.replaceWith(compiledHtml);
+        const identityAttrs = [`data-type="${escapeHtml(type)}"`];
+        for (const [attrName, attrVal] of Object.entries(el.attribs)) {
+          if (attrName.startsWith("data-") && attrName !== "data-type") {
+            identityAttrs.push(`${attrName}="${escapeHtml(attrVal)}"`);
+          }
+        }
+        $el.replaceWith(`<div ${identityAttrs.join(" ")}>${compiledHtml}</div>`);
       }
     }
 
@@ -452,7 +469,7 @@ export class EditorContentCompiler {
     const currency = resolveCurrency(product, _storeCurrency);
     let priceHtml = "";
     if (showPrice && product.price) {
-      priceHtml = `<div style="font-size: 16px; color: #008060; font-weight: 700; margin-bottom: 12px; font-family: sans-serif;">${formatPrice(product.price, currency)}</div>`;
+      priceHtml = `<div style="font-size: 18px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 12px; font-family: sans-serif;">${formatPrice(product.price, currency)}</div>`;
     }
 
     let descHtml = "";
@@ -532,6 +549,7 @@ export class EditorContentCompiler {
     const showButton = attrs.showButton !== false;
     const buttonText = attrs.buttonText || "Add to Cart";
     const buttonColor = attrs.buttonColor || "#008060";
+    const buttonRadius = attrs.buttonRadius ?? 6;
 
     let list = [];
     if (manualProducts && manualProducts.length > 0) {
@@ -603,13 +621,13 @@ export class EditorContentCompiler {
 
       const pCurrency = p.currency || _storeCurrency || 'USD';
       const pPrice = (showPrice && p.price)
-        ? `<div style="font-size: 14px; color: #008060; font-weight: 700; margin-bottom: 8px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
+        ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 8px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
         : "";
 
       const pBtn = showButton
         ? `<form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
             <input type="hidden" name="id" value="${numericVId}" />
-            <button type="submit" style="display: block; width: 100%; padding: 8px 12px; background: ${buttonColor}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+            <button type="submit" style="display: block; width: 100%; padding: 8px 12px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
               ${buttonText}
             </button>
           </form>`
@@ -652,6 +670,7 @@ export class EditorContentCompiler {
     const showButton = attrs.showButton !== false;
     const buttonText = attrs.buttonText || "Add to Cart";
     const buttonColor = attrs.buttonColor || "#008060";
+    const buttonRadius = attrs.buttonRadius ?? 6;
 
     let list = [];
     if (manualProducts && manualProducts.length > 0) {
@@ -721,13 +740,13 @@ export class EditorContentCompiler {
 
       const pCurrency = p.currency || _storeCurrency || 'USD';
       const pPrice = (showPrice && p.price)
-        ? `<div style="font-size: 14px; color: #008060; font-weight: 700; margin-bottom: 8px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
+        ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 8px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
         : "";
 
       const pBtn = showButton
         ? `<form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
             <input type="hidden" name="id" value="${numericVId}" />
-            <button type="submit" style="display: block; width: 100%; padding: 8px 12px; background: ${buttonColor}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+            <button type="submit" style="display: block; width: 100%; padding: 8px 12px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
               ${buttonText}
             </button>
           </form>`
@@ -789,6 +808,7 @@ export class EditorContentCompiler {
     const showButton = attrs.showButton !== false;
     const buttonText = attrs.buttonText || "Shop Now";
     const buttonColor = attrs.buttonColor || "#008060";
+    const buttonRadius = attrs.buttonRadius ?? 5;
 
     if (!collectionHandle) {
       return `<div style="padding: 32px 16px; text-align: center; border: 2px dashed #e1e3e5; border-radius: 8px; color: #6d7175; font-family: sans-serif;">` +
@@ -855,7 +875,7 @@ export class EditorContentCompiler {
       `;
     }
 
-    const cardStyle = `border: 1px solid #e1e3e5; border-radius: 10px; overflow: hidden; background: #fff; box-sizing: border-box;`;
+    const cardStyle = `border: 1px solid #e1e3e5; border-radius: 8px; overflow: hidden; background: #fff; box-sizing: border-box;`;
 
     let contentHtml = "";
     if (layout === "scroll") {
@@ -876,13 +896,13 @@ export class EditorContentCompiler {
 
         const pCurrency = p.currency || _storeCurrency || 'USD';
         const pPrice = (showPrice && p.price)
-          ? `<div style="font-size: 13px; color: #008060; font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
+          ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
           : "";
 
         const pBtn = showButton
           ? `<form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
               <input type="hidden" name="id" value="${numericVId}" />
-              <button type="submit" style="display: block; width: 100%; padding: 6px; background: ${buttonColor}; color: #fff; border: none; border-radius: 5px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+              <button type="submit" style="display: block; width: 100%; padding: 6px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
                 ${buttonText}
               </button>
             </form>`
@@ -922,13 +942,13 @@ export class EditorContentCompiler {
 
         const pCurrency = p.currency || _storeCurrency || 'USD';
         const pPrice = (showPrice && p.price)
-          ? `<div style="font-size: 13px; color: #008060; font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
+          ? `<div style="font-size: 14px; color: var(--blogger-primary-color, #008060); font-weight: 700; margin-bottom: 6px; font-family: sans-serif;">${formatPrice(p.price, pCurrency)}</div>`
           : "";
 
         const pBtn = showButton
           ? `<form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
               <input type="hidden" name="id" value="${numericVId}" />
-              <button type="submit" style="display: block; width: 100%; padding: 6px; background: ${buttonColor}; color: #fff; border: none; border-radius: 5px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
+              <button type="submit" style="display: block; width: 100%; padding: 6px; background: ${buttonColor}; color: #fff; border: none; border-radius: ${buttonRadius}px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; font-family: sans-serif;">
                 ${buttonText}
               </button>
             </form>`
@@ -1008,6 +1028,7 @@ export class EditorContentCompiler {
     const imageUrl = attrs.imageUrl || attrs.imageurl || attrs.image || (typeof attrs.featuredImage === 'string' ? attrs.featuredImage : attrs.featuredImage?.url) || attrs.product?.image || attrs.product?.featuredImage?.url || attrs.product?.images?.[0]?.originalSrc || attrs.product?.images?.[0]?.src || "";
     const handle = attrs.handle || attrs.product?.handle || "";
     const buttonText = attrs.buttonText || attrs.buttontext || "Add to Cart";
+    const buttonRadius = attrs.buttonRadius ?? 4;
     const buttonColor = attrs.buttonColor || attrs.buttoncolor || "#2d6a4f";
     const showImage = attrs.showImage !== false && attrs.showimage !== false && attrs.showimage !== "false";
     const showPrice = attrs.showPrice !== false && attrs.showprice !== false && attrs.showprice !== "false";
@@ -1042,11 +1063,11 @@ export class EditorContentCompiler {
     const formattedPrice = price ? (String(price).startsWith('$') || String(price).startsWith('₹') ? price : formatPrice(price, currency)) : "";
     const formattedCompareAtPrice = compareAtPrice ? (String(compareAtPrice).startsWith('$') || String(compareAtPrice).startsWith('₹') ? compareAtPrice : formatPrice(compareAtPrice, currency)) : "";
     const priceHtml = showPrice && formattedPrice
-      ? `<div style="margin: 0 0 12px 0;"><span style="font-weight: bold;">${escapeHtml(formattedPrice)}</span>${formattedCompareAtPrice ? `<span style="text-decoration: line-through; color: #6d7175; margin-left: 8px; font-size: 14px;">${escapeHtml(formattedCompareAtPrice)}</span>` : ""}</div>`
+      ? `<div style="margin: 0 0 12px 0;"><span style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060);">${escapeHtml(formattedPrice)}</span>${formattedCompareAtPrice ? `<span style="text-decoration: line-through; color: #6d7175; margin-left: 8px; font-size: 14px;">${escapeHtml(formattedCompareAtPrice)}</span>` : ""}</div>`
       : "";
 
     const buttonHtml = showButton
-      ? `<a href="${productUrl}" style="display: ${layout === "vertical" ? "block" : "inline-block"}; background: ${buttonColor}; color: #ffffff; text-decoration: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center; margin-top: auto;">${escapeHtml(buttonText)}</a>`
+      ? `<a href="${productUrl}" style="display: ${layout === "vertical" ? "block" : "inline-block"}; background: ${buttonColor}; color: #ffffff; text-decoration: none; padding: 8px 16px; border-radius: ${buttonRadius}px; font-weight: 600; text-align: center; margin-top: auto;">${escapeHtml(buttonText)}</a>`
       : "";
 
     return `
@@ -1092,6 +1113,7 @@ export class EditorContentCompiler {
   :root {
     --blogger-primary-color: ${settings.primaryColor || "#008060"};
     --blogger-secondary-color: ${settings.secondaryColor || "#005bd3"};
+    --blogger-text-color: ${settings.textColor || "#202223"};
     --blogger-font-family: ${settings.fontFamily || "system-ui"};
     --blogger-layout-width: ${settings.blogLayout === "centered" ? "800px" : settings.blogLayout === "narrow" ? "640px" : "100%"};
   }
@@ -1101,6 +1123,10 @@ export class EditorContentCompiler {
     margin-left: auto !important;
     margin-right: auto !important;
     font-family: var(--blogger-font-family) !important;
+    /* Not !important, deliberately: this sets the base/inherited text color without
+       overriding elements that intentionally set their own (buttons, headings with an
+       explicit color setting, etc). */
+    color: var(--blogger-text-color);
     padding-bottom: 80px !important;
     margin-bottom: 80px !important;
   }

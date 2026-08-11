@@ -45,7 +45,7 @@ import ArticlePreview from "../../components/editor/ArticlePreview";
 import SyncStatusIndicator from "../../components/SyncStatusIndicator.jsx";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 import { useBuilderStore } from "../../components/builder/store/useBuilderStore";
-import { normalizeBlocksAst } from "../../components/builder/BlockRegistry";
+import { normalizeBlocksAst, applyThemeColorDefaults, applyThemeShapeDefaults } from "../../components/builder/BlockRegistry";
 import ExcerptRichTextEditor from "../../components/editor/ExcerptRichTextEditor";
 import ShopifyRichTextEditor from "../../components/editor/ShopifyRichTextEditor";
 import ArticleComments from "../../components/comments/ArticleComments";
@@ -785,11 +785,9 @@ export default function PostEditor() {
 
 
   // Track structural edits made in either editor mode
-  const saveBarRef = useRef(null);
   const blocksById = useBuilderStore((state) => state.blocksById);
   const rootIds = useBuilderStore((state) => state.rootIds);
 
-  const isFirstRender = useRef(true);
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
   const [shopifyBlogId, setShopifyBlogId] = useState("");
@@ -860,6 +858,26 @@ export default function PostEditor() {
       .then((r) => r.json())
       .then((data) => {
         if (data.shop?.timezone) setShopTimezone(data.shop.timezone);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Point new blocks' default brand/font color at the shop's configured settings (manually
+  // set or theme-synced) instead of the static fallbacks. Already-placed blocks are untouched.
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then(({ settings }) => {
+        if (settings?.primaryColor || settings?.secondaryColor || settings?.textColor) {
+          applyThemeColorDefaults({
+            primaryColor: settings.primaryColor,
+            secondaryColor: settings.secondaryColor,
+            textColor: settings.textColor,
+          });
+        }
+        if (settings?.buttonRadius !== undefined) {
+          applyThemeShapeDefaults({ buttonRadius: settings.buttonRadius });
+        }
       })
       .catch(() => {});
   }, []);
@@ -1085,65 +1103,18 @@ export default function PostEditor() {
 
   const saveBarId = "post-editor-save-bar";
 
-  // Sync the save bar visibility with the dirty state. The first render is
-  // skipped so the bar never appears on mount / refresh — it is only shown
-  // once the user actually makes a change.
+  // <ui-save-bar> is rendered unconditionally below (Shopify's documented pattern) —
+  // shopify.saveBar.show()/hide() is the *only* thing that controls its visibility.
+  // Previously this element was also conditionally mounted on isDirty, which raced the DOM
+  // mount against the imperative API call — the actual cause of the save bar misbehaving.
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
+    if (isLoading || !window.shopify?.saveBar) return;
+    if (isDirty) {
+      window.shopify.saveBar.show(saveBarId).catch(() => { });
+    } else {
+      window.shopify.saveBar.hide(saveBarId).catch(() => { });
     }
-    if (window.shopify?.saveBar) {
-      if (isDirty) {
-        window.shopify.saveBar.show(saveBarId).catch(() => { });
-      } else {
-        window.shopify.saveBar.hide(saveBarId).catch(() => { });
-      }
-    }
-  }, [isDirty]);
-
-  // Reset the save bar once the post has finished loading. On a refresh the
-  // App Bridge may not have been ready for the very first hide() calls, so we
-  // explicitly reset after the fetch settles to guarantee it stays hidden.
-  useEffect(() => {
-    if (!isLoading) {
-      if (window.shopify?.saveBar) {
-        try {
-          window.shopify.saveBar.hide(saveBarId).catch(() => { });
-        } catch (e) {}
-      }
-    }
-  }, [isLoading]);
-
-  useEffect(() => {
-    const elem = saveBarRef.current;
-    if (!elem) return;
-
-    const onSave = () => {
-      handleSave(post.status === "published" ? "published" : "draft", "savebar");
-    };
-    const onDiscard = () => {
-      handleDiscard();
-    };
-    const onClick = (e) => {
-      const text = (e.target?.textContent || e.target?.innerText || "").toLowerCase();
-      if (text.includes("discard")) {
-        handleDiscard();
-      } else if (text.includes("save")) {
-        handleSave(post.status === "published" ? "published" : "draft", "savebar");
-      }
-    };
-
-    elem.addEventListener("save", onSave);
-    elem.addEventListener("discard", onDiscard);
-    elem.addEventListener("click", onClick);
-
-    return () => {
-      elem.removeEventListener("save", onSave);
-      elem.removeEventListener("discard", onDiscard);
-      elem.removeEventListener("click", onClick);
-    };
-  }, [isDirty, post.status]);
+  }, [isDirty, isLoading]);
 
   useEffect(() => {
     return () => {
@@ -1624,18 +1595,17 @@ export default function PostEditor() {
 
   return (
     <Frame>
-      {isDirty && (
-        <ui-save-bar id={saveBarId} ref={saveBarRef}>
-          <button
-            variant="primary"
-            onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}
-            loading={isSavingSaveBar ? "" : undefined}
-          >
-            Save
-          </button>
-          <button onClick={handleDiscard}>Discard</button>
-        </ui-save-bar>
-      )}
+      {/* Rendered unconditionally — see the effect above for why. */}
+      <ui-save-bar id={saveBarId}>
+        <button
+          variant="primary"
+          onClick={() => handleSave(post.status === "published" ? "published" : "draft", "savebar")}
+          loading={isSavingSaveBar ? "" : undefined}
+        >
+          Save
+        </button>
+        <button onClick={handleDiscard}>Discard</button>
+      </ui-save-bar>
 
       {isDirty && !window.shopify && (
         <div style={{

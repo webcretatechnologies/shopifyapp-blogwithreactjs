@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { BlockRegistry, BLOCK_CATEGORIES, createBlock, normalizeBlockType } from "./BlockRegistry";
+import { BlockRegistry, BLOCK_CATEGORIES, createBlock, normalizeBlockType, applyThemeColorDefaults, applyThemeShapeDefaults } from "./BlockRegistry";
 import { useBuilderStore } from "./store/useBuilderStore";
 import { 
   Box, 
@@ -145,7 +145,7 @@ export default function BlockPicker({ isRailMode = false }) {
   const selectedBlockId = useBuilderStore((s) => s.selectedBlockId);
   const blocksById = useBuilderStore((s) => s.blocksById);
 
-  const handleAddBlock = (type) => {
+  const handleAddBlock = async (type) => {
     let targetParentId = null;
     if (selectedBlockId && blocksById[selectedBlockId]) {
       const sel = blocksById[selectedBlockId];
@@ -160,6 +160,25 @@ export default function BlockPicker({ isRailMode = false }) {
         }
       }
     }
+
+    // Re-pull the shop's current theme-synced settings right before creating the block,
+    // rather than relying solely on the one-time fetch at page mount — settings saved in
+    // another tab/session, or a stale mount that never re-ran, would otherwise silently be
+    // missed. Fails soft: on any error, falls back to whatever defaults are already patched.
+    try {
+      const res = await fetch("/api/settings");
+      const { settings } = await res.json();
+      if (settings?.primaryColor || settings?.secondaryColor || settings?.textColor) {
+        applyThemeColorDefaults({
+          primaryColor: settings.primaryColor,
+          secondaryColor: settings.secondaryColor,
+          textColor: settings.textColor,
+        });
+      }
+      if (settings?.buttonRadius !== undefined) {
+        applyThemeShapeDefaults({ buttonRadius: settings.buttonRadius });
+      }
+    } catch {}
 
     const { defaultSettings } = BlockRegistry[type] || {};
     addBlock(type, defaultSettings || {}, targetParentId);

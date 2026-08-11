@@ -126,6 +126,7 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
       const levels = settings.levels || [2, 3];
       const listStyle = settings.listStyle || "bullet";
       const collapsible = Boolean(settings.collapsible);
+      const textColor = settings.textColor || "#202223";
 
       const allHeadings = context.allHeadings || [];
       const allowedLevels = new Set(levels.map(Number));
@@ -165,7 +166,7 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
           .map((item) => {
             const isMain = item.level === minLevel;
             const clickHandler = `var el=document.getElementById('${item.id}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});if(history.pushState){history.pushState(null,null,'#${item.id}');}return false;}`;
-            const link = `<a href="#${item.id}" onclick="${clickHandler}" style="color: #008060; text-decoration: none; font-weight: ${isMain ? '600' : '400'}; transition: color 0.15s ease;">${item.text}</a>`;
+            const link = `<a href="#${item.id}" onclick="${clickHandler}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? '600' : '400'}; transition: color 0.15s ease;">${item.text}</a>`;
             const childrenHtml = item.children && item.children.length > 0
               ? renderTocNodesHtml(item.children, false)
               : "";
@@ -214,7 +215,7 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
         .sp-toc-details summary {
           font-weight: 700;
           font-size: 16px;
-          color: #202223;
+          color: ${textColor};
           outline: none;
           cursor: pointer;
           display: flex !important;
@@ -235,7 +236,7 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
           width: 20px;
           height: 20px;
           transition: transform 0.25s ease;
-          color: #202223;
+          color: ${textColor};
         }
         .sp-toc-details[open] .toc-chevron {
           transform: rotate(180deg);
@@ -253,7 +254,7 @@ ${listContentHtml}
       }
 
       return `${styleTag}\n<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
-  <div style="font-weight: 700; font-size: 16px; color: #202223; margin-bottom: 12px;">${title}</div>
+  <div style="font-weight: 700; font-size: 16px; color: ${textColor}; margin-bottom: 12px;">${title}</div>
 ${listContentHtml}
 </div>`;
     }
@@ -400,7 +401,7 @@ ${listContentHtml}
       const align = settings.alignment || settings.align || "center";
       const color = settings.backgroundColor || settings.color || "#008060";
       const textColor = settings.textColor || "#ffffff";
-      const br = (settings.borderRadius !== undefined ? settings.borderRadius : 6) + "px";
+      const br = (settings.borderRadius !== undefined ? settings.borderRadius : 4) + "px";
       return `<div class="builder-button-block" style="text-align: ${align}; margin: 16px 0;">
         <a href="${url}" style="display: inline-block; background-color: ${color}; color: ${textColor}; padding: 12px 24px; border-radius: ${br}; font-weight: 600; text-decoration: none;">${text}</a>
       </div>`;
@@ -417,8 +418,8 @@ ${listContentHtml}
             <div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; text-align: center; background: #fff;">
               ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 180px; object-fit: contain; margin-bottom: 12px;" />` : ''}
               <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
-              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 12px;">₹${p.price}</p>` : ''}
-              ${settings.showButton !== false ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Shop Now'}</button>` : ''}
+              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 12px;">₹${p.price}</p>` : ''}
+              ${settings.showButton !== false ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: ${settings.buttonRadius ?? 5}px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Shop Now'}</button>` : ''}
             </div>
           `).join('')}
         </div>
@@ -428,15 +429,23 @@ ${listContentHtml}
     case "ProductSlider": {
       const title = settings.title || "";
       const products = settings.manualProducts || settings.products || [];
+      // Mirrors the editor preview's & server compiler's cardStyle presets (ProductSliderBlock/index.jsx),
+      // which this client compiler was previously ignoring entirely.
+      const sliderCardStyles = {
+        shadow: "border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; background: #fff;",
+        border: "border-radius: 8px; border: 1px solid #e1e3e5; overflow: hidden; background: #fff;",
+        minimal: "padding: 4px;",
+      };
+      const sliderCardStyle = sliderCardStyles[settings.cardStyle] || sliderCardStyles.shadow;
       return `<div class="builder-product-slider" style="margin: 24px 0; overflow-x: auto;">
         ${title ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: ${settings.titleAlign || 'left'};">${title}</h3>` : ''}
         <div style="display: flex; gap: ${settings.gap || '16px'}; overflow-x: auto; padding-bottom: 8px;">
           ${products.map(p => `
-            <div style="min-width: 220px; flex-shrink: 0; border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; text-align: center; background: #fff;">
+            <div style="min-width: 220px; flex-shrink: 0; ${sliderCardStyle} padding: 16px; text-align: center;">
               ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 160px; object-fit: contain; margin-bottom: 12px;" />` : ''}
               <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
-              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 12px;">₹${p.price}</p>` : ''}
-              ${settings.showButton !== false ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Add to Cart'}</button>` : ''}
+              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 12px;">₹${p.price}</p>` : ''}
+              ${settings.showButton !== false ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: ${settings.buttonRadius ?? 6}px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Add to Cart'}</button>` : ''}
             </div>
           `).join('')}
         </div>
@@ -531,6 +540,14 @@ ${listContentHtml}
       const title = settings.title || "";
       const products = settings.manualProducts || [];
       const cols = settings.columns || 3;
+      // Mirrors the editor preview's & server compiler's cardStyle presets (ProductGridBlock/index.jsx),
+      // which this client compiler was previously ignoring entirely.
+      const gridCardStyles = {
+        shadow: "border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; background: #fff;",
+        border: "border-radius: 8px; border: 1px solid #e1e3e5; overflow: hidden; background: #fff;",
+        minimal: "padding: 4px;",
+      };
+      const gridCardStyle = gridCardStyles[settings.cardStyle] || gridCardStyles.shadow;
       return `<div class="builder-product-grid" style="margin: 24px 0;">
         ${title ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: ${settings.titleAlign || 'left'};">${title}</h3>` : ''}
         <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'}; align-items: stretch;">
@@ -540,17 +557,17 @@ ${listContentHtml}
             const formattedPrice = p.price ? (String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, currency)) : "";
             const pLink = p.handle ? `/products/${p.handle}` : "#";
 
-            return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; overflow: hidden; background: #fff; display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box;">
+            return `<div style="${gridCardStyle} display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box;">
               <div>
                 <div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom: 1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; overflow: hidden;">
                   ${imageUrl ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; text-decoration:none;"><img src="${imageUrl}" alt="${p.title || ''}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>` : '<span style="font-size: 24px;">🖼</span>'}
                 </div>
                 <div style="padding: 12px;">
                   <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 4px; color: #202223;"><a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title || 'Product'}</a></h4>
-                  ${settings.showPrice !== false && formattedPrice ? `<p style="font-size: 14px; font-weight: 700; color: #008060; margin: 0 0 8px;">${formattedPrice}</p>` : ''}
+                  ${settings.showPrice !== false && formattedPrice ? `<p style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 8px;">${formattedPrice}</p>` : ''}
                 </div>
               </div>
-              ${settings.showButton !== false ? `<div style="padding: 0 12px 12px;"><a href="${pLink}" style="display: block; background: ${settings.buttonColor || '#008060'}; color: #fff; text-decoration: none; padding: 8px 12px; border-radius: 6px; font-weight: 600; text-align: center; font-size: 13px; margin-top: auto;">${settings.buttonText || 'Add to Cart'}</a></div>` : ''}
+              ${settings.showButton !== false ? `<div style="padding: 0 12px 12px;"><a href="${pLink}" style="display: block; background: ${settings.buttonColor || '#008060'}; color: #fff; text-decoration: none; padding: 8px 12px; border-radius: ${settings.buttonRadius ?? 6}px; font-weight: 600; text-align: center; font-size: 13px; margin-top: auto;">${settings.buttonText || 'Add to Cart'}</a></div>` : ''}
             </div>`;
           }).join('')}
         </div>
@@ -568,6 +585,7 @@ ${listContentHtml}
       const buttonColor = settings.buttonColor || "#008060";
       const layout = settings.layout || "vertical";
       const br = settings.borderRadius ?? 8;
+      const buttonBr = settings.buttonRadius ?? 4;
       const borderColor = settings.borderColor || "#e1e3e5";
       const bg = settings.backgroundColor || "#ffffff";
 
@@ -592,9 +610,9 @@ ${listContentHtml}
         <div style="flex: 1; padding: ${isCompact ? '0 12px' : '16px'}; display: flex; flex-direction: column; justify-content: space-between;">
           <div style="flex: 1;">
             <h4 style="margin: 0 0 8px; font-size: 16px; font-weight: 600; color: #202223;">${title}</h4>
-            ${showPrice && price ? `<p style="margin: 0 0 12px; font-weight: 700; color: #008060;">${price}</p>` : ''}
+            ${showPrice && price ? `<p style="margin: 0 0 12px; font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060);">${price}</p>` : ''}
           </div>
-          ${showButton ? `<a href="${settings.handle ? `/products/${settings.handle}` : '#'}" style="display: inline-block; background-color: ${buttonColor}; color: #ffffff; text-decoration: none; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; text-align: center; width: ${!isHorizontal && !isCompact ? '100%' : 'auto'}; box-sizing: border-box; margin-top: auto;">${buttonText}</a>` : ''}
+          ${showButton ? `<a href="${settings.handle ? `/products/${settings.handle}` : '#'}" style="display: inline-block; background-color: ${buttonColor}; color: #ffffff; text-decoration: none; border: none; padding: 8px 16px; border-radius: ${buttonBr}px; font-weight: 600; text-align: center; width: ${!isHorizontal && !isCompact ? '100%' : 'auto'}; box-sizing: border-box; margin-top: auto;">${buttonText}</a>` : ''}
         </div>
       </div>`;
     }
@@ -617,7 +635,7 @@ ${listContentHtml}
             ${settings.showBadge && settings.badge ? `<span style="display: inline-block; padding: 2px 8px; background: #ffd700; color: #202223; font-size: 11px; font-weight: 700; border-radius: 12px; margin-bottom: 8px;">${settings.badge}</span>` : ''}
             <h4 style="font-size: 15px; font-weight: 600; margin: 0 0 6px; color: #202223;"><a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title || ''}</a></h4>
             ${settings.showDescription && p.description ? `<p style="font-size: 13px; color: #6d7175; margin: 0 0 10px; line-height: 1.4;">${p.description}</p>` : ''}
-            ${settings.showPrice && formattedPrice ? `<p style="font-size: 16px; font-weight: 700; color: #008060; margin: 0 0 12px;">${formattedPrice}</p>` : ''}
+            ${settings.showPrice && formattedPrice ? `<p style="font-size: 18px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 12px;">${formattedPrice}</p>` : ''}
             <a href="${pLink}" style="display: block; width: 100%; background: ${settings.buttonColor || '#008060'}; color: #ffffff; text-decoration: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; text-align: center; box-sizing: border-box;">${settings.buttonText || 'Add to Cart'}</a>
           </div>
         </div>`;
@@ -629,7 +647,7 @@ ${listContentHtml}
           ${settings.showBadge && settings.badge ? `<span style="display: inline-block; padding: 2px 8px; background: #ffd700; color: #202223; font-size: 10px; font-weight: 700; border-radius: 12px; margin-bottom: 6px;">${settings.badge}</span>` : ''}
           <h4 style="font-size: 16px; font-weight: 600; margin: 0 0 4px; color: #202223;"><a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title || ''}</a></h4>
           ${settings.showDescription && p.description ? `<p style="font-size: 13px; color: #6d7175; margin: 0 0 8px; line-height: 1.4;">${p.description}</p>` : ''}
-          ${settings.showPrice && formattedPrice ? `<p style="font-size: 16px; font-weight: 700; color: #008060; margin: 0 0 10px;">${formattedPrice}</p>` : ''}
+          ${settings.showPrice && formattedPrice ? `<p style="font-size: 18px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 10px;">${formattedPrice}</p>` : ''}
           <a href="${pLink}" style="display: inline-block; background: ${settings.buttonColor || '#008060'}; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; text-align: center; box-sizing: border-box;">${settings.buttonText || 'Add to Cart'}</a>
         </div>
       </div>`;

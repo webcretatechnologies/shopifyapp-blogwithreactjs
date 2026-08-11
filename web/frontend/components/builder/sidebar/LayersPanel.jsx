@@ -104,7 +104,13 @@ function LayerRow({ id, depth, isCollapsed, onToggleCollapse }) {
         tabIndex={0}
         aria-selected={isSelected}
         onClick={(e) => {
-          selectBlock(id, e.ctrlKey || e.metaKey || e.shiftKey);
+          // Ctrl/Cmd/Shift-click always toggles. Plain clicks normally replace the whole
+          // selection (so clicking one layer to edit its settings is a single click) — but
+          // once 2+ blocks are already selected (a bulk-selection session, typically started
+          // via the checkboxes), a plain click on another row should extend/toggle that
+          // selection instead of silently collapsing it back down to one block.
+          const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || selectedBlockIds.length > 1;
+          selectBlock(id, isMulti);
         }}
         onKeyDown={handleKeyDown}
         style={{
