@@ -96,7 +96,6 @@ const DEFAULT_SETTINGS = {
   showPublishedDate: true,
   showRelatedPosts: true,
   relatedPostsCount: "3",
-  blogPostsPerPage: "10",
   defaultAuthor: "",
   customHeaderCode: "",
   customFooterCode: "",
@@ -537,16 +536,6 @@ export default function Settings() {
                       value={settings.blogLayout}
                       onChange={set("blogLayout")}
                       helpText="Controls the maximum content width on the storefront"
-                    />
-                    <TextField
-                      label="Posts per page"
-                      type="number"
-                      value={settings.blogPostsPerPage}
-                      onChange={set("blogPostsPerPage")}
-                      min={1}
-                      max={50}
-                      autoComplete="off"
-                      helpText="Number of articles shown per page on the blog index"
                     />
                   </SectionCard>
                 </Layout.Section>

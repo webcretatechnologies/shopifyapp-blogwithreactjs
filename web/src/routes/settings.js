@@ -113,7 +113,6 @@ router.post("/", async (req, res) => {
       "showPublishedDate",
       "showRelatedPosts",
       "relatedPostsCount",
-      "blogPostsPerPage",
       "defaultAuthor",
       "customHeaderCode",
       "customFooterCode"
