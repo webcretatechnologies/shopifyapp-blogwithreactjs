@@ -523,14 +523,16 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
         <InlineStack align="space-between" blockAlign="center" wrap={false}>
           {/* Left Controls: Sidebar toggles & Title */}
           <InlineStack gap="300" blockAlign="center" wrap={false}>
-            <Tooltip content={showLeftSidebar ? "Hide Blocks Sidebar" : "Show Blocks Sidebar"}>
-              <Button
-                variant="tertiary"
-                icon={LayoutSidebarLeftIcon}
-                onClick={() => setShowLeftSidebar(!showLeftSidebar)}
-                tone={showLeftSidebar ? "success" : undefined}
-              />
-            </Tooltip>
+            <div style={{ display: "flex", alignItems: "center", lineHeight: 0 }}>
+              <Tooltip activatorWrapper="div" content={showLeftSidebar ? "Hide Blocks Sidebar" : "Show Blocks Sidebar"}>
+                <Button
+                  variant="tertiary"
+                  icon={LayoutSidebarLeftIcon}
+                  onClick={() => setShowLeftSidebar(!showLeftSidebar)}
+                  tone={showLeftSidebar ? "success" : undefined}
+                />
+              </Tooltip>
+            </div>
 
             {isFullscreen && onTitleChange ? (
               <div style={{ width: "280px" }}>
@@ -649,14 +651,16 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
               {isFullscreen ? "Exit Fullscreen" : "Full Screen Studio"}
             </Button>
 
-            <Tooltip content={showRightSidebar ? "Hide Settings Panel" : "Show Settings Panel"}>
-              <Button
-                variant="tertiary"
-                icon={LayoutSidebarRightIcon}
-                onClick={() => setShowRightSidebar(!showRightSidebar)}
-                tone={showRightSidebar ? "success" : undefined}
-              />
-            </Tooltip>
+            <div style={{ display: "flex", alignItems: "center", lineHeight: 0 }}>
+              <Tooltip activatorWrapper="div" content={showRightSidebar ? "Hide Settings Panel" : "Show Settings Panel"}>
+                <Button
+                  variant="tertiary"
+                  icon={LayoutSidebarRightIcon}
+                  onClick={() => setShowRightSidebar(!showRightSidebar)}
+                  tone={showRightSidebar ? "success" : undefined}
+                />
+              </Tooltip>
+            </div>
           </InlineStack>
         </InlineStack>
       </Box>
