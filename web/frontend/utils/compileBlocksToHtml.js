@@ -82,7 +82,13 @@ function injectBlockIdentity(html, block) {
   let dataAttrs = ` data-type="${block.type}"`;
   
   if (block.settings) {
-    const skipKeys = ["content", "code", "tableData"];
+    // "settings" is never a legitimate field name on a block's own settings object — its
+    // presence means upstream data got corrupted (see ShopifyArticleParser._convertDataBlock's
+    // docblock for the round-trip bug that used to produce this). Skipping it here is
+    // defense-in-depth so a stray nested "settings" key can never be re-emitted as a
+    // `data-settings` attribute and re-enter the compounding loop, even if it somehow
+    // reappears in stored data before a repair runs.
+    const skipKeys = ["content", "code", "tableData", "settings"];
     for (const [key, value] of Object.entries(block.settings)) {
       if (skipKeys.includes(key)) continue;
       if (value === null || value === undefined) continue;

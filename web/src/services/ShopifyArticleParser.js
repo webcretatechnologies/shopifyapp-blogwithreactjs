@@ -8,6 +8,18 @@
  */
 import * as cheerio from "cheerio";
 
+/** A `data-settings` attribute value can itself contain further nested "settings" keys from
+ * historical corruption (see _convertDataBlock's docblock). Recursively unwrap before merging
+ * so legacy multi-layer content parses correctly, not just single-wrapped content going
+ * forward. */
+function unwrapNestedSettings(val) {
+  let current = val;
+  while (current && typeof current === "object" && !Array.isArray(current) && current.settings && typeof current.settings === "object" && !Array.isArray(current.settings)) {
+    current = current.settings;
+  }
+  return current;
+}
+
 export class ShopifyArticleParser {
   /**
    * Parse Shopify article HTML into editor blocks.
@@ -423,7 +435,18 @@ export class ShopifyArticleParser {
           val = parseFloat(val);
         }
         block.settings = block.settings || {};
-        block.settings[mappedKey] = val;
+        // A literal `data-settings` attribute IS the block's settings object, never a normal
+        // field named "settings" — merge its own fields directly instead of nesting it under
+        // a "settings" key. Without this, a round trip (sync -> Shopify echo -> reconcile)
+        // wraps the real settings in an extra layer every single time, compounding forever
+        // and eventually burying real data (e.g. a Product Slider's product list) so deep the
+        // renderer can no longer find it. (Legacy content already affected by this needs a
+        // one-time repair; this only stops it from happening again.)
+        if (mappedKey === "settings" && val && typeof val === "object" && !Array.isArray(val)) {
+          Object.assign(block.settings, unwrapNestedSettings(val));
+        } else {
+          block.settings[mappedKey] = val;
+        }
       }
     });
 
@@ -498,7 +521,21 @@ export class ShopifyArticleParser {
   }
 
   /**
-   * Convert a single app block back to its div[data-type] wrapper HTML.
+   * Convert a single app block back to its div[data-type] wrapper HTML. Mirrors
+   * `injectBlockIdentity()` in the frontend's compileBlocksToHtml.js: flattens the block's own
+   * `settings` fields into individual `data-<kebab-key>` attributes, one per field.
+   *
+   * This function previously JSON-stringified the ENTIRE `settings` object into a single
+   * `data-settings="{...}"` attribute instead of flattening it — since `settings` was iterated
+   * as just another top-level key on `block` alongside `id`/`type`/`children`, not recognized
+   * as the object whose OWN fields need serializing. That produced two compounding bugs on
+   * every echo/reconcile cycle that ran this function: (1) the real settings got buried one
+   * layer deeper each time content round-tripped through here (a `data-settings` attribute
+   * parses back as a single nested key, not flat fields — see EditorContentCompiler.compile()
+   * and _convertDataBlock's own unwrapping fixes for the corresponding parse-side half of this),
+   * and (2) leaf content blocks (Heading/RichText/Image/...) had no matching case in this
+   * function's siblings, so they always fell into this generic path and rendered as an empty
+   * self-closing `<div></div>` with no visible content at all.
    */
   static _blockToDataHtml(block) {
     const REVERSE_TYPE_MAP = {
@@ -536,22 +573,39 @@ export class ShopifyArticleParser {
     const dataType = REVERSE_TYPE_MAP[block.type] || block.type;
     let attrs = `data-type="${dataType}"`;
 
-    const skipKeys = ["id", "type"];
-    for (const [key, value] of Object.entries(block)) {
+    const settings = (block.settings && typeof block.settings === "object" && !Array.isArray(block.settings))
+      ? block.settings
+      : {};
+    const skipKeys = ["content", "code", "tableData", "settings"];
+    for (const [key, value] of Object.entries(settings)) {
       if (skipKeys.includes(key)) continue;
-      const attrName = REVERSE_ATTR_MAP[key] || key;
+      if (value === null || value === undefined) continue;
+      const attrName = REVERSE_ATTR_MAP[key] || key.replace(/([A-Z])/g, "-$1").toLowerCase();
       let val = value;
       if (typeof val === "boolean") {
         val = val ? "true" : "false";
       } else if (typeof val === "object") {
         try { val = JSON.stringify(val); } catch (e) { continue; }
       }
-      if (val !== undefined && val !== null) {
-        attrs += ` data-${attrName}="${String(val).replace(/"/g, "&quot;")}"`;
-      }
+      attrs += ` data-${attrName}="${String(val).replace(/"/g, "&quot;")}"`;
+    }
+    // content/code/tableData are large/free-form — keep as data-* too (matches
+    // injectBlockIdentity's own skipKeys carve-out of the SAME three fields, which stores
+    // them as regular attributes rather than excluding them outright), so RichText/Html/
+    // Table blocks still round-trip their actual content.
+    for (const key of ["content", "code", "tableData"]) {
+      const val = settings[key];
+      if (val === null || val === undefined || val === "") continue;
+      const attrName = key.replace(/([A-Z])/g, "-$1").toLowerCase();
+      const serialized = typeof val === "object" ? JSON.stringify(val) : String(val);
+      attrs += ` data-${attrName}="${serialized.replace(/"/g, "&quot;")}"`;
     }
 
-    return `<div ${attrs}></div>`;
+    const innerHtml = Array.isArray(block.children) && block.children.length > 0
+      ? this._blocksToRawHtml(block.children)
+      : "";
+
+    return `<div ${attrs}>${innerHtml}</div>`;
   }
 
   static _parseFallbackSettings($el, blockType, $) {

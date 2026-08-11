@@ -70,6 +70,12 @@ export default defineConfig({
       "^/admin-api(/|(\\?.*)?$)": proxyOptions,
       "^/uploads(/|(\\?.*)?$)": proxyOptions,
       "^/chat-socket(/|(\\?.*)?$)": { ...proxyOptions, ws: true },
+      // Public, storefront-facing routes mounted directly on Express (before Shopify auth) —
+      // without these, Vite's dev server swallows them and returns the app shell instead of
+      // proxying to Express, since they don't match any of the prefixes above. Production has
+      // no separate Vite process, so this gap is dev-only.
+      "^/styles\\.css(/|(\\?.*)?$)": proxyOptions,
+      "^/track(/|(\\?.*)?$)": proxyOptions,
     },
   },
 });

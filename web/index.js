@@ -105,6 +105,7 @@ import wizardRoutes from "./src/routes/wizard.js";
 import supportRoutes from "./src/routes/support.js";
 import superAdminRoutes from "./src/routes/superAdmin.js";
 import trackingRoutes from "./src/routes/tracking.js";
+import publicStylesRoutes from "./src/routes/publicStyles.js";
 import patternRoutes from "./src/routes/patterns.js";
 
 // Process-level event handlers to prevent crashes from unhandled network errors
@@ -176,6 +177,9 @@ import proxyRoutes from "./src/routes/proxy.js";
 
 // ─── Public Tracking Routes (BEFORE Shopify auth — no session needed) ──────
 app.use("/track", trackingRoutes);
+
+// ─── Public Global Styles Route (BEFORE Shopify auth — storefront-loaded CSS) ──
+app.use("/styles.css", publicStylesRoutes);
 
 // ─── App Proxy Routes (Validated via Shopify Signature) ──────────────────────
 app.use("/api/proxy", proxyRoutes);

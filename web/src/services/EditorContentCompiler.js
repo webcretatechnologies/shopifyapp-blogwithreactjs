@@ -3,6 +3,28 @@ import shopify, { prisma } from "../../shopify.js";
 import { formatPrice } from "../utils/priceUtils.js";
 import ThemeStyleService from "./ThemeStyleService.js";
 
+// The app's own public base URL — HOST already includes the protocol (e.g.
+// "https://xxx.trycloudflare.com" in dev, the real production domain in prod). This is the
+// actual configured variable (confirmed via .env and vite.config.js); ArticleSyncService.js's
+// tracking-pixel injection checks APP_URL/SHOPIFY_APP_HOST instead, which aren't set in this
+// environment and silently fall back to "https://localhost:3000" — unreachable from a real
+// storefront visitor's browser. Not fixed here since it's a separate, pre-existing bug in a
+// different feature (view tracking), out of scope for this change.
+const APP_URL = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
+
+/** A `data-settings` attribute value can itself contain further nested "settings" keys from
+ * historical corruption (each sync/echo/reconcile round trip used to add another wrapper layer
+ * before this was fixed — see the docblock at the compile() call site). Recursively unwrap
+ * before merging so legacy multi-layer content compiles correctly, not just single-wrapped
+ * content going forward. */
+function unwrapNestedSettings(val) {
+  let current = val;
+  while (current && typeof current === "object" && !Array.isArray(current) && current.settings && typeof current.settings === "object" && !Array.isArray(current.settings)) {
+    current = current.settings;
+  }
+  return current;
+}
+
 // In-memory cache for store currency (per compile run)
 let _storeCurrency = null;
 
@@ -193,7 +215,17 @@ export class EditorContentCompiler {
               // keep as string
             }
           }
-          attrs[mappedKey] = val;
+          // A literal `data-settings` attribute IS the block's settings object, never a
+          // normal field named "settings" — merge its own fields directly instead of nesting
+          // it under a "settings" key. Same fix as ShopifyArticleParser._convertDataBlock;
+          // without it, this function would re-introduce the nested-settings corruption bug
+          // even after that parser-side fix, since this is a second, independent place that
+          // reads the exact same data-* attributes.
+          if (mappedKey === "settings" && val && typeof val === "object" && !Array.isArray(val)) {
+            Object.assign(attrs, unwrapNestedSettings(val));
+          } else {
+            attrs[mappedKey] = val;
+          }
         }
       }
 
@@ -214,10 +246,31 @@ export class EditorContentCompiler {
           // DividerExtension. Keep it for backward compatibility with old
           // articles; don't assume it's exercised by newly inserted dividers.
           case "dividerBlock":
+          case "Divider":
             compiledHtml = this.renderDivider(attrs);
             break;
           case "spacerBlock":
+          case "Spacer":
             compiledHtml = this.renderSpacer(attrs);
+            break;
+          // Heading/RichText/plain Image/Callout/Table have no case here historically —
+          // any content compiled through this path (e.g. contentHtml reconstructed by
+          // ShopifyArticleParser._blockToDataHtml during a webhook echo/reconcile cycle)
+          // silently fell to `default: leave untouched`, meaning these divs never became
+          // real visible HTML — a post's headings/paragraphs/images could go invisible on
+          // the storefront with no error anywhere. Added to match compileBlocksToHtml.js's
+          // (the primary, client-side compiler's) rendering exactly.
+          case "Heading":
+            compiledHtml = this.renderHeading(attrs);
+            break;
+          case "RichText":
+            compiledHtml = this.renderRichText(attrs);
+            break;
+          case "Callout":
+            compiledHtml = this.renderCalloutBlock(attrs);
+            break;
+          case "Table":
+            compiledHtml = this.renderTableBlock(attrs);
             break;
           case "videoBlock":
           case "VideoBlock":
@@ -262,6 +315,7 @@ export class EditorContentCompiler {
           // real rich-text caption, which this function has no access to).
           case "imageBlock":
           case "ImageBlock":
+          case "Image":
             compiledHtml = this.renderImage(attrs);
             break;
           case "productCard":
@@ -331,6 +385,76 @@ export class EditorContentCompiler {
   static renderSpacer(attrs) {
     const height = attrs.height || "40px";
     return `<div style="height: ${height};"></div>`;
+  }
+
+  // Mirrors compileBlocksToHtml.js's "Heading" case for visual consistency between the two
+  // compilers.
+  static renderHeading(attrs) {
+    const level = attrs.level || 2;
+    const align = attrs.align || "left";
+    const color = attrs.color || "#202223";
+    const text = attrs.text || "";
+    const fontSize = attrs.fontSize ? `font-size: ${attrs.fontSize};` : "";
+    return `<h${level} class="builder-heading-block" style="text-align: ${align}; color: ${color}; ${fontSize} margin: 16px 0 8px;">${text}</h${level}>`;
+  }
+
+  // Mirrors compileBlocksToHtml.js's "RichText" case. That version also supports a Tiptap
+  // JSON document via @tiptap/html's generateHTML() — not reproduced here since every RichText
+  // block seen through this path (data-* attributes reconstructed from stored HTML) carries
+  // its content as an already-serialized HTML string, never a JSON doc object. If that ever
+  // changes, this needs the same generateHTML() call compileBlocksToHtml.js makes.
+  static renderRichText(attrs) {
+    const content = attrs.content;
+    if (!content || typeof content !== "string") return "";
+    const cleanText = content.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
+    const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(content);
+    if (!cleanText && !containsMedia) return "";
+    return `<div class="builder-richtext-wrapper">${content}</div>`;
+  }
+
+  // Mirrors compileBlocksToHtml.js's "Callout" case.
+  static renderCalloutBlock(attrs) {
+    const bg = attrs.backgroundColor || "#fdfbc8";
+    const border = attrs.borderColor || "#eab308";
+    const emoji = attrs.emoji || "💡";
+    const title = attrs.title || "";
+    const body = attrs.body || "";
+    return `<div class="builder-callout" style="background-color: ${bg}; border-left: 4px solid ${border}; padding: 16px; border-radius: 6px; display: flex; gap: 12px; align-items: center; margin: 16px 0;">
+      <span style="font-size: 24px;">${emoji}</span>
+      <div>
+        <strong style="display: block; margin-bottom: 4px; color: #202223;">${title}</strong>
+        <span style="color: #4a4a4a;">${body}</span>
+      </div>
+    </div>`;
+  }
+
+  // Mirrors compileBlocksToHtml.js's "Table" case.
+  static renderTableBlock(attrs) {
+    const data = Array.isArray(attrs.tableData) ? attrs.tableData : [];
+    const hasHeader = attrs.hasHeader;
+
+    let theadRows = [];
+    let tbodyRows = [];
+    if (data.length > 0) {
+      if (hasHeader) {
+        theadRows = [data[0]];
+        tbodyRows = data.slice(1);
+      } else {
+        tbodyRows = data;
+      }
+    }
+
+    const theadHtml = theadRows.length > 0
+      ? `<thead>${theadRows.map((row) => `<tr>${row.map((cell) => `<th style="border: 1px solid #e1e3e5; padding: 8px; background: #f4f6f8; font-weight: 600;">${cell || ""}</th>`).join("")}</tr>`).join("")}</thead>`
+      : "";
+    const tbodyHtml = `<tbody>${tbodyRows.map((row) => `<tr>${row.map((cell) => `<td style="border: 1px solid #e1e3e5; padding: 8px;">${cell || ""}</td>`).join("")}</tr>`).join("")}</tbody>`;
+
+    return `<div class="builder-table-block" style="margin: 16px 0; overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; border: 1px solid #e1e3e5; text-align: left;">
+        ${theadHtml}
+        ${tbodyHtml}
+      </table>
+    </div>`;
   }
 
   static renderVideo(attrs) {
@@ -1129,7 +1253,26 @@ export class EditorContentCompiler {
   static generateStyles(settings) {
     return `${buildGoogleFontsLinkTag(settings.fontFamily)}
 <style id="blogger-custom-styles">
-  :root {
+${this.generateGlobalCss(settings)}
+</style>
+`;
+  }
+
+  /**
+   * Raw CSS (no <style> wrapper) for the shop's blog appearance settings. Colors and font are
+   * ALWAYS baked in here at sync time — scoped decision: only layout width (§ below) is a live,
+   * site-wide setting; colors apply to newly-created blocks via BlockRegistry's theme-color
+   * sync (see applyThemeColorDefaults in BlockRegistry.jsx), and font is fetched live from the
+   * theme at each sync (see compileForStorefront), but neither is part of the shared
+   * `/styles.css` link — this function's output is complete and self-contained per article.
+   *
+   * `max-width` is the one exception: it's deliberately non-`!important` here so it can never
+   * fight the live layout stylesheet (`generateLayoutCss`) once an article links to it — equal
+   * specificity + !important always beats non-!important regardless of DOM order, so the live
+   * link silently wins over this stale snapshot with no conflict, no flash of wrong width.
+   */
+  static generateGlobalCss(settings) {
+    return `  :root {
     --blogger-primary-color: ${settings.primaryColor || "#008060"};
     --blogger-secondary-color: ${settings.secondaryColor || "#005bd3"};
     --blogger-text-color: ${settings.textColor || "#202223"};
@@ -1138,7 +1281,7 @@ export class EditorContentCompiler {
   }
 
   .blogger-article-container {
-    max-width: var(--blogger-layout-width) !important;
+    max-width: var(--blogger-layout-width);
     margin-left: auto !important;
     margin-right: auto !important;
     font-family: var(--blogger-font-family) !important;
@@ -1287,10 +1430,28 @@ export class EditorContentCompiler {
     .blogger-article-container .blogger-product-grid {
       grid-template-columns: 1fr !important;
     }
+  }`;
   }
 
-</style>
-`;
+  /**
+   * Raw CSS for JUST the blog article layout width — the one appearance setting that's live
+   * and site-wide (served from the public `/styles.css` endpoint, linked from every
+   * newly-synced article). Deliberately narrow in scope: colors and font are intentionally
+   * NOT part of this shared stylesheet (see generateGlobalCss's docblock for why), so this
+   * only ever needs `settings.blogLayout`.
+   */
+  static generateLayoutCss(settings, { important = true } = {}) {
+    const bang = important ? " !important" : "";
+    const layoutWidth = settings.blogLayout === "centered" ? "800px" : settings.blogLayout === "narrow" ? "640px" : "100%";
+    return `  :root {
+    --blogger-layout-width: ${layoutWidth};
+  }
+
+  .blogger-article-container {
+    max-width: var(--blogger-layout-width)${bang};
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }`;
   }
 
   static renderFaqBlock(attrs) {
@@ -1421,9 +1582,28 @@ export class EditorContentCompiler {
       fontFamily: liveFontFamily ? `'${liveFontFamily}', sans-serif` : "system-ui",
     };
 
-    const styles = this.generateStyles(settings);
+    // Colors and font are baked in here at sync time (always current as of this sync — colors
+    // via the shop's saved settings, font via the live theme fetch above). Only the layout
+    // width inside generateGlobalCss() is deliberately "soft", so it never fights the live
+    // layout stylesheet below once that's present.
+    const fallbackStyles = `${buildGoogleFontsLinkTag(settings.fontFamily)}
+<style id="blogger-custom-styles">
+${this.generateGlobalCss(settings)}
+</style>
+`;
+
+    // Live layout-width stylesheet link — the fix for "changing Blog Article Layout should
+    // apply everywhere instantly, not just to posts that get individually re-synced." Any
+    // future layout-width change is picked up by this article on its very next storefront page
+    // view, forever, with zero further action on this specific post. Silently overrides the
+    // fallback above via the CSS !important tie-break, not by replacing/removing it. Colors and
+    // font are intentionally NOT part of this shared link — see generateGlobalCss()'s docblock.
+    const liveStylesLink = domain
+      ? `<link rel="stylesheet" href="${APP_URL}/styles.css?shop=${encodeURIComponent(domain)}">`
+      : "";
+
     const headerCode = settings.customHeaderCode ? `\n${settings.customHeaderCode}\n` : "";
     const footerCode = settings.customFooterCode ? `\n${settings.customFooterCode}\n` : "";
-    return `${styles}${headerCode}\n<div class="blogger-article-container">\n${compiled}\n</div>${footerCode}`;
+    return `${fallbackStyles}${liveStylesLink}${headerCode}\n<div class="blogger-article-container">\n${compiled}\n</div>${footerCode}`;
   }
 }
