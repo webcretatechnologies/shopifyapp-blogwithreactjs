@@ -159,7 +159,7 @@ export class ShopifyArticleParser {
           currentBlocksArray.push({
             id: this._generateId(),
             type: "Image",
-            settings: { src, alt: $el.attr("alt") || "", width: "100%", alignment: "center" },
+            settings: { src, alt: $el.attr("alt") || "", width: this._extractImageWidth($el), alignment: "center" },
           });
         }
         return;
@@ -176,7 +176,7 @@ export class ShopifyArticleParser {
               src: $img.attr("src"),
               alt: $img.attr("alt") || "",
               caption: $caption.text()?.trim() || "",
-              width: "100%",
+              width: this._extractImageWidth($img),
               alignment: "center",
             },
           });
@@ -259,13 +259,16 @@ export class ShopifyArticleParser {
     const $container = $("body").length > 0 ? $("body") : $.root();
     $container.contents().each((_, el) => processNode(el, blocks));
 
-    // If no blocks were found, create a single text block
+    // If no blocks were found, create a single empty RichText block — the current builder
+    // schema ({ type, settings: {...} }), not the old pre-builder legacy shape
+    // ({ type: "text", data, isHtml }) this used to emit. That legacy shape isn't renderable by
+    // the current builder, and callers like import.js's own "no blocks" fallback couldn't catch
+    // it either, since blocks.length was 1 (just the wrong shape), not 0.
     if (blocks.length === 0) {
       blocks.push({
         id: this._generateId(),
-        type: "text",
-        data: "",
-        isHtml: true,
+        type: "RichText",
+        settings: { content: "" },
       });
     }
 
@@ -512,34 +515,9 @@ export class ShopifyArticleParser {
 
     let html = "";
     for (const block of blocks) {
-      switch (block.type) {
-        case "text":
-          html += block.data || "";
-          break;
-        case "heading":
-          html += `<h${block.level || 2}>${block.data || ""}</h${block.level || 2}>`;
-          break;
-        case "image":
-          html += `<img src="${block.url || block.src || ""}" alt="${block.alt || ""}" />`;
-          break;
-        case "divider":
-          html += "<hr />";
-          break;
-        case "spacer":
-          html += `<div style="height: ${block.height || "40px"}"></div>`;
-          break;
-        case "list":
-          if (block.listType === "ol") {
-            html += "<ol>" + (block.items || []).map((i) => `<li>${i}</li>`).join("") + "</ol>";
-          } else {
-            html += "<ul>" + (block.items || []).map((i) => `<li>${i}</li>`).join("") + "</ul>";
-          }
-          break;
-        default:
-          // For custom app blocks, reconstruct as div[data-type] wrappers
-          html += this._blockToDataHtml(block);
-          break;
-      }
+      // Every block this parser produces uses the current builder schema (capitalized types,
+      // e.g. "RichText"/"Heading"/"Image") — reconstruct as div[data-type] wrappers.
+      html += this._blockToDataHtml(block);
     }
     return html;
   }
@@ -871,5 +849,33 @@ export class ShopifyArticleParser {
 
   static _generateId() {
     return `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Reads an <img>'s actual rendered size from the source HTML (inline style width, then the
+   * width HTML attribute, then a parent wrapper's width style) instead of assuming full width.
+   * Without this, an image the merchant deliberately sized small in Shopify's native editor
+   * (via its own resize handles, which write a `width` attribute or inline style) gets imported
+   * as a full-width Image block — visually "the image became huge" even though nothing about
+   * the image itself changed, only its display size was dropped during parsing.
+   */
+  static _extractImageWidth($el) {
+    const style = $el.attr("style") || "";
+    const styleMatch = style.match(/(?:^|;)\s*width\s*:\s*([^;]+)/i);
+    if (styleMatch) return styleMatch[1].trim();
+
+    const widthAttr = $el.attr("width");
+    if (widthAttr && /^\d+(\.\d+)?$/.test(widthAttr.trim())) {
+      return `${widthAttr.trim()}px`;
+    }
+
+    const $parent = $el.parent();
+    if ($parent.length) {
+      const parentStyle = $parent.attr("style") || "";
+      const parentMatch = parentStyle.match(/(?:^|;)\s*width\s*:\s*([^;]+)/i);
+      if (parentMatch) return parentMatch[1].trim();
+    }
+
+    return "100%";
   }
 }

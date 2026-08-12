@@ -1,7 +1,6 @@
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import shopify from "../../shopify.js";
-import * as cheerio from "cheerio";
 import { getArticleLimit } from "../services/PlanFeatureService.js";
 import { ArticleSyncService } from "../services/ArticleSyncService.js";
 import { ShopifyArticleParser } from "../services/ShopifyArticleParser.js";
@@ -42,7 +41,7 @@ router.get("/blogs", async (req, res) => {
           nodes { id title handle }
         }
       }
-    `, { variables: { first: 50 } });
+    `, { variables: { first: 250 } });
     const blogs = result.data?.blogs?.nodes || [];
 
     res.json({
@@ -67,27 +66,49 @@ router.get("/articles", async (req, res) => {
     const { blog_id } = req.query;
     if (!blog_id) return res.status(400).json({ error: "blog_id is required" });
 
+    // Follows pageInfo.hasNextPage/endCursor rather than a single first:250 call — a single page
+    // was silently truncating any blog with more than 250 articles. Same cursor-loop pattern
+    // already used in sitemapIndex.js's fetchPublishedArticles. Bounded by a safety cap so a
+    // pathological shop can't cause a runaway loop.
     const client = new shopify.api.clients.Graphql({ session });
-    const result = await client.request(`
-      query GetBlogArticles($id: ID!, $first: Int!) {
-        blog(id: $id) {
-          articles(first: $first) {
-            nodes {
-              id
-              title
-              author { name }
-              isPublished
-              publishedAt
+    const rawArticles = [];
+    let cursor = null;
+    let hasNextPage = true;
+    const SAFETY_CAP = 2000;
+
+    while (hasNextPage && rawArticles.length < SAFETY_CAP) {
+      const result = await client.request(`
+        query GetBlogArticles($id: ID!, $first: Int!, $after: String) {
+          blog(id: $id) {
+            articles(first: $first, after: $after) {
+              nodes {
+                id
+                title
+                author { name }
+                isPublished
+                publishedAt
+                image { url altText }
+              }
+              pageInfo { hasNextPage endCursor }
             }
           }
         }
-      }
-    `, { variables: { id: ArticleSyncService.toBlogGid(blog_id), first: 250 } });
-    const articles = (result.data?.blog?.articles?.nodes || []).map((a) => ({
+      `, { variables: { id: ArticleSyncService.toBlogGid(blog_id), first: 250, after: cursor } });
+
+      const connection = result.data?.blog?.articles;
+      if (!connection) break;
+      rawArticles.push(...connection.nodes);
+      hasNextPage = connection.pageInfo?.hasNextPage;
+      cursor = connection.pageInfo?.endCursor;
+    }
+
+    const articles = rawArticles.map((a) => ({
       id: ArticleSyncService.numericIdFromGid(a.id),
       title: a.title,
       author: a.author?.name || "",
       published_at: a.isPublished ? a.publishedAt : null,
+      image: a.image?.url || null,
+      image_alt: a.image?.altText || "",
     }));
 
     // Check which ones are already imported
@@ -119,7 +140,24 @@ router.post("/execute", async (req, res) => {
     const { blog_id, article_id } = req.body;
     if (!blog_id || !article_id) return res.status(400).json({ error: "blog_id and article_id required" });
 
-    // Enforce Plan Limits
+    // ── Guard against duplicate import ─────────────────────────────────────────
+    // The UI already disables the button for already-imported articles, but that's
+    // client-side only — bypassable by a double-click race or a direct API call. Without this,
+    // two local posts could both end up linked to the same Shopify article (now also prevented
+    // at the DB level by ShopifyArticle.shopifyArticleId's unique constraint, but checking here
+    // first gives a clean, actionable error instead of a raw constraint-violation 500).
+    const existingLink = await prisma.shopifyArticle.findUnique({
+      where: { shopifyArticleId: String(article_id) },
+      select: { postId: true },
+    });
+    if (existingLink) {
+      return res.status(409).json({
+        error: "This article has already been imported.",
+        post_id: existingLink.postId,
+      });
+    }
+
+    // ── Enforce Plan Limits ────────────────────────────────────────────────────
     const limit = getArticleLimit(shop.planKey);
     if (limit !== null) {
       const count = await prisma.post.count({ where: { shopId: shop.id } });
@@ -128,179 +166,117 @@ router.post("/execute", async (req, res) => {
       }
     }
 
-    // Fetch from Shopify
+    // ── Fetch article from Shopify ─────────────────────────────────────────────
     const client = new shopify.api.clients.Graphql({ session });
     const shopifyArticle = await ArticleSyncService.fetchArticleByGid(client, article_id);
-    if (!shopifyArticle) return res.status(404).json({ error: "Article not found on Shopify" });
-
-    // Parse HTML to JSON blocks
-    const html = shopifyArticle.body_html || "";
-    let blocks = [];
-
-    if (html) {
-      const $ = cheerio.load(html);
-      
-      const extractBlocks = (element) => {
-        const name = element.tagName;
-        const $el = $(element);
-
-        // Custom App block data
-        if ($el.attr("data-blog-app-block") !== undefined) {
-          try {
-            const dataStr = $el.attr("data-blog-app-data");
-            const parsed = JSON.parse(dataStr);
-            if (parsed) {
-              parsed.id = Date.now().toString(36) + Math.random().toString(36).substr(2);
-              blocks.push(parsed);
-              return;
-            }
-          } catch(e) { }
-        }
-
-        if (["h1", "h2", "h3", "h4", "h5", "h6"].includes(name)) {
-          blocks.push({
-            id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-            type: "heading",
-            level: parseInt(name.substring(1)),
-            data: $el.text().trim(),
-          });
-        } else if (name === "p") {
-          const text = $el.html()?.trim();
-          if (text) {
-            blocks.push({
-              id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-              type: "text",
-              data: text,
-              isHtml: true,
-            });
-          }
-        } else if (name === "ul" || name === "ol") {
-          const items = [];
-          $el.children("li").each((_, li) => {
-            const txt = $(li).html()?.trim();
-            if (txt) items.push(txt);
-          });
-          if (items.length) {
-            blocks.push({
-              id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-              type: "list",
-              listType: name,
-              items,
-            });
-          }
-        } else if (name === "img") {
-          const src = $el.attr("src");
-          if (src) {
-            blocks.push({
-              id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-              type: "image",
-              url: src,
-              alt: $el.attr("alt") || "",
-              data: "",
-            });
-          }
-        } else if (name === "hr") {
-          blocks.push({
-            id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-            type: "divider",
-            data: "",
-          });
-        } else if (name === "table") {
-           const headers = [];
-           const rows = [];
-           $el.find("thead th, thead td").each((_, th) => headers.push($(th).text().trim()));
-           $el.find("tbody tr, tr").each((_, tr) => {
-             const row = [];
-             $(tr).find("td, th").each((_, td) => {
-               if ($(td).closest("thead").length === 0) {
-                 row.push($(td).text().trim());
-               }
-             });
-             if (row.length) rows.push(row);
-           });
-           if (headers.length || rows.length) {
-             blocks.push({
-               id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-               type: "table",
-               headers,
-               rows,
-             });
-           }
-        } else if (name === "div" || name === "span" || name === "section") {
-           // Recursively check children
-           $el.children().each((_, child) => extractBlocks(child));
-        }
-      };
-
-      $("body").children().each((_, el) => extractBlocks(el));
+    if (!shopifyArticle) {
+      return res.status(404).json({ error: "Article not found on Shopify" });
     }
 
-    if (blocks.length === 0) {
-      blocks = [{ id: Date.now().toString(36), type: "text", data: "" }];
-    }
+    // ── Parse HTML → new builder block schema FIRST ────────────────────────────
+    // ShopifyArticleParser converts Shopify body_html into the structured block format
+    // used by the drag & drop builder ({ type: "Heading", settings: { text, level } } etc.)
+    // This MUST happen before post creation so contentJson/contentHtml are correct.
+    // The old hand-rolled extractBlocks produced an incompatible legacy schema
+    // ({ type: "heading", data: "..." }) that the builder cannot render.
+    const parsed = ShopifyArticleParser.parse(shopifyArticle.body_html || "");
+    const contentJson = parsed.blocks.length > 0
+      ? parsed.blocks
+      : [{ id: `block_${Date.now()}_init`, type: "RichText", settings: { content: "" } }];
+    // rawEditorHtml is the cleaned, stripped editor-format HTML (no analytics pixels,
+    // no app wrappers). Using the raw Shopify body_html as contentHtml would pollute
+    // the editor with injected tracking scripts and custom section wrappers.
+    const contentHtml = parsed.rawEditorHtml || shopifyArticle.body_html || "";
 
+    // ── Preserve the article's existing URL ────────────────────────────────────
+    // pushPostToShopify pushes `handle: post.slug` on every sync (see ArticleSyncService.js's
+    // toArticleGraphQLInput) — always minting a fresh slug here would silently change an
+    // already-published, already-indexed article's live URL the very next time it syncs,
+    // breaking backlinks/bookmarks/SEO for content that worked fine before being imported. Only
+    // fall back to a generated slug if this shop somehow already has a post using that handle
+    // (rare — Shopify handles are already unique per shop) or the article has no handle at all.
+    let slug = shopifyArticle.handle || "";
+    if (slug) {
+      const existing = await prisma.post.findFirst({ where: { shopId: shop.id, slug } });
+      if (existing) slug = "";
+    }
+    if (!slug) slug = generateSlug(shopifyArticle.title);
+
+    // ── Create the post record ─────────────────────────────────────────────────
     const postData = {
       shopId: shop.id,
       title: shopifyArticle.title,
-      slug: generateSlug(shopifyArticle.title),
-      contentJson: blocks,
-      contentHtml: shopifyArticle.body_html || "",
+      slug,
+      contentJson,
+      contentHtml,
       status: shopifyArticle.published_at ? "published" : "draft",
       publishedAt: shopifyArticle.published_at ? new Date(shopifyArticle.published_at) : null,
+      // image.src is already normalized by articleFromGraphQL (maps url → src)
       featuredImage: shopifyArticle.image?.src || null,
       author: shopifyArticle.author || null,
+      metaTitle: shopifyArticle.meta_title || null,
+      metaDescription: shopifyArticle.meta_description || null,
       productSliderPosition: "none",
     };
 
     const post = await prisma.post.create({ data: postData });
 
-    // Process Tags
+    // ── Process Tags ───────────────────────────────────────────────────────────
     if (shopifyArticle.tags) {
-       const tagNames = shopifyArticle.tags.split(",").map(t => t.trim()).filter(Boolean);
-       for (const tagName of tagNames) {
-          const slug = tagName.toLowerCase().replace(/\s+/g, "-");
-          const tagRec = await prisma.tag.upsert({
-            where: { shopId_slug: { shopId: shop.id, slug } },
-            create: { shopId: shop.id, name: tagName, slug },
-            update: {},
-          });
-          await prisma.postTag.create({ data: { postId: post.id, tagId: tagRec.id } });
-       }
+      const tagNames = shopifyArticle.tags.split(",").map((t) => t.trim()).filter(Boolean);
+      for (const tagName of tagNames) {
+        const slug = tagName.toLowerCase().replace(/\s+/g, "-");
+        const tagRec = await prisma.tag.upsert({
+          where: { shopId_slug: { shopId: shop.id, slug } },
+          create: { shopId: shop.id, name: tagName, slug },
+          update: {},
+        });
+        await prisma.postTag.create({ data: { postId: post.id, tagId: tagRec.id } });
+      }
     }
 
-    // Parse the body HTML into editor blocks using the ShopifyArticleParser
-    const parsed = ShopifyArticleParser.parse(shopifyArticle.body_html || "");
-
-    // Build normalized remote state and initial baseline for proper 2-way sync
+    // ── Build sync baseline ────────────────────────────────────────────────────
+    // normalizeRemoteState + buildBaselineSnapshot record what Shopify currently
+    // looks like so future reconcile runs can detect which side changed.
     const remoteState = ArticleSyncService.normalizeRemoteState(shopifyArticle);
-    remoteState.content.editorHtml = parsed.rawEditorHtml || shopifyArticle.body_html || "";
-    remoteState.content.contentJson = parsed.blocks;
+    // Augment remote state with the parsed editor representation so the baseline
+    // stores both the raw Shopify HTML (storefrontHtml) and the builder's HTML.
+    remoteState.content.editorHtml = contentHtml;
+    remoteState.content.contentJson = contentJson;
 
     const initialBaseline = ArticleSyncService.buildBaselineSnapshot(
       remoteState,
       shopifyArticle.body_html || "",
-      1
+      1,
     );
 
-    // Link to ShopifyArticle with proper sync tracking
+    // ── Link to ShopifyArticle ─────────────────────────────────────────────────
     await prisma.shopifyArticle.create({
       data: {
         postId: post.id,
         shopifyArticleId: String(shopifyArticle.id),
+        // Store as bare numeric string — ArticleSyncService.pushPostToShopify
+        // wraps this in toBlogGid() before any Shopify GraphQL calls.
         shopifyBlogId: String(blog_id),
         status: post.status,
         syncedAt: new Date(),
         syncState: "in_sync",
-        syncMode: "external_html",
+        // "managed" = app is source-of-truth. After import the merchant edits
+        // in the builder, so the builder's blocks must win over Shopify's raw HTML.
+        // "external_html" would treat Shopify as canonical and suppress local edits.
+        syncMode: "managed",
         lastSyncDirection: "shopify_to_app",
         lastInboundHash: ArticleSyncService.computeContentHash(shopifyArticle),
-        lastRemoteUpdatedAt: shopifyArticle.updated_at ? new Date(shopifyArticle.updated_at) : null,
+        lastRemoteUpdatedAt: shopifyArticle.updated_at
+          ? new Date(shopifyArticle.updated_at)
+          : null,
         structureDegraded: parsed.structureDegraded,
         syncRevision: 1,
         lastSyncedSnapshot: initialBaseline,
-      }
+      },
     });
 
+    // ── Log the import event ───────────────────────────────────────────────────
     await ArticleSyncService.logSyncEvent({
       shopId: shop.id,
       postId: post.id,
@@ -308,7 +284,7 @@ router.post("/execute", async (req, res) => {
       direction: "shopify_to_app",
       eventType: "import",
       status: "applied",
-      message: `Imported article "${shopifyArticle.title}" from Shopify blog ${blog_id}`,
+      message: `Imported article "${shopifyArticle.title}" from Shopify blog ${blog_id} (${contentJson.length} blocks parsed, structureDegraded=${parsed.structureDegraded})`,
     });
 
     res.json({ success: true, post_id: post.id });

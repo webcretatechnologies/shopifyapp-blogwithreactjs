@@ -250,7 +250,7 @@ model PostRelatedPost {
 model ShopifyArticle {
   id                 Int       @id @default(autoincrement())
   postId             Int       @unique
-  shopifyArticleId   String?
+  shopifyArticleId   String?   @unique
   shopifyBlogId      String?
   status             String    @default("draft")
   syncedAt           DateTime?

@@ -424,7 +424,7 @@ export default function Articles() {
       onClick={() => navigate(`/posts/${post.id}/edit`)}
     >
       <IndexTable.Cell>
-        <InlineStack gap="300" align="start" blockAlign="center">
+        <InlineStack gap="300" align="start" blockAlign="center" wrap={false}>
           {post.featuredImage ? (
             <Thumbnail
               source={post.featuredImage}
@@ -442,14 +442,21 @@ export default function Articles() {
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 18,
+                flexShrink: 0,
               }}
             >
               📝
             </div>
           )}
-          <Text variant="bodyMd" fontWeight="semibold">
-            {post.title}
-          </Text>
+          {/* A long title wrapping to a second line makes only that row disproportionately
+              tall next to single-line rows — truncate to one line with an ellipsis instead,
+              same fix as the Import from Shopify list. Needs an explicit max-width since a flex
+              child otherwise just grows to fit its content, which defeats truncate entirely. */}
+          <div style={{ maxWidth: 320, minWidth: 0 }}>
+            <Text variant="bodyMd" fontWeight="semibold" truncate>
+              {post.title}
+            </Text>
+          </div>
         </InlineStack>
       </IndexTable.Cell>
       <IndexTable.Cell>

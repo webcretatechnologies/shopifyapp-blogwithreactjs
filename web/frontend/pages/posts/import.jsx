@@ -19,10 +19,12 @@ import {
   Frame,
   Toast,
   ChoiceList,
+  Thumbnail,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { useNavigate } from "react-router-dom";
 import { ImportIcon, ArrowLeftIcon } from "@shopify/polaris-icons";
+import ConfirmActionModal from "../../components/ConfirmActionModal";
 
 const PER_PAGE = 20;
 
@@ -42,6 +44,8 @@ export default function ArticleImporter() {
   const [importingId, setImportingId] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
   const [error, setError] = useState(null);
+  const [confirmArticle, setConfirmArticle] = useState(null); // article pending import confirmation
+  const [confirmError, setConfirmError] = useState(null);
 
   // ─── IndexFilters state ───────────────────────────────────────────────────
   const [mode, setMode] = useState(IndexFiltersMode.Default);
@@ -98,10 +102,25 @@ export default function ArticleImporter() {
     fetchArticles();
   }, [selectedBlog]);
 
-  // ─── Import handler ───────────────────────────────────────────────────────
-  const handleImport = async (articleId) => {
+  // ─── Import handlers ──────────────────────────────────────────────────────
+  // Import writes real data (creates a Post + links it to the live Shopify article) and can't be
+  // undone with a single click, so it goes through a confirmation step first — requestImport just
+  // opens the modal; confirmImport does the actual work once the merchant confirms.
+  const requestImport = (article) => {
+    setConfirmError(null);
+    setConfirmArticle(article);
+  };
+
+  const cancelImport = () => {
+    setConfirmArticle(null);
+    setConfirmError(null);
+  };
+
+  const confirmImport = async () => {
+    if (!confirmArticle) return;
+    const articleId = confirmArticle.id;
     setImportingId(articleId);
-    setError(null);
+    setConfirmError(null);
     try {
       const res = await fetch("/api/import/execute", {
         method: "POST",
@@ -115,6 +134,7 @@ export default function ArticleImporter() {
         throw new Error(errMsg || `Request failed: ${res.status}`);
       }
       const data = await res.json();
+      setConfirmArticle(null);
       setToastMessage({
         content: "Article imported successfully!",
         action: { content: "Edit article", onAction: () => navigate(`/posts/${data.post_id}/edit`) },
@@ -124,7 +144,9 @@ export default function ArticleImporter() {
         prev.map((a) => (String(a.id) === String(articleId) ? { ...a, is_imported: true } : a))
       );
     } catch (err) {
-      setError(err.message);
+      // Surfaced inside the modal, not the page banner behind it — the modal overlay would
+      // otherwise hide a page-level error and make the failure look like nothing happened.
+      setConfirmError(err.message);
     } finally {
       setImportingId(null);
     }
@@ -265,32 +287,43 @@ export default function ArticleImporter() {
 
   // ─── Table rows ───────────────────────────────────────────────────────────
   const rowMarkup = paginatedArticles.map((article, index) => {
-    const { id, title, author, published_at, is_imported } = article;
+    const { id, title, author, published_at, is_imported, image, image_alt } = article;
     const isPublished = Boolean(published_at);
 
     return (
       <IndexTable.Row id={String(id)} key={id} position={index}>
         {/* Title */}
         <IndexTable.Cell>
-          <InlineStack gap="300" blockAlign="center">
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                background: isPublished ? "#e8f5e9" : "#f1f2f3",
-                borderRadius: 8,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 16,
-                flexShrink: 0,
-              }}
-            >
-              {isPublished ? "📄" : "📝"}
+          <InlineStack gap="300" blockAlign="center" wrap={false}>
+            {image ? (
+              <Thumbnail source={image} alt={image_alt || title} size="small" />
+            ) : (
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  background: isPublished ? "#e8f5e9" : "#f1f2f3",
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
+                  flexShrink: 0,
+                }}
+              >
+                {isPublished ? "📄" : "📝"}
+              </div>
+            )}
+            {/* Long titles were wrapping to a second line, making that row disproportionately
+                tall and visually broken next to single-line rows — truncate to one line with
+                an ellipsis instead, same as every other admin table in this app. Needs an
+                explicit max-width since a flex child otherwise just grows to fit its content,
+                which defeats truncate entirely. */}
+            <div style={{ maxWidth: 320, minWidth: 0 }}>
+              <Text variant="bodyMd" fontWeight="semibold" truncate>
+                {title}
+              </Text>
             </div>
-            <Text variant="bodyMd" fontWeight="semibold">
-              {title}
-            </Text>
           </InlineStack>
         </IndexTable.Cell>
 
@@ -342,7 +375,7 @@ export default function ArticleImporter() {
               icon={ImportIcon}
               loading={importingId === id}
               disabled={is_imported || (importingId !== null && importingId !== id)}
-              onClick={() => handleImport(id)}
+              onClick={() => requestImport(article)}
             >
               {is_imported ? "Imported" : "Import"}
             </Button>
@@ -366,6 +399,22 @@ export default function ArticleImporter() {
           duration={6000}
         />
       )}
+
+      <ConfirmActionModal
+        open={!!confirmArticle}
+        title="Import this article?"
+        body={
+          confirmArticle
+            ? `"${confirmArticle.title}" will be copied into the visual editor as a new post, ready to edit. This doesn't change or remove anything on Shopify.`
+            : ""
+        }
+        confirmText="Import article"
+        confirmTone="primary"
+        onConfirm={confirmImport}
+        onCancel={cancelImport}
+        loading={importingId !== null}
+        error={confirmError}
+      />
 
       <Page
         breadcrumbs={[

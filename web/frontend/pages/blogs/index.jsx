@@ -207,9 +207,11 @@ export default function Blogs() {
         onClick={() => navigate(`/blogs/${blog.id}/edit`)}
       >
         <IndexTable.Cell>
-          <Text variant="bodyMd" fontWeight="bold" as="span">
-            {blog.title}
-          </Text>
+          <div style={{ maxWidth: 320, minWidth: 0 }}>
+            <Text variant="bodyMd" fontWeight="bold" as="span" truncate>
+              {blog.title}
+            </Text>
+          </div>
         </IndexTable.Cell>
         <IndexTable.Cell>
           <Text variant="bodySm" tone="subdued">

@@ -92,7 +92,9 @@ export default function RelatedPostsPicker({ value = [], onChange, excludePostId
                 {post.featuredImage && (
                   <Thumbnail source={post.featuredImage} alt="" size="extraSmall" />
                 )}
-                <Text as="span" variant="bodySm">{post.title}</Text>
+                <div style={{ maxWidth: 200, minWidth: 0 }}>
+                  <Text as="span" variant="bodySm" truncate>{post.title}</Text>
+                </div>
               </InlineStack>
             </Tag>
           ))}

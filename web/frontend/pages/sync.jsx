@@ -198,12 +198,21 @@ export default function SyncDashboard() {
         position={index}
       >
         <IndexTable.Cell>
-          <Text variant="bodySm" fontWeight="semibold">
-            {post.title}
+          {/* A long title wrapping to a second line makes only that row disproportionately tall
+              next to single-line rows — truncate to one line with an ellipsis instead, same fix
+              as the Manage Posts and Import from Shopify lists. The degraded-warning icon is
+              kept as a sibling outside the truncated zone so it's never swallowed by the
+              ellipsis. */}
+          <InlineStack gap="100" wrap={false} blockAlign="center">
+            <div style={{ maxWidth: 280, minWidth: 0 }}>
+              <Text variant="bodySm" fontWeight="semibold" truncate>
+                {post.title}
+              </Text>
+            </div>
             {isDegraded && (
-              <Text variant="bodySm" tone="critical"> ⚠️</Text>
+              <Text variant="bodySm" tone="critical">⚠️</Text>
             )}
-          </Text>
+          </InlineStack>
         </IndexTable.Cell>
         <IndexTable.Cell>
           <Badge tone={post.status === "published" ? "success" : "info"}>

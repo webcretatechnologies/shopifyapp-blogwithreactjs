@@ -315,9 +315,11 @@ export default function Comments() {
 
           {/* Blog post */}
           <IndexTable.Cell>
-            <Text fontWeight="medium" as="span">
-              {article?.title || "Unknown Article"}
-            </Text>
+            <div style={{ maxWidth: 220, minWidth: 0 }}>
+              <Text fontWeight="medium" as="span" truncate>
+                {article?.title || "Unknown Article"}
+              </Text>
+            </div>
           </IndexTable.Cell>
 
           {/* Status */}
