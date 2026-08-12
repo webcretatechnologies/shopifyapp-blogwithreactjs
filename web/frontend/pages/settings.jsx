@@ -24,6 +24,8 @@ import {
   SkeletonPage,
   SkeletonBodyText,
   SkeletonDisplayText,
+  DataTable,
+  Spinner,
 } from "@shopify/polaris";
 import { useState, useEffect } from "react";
 import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
@@ -63,6 +65,7 @@ const TABS = [
   { id: "appearance", content: "Appearance" },
   { id: "content", content: "Content & display" },
   { id: "seo", content: "SEO" },
+  { id: "sitemap", content: "Sitemap & Indexing" },
   { id: "advanced", content: "Advanced" },
 ];
 
@@ -114,6 +117,8 @@ export default function Settings() {
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
   const [isSyncingTheme, setIsSyncingTheme] = useState(false);
   const [selectedTab, setSelectedTab] = useState(0);
+  const [sitemapStatus, setSitemapStatus] = useState(null);
+  const [isLoadingSitemap, setIsLoadingSitemap] = useState(true);
 
   const set = (key) => (value) => setSettings((s) => ({ ...s, [key]: value }));
 
@@ -138,6 +143,14 @@ export default function Settings() {
       .then((r) => r.json())
       .then((data) => setMetaRobotsActive(!!data.active))
       .catch(() => setMetaRobotsActive(false));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/settings/sitemap-status")
+      .then((r) => r.json())
+      .then((data) => setSitemapStatus(data))
+      .catch(() => setSitemapStatus({ sitemapUrl: "", posts: [] }))
+      .finally(() => setIsLoadingSitemap(false));
   }, []);
 
   const handleSyncFromTheme = async () => {
@@ -658,8 +671,78 @@ export default function Settings() {
               </Layout.Section>
             )}
 
-            {/* ─── Advanced ────────────────────────────────────────── */}
+            {/* ─── Sitemap & Indexing ──────────────────────────────── */}
             {selectedTab === 3 && (
+              <>
+                <Layout.Section>
+                  <SectionCard title="Sitemap">
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      Shopify automatically includes every published article in its own sitemap.xml —
+                      but it can't exclude noindex'd or individually-excluded posts from that. This is
+                      a second, "clean" sitemap containing only your indexable, non-excluded posts.
+                    </Text>
+                    <Banner tone="warning">
+                      Submit the URL below to Google Search Console / Bing Webmaster Tools instead
+                      of Shopify's sitemap.xml — the "Exclude from XML sitemap" toggle on a post
+                      only has an effect on this sitemap, not Shopify's own.
+                    </Banner>
+                    {sitemapStatus && (
+                      <InlineStack gap="200" blockAlign="center" wrap={false}>
+                        <Box style={{ flex: 1, minWidth: 0 }}>
+                          <TextField
+                            label="Sitemap URL"
+                            labelHidden
+                            value={sitemapStatus.sitemapUrl}
+                            readOnly
+                            autoComplete="off"
+                          />
+                        </Box>
+                        <Button
+                          onClick={() => {
+                            navigator.clipboard.writeText(sitemapStatus.sitemapUrl);
+                            setToast({ content: "Sitemap URL copied" });
+                          }}
+                        >
+                          Copy
+                        </Button>
+                      </InlineStack>
+                    )}
+                  </SectionCard>
+                </Layout.Section>
+
+                <Layout.Section>
+                  <SectionCard title="Post indexing status">
+                    {isLoadingSitemap && (
+                      <InlineStack align="center">
+                        <Spinner size="small" />
+                      </InlineStack>
+                    )}
+                    {!isLoadingSitemap && sitemapStatus && sitemapStatus.posts.length === 0 && (
+                      <Text as="p" tone="subdued">No published posts yet.</Text>
+                    )}
+                    {!isLoadingSitemap && sitemapStatus && sitemapStatus.posts.length > 0 && (
+                      <DataTable
+                        columnContentTypes={["text", "text", "text", "text"]}
+                        headings={["Post", "Sitemap", "Meta description", "Last synced"]}
+                        rows={sitemapStatus.posts.map((p) => [
+                          p.title,
+                          p.inSitemap
+                            ? <Badge key={`idx-${p.id}`} tone="success">In sitemap</Badge>
+                            : <Badge key={`idx-${p.id}`} tone="attention">{p.noindex ? "Noindex — excluded" : "Excluded"}</Badge>,
+                          p.hasMetaDescription
+                            ? <Badge key={`meta-${p.id}`} tone="success">Present</Badge>
+                            : <Badge key={`meta-${p.id}`} tone="warning">Missing</Badge>,
+                          p.syncedAt ? new Date(p.syncedAt).toLocaleString() : "Not synced",
+                        ])}
+                      />
+                    )}
+                  </SectionCard>
+                </Layout.Section>
+              </>
+            )}
+
+            {/* ─── Advanced ────────────────────────────────────────── */}
+            {selectedTab === 4 && (
               <Layout.Section>
                 <SectionCard
                   title="Custom code injection"

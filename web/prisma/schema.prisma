@@ -145,6 +145,7 @@ model Post {
   ogTitle               String?           @db.VarChar(120)
   metaRobotsNoindex     Boolean           @default(false)
   metaRobotsNofollow    Boolean           @default(false)
+  excludeFromSitemap    Boolean           @default(false)
   richSnippetType       String            @default("BlogPosting")
   trackingKey           String?           @unique
   category              Category?         @relation(fields: [categoryId], references: [id])

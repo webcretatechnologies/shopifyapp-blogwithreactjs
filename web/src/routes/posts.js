@@ -179,6 +179,7 @@ router.post("/", async (req, res) => {
       ogImage,
       metaRobotsNoindex,
       metaRobotsNofollow,
+      excludeFromSitemap,
       richSnippetType,
     } = req.body;
 
@@ -225,6 +226,7 @@ router.post("/", async (req, res) => {
         ogImage: ogImage || null,
         metaRobotsNoindex: !!metaRobotsNoindex,
         metaRobotsNofollow: !!metaRobotsNofollow,
+        excludeFromSitemap: !!excludeFromSitemap,
         richSnippetType: RICH_SNIPPET_TYPES.includes(richSnippetType) ? richSnippetType : "BlogPosting",
       },
     });
@@ -301,6 +303,7 @@ router.put("/:id", async (req, res) => {
       ogImage,
       metaRobotsNoindex,
       metaRobotsNofollow,
+      excludeFromSitemap,
       richSnippetType,
       blogId,
     } = req.body;
@@ -357,6 +360,7 @@ router.put("/:id", async (req, res) => {
         ogImage: ogImage !== undefined ? ogImage : post.ogImage,
         metaRobotsNoindex: metaRobotsNoindex !== undefined ? !!metaRobotsNoindex : post.metaRobotsNoindex,
         metaRobotsNofollow: metaRobotsNofollow !== undefined ? !!metaRobotsNofollow : post.metaRobotsNofollow,
+        excludeFromSitemap: excludeFromSitemap !== undefined ? !!excludeFromSitemap : post.excludeFromSitemap,
         richSnippetType: richSnippetType !== undefined
           ? (RICH_SNIPPET_TYPES.includes(richSnippetType) ? richSnippetType : "BlogPosting")
           : post.richSnippetType,
@@ -573,6 +577,7 @@ router.post("/:id/clone", async (req, res) => {
         ogImage: sourcePost.ogImage,
         metaRobotsNoindex: sourcePost.metaRobotsNoindex,
         metaRobotsNofollow: sourcePost.metaRobotsNofollow,
+        excludeFromSitemap: sourcePost.excludeFromSitemap,
         richSnippetType: sourcePost.richSnippetType,
         publishedAt: null,        // Clone is never auto-published
         trackingKey: null,        // Will be generated fresh on first view
@@ -1509,6 +1514,7 @@ function serializePost(post) {
     ogImage: post.ogImage,
     metaRobotsNoindex: post.metaRobotsNoindex,
     metaRobotsNofollow: post.metaRobotsNofollow,
+    excludeFromSitemap: post.excludeFromSitemap,
     richSnippetType: post.richSnippetType,
     publishedAt: post.publishedAt,
     createdAt: post.createdAt,

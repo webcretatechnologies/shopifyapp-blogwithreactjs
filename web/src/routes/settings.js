@@ -4,6 +4,10 @@ import ThemeStyleService from "../services/ThemeStyleService.js";
 
 const router = express.Router();
 
+// /sitemap-index.xml is served by THIS app's own server (see src/routes/sitemapIndex.js), not by
+// the shop's storefront domain — same reasoning/pattern as EditorContentCompiler.js's APP_URL.
+const APP_URL = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
+
 // GET /api/settings/meta-robots-status — is the "Blog Meta Robots" app embed active on the main theme?
 // Same read-only approach as /api/shop/extension-status in index.js, scoped to this specific block.
 router.get("/meta-robots-status", async (req, res) => {
@@ -46,6 +50,47 @@ router.get("/theme-style-tokens", async (req, res) => {
   } catch (err) {
     console.error("GET /api/settings/theme-style-tokens error:", err);
     res.status(500).json({ error: "Couldn't read colors from your theme. Please try again." });
+  }
+});
+
+// GET /api/settings/sitemap-status — powers the Settings > Sitemap & Indexing tab's post table.
+router.get("/sitemap-status", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session || !session.shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
+    if (!shop) return res.status(404).json({ error: "Shop not found" });
+
+    const posts = await prisma.post.findMany({
+      where: { shopId: shop.id, status: "published" },
+      select: {
+        id: true,
+        title: true,
+        metaRobotsNoindex: true,
+        excludeFromSitemap: true,
+        metaDescription: true,
+        shopifyArticle: { select: { syncedAt: true, shopifyArticleId: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    res.json({
+      shopDomain: shop.domain,
+      sitemapUrl: `${APP_URL}/sitemap-index.xml?shop=${encodeURIComponent(shop.domain)}`,
+      posts: posts.map((p) => ({
+        id: p.id,
+        title: p.title,
+        inSitemap: !p.metaRobotsNoindex && !p.excludeFromSitemap,
+        noindex: p.metaRobotsNoindex,
+        hasMetaDescription: !!(p.metaDescription && p.metaDescription.trim()),
+        synced: !!p.shopifyArticle?.shopifyArticleId,
+        syncedAt: p.shopifyArticle?.syncedAt || null,
+      })),
+    });
+  } catch (error) {
+    console.error("GET /api/settings/sitemap-status error:", error);
+    res.status(500).json({ error: "Failed to fetch sitemap status" });
   }
 });
 

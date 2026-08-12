@@ -76,6 +76,7 @@ export default defineConfig({
       // no separate Vite process, so this gap is dev-only.
       "^/styles\\.css(/|(\\?.*)?$)": proxyOptions,
       "^/track(/|(\\?.*)?$)": proxyOptions,
+      "^/sitemap-index\\.xml(/|(\\?.*)?$)": proxyOptions,
     },
   },
 });

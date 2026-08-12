@@ -70,6 +70,11 @@ const META_ROBOTS_OPTIONS = [
   { label: "Noindex, Nofollow", value: "NOINDEX_NOFOLLOW" },
 ];
 
+const SITEMAP_EXCLUDE_OPTIONS = [
+  { label: "No", value: "no" },
+  { label: "Yes", value: "yes" },
+];
+
 const metaRobotsValueFromFlags = (noindex, nofollow) => {
   if (noindex && nofollow) return "NOINDEX_NOFOLLOW";
   if (noindex) return "NOINDEX_FOLLOW";
@@ -825,6 +830,7 @@ export default function PostEditor() {
     ogImage: "",
     metaRobotsNoindex: false,
     metaRobotsNofollow: false,
+    excludeFromSitemap: false,
     richSnippetType: "BlogPosting",
   });
   const [seoExpanded, setSeoExpanded] = useState(false);
@@ -970,6 +976,7 @@ export default function PostEditor() {
         ogImage: data.post.ogImage || "",
         metaRobotsNoindex: !!data.post.metaRobotsNoindex,
         metaRobotsNofollow: !!data.post.metaRobotsNofollow,
+        excludeFromSitemap: !!data.post.excludeFromSitemap,
         richSnippetType: data.post.richSnippetType || "BlogPosting",
       };
 
@@ -1000,6 +1007,7 @@ export default function PostEditor() {
         ogImage: data.post.ogImage || "",
         metaRobotsNoindex: !!data.post.metaRobotsNoindex,
         metaRobotsNofollow: !!data.post.metaRobotsNofollow,
+        excludeFromSitemap: !!data.post.excludeFromSitemap,
         richSnippetType: data.post.richSnippetType || "BlogPosting",
       });
       if (data.post.metaTitle || data.post.metaDescription || data.post.metaRobotsNoindex || data.post.metaRobotsNofollow || (data.post.richSnippetType && data.post.richSnippetType !== "BlogPosting")) setSeoExpanded(true);
@@ -1068,6 +1076,7 @@ export default function PostEditor() {
         isFieldDirty(seoData.ogImage, "") ||
         seoData.metaRobotsNoindex ||
         seoData.metaRobotsNofollow ||
+        seoData.excludeFromSitemap ||
         isFieldDirty(seoData.richSnippetType, "BlogPosting")
       );
     }
@@ -1091,6 +1100,7 @@ export default function PostEditor() {
       isFieldDirty(seoData.ogImage, o.ogImage) ||
       !!seoData.metaRobotsNoindex !== !!o.metaRobotsNoindex ||
       !!seoData.metaRobotsNofollow !== !!o.metaRobotsNofollow ||
+      !!seoData.excludeFromSitemap !== !!o.excludeFromSitemap ||
       isFieldDirty(seoData.richSnippetType, o.richSnippetType || "BlogPosting");
 
     const originalTags = o.tags || [];
@@ -1339,6 +1349,7 @@ export default function PostEditor() {
         ogImage: originalPost.ogImage || "",
         metaRobotsNoindex: !!originalPost.metaRobotsNoindex,
         metaRobotsNofollow: !!originalPost.metaRobotsNofollow,
+        excludeFromSitemap: !!originalPost.excludeFromSitemap,
         richSnippetType: originalPost.richSnippetType || "BlogPosting",
       });
     } else {
@@ -1368,6 +1379,7 @@ export default function PostEditor() {
         ogImage: "",
         metaRobotsNoindex: false,
         metaRobotsNofollow: false,
+        excludeFromSitemap: false,
         richSnippetType: "BlogPosting",
       });
     }
@@ -1952,6 +1964,27 @@ export default function PostEditor() {
                                   Renders a matching &lt;meta name="robots"&gt; tag on the live article page.
                                 </Text>
                               )}
+                            </BlockStack>
+
+                            {/* Exclude from XML sitemap */}
+                            <BlockStack gap="100">
+                              <Select
+                                label="Exclude from XML sitemap"
+                                options={SITEMAP_EXCLUDE_OPTIONS}
+                                value={seoData.excludeFromSitemap ? "yes" : "no"}
+                                onChange={(val) => setSeoData((s) => ({
+                                  ...s,
+                                  excludeFromSitemap: val === "yes",
+                                }))}
+                              />
+                              <Text variant="bodySm" tone="subdued">
+                                Shopify's own sitemap.xml can't exclude individual posts — this
+                                only takes effect on the app's separate sitemap, found under
+                                Settings → Sitemap & Indexing, which you submit to Search Console/
+                                Bing instead. Independent of Meta robots above — a post can stay
+                                indexable while still being left out of that sitemap. Noindex'd
+                                posts are always excluded regardless of this setting.
+                              </Text>
                             </BlockStack>
                           </BlockStack>
                         </>
