@@ -28,6 +28,7 @@ import {
   Spinner,
 } from "@shopify/polaris";
 import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 
 const LAYOUT_OPTIONS = [
@@ -107,6 +108,8 @@ const DEFAULT_SETTINGS = {
 const SAVE_BAR_ID = "settings-save-bar";
 
 export default function Settings() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   // Snapshot of the last-loaded/last-saved settings — the baseline the contextual save bar
   // compares against to decide whether there are unsaved changes, and what Discard reverts to.
@@ -116,7 +119,11 @@ export default function Settings() {
   const [toast, setToast] = useState(null);
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
   const [isSyncingTheme, setIsSyncingTheme] = useState(false);
-  const [selectedTab, setSelectedTab] = useState(0);
+  const [selectedTab, setSelectedTab] = useState(() => {
+    const tabParam = searchParams.get("tab");
+    const idx = TABS.findIndex((t) => t.id === tabParam);
+    return idx >= 0 ? idx : 0;
+  });
   const [sitemapStatus, setSitemapStatus] = useState(null);
   const [isLoadingSitemap, setIsLoadingSitemap] = useState(true);
 
@@ -743,6 +750,7 @@ export default function Settings() {
 
             {/* ─── Advanced ────────────────────────────────────────── */}
             {selectedTab === 4 && (
+              <>
               <Layout.Section>
                 <SectionCard
                   title="Custom code injection"
@@ -770,6 +778,21 @@ export default function Settings() {
                   />
                 </SectionCard>
               </Layout.Section>
+
+              <Layout.Section>
+                <SectionCard title="Sync status">
+                  <Text as="p" variant="bodyMd" tone="subdued">
+                    View the 2-way sync state for every post, force re-sync individual posts to
+                    Shopify, resync everything at once, and review the sync log.
+                  </Text>
+                  <InlineStack align="end">
+                    <Button onClick={() => navigate("/sync")}>
+                      Open Sync Status
+                    </Button>
+                  </InlineStack>
+                </SectionCard>
+              </Layout.Section>
+              </>
             )}
           </Layout>
         </Box>

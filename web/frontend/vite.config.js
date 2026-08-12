@@ -77,6 +77,8 @@ export default defineConfig({
       "^/styles\\.css(/|(\\?.*)?$)": proxyOptions,
       "^/track(/|(\\?.*)?$)": proxyOptions,
       "^/sitemap-index\\.xml(/|(\\?.*)?$)": proxyOptions,
+      "^/related-posts\\.json(/|(\\?.*)?$)": proxyOptions,
+      "^/related-posts\\.js(/|(\\?.*)?$)": proxyOptions,
     },
   },
 });

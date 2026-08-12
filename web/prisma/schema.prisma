@@ -156,6 +156,8 @@ model Post {
   tags                  PostTag[]
   translations          PostTranslation[]
   shopifyArticle        ShopifyArticle?
+  relatedPosts          PostRelatedPost[] @relation("PostRelations")
+  relatedByPosts        PostRelatedPost[] @relation("PostRelatedBy")
 
   @@index([shopId])
   @@index([shopId, status])
@@ -231,6 +233,18 @@ model PostProduct {
   @@id([postId, productId])
   @@index([postId])
   @@index([productId], map: "PostProduct_productId_fkey")
+}
+
+model PostRelatedPost {
+  postId        Int
+  relatedPostId Int
+  position      Int  @default(0)
+  post          Post @relation("PostRelations", fields: [postId], references: [id], onDelete: Cascade)
+  relatedPost   Post @relation("PostRelatedBy", fields: [relatedPostId], references: [id], onDelete: Cascade)
+
+  @@id([postId, relatedPostId])
+  @@index([postId])
+  @@index([relatedPostId])
 }
 
 model ShopifyArticle {

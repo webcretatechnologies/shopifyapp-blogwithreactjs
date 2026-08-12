@@ -50,6 +50,7 @@ import ExcerptRichTextEditor from "../../components/editor/ExcerptRichTextEditor
 import ShopifyRichTextEditor from "../../components/editor/ShopifyRichTextEditor";
 import ArticleComments from "../../components/comments/ArticleComments";
 import { metaRobotsActivateUrl } from "../../utils/themeEmbedUtils";
+import RelatedPostsPicker from "../../components/RelatedPostsPicker";
 
 const stripHtml = (html) => {
   if (!html) return "";
@@ -834,6 +835,7 @@ export default function PostEditor() {
     richSnippetType: "BlogPosting",
   });
   const [seoExpanded, setSeoExpanded] = useState(false);
+  const [relatedPostsSelection, setRelatedPostsSelection] = useState([]);
   const [themeTemplate, setThemeTemplate] = useState("default");
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
 
@@ -978,6 +980,7 @@ export default function PostEditor() {
         metaRobotsNofollow: !!data.post.metaRobotsNofollow,
         excludeFromSitemap: !!data.post.excludeFromSitemap,
         richSnippetType: data.post.richSnippetType || "BlogPosting",
+        relatedPosts: data.post.relatedPosts || [],
       };
 
       const loadedTags = parseTags(data.post.tags);
@@ -1010,6 +1013,7 @@ export default function PostEditor() {
         excludeFromSitemap: !!data.post.excludeFromSitemap,
         richSnippetType: data.post.richSnippetType || "BlogPosting",
       });
+      setRelatedPostsSelection(data.post.relatedPosts || []);
       if (data.post.metaTitle || data.post.metaDescription || data.post.metaRobotsNoindex || data.post.metaRobotsNofollow || (data.post.richSnippetType && data.post.richSnippetType !== "BlogPosting")) setSeoExpanded(true);
     } catch (err) {
       setError(err.message);
@@ -1077,6 +1081,7 @@ export default function PostEditor() {
         seoData.metaRobotsNoindex ||
         seoData.metaRobotsNofollow ||
         seoData.excludeFromSitemap ||
+        relatedPostsSelection.length > 0 ||
         isFieldDirty(seoData.richSnippetType, "BlogPosting")
       );
     }
@@ -1103,13 +1108,19 @@ export default function PostEditor() {
       !!seoData.excludeFromSitemap !== !!o.excludeFromSitemap ||
       isFieldDirty(seoData.richSnippetType, o.richSnippetType || "BlogPosting");
 
+    const originalRelatedIds = (o.relatedPosts || []).map((p) => p.id);
+    const currentRelatedIds = relatedPostsSelection.map((p) => p.id);
+    const isRelatedPostsDirty =
+      currentRelatedIds.length !== originalRelatedIds.length ||
+      !currentRelatedIds.every((id, i) => id === originalRelatedIds[i]);
+
     const originalTags = o.tags || [];
     const isTagsDirty =
       tags.length !== originalTags.length ||
       !tags.every((t) => originalTags.includes(t));
 
-    return isPostDirty || isTagsDirty;
-  }, [isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData, isLoading]);
+    return isPostDirty || isTagsDirty || isRelatedPostsDirty;
+  }, [isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData, isLoading, relatedPostsSelection]);
 
   const saveBarId = "post-editor-save-bar";
 
@@ -1246,6 +1257,7 @@ export default function PostEditor() {
       productSliderProducts: [],
       editorMode: post.editorMode || "builder",
       ...seoData,
+      relatedPostIds: relatedPostsSelection.map((p) => p.id),
     };
   };
 
@@ -1352,6 +1364,7 @@ export default function PostEditor() {
         excludeFromSitemap: !!originalPost.excludeFromSitemap,
         richSnippetType: originalPost.richSnippetType || "BlogPosting",
       });
+      setRelatedPostsSelection(originalPost.relatedPosts || []);
     } else {
       setPost({
         title: "",
@@ -1382,6 +1395,7 @@ export default function PostEditor() {
         excludeFromSitemap: false,
         richSnippetType: "BlogPosting",
       });
+      setRelatedPostsSelection([]);
     }
     if (window.shopify?.saveBar) {
       try { window.shopify.saveBar.hide(saveBarId); } catch (e) {}
@@ -2334,6 +2348,20 @@ export default function PostEditor() {
                         options={[{ label: "Default blog post", value: "default" }]}
                         value={themeTemplate}
                         onChange={setThemeTemplate}
+                      />
+                    </BlockStack>
+                  </Box>
+                </Card>
+
+                {/* ── Related Posts ── */}
+                <Card>
+                  <Box padding="400">
+                    <BlockStack gap="300">
+                      <Text variant="headingSm" as="h2">Related posts</Text>
+                      <RelatedPostsPicker
+                        value={relatedPostsSelection}
+                        onChange={setRelatedPostsSelection}
+                        excludePostId={post.id}
                       />
                     </BlockStack>
                   </Box>

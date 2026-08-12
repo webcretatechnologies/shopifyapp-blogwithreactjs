@@ -44,6 +44,7 @@ export default function SyncDashboard() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reconciling, setReconciling] = useState(false);
+  const [bulkResyncing, setBulkResyncing] = useState(false);
   const [syncing, setSyncing] = useState({});
   const [toast, setToast] = useState(null);
   const [selectedTab, setSelectedTab] = useState(0);
@@ -136,6 +137,31 @@ export default function SyncDashboard() {
       showToast(`❌ Reconciliation failed: ${err.message}`, true);
     } finally {
       setReconciling(false);
+    }
+  }, [showToast, fetchPosts]);
+
+  const handleBulkResync = useCallback(async () => {
+    setBulkResyncing(true);
+    try {
+      const res = await fetch("/api/posts/bulk-resync", {
+        method: "POST",
+      });
+      const data = await res.json();
+      const syncedCount = (data.results || []).filter((r) => r.status === "synced").length;
+      const errorRows = (data.results || []).filter((r) => r.status === "error");
+      const errors = errorRows.length;
+      showToast(
+        `✅ Resync complete: ${syncedCount} post${syncedCount === 1 ? "" : "s"} pushed to Shopify${errors ? `, ${errors} errors` : ""}`
+      );
+      if (errors) {
+        const first = errorRows[0];
+        showToast(`❌ Resync error: ${first?.title || first?.postId} — ${first?.error || "Unknown error"}`, true);
+      }
+      fetchPosts();
+    } catch (err) {
+      showToast(`❌ Bulk resync failed: ${err.message}`, true);
+    } finally {
+      setBulkResyncing(false);
     }
   }, [showToast, fetchPosts]);
 
@@ -282,8 +308,8 @@ export default function SyncDashboard() {
         title="Sync Status"
         subtitle="Manage the 2-way synchronization between your app and Shopify"
         backAction={{
-          content: "Dashboard",
-          onAction: () => navigate("/posts"),
+          content: "Settings",
+          onAction: () => navigate("/settings?tab=advanced"),
         }}
         primaryAction={{
           content: reconciling ? "Reconciling..." : "Reconcile All",
@@ -291,6 +317,12 @@ export default function SyncDashboard() {
           loading: reconciling,
         }}
         secondaryActions={[
+          {
+            content: bulkResyncing ? "Resyncing..." : "Resync All Posts",
+            icon: RefreshIcon,
+            onAction: handleBulkResync,
+            loading: bulkResyncing,
+          },
           {
             content: "Refresh",
             icon: RefreshIcon,
@@ -311,6 +343,9 @@ export default function SyncDashboard() {
                 or <strong>Reconcile All</strong> to check each post against Shopify
                 and catch any changes.
                 The sync uses baseline field-level merge and surfaces only true same-field conflicts.
+                Some features (like Related posts) are baked in at sync time rather than applying
+                live — use <strong>Resync All Posts</strong> to push every linked post's current
+                content to Shopify in one go, so already-published posts pick those up too.
               </p>
             </Banner>
           </Layout.Section>

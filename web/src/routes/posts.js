@@ -181,6 +181,7 @@ router.post("/", async (req, res) => {
       metaRobotsNofollow,
       excludeFromSitemap,
       richSnippetType,
+      relatedPostIds = [],
     } = req.body;
 
     if (!title) return res.status(422).json({ error: "Title is required" });
@@ -239,6 +240,11 @@ router.post("/", async (req, res) => {
     // Sync products
     if (Array.isArray(productSliderProducts)) {
       await syncProducts(shop.id, post.id, productSliderProducts);
+    }
+
+    // Sync manual related-posts override
+    if (Array.isArray(relatedPostIds)) {
+      await syncRelatedPosts(shop.id, post.id, relatedPostIds);
     }
 
     // Create ShopifyArticle record if blogId provided
@@ -306,6 +312,7 @@ router.put("/:id", async (req, res) => {
       excludeFromSitemap,
       richSnippetType,
       blogId,
+      relatedPostIds,
     } = req.body;
 
     // Check section limit
@@ -374,6 +381,10 @@ router.put("/:id", async (req, res) => {
 
     if (Array.isArray(productSliderProducts)) {
       await syncProducts(shop.id, post.id, productSliderProducts);
+    }
+
+    if (Array.isArray(relatedPostIds)) {
+      await syncRelatedPosts(shop.id, post.id, relatedPostIds);
     }
 
     const shopifyRecord = await prisma.shopifyArticle.findUnique({ where: { postId: post.id } });
@@ -1479,6 +1490,37 @@ async function syncProducts(shopId, postId, products) {
   }
 }
 
+// Manual "Related posts" override — mirrors syncProducts() above, but relatedPostIds reference
+// existing local Post rows directly (unlike products, which are external Shopify resources that
+// need local upsert/caching first).
+async function syncRelatedPosts(shopId, postId, relatedPostIds) {
+  if (!Array.isArray(relatedPostIds)) return;
+
+  const ids = relatedPostIds
+    .map((id) => parseInt(id, 10))
+    .filter((id) => Number.isInteger(id) && id !== postId);
+
+  // Only accept ids that actually belong to this shop — prevents cross-shop references.
+  const validPosts = ids.length > 0
+    ? await prisma.post.findMany({ where: { id: { in: ids }, shopId }, select: { id: true } })
+    : [];
+  const validIds = new Set(validPosts.map((p) => p.id));
+  const orderedValidIds = ids.filter((id) => validIds.has(id));
+
+  await prisma.postRelatedPost.deleteMany({ where: { postId } });
+
+  if (orderedValidIds.length > 0) {
+    await prisma.postRelatedPost.createMany({
+      data: orderedValidIds.map((relatedPostId, index) => ({
+        postId,
+        relatedPostId,
+        position: index,
+      })),
+      skipDuplicates: true,
+    });
+  }
+}
+
 function serializePost(post) {
   return {
     id: post.id,
@@ -1502,6 +1544,14 @@ function serializePost(post) {
       ? post.products.map((pp) => ({
           position: pp.position,
           ...pp.product,
+        }))
+      : [],
+    relatedPosts: post.relatedPosts
+      ? post.relatedPosts.map((r) => ({
+          id: r.relatedPost.id,
+          title: r.relatedPost.title,
+          slug: r.relatedPost.slug,
+          featuredImage: r.relatedPost.featuredImage,
         }))
       : [],
     shopifyArticle: post.shopifyArticle || null,
@@ -1741,6 +1791,42 @@ router.post("/reconcile", async (req, res) => {
     res.json({ results });
   } catch (err) {
     console.error("POST /api/posts/reconcile error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/posts/bulk-resync — Force re-sync every linked post to Shopify ──
+// Pushes current app content for every post already linked to a Shopify blog — the one-time
+// catch-up mechanism for features that bake into body_html at sync time (e.g. Related posts)
+// rather than applying live, so already-published posts pick them up without editing each one
+// by hand. Sequential (not Promise.all) to stay well under Shopify's Admin API rate limits when
+// a shop has many posts.
+router.post("/bulk-resync", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const linkedPosts = await prisma.post.findMany({
+      where: {
+        shopId: shop.id,
+        shopifyArticle: { is: { shopifyBlogId: { not: null } } },
+      },
+      select: { id: true, title: true, status: true },
+    });
+
+    const results = [];
+    for (const post of linkedPosts) {
+      try {
+        await ArticleSyncService.pushPostToShopify(post.id, { publishMode: post.status === "published" });
+        results.push({ postId: post.id, title: post.title, status: "synced" });
+      } catch (err) {
+        results.push({ postId: post.id, title: post.title, status: "error", error: err.message });
+      }
+    }
+
+    res.json({ results });
+  } catch (err) {
+    console.error("POST /api/posts/bulk-resync error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2059,6 +2145,7 @@ router.get("/:id", async (req, res) => {
         category: true,
         tags: { include: { tag: true } },
         products: { include: { product: true }, orderBy: { position: "asc" } },
+        relatedPosts: { include: { relatedPost: true }, orderBy: { position: "asc" } },
         shopifyArticle: true,
         blocks: { orderBy: { orderIndex: "asc" } },
       },

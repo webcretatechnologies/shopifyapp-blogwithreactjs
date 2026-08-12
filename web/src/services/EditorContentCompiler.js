@@ -1376,6 +1376,109 @@ ${this.generateGlobalCss(settings)}
 
   .blogger-related-posts {
     display: ${settings.showRelatedPosts === false || settings.showRelatedPosts === "false" ? "none !important" : "block"};
+    margin: 40px 0 0;
+    padding-top: 24px;
+    border-top: 1px solid #e1e3e5;
+  }
+
+  .blogger-related-posts__title {
+    font-size: 1.25em;
+    font-weight: 600;
+    margin: 0 0 16px;
+  }
+
+  .blogger-related-posts__grid {
+    display: grid;
+    /* auto-fit, not auto-fill — auto-fill reserves track space for as many columns as could fit
+       even when there are fewer actual items, leaving a phantom empty column and making real
+       items narrower than they should be. auto-fit collapses those empty tracks so items stretch
+       to fill the row. */
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+  }
+
+  /* Confirmed via live DevTools inspection that the previous "floating white box on hover" was
+     not a stray element or theme conflict — it was this exact box-shadow rule, rendering exactly
+     as written. It looked wrong because the card had NO visible boundary at rest, so a shadow
+     suddenly appearing on hover read as a disconnected glitch rather than a natural lift. Fix is
+     a proper resting-state card (background/border/shadow always present) so hover only
+     intensifies an already-card-like shape instead of introducing one from nothing. */
+  .blogger-related-posts__item {
+    display: flex !important;
+    flex-direction: column !important;
+    text-decoration: none !important;
+    color: inherit !important;
+    background: #ffffff !important;
+    border: 1px solid #e1e3e5 !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+    padding: 0 0 12px !important;
+    border-radius: 10px;
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .blogger-related-posts__item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12) !important;
+  }
+
+  /* Mixed-aspect-ratio source images (marketing banners, not uniform product shots) can't be
+     cropped to a fixed box without losing meaningful content, but plain letterboxing (empty gray
+     bars) looks unpolished. Same fix real thumbnail-heavy products use (YouTube/Netflix/Spotify):
+     a blurred, scaled-up copy of the SAME image fills the box as a backdrop
+     (__image-bg, a sibling — not a wrapper of the sharp image — so filter:blur() doesn't blur
+     the sharp image too), with the real image centered on top at full, uncropped size. */
+  .blogger-related-posts__image-wrap,
+  .blogger-related-posts__image-placeholder {
+    /* !important on layout-affecting properties (not just background/color) because a theme's
+       own generic div/rte rules were silently overriding this — same class of bug the image's
+       object-fit had. Without a forced width/aspect-ratio/display/background, the placeholder
+       for image-less posts could collapse to zero height, leaving its title floating with no
+       box above it while sibling cards' titles sit below a real image. */
+    display: block !important;
+    position: relative !important;
+    width: 100% !important;
+    aspect-ratio: 16 / 9 !important;
+    border-radius: 0 !important;
+    margin: 0 0 12px !important;
+    background: #f1f2f3 !important;
+    overflow: hidden !important;
+  }
+
+  .blogger-related-posts__image-bg {
+    position: absolute !important;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    filter: blur(18px);
+    transform: scale(1.15);
+    opacity: 0.55;
+  }
+
+  .blogger-related-posts__image {
+    /* !important throughout this rule because the theme's own image styling (e.g. Dawn's
+       article/rte image rules) can be more specific than this plain class selector and was
+       silently overriding it — same reasoning as the color/font rules elsewhere in this
+       function. */
+    position: relative !important;
+    z-index: 1;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+  }
+
+  .blogger-related-posts__item-title {
+    font-size: 0.95em;
+    font-weight: 500;
+    line-height: 1.4;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 12px !important;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .blogger-toc {
@@ -1553,7 +1656,7 @@ ${this.generateGlobalCss(settings)}
     </div>`;
   }
 
-  static async compileForStorefront(contentHtml, session = null, shopifyClient = null, shopDomain = null) {
+  static async compileForStorefront(contentHtml, session = null, shopifyClient = null, shopDomain = null, postId = null) {
     const compiled = await this.compile(contentHtml, session, shopifyClient);
     
     const domain = shopDomain || session?.shop;
@@ -1619,6 +1722,17 @@ ${this.generateGlobalCss(settings)}
 
     const headerCode = settings.customHeaderCode ? `\n${settings.customHeaderCode}\n` : "";
     const footerCode = settings.customFooterCode ? `\n${settings.customFooterCode}\n` : "";
-    return `${fallbackStyles}${liveStylesLink}${headerCode}\n<div class="blogger-article-container">\n${compiled}\n</div>${footerCode}`;
+
+    // Related posts — a placeholder + shared bootstrap script, NOT baked HTML. Real content is
+    // fetched live from /related-posts.json (web/src/routes/relatedPosts.js) on every storefront
+    // page view, so toggling showRelatedPosts or changing relatedPostsCount applies instantly to
+    // every already-published post with no resync — same live-update reasoning as the
+    // /styles.css <link> above, just for data instead of CSS. Omitted only when there's no postId
+    // (e.g. the /preview route, which has no saved post yet) or no domain to build the fetch URL.
+    const relatedPostsHtml = (postId && domain)
+      ? `<div class="blogger-related-posts" data-related-posts data-post-id="${postId}" data-shop="${escapeHtml(domain)}"></div>\n<script src="${APP_URL}/related-posts.js" defer></script>`
+      : "";
+
+    return `${fallbackStyles}${liveStylesLink}${headerCode}\n<div class="blogger-article-container">\n${compiled}\n${relatedPostsHtml}\n</div>${footerCode}`;
   }
 }

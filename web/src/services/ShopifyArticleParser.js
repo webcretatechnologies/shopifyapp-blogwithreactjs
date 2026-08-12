@@ -295,6 +295,13 @@ export class ShopifyArticleParser {
     // self-heals the next time it round-trips, instead of requiring a manual repair.
     $('img[src*="/track/view.gif"]').remove();
 
+    // The related-posts block (RelatedPostsService.renderRelatedPostsHtml) is app-generated at
+    // sync time, same as the tracking pixel and custom-styles block above — it has no data-type
+    // attribute (nothing to re-edit), so without this it gets echoed back on webhook reconcile,
+    // preserved as real content, and a fresh block gets appended on top of it on the next sync —
+    // duplicating (and re-duplicating) indefinitely.
+    $(".blogger-related-posts").remove();
+
     // Remove blogger-article-container wrapper but keep inner content
     $(".blogger-article-container").each((_, el) => {
       const $el = $(el);

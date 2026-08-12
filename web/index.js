@@ -107,6 +107,7 @@ import superAdminRoutes from "./src/routes/superAdmin.js";
 import trackingRoutes from "./src/routes/tracking.js";
 import publicStylesRoutes from "./src/routes/publicStyles.js";
 import sitemapIndexRoutes from "./src/routes/sitemapIndex.js";
+import relatedPostsRoutes from "./src/routes/relatedPosts.js";
 import patternRoutes from "./src/routes/patterns.js";
 
 // Process-level event handlers to prevent crashes from unhandled network errors
@@ -184,6 +185,9 @@ app.use("/styles.css", publicStylesRoutes);
 
 // ─── Public Sitemap Route (BEFORE Shopify auth — crawler/search-engine accessible) ──
 app.use("/", sitemapIndexRoutes);
+
+// ─── Public Related Posts Routes (BEFORE Shopify auth — fetched live from the storefront) ──
+app.use("/", relatedPostsRoutes);
 
 // ─── App Proxy Routes (Validated via Shopify Signature) ──────────────────────
 app.use("/api/proxy", proxyRoutes);

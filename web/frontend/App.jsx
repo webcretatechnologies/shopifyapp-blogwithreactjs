@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { NavMenu } from "@shopify/app-bridge-react";
 import Routes from "./Routes";
 import { QueryProvider, PolarisProvider } from "./components";
-import ChatBubble from "./components/chat/ChatBubble";
 import { Box } from "@shopify/polaris";
 
 export default function App() {
@@ -26,17 +25,12 @@ export default function App() {
               <a href="/analytics">Analytics</a>
               <a href="/plans">{t("Navigation.pricingPlans")}</a>
               <a href="/settings">{t("Navigation.settings")}</a>
-              <a href="/sync">Sync Status</a>
               <a href="/posts/import">Import</a>
-              <a href="/posts/wizard">Wizard</a>
-              <a href="/support">Support</a>
             </NavMenu>
           )}
           <Box paddingBlockEnd="1600">
             <Routes pages={pages} />
           </Box>
-          {/* Custom in-app chat bubble (shown on all pages) */}
-          {!isAdminPath && <ChatBubble />}
         </QueryProvider>
       </BrowserRouter>
     </PolarisProvider>
