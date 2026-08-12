@@ -1412,7 +1412,7 @@ export default function PostEditor() {
       const res = await fetch("/api/posts/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentHtml: htmlToPreview }),
+        body: JSON.stringify({ contentHtml: htmlToPreview, customCss: post.customCss }),
       });
       const data = await res.json();
       if (data.contentHtml) {

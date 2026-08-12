@@ -125,8 +125,8 @@ router.post("/preview", async (req, res) => {
     if (session) {
       client = new shopify.api.clients.Graphql({ session });
     }
-    const { contentHtml } = req.body;
-    const compiled = await EditorContentCompiler.compileForStorefront(contentHtml || "", session, client);
+    const { contentHtml, customCss } = req.body;
+    const compiled = await EditorContentCompiler.compileForStorefront(contentHtml || "", session, client, undefined, undefined, customCss);
     res.json({ contentHtml: compiled });
   } catch (err) {
     console.error("POST /api/posts/preview error:", err);

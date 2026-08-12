@@ -352,9 +352,11 @@ export default function SyncDashboard() {
                 or <strong>Reconcile All</strong> to check each post against Shopify
                 and catch any changes.
                 The sync uses baseline field-level merge and surfaces only true same-field conflicts.
-                Some features (like Related posts) are baked in at sync time rather than applying
-                live — use <strong>Resync All Posts</strong> to push every linked post's current
-                content to Shopify in one go, so already-published posts pick those up too.
+                Related posts and custom header/footer code update live once a post carries the
+                current sync format — no per-post resync needed for setting changes after that. If
+                a post was last synced before this was added, use <strong>Resync All Posts</strong>
+                once to bring it onto the live mechanism; every setting change after that applies
+                automatically.
               </p>
             </Banner>
           </Layout.Section>

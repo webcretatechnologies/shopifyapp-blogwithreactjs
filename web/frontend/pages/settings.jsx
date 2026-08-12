@@ -763,7 +763,7 @@ export default function Settings() {
                     multiline={4}
                     placeholder="<!-- Paste custom CSS or JavaScript to show above every article -->"
                     autoComplete="off"
-                    helpText="Added at the top of every blog article's content. Note: this is part of the article body, not your theme's <head> — apps aren't permitted to edit theme files directly."
+                    helpText="Shown at the top of every published article, and applies live within seconds of saving — no need to resync individual posts. Note: this is part of the article body, not your theme's <head> — apps aren't permitted to edit theme files directly."
                     monospaced
                   />
                   <TextField
@@ -773,7 +773,7 @@ export default function Settings() {
                     multiline={4}
                     placeholder="<!-- Paste custom scripts to show below every article -->"
                     autoComplete="off"
-                    helpText="Added at the end of every blog article's content."
+                    helpText="Shown at the end of every published article, and applies live within seconds of saving — no need to resync individual posts."
                     monospaced
                   />
                 </SectionCard>

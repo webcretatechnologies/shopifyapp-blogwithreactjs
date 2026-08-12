@@ -1656,7 +1656,7 @@ ${this.generateGlobalCss(settings)}
     </div>`;
   }
 
-  static async compileForStorefront(contentHtml, session = null, shopifyClient = null, shopDomain = null, postId = null) {
+  static async compileForStorefront(contentHtml, session = null, shopifyClient = null, shopDomain = null, postId = null, customCss = null) {
     const compiled = await this.compile(contentHtml, session, shopifyClient);
     
     const domain = shopDomain || session?.shop;
@@ -1720,19 +1720,48 @@ ${this.generateGlobalCss(settings)}
       ? `<link rel="stylesheet" href="${APP_URL}/styles.css?shop=${encodeURIComponent(domain)}">`
       : "";
 
-    const headerCode = settings.customHeaderCode ? `\n${settings.customHeaderCode}\n` : "";
-    const footerCode = settings.customFooterCode ? `\n${settings.customFooterCode}\n` : "";
-
-    // Related posts — a placeholder + shared bootstrap script, NOT baked HTML. Real content is
-    // fetched live from /related-posts.json (web/src/routes/relatedPosts.js) on every storefront
-    // page view, so toggling showRelatedPosts or changing relatedPostsCount applies instantly to
-    // every already-published post with no resync — same live-update reasoning as the
-    // /styles.css <link> above, just for data instead of CSS. Omitted only when there's no postId
-    // (e.g. the /preview route, which has no saved post yet) or no domain to build the fetch URL.
-    const relatedPostsHtml = (postId && domain)
-      ? `<div class="blogger-related-posts" data-related-posts data-post-id="${postId}" data-shop="${escapeHtml(domain)}"></div>\n<script src="${APP_URL}/related-posts.js" defer></script>`
+    // Per-post Custom CSS (post.customCss, set in the editor's Custom CSS field) — previously
+    // saved to the database but never actually rendered anywhere: the only code that read it
+    // (BlockRenderer.js's renderBlocks()) isn't part of the real Save & Sync path, which only
+    // ever calls EditorContentCompiler. This one stays baked (not live) — it's explicit per-post
+    // content the merchant enters for THIS article, analogous to a manual Related Posts pick,
+    // not a global setting. Placed after the baked global styles/live layout link so a merchant's
+    // custom rules can override either by normal CSS cascade (same selector = later wins),
+    // without needing !important.
+    const customCssBlock = customCss
+      ? `\n<style id="blogger-post-custom-css">\n${customCss}\n</style>\n`
       : "";
 
-    return `${fallbackStyles}${liveStylesLink}${headerCode}\n<div class="blogger-article-container">\n${compiled}\n${relatedPostsHtml}\n</div>${footerCode}`;
+    // One shared bootstrap script covers both related posts and custom header/footer code below —
+    // emitted whenever there's a domain to build fetch URLs from, regardless of whether this
+    // specific article also has a related-posts placeholder.
+    const liveScriptTag = domain
+      ? `<script src="${APP_URL}/related-posts.js" defer></script>`
+      : "";
+
+    // Related posts — a placeholder, NOT baked HTML. Real content is fetched live from
+    // /related-posts.json (web/src/routes/relatedPosts.js) on every storefront page view, so
+    // toggling showRelatedPosts or changing relatedPostsCount applies instantly to every
+    // already-published post with no resync — same live-update reasoning as the /styles.css
+    // <link> above, just for data instead of CSS. Omitted only when there's no postId (e.g. the
+    // /preview route, which has no saved post yet) or no domain to build the fetch URL.
+    const relatedPostsHtml = (postId && domain)
+      ? `<div class="blogger-related-posts" data-related-posts data-post-id="${postId}" data-shop="${escapeHtml(domain)}"></div>`
+      : "";
+
+    // Custom header/footer code (Settings → Advanced) — also placeholders now, not baked HTML.
+    // Previously this text was inserted directly at sync time, meaning a merchant who changed
+    // this *global* setting saw nothing change on any already-published post until each one was
+    // individually resynced — surprising for something that reads as a site-wide setting, not
+    // per-post content. Now fetched live from /custom-code.json on every page view, same as
+    // related posts above, via the same shared script.
+    const headerPlaceholder = domain
+      ? `<div data-custom-header data-shop="${escapeHtml(domain)}"></div>`
+      : "";
+    const footerPlaceholder = domain
+      ? `<div data-custom-footer data-shop="${escapeHtml(domain)}"></div>`
+      : "";
+
+    return `${fallbackStyles}${liveStylesLink}${customCssBlock}${liveScriptTag}${headerPlaceholder}\n<div class="blogger-article-container">\n${compiled}\n${relatedPostsHtml}\n</div>${footerPlaceholder}`;
   }
 }

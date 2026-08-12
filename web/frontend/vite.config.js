@@ -79,6 +79,7 @@ export default defineConfig({
       "^/sitemap-index\\.xml(/|(\\?.*)?$)": proxyOptions,
       "^/related-posts\\.json(/|(\\?.*)?$)": proxyOptions,
       "^/related-posts\\.js(/|(\\?.*)?$)": proxyOptions,
+      "^/custom-code\\.json(/|(\\?.*)?$)": proxyOptions,
     },
   },
 });

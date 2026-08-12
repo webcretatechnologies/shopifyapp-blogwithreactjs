@@ -1,18 +1,20 @@
 /**
- * Related posts routes (PUBLIC — no session auth required)
+ * Live storefront routes (PUBLIC — no session auth required)
  *
- * Unlike the rest of an article's body, related posts must reflect the current
- * showRelatedPosts/relatedPostsCount settings the moment they change — not just on that post's
- * next Save & Sync. EditorContentCompiler.compileForStorefront bakes only a placeholder div
- * (`data-related-posts data-post-id="..."`) plus a <script src=".../related-posts.js"> into every
- * synced article; this file supplies both halves of the live mechanism: the JSON endpoint the
- * script fetches (reading settings fresh on every request, same pattern as publicStyles.js), and
- * the script itself.
+ * Covers everything that must reflect a *global setting* the moment it's saved, not just on a
+ * post's next Save & Sync — related posts (showRelatedPosts/relatedPostsCount) and custom
+ * header/footer code (Settings → Advanced). EditorContentCompiler.compileForStorefront bakes only
+ * lightweight placeholder divs plus one shared <script src=".../related-posts.js"> into every
+ * synced article; this file supplies the other half of each: the JSON endpoints the script
+ * fetches (reading settings fresh on every request, same pattern as publicStyles.js), and the
+ * script itself. Kept under the original related-posts.js/.json URLs even though its scope grew,
+ * since those URLs are already baked into every previously-synced article's body_html.
  *
- * Accessed cross-domain from Shopify storefronts, so both routes must be mounted BEFORE any
+ * Accessed cross-domain from Shopify storefronts, so all routes here must be mounted BEFORE any
  * Shopify session validation middleware — same placement as tracking.js/publicStyles.js.
  *
  *   GET /related-posts.json?postId=<id>&shop=<shop-domain>
+ *   GET /custom-code.json?shop=<shop-domain>
  *   GET /related-posts.js
  */
 import express from "express";
@@ -120,11 +122,59 @@ router.get("/related-posts.json", async (req, res) => {
   }
 });
 
-// Static bootstrap script — content never depends on request data, only on app deploys, so a
-// longer cache is fine (unlike the JSON endpoint above).
+// Custom header/footer code (Settings → Advanced) — same live-update reasoning as related posts:
+// a merchant expects a *setting* to apply everywhere the moment they save it, not only to posts
+// they individually resync afterward. Reads fresh from ShopSetting on every request.
+router.get("/custom-code.json", async (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "public, max-age=15");
+
+  const shopDomain = String(req.query.shop || "").trim();
+  const empty = JSON.stringify({ headerCode: "", footerCode: "" });
+  if (!shopDomain) {
+    res.send(empty);
+    return;
+  }
+
+  const cacheKey = `customcode:${shopDomain}`;
+  const cached = dataCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    res.send(cached.body);
+    return;
+  }
+
+  try {
+    const shop = await prisma.shop.findUnique({ where: { domain: shopDomain }, include: { settings: true } });
+    if (!shop) {
+      res.send(empty);
+      return;
+    }
+    const settings = (shop.settings || []).reduce((acc, s) => {
+      acc[s.key] = s.value;
+      return acc;
+    }, {});
+    const body = JSON.stringify({
+      headerCode: settings.customHeaderCode || "",
+      footerCode: settings.customFooterCode || "",
+    });
+    dataCache.set(cacheKey, { body, expiresAt: Date.now() + CACHE_TTL_MS });
+    res.send(body);
+  } catch (err) {
+    console.error("GET /custom-code.json error:", err);
+    res.send(empty);
+  }
+});
+
+// Static bootstrap script — content only changes on app deploys, so some caching is still
+// reasonable, but a full hour (the original choice here) meant a browser that fetched this
+// script before a deploy kept running the stale version for up to an hour afterward — exactly
+// what happened when custom header/footer support was added to this same script shortly after
+// related posts alone had already been fetched and cached by a real visitor. Kept short while
+// this is still under active iteration.
 router.get("/related-posts.js", (req, res) => {
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
-  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.setHeader("Cache-Control", "public, max-age=15");
   res.send(RELATED_POSTS_SCRIPT);
 });
 
@@ -160,7 +210,7 @@ const RELATED_POSTS_SCRIPT = `(function () {
     container.innerHTML = html;
   }
 
-  function init() {
+  function initRelatedPosts() {
     var containers = document.querySelectorAll('[data-related-posts]');
     containers.forEach(function (container) {
       var postId = container.getAttribute('data-post-id');
@@ -176,6 +226,54 @@ const RELATED_POSTS_SCRIPT = `(function () {
         })
         .catch(function () {});
     });
+  }
+
+  // el.innerHTML = html does NOT execute any <script> tags inside it — a real regression from
+  // the old "baked directly into body_html" behavior, where a merchant's pasted tracking pixel/
+  // chat-widget <script> ran normally as part of the initial page HTML. Manually recreate each
+  // script element (the standard workaround) so pasted scripts keep working after this moved to
+  // JS-injected content.
+  function injectHtmlWithScripts(el, html) {
+    el.innerHTML = html;
+    var oldScripts = el.querySelectorAll('script');
+    oldScripts.forEach(function (oldScript) {
+      var newScript = document.createElement('script');
+      for (var i = 0; i < oldScript.attributes.length; i++) {
+        var attr = oldScript.attributes[i];
+        newScript.setAttribute(attr.name, attr.value);
+      }
+      newScript.textContent = oldScript.textContent;
+      oldScript.parentNode.replaceChild(newScript, oldScript);
+    });
+  }
+
+  // Custom header/footer code (Settings → Advanced) — fetched once per page and injected into
+  // whichever placeholder(s) are present, so a setting change applies to every already-published
+  // post the moment a visitor loads the page, with no resync.
+  function initCustomCode() {
+    var headerEls = document.querySelectorAll('[data-custom-header]');
+    var footerEls = document.querySelectorAll('[data-custom-footer]');
+    if (headerEls.length === 0 && footerEls.length === 0) return;
+    var shop = (headerEls[0] || footerEls[0]).getAttribute('data-shop');
+    if (!shop) return;
+    var url = '${APP_URL}/custom-code.json?shop=' + encodeURIComponent(shop);
+    fetch(url)
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data) return;
+        if (data.headerCode) {
+          headerEls.forEach(function (el) { injectHtmlWithScripts(el, data.headerCode); });
+        }
+        if (data.footerCode) {
+          footerEls.forEach(function (el) { injectHtmlWithScripts(el, data.footerCode); });
+        }
+      })
+      .catch(function () {});
+  }
+
+  function init() {
+    initRelatedPosts();
+    initCustomCode();
   }
 
   if (document.readyState === 'loading') {
