@@ -840,9 +840,9 @@ export default function PostEditor() {
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
 
   useEffect(() => {
-    fetch("/api/settings/meta-robots-status")
+    fetch("/api/shop/setup-status")
       .then((r) => r.json())
-      .then((data) => setMetaRobotsActive(!!data.active))
+      .then((data) => setMetaRobotsActive(!!data.metaRobots?.active))
       .catch(() => setMetaRobotsActive(false));
   }, []);
 

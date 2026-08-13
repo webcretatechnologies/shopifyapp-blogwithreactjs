@@ -13,22 +13,26 @@ import {
   Divider,
   Badge,
   ProgressBar,
-  Select,
   Banner,
   SkeletonBodyText,
   SkeletonDisplayText,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { RefreshIcon } from "@shopify/polaris-icons";
+import { RefreshIcon, CheckCircleIcon } from "@shopify/polaris-icons";
 import KpiRow from "../components/common/KpiRow";
 import AnalyticsChart from "../components/analytics/AnalyticsChart";
+import DateRangeFilter, { toISODateString } from "../components/analytics/DateRangePicker";
 import SetupGuide from "../components/SetupGuide";
+import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
+import { analyticsTrackerActivateUrl } from "../utils/themeEmbedUtils";
 
-const RANGE_OPTIONS = [
-  { label: "Last 7 days", value: "7" },
-  { label: "Last 30 days", value: "30" },
-  { label: "Last 90 days", value: "90" },
-];
+const DEFAULT_RANGE = (() => {
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 29);
+  return { start, end };
+})();
 
 // ─── Mini Funnel ─────────────────────────────────────────────────────────
 function MiniFunnel({ funnel = [] }) {
@@ -67,34 +71,44 @@ export default function Dashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [shopInfo, setShopInfo] = useState(null);
-  const [extensionActive, setExtensionActive] = useState(false);
-  const [extensionLoading, setExtensionLoading] = useState(true);
-  const [metaRobotsActive, setMetaRobotsActive] = useState(false);
-  const [metaRobotsLoading, setMetaRobotsLoading] = useState(true);
-  const [range, setRange] = useState("30");
+  const [setupStatus, setSetupStatus] = useState(null);
+  const [setupLoading, setSetupLoading] = useState(true);
+  const [dateRange, setDateRange] = useState(DEFAULT_RANGE);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [showRefreshBadge, setShowRefreshBadge] = useState(false);
   // Mirrors SetupGuide's dismissal flag: while the guide is visible it already
-  // contains the enable-tracking step, so the banner would be a duplicate prompt.
+  // contains the enable-tracking step, so the banner would be a duplicate prompt. Uses
+  // sessionStorage (not localStorage) so an incomplete requirement resurfaces on the merchant's
+  // next admin session rather than staying hidden forever once dismissed once.
   const [setupDismissed] = useState(
-    () => localStorage.getItem("blogger_setup_dismissed") === "1"
+    () => sessionStorage.getItem("blogger_setup_dismissed") === "1"
   );
 
-  const fetchAnalytics = async (days = range) => {
-    setAnalyticsLoading(true);
+  const fetchAnalytics = async (range = dateRange, { silent = false } = {}) => {
+    if (!silent) setAnalyticsLoading(true);
     try {
-      const res = await fetch(`/api/posts/analytics/summary?days=${days}`);
+      const from = toISODateString(range.start);
+      const to = toISODateString(range.end);
+      const res = await fetch(`/api/posts/analytics/summary?from=${from}&to=${to}`);
       if (res.ok) {
         const data = await res.json();
         setAnalytics(data);
       }
     } catch {
     } finally {
-      setAnalyticsLoading(false);
+      if (!silent) setAnalyticsLoading(false);
     }
   };
 
-  const handleRangeChange = (value) => {
-    setRange(value);
-    fetchAnalytics(value);
+  // Not using Polaris <Toast> — it requires a <Frame> ancestor this app's provider tree doesn't
+  // have (see pages/analytics.jsx for the full explanation); a Frame-independent badge instead.
+  const handleManualRefresh = () => {
+    setManualRefreshing(true);
+    fetchAnalytics(dateRange, { silent: true }).finally(() => {
+      setManualRefreshing(false);
+      setShowRefreshBadge(true);
+      setTimeout(() => setShowRefreshBadge(false), 2500);
+    });
   };
 
   const fetchShop = async () => {
@@ -105,37 +119,41 @@ export default function Dashboard() {
     } catch {}
   };
 
-  const fetchExtensionStatus = async () => {
-    setExtensionLoading(true);
+  const fetchSetupStatus = async ({ silent = false } = {}) => {
+    if (!silent) setSetupLoading(true);
     try {
-      const res = await fetch("/api/shop/extension-status");
+      const res = await fetch("/api/shop/setup-status");
       const data = await res.json();
-      setExtensionActive(data.active);
+      setSetupStatus(data);
     } catch {} finally {
-      setExtensionLoading(false);
-    }
-  };
-
-  const fetchMetaRobotsStatus = async () => {
-    setMetaRobotsLoading(true);
-    try {
-      const res = await fetch("/api/settings/meta-robots-status");
-      const data = await res.json();
-      setMetaRobotsActive(data.active);
-    } catch {} finally {
-      setMetaRobotsLoading(false);
+      if (!silent) setSetupLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAnalytics();
     fetchShop();
-    fetchExtensionStatus();
-    fetchMetaRobotsStatus();
+    fetchSetupStatus();
+  }, []);
+
+  useEffect(() => {
+    fetchAnalytics(dateRange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange]);
+
+  // A merchant enabling an app embed happens in the theme editor, a separate tab — re-check
+  // silently (no loading flash) whenever they switch back to this one, so a completed step
+  // ticks off on its own instead of requiring a manual page reload.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchSetupStatus({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
   const { t } = useTranslation();
   const stats = analytics?.stats;
+  const rangeDays = Math.round((dateRange.end - dateRange.start) / (24 * 60 * 60 * 1000)) + 1;
 
   return (
     <>
@@ -157,13 +175,34 @@ export default function Dashboard() {
         ]}
       >
         <Layout>
+          {/* ── Missing OAuth scopes — needs reinstall, not a theme fix ──── */}
+          {!setupLoading && setupStatus?.missingScopes?.length > 0 && (
+            <Layout.Section>
+              <Banner
+                title="This app needs additional permissions"
+                tone="critical"
+                action={{
+                  content: "Manage app permissions",
+                  onAction: () =>
+                    window.open(`https://${shopInfo?.domain}/admin/settings/apps`, "_blank"),
+                }}
+              >
+                <Text as="p">
+                  Some features may not work correctly until you reinstall or reauthorize this app
+                  from your Shopify Admin's Apps page to grant the permissions it now needs.
+                </Text>
+              </Banner>
+            </Layout.Section>
+          )}
+
           {/* ── Setup Guide ─────────────────────────────────────────── */}
-          {!analyticsLoading && !extensionLoading && !metaRobotsLoading && (
+          {!analyticsLoading && !setupLoading && (
             <Layout.Section>
               <SetupGuide
                 shop={shopInfo?.domain}
-                isExtensionActive={extensionActive}
-                isMetaRobotsActive={metaRobotsActive}
+                isExtensionActive={setupStatus?.analyticsTracker?.active}
+                isMetaRobotsActive={setupStatus?.metaRobots?.active}
+                themeSupportsAppEmbeds={setupStatus?.themeSupportsAppEmbeds}
                 hasPosts={stats?.totalPosts > 0}
               />
             </Layout.Section>
@@ -171,40 +210,32 @@ export default function Dashboard() {
 
           {/* ── Date range toolbar ──────────────────────────────────── */}
           <Layout.Section>
-            <InlineStack align="end" gap="200" blockAlign="center">
-              <Box minWidth="160px">
-                <Select
-                  label="Date range"
-                  labelHidden
-                  options={RANGE_OPTIONS}
-                  value={range}
-                  onChange={handleRangeChange}
-                />
-              </Box>
+            <InlineStack align="end" gap="300" blockAlign="center">
+              {showRefreshBadge && (
+                <Badge tone="success" icon={CheckCircleIcon}>
+                  Updated
+                </Badge>
+              )}
               <Button
-                onClick={() => fetchAnalytics()}
+                onClick={handleManualRefresh}
                 icon={RefreshIcon}
                 accessibilityLabel="Refresh analytics"
+                loading={manualRefreshing}
               />
+              <DateRangeFilter value={dateRange} onChange={setDateRange} />
             </InlineStack>
           </Layout.Section>
 
           {/* ── Tracking not active — empty-state guidance ──────────── */}
-          {!extensionLoading && !extensionActive && setupDismissed && (
+          {!setupLoading && setupDismissed && (
             <Layout.Section>
-              <Banner
-                title="Storefront tracking isn't active yet"
-                tone="warning"
-                action={{
-                  content: "Enable tracking",
-                  onAction: () =>
-                    window.open(`https://${shopInfo?.domain}/admin/themes/current/editor?context=apps`, "_blank"),
-                }}
-              >
-                <Text as="p">
-                  Views, revenue, and conversions below will stay at zero until you enable the Blog Analytics app embed in your theme editor.
-                </Text>
-              </Banner>
+              <EmbedRequirementBanner
+                active={setupStatus?.analyticsTracker?.active}
+                themeSupportsAppEmbeds={setupStatus?.themeSupportsAppEmbeds}
+                activateUrl={analyticsTrackerActivateUrl(shopInfo?.domain || "")}
+                featureName="Storefront tracking"
+                whatBreaks="Views, revenue, and conversions below will stay at zero."
+              />
             </Layout.Section>
           )}
 
@@ -215,7 +246,7 @@ export default function Dashboard() {
               items={[
                 { label: "Total articles", value: stats?.totalPosts ?? 0 },
                 {
-                  label: `Views (${range}d)`,
+                  label: `Views (${rangeDays}d)`,
                   value: (stats?.totalViews ?? 0).toLocaleString(),
                   trend: analytics?.trends?.views,
                 },
@@ -247,8 +278,8 @@ export default function Dashboard() {
             ) : (
               <AnalyticsChart
                 data={analytics?.daily || []}
-                title={`Blog performance — last ${range} days`}
-                period={range}
+                title={`Blog performance — last ${rangeDays} days`}
+                period={analytics?.daily?.length || 1}
                 showPeriodSelector={false}
                 series={[
                   { key: "views", label: "Views", color: "#008060" },
@@ -272,7 +303,7 @@ export default function Dashboard() {
                     <MiniFunnel funnel={analytics.funnel} />
                   ) : (
                     <Text tone="subdued" variant="bodySm">
-                      {extensionActive
+                      {setupStatus?.analyticsTracker?.active
                         ? "No funnel data yet for this period."
                         : "No funnel data yet. Enable storefront tracking above to start collecting it."}
                     </Text>
@@ -337,7 +368,7 @@ export default function Dashboard() {
                     <Text variant="headingMd" as="h3">Top posts</Text>
                     <Divider />
                     <Text tone="subdued" variant="bodySm">
-                      {extensionActive
+                      {setupStatus?.analyticsTracker?.active
                         ? "No performance data yet for this period. Check back once your posts start getting traffic."
                         : "No performance data yet. Enable storefront tracking above to start collecting it."}
                     </Text>

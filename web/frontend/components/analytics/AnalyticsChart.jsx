@@ -7,7 +7,16 @@ import {
   InlineStack,
   BlockStack,
   Select,
+  Checkbox,
 } from "@shopify/polaris";
+
+// Lightens a "#rrggbb" color for the muted comparison-overlay line, without adding a color lib.
+function fadeColor(hex, opacity) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return hex;
+  const [, r, g, b] = m;
+  return `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${opacity})`;
+}
 
 export default function AnalyticsChart({
   data = [],
@@ -17,6 +26,9 @@ export default function AnalyticsChart({
   chartType = "area",
   period: controlledPeriod,
   showPeriodSelector = true,
+  compareData = null,
+  showComparison = false,
+  onToggleComparison = null,
 }) {
   // Use series if provided; otherwise build from color prop for backward compat
   const series = seriesProp || [{ key: "views", label: "Views", color }];
@@ -26,21 +38,44 @@ export default function AnalyticsChart({
   const period = controlledPeriod ?? internalPeriod;
 
   const filtered = data.slice(-parseInt(period));
+  const compareActive = showComparison && Array.isArray(compareData) && compareData.length > 0;
+  // Comparison is positional ("day N of this period" vs "day N of last period"), not
+  // calendar-aligned — the backend already returns compareData zero-filled to the same length.
+  const filteredCompare = compareActive ? compareData.slice(-filtered.length) : [];
 
-  const chartSeries = series.map((s) => ({
-    name: s.label,
-    data: filtered.map((d) => d[s.key] || 0),
-  }));
-  const chartColors = series.map((s) => s.color);
+  const chartSeries = [
+    ...series.map((s) => ({
+      name: s.label,
+      data: filtered.map((d) => d[s.key] || 0),
+    })),
+    ...(compareActive
+      ? series.map((s) => ({
+          name: `${s.label} (previous period)`,
+          data: filteredCompare.map((d) => d[s.key] || 0),
+        }))
+      : []),
+  ];
+  const chartColors = [
+    ...series.map((s) => s.color),
+    ...(compareActive ? series.map((s) => fadeColor(s.color, 0.55)) : []),
+  ];
+  const dashArray = [
+    ...series.map(() => 0),
+    ...(compareActive ? series.map(() => 6) : []),
+  ];
 
   const totals = series.map((s) => ({
     label: s.label,
     total: filtered.reduce((sum, d) => sum + (d[s.key] || 0), 0),
   }));
 
+  // Comparison overlays render as plain lines (no area fill) alongside the primary series —
+  // keeps two overlapping gradient fills from turning into visual mud.
+  const effectiveType = compareActive ? "line" : chartType;
+
   const options = {
     chart: {
-      type: chartType,
+      type: effectiveType,
       toolbar: { show: false },
       zoom: { enabled: false },
       fontFamily:
@@ -49,16 +84,18 @@ export default function AnalyticsChart({
       animations: { enabled: true, speed: 600 },
     },
     colors: chartColors,
-    fill: {
-      type: "gradient",
-      gradient: {
-        shadeIntensity: 1,
-        opacityFrom: 0.35,
-        opacityTo: 0.02,
-        stops: [0, 100],
-      },
-    },
-    stroke: { curve: "smooth", width: chartSeries.length > 1 ? [2, 2, 2] : 2 },
+    fill: compareActive
+      ? { type: "solid", opacity: [...series.map(() => 1), ...series.map(() => 0)] }
+      : {
+          type: "gradient",
+          gradient: {
+            shadeIntensity: 1,
+            opacityFrom: 0.35,
+            opacityTo: 0.02,
+            stops: [0, 100],
+          },
+        },
+    stroke: { curve: "smooth", width: chartSeries.length > 1 ? chartSeries.map(() => 2) : 2, dashArray },
     grid: {
       borderColor: "#e1e3e5",
       strokeDashArray: 4,
@@ -106,25 +143,38 @@ export default function AnalyticsChart({
               ))}
             </Text>
           </BlockStack>
-          {showPeriodSelector && (
-            <Select
-              label="Date range"
-              labelHidden
-              options={[
-                { label: "Last 7 days", value: "7" },
-                { label: "Last 30 days", value: "30" },
-                { label: "Last 90 days", value: "90" },
-              ]}
-              value={period}
-              onChange={setInternalPeriod}
-            />
-          )}
+          <InlineStack gap="400" blockAlign="center">
+            {onToggleComparison && Array.isArray(compareData) && compareData.length > 0 && (
+              <Checkbox
+                label="Show comparison"
+                checked={showComparison}
+                onChange={onToggleComparison}
+              />
+            )}
+            {showPeriodSelector && (
+              <Select
+                label="Date range"
+                labelHidden
+                options={[
+                  { label: "Last 7 days", value: "7" },
+                  { label: "Last 30 days", value: "30" },
+                  { label: "Last 90 days", value: "90" },
+                ]}
+                value={period}
+                onChange={setInternalPeriod}
+              />
+            )}
+          </InlineStack>
         </InlineStack>
-        <div style={{ marginTop: "16px" }}>
+        <div
+          style={{ marginTop: "16px" }}
+          role="img"
+          aria-label={`${title}: ${totals.map((t) => `${t.label} ${t.total.toLocaleString()}`).join(", ")} over the last ${filtered.length} days`}
+        >
           <ReactApexChart
             options={options}
             series={chartSeries}
-            type={chartType === "bar" ? "bar" : "area"}
+            type={effectiveType === "bar" ? "bar" : effectiveType === "line" ? "line" : "area"}
             height={260}
           />
         </div>

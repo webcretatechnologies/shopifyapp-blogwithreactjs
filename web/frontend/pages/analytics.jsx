@@ -16,174 +16,181 @@ import {
   Badge,
   Divider,
   Button,
-  ProgressBar,
   IndexTable,
   Icon,
+  Banner,
 } from "@shopify/polaris";
 import {
   ExportIcon,
-  ViewIcon,
   CartIcon,
-  CreditCardIcon,
   CheckCircleIcon,
-  CheckIcon,
+  RefreshIcon,
 } from "@shopify/polaris-icons";
 import KpiRow from "../components/common/KpiRow";
 import AnalyticsChart from "../components/analytics/AnalyticsChart";
 import DeviceChart from "../components/analytics/DeviceChart";
 import TopSources from "../components/analytics/TopSources";
+import FunnelChart from "../components/analytics/FunnelChart";
+import CountryBreakdown from "../components/analytics/CountryBreakdown";
+import DateRangePicker, { toISODateString } from "../components/analytics/DateRangePicker";
+import { downloadAnalyticsCsv } from "../utils/analyticsCsv";
+import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
+import { analyticsTrackerActivateUrl } from "../utils/themeEmbedUtils";
 
-// ─── Funnel Chart ─────────────────────────────────────────────────────────
-function FunnelChart({ funnel = [] }) {
-  if (!funnel.length) return null;
-  const maxCount = Math.max(...funnel.map((f) => f.count), 1);
-
-  return (
-    <Card>
-      <Box padding="400">
-        <BlockStack gap="300">
-          <Text variant="headingMd" as="h3">Conversion funnel</Text>
-          <Divider />
-          <BlockStack gap="200">
-            {funnel.map((stage, i) => {
-              const pct = (stage.count / maxCount) * 100;
-              const dropPct =
-                i > 0 && funnel[i - 1].count > 0
-                  ? ((1 - stage.count / funnel[i - 1].count) * 100).toFixed(1)
-                  : null;
-              const arrow = i < funnel.length - 1 ? "↓" : "";
-              const stageIcon = [ViewIcon, CartIcon, CreditCardIcon, CheckCircleIcon][i];
-              return (
-                <div key={stage.stage}>
-                  <InlineStack align="space-between" blockAlign="center">
-                    <InlineStack gap="200" blockAlign="center">
-                      <Box
-                        background={i === 3 ? "bg-success-subdued" : i === 0 ? "bg-info-subdued" : "bg-subdued"}
-                        borderRadius="200"
-                        padding="150"
-                      >
-                        <Icon source={stageIcon || CheckIcon} tone={i === 3 ? "success" : i === 0 ? "info" : "subdued"} />
-                      </Box>
-                      <BlockStack gap="025">
-                        <Text variant="bodySm" fontWeight="semibold">
-                          {stage.stage}
-                        </Text>
-                        {dropPct && parseFloat(dropPct) > 0 && (
-                          <Text variant="bodyXs" tone="critical">
-                            {arrow} {dropPct}% drop
-                          </Text>
-                        )}
-                      </BlockStack>
-                    </InlineStack>
-                    <Text variant="bodySm" fontWeight="bold">
-                      {stage.count.toLocaleString()}
-                    </Text>
-                  </InlineStack>
-                  <div style={{ marginTop: 6 }}>
-                    <ProgressBar
-                      progress={Math.round(pct)}
-                      size="small"
-                      tone={i === 3 ? "success" : i === 0 ? "primary" : "highlight"}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </BlockStack>
-        </BlockStack>
-      </Box>
-    </Card>
-  );
-}
-
-// ─── Top Countries Table ──────────────────────────────────────────────────
-function CountryBreakdown({ countries = [] }) {
-  if (!countries.length) return null;
-  const total = countries.reduce((s, c) => s + c.count, 0);
-
-  return (
-    <Card>
-      <Box padding="400">
-        <BlockStack gap="300">
-          <Text variant="headingMd" as="h3">Top countries</Text>
-          <Divider />
-          {countries.slice(0, 8).map(({ code, count }) => {
-            const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0";
-            const flag = code
-              ? code
-                  .toUpperCase()
-                  .replace(/./g, (c) =>
-                    String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)
-                  )
-              : "🌐";
-            return (
-              <InlineStack key={code} align="space-between" blockAlign="center">
-                <InlineStack gap="200" blockAlign="center">
-                  <span style={{ fontSize: "16px" }}>{flag}</span>
-                  <Text variant="bodySm">{code || "Unknown"}</Text>
-                </InlineStack>
-                <Text variant="bodySm" fontWeight="semibold">
-                  {count.toLocaleString()} ({pct}%)
-                </Text>
-              </InlineStack>
-            );
-          })}
-        </BlockStack>
-      </Box>
-    </Card>
-  );
-}
+const DEFAULT_RANGE = (() => {
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 29);
+  return { start, end };
+})();
 
 // ─── Main Page ────────────────────────────────────────────────────────────
 export default function Analytics() {
   const navigate = useNavigate();
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [dateRange, setDateRange] = useState(DEFAULT_RANGE);
+  const [showComparison, setShowComparison] = useState(false);
+  const [lastLoadedAt, setLastLoadedAt] = useState(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const [shopDomain, setShopDomain] = useState(null);
+  const [setupStatus, setSetupStatus] = useState(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
+
+  const fetchSetupStatus = () => {
+    fetch("/api/shop/setup-status").then((r) => r.json()).then(setSetupStatus).catch(() => {});
+  };
 
   useEffect(() => {
-    fetch("/api/posts/analytics/summary")
-      .then((r) => r.json())
+    fetch("/api/shop").then((r) => r.json()).then((d) => setShopDomain(d.shop?.domain)).catch(() => {});
+    fetchSetupStatus();
+  }, []);
+
+  // Re-check silently when the merchant switches back from the theme editor tab, so the banner
+  // above clears itself the moment the embed is actually turned on — no manual reload needed.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchSetupStatus();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
+  const loadAnalytics = (range, { silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
+    const from = toISODateString(range.start);
+    const to = toISODateString(range.end);
+    return fetch(`/api/posts/analytics/summary?from=${from}&to=${to}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Request failed (${r.status})`);
+        return r.json();
+      })
       .then((d) => {
         setAnalytics(d);
         setLoading(false);
+        setLastLoadedAt(Date.now());
+        if (silent) setError(null);
       })
-      .catch(() => setLoading(false));
-  }, []);
+      .catch((err) => {
+        if (!silent) {
+          setError(err.message || "Failed to load analytics");
+          setLoading(false);
+        }
+        // Silent background refreshes fail quietly — the last good data stays on screen rather
+        // than flashing an error banner over an otherwise-working page.
+      });
+  };
+
+  // Manual refresh button — silent (no full-page spinner, matches the auto-refresh behavior),
+  // but a merchant clicking a refresh button expects SOME visible confirmation it did something,
+  // otherwise it's indistinguishable from a dead button. Spinner replaces the icon while in
+  // flight, then a brief "Updated" badge confirms completion.
+  // Not using Polaris <Toast> here — it requires a <Frame> ancestor, and this app's provider
+  // tree (PolarisProvider.jsx) has none, so Toast throws "No Frame context was provided" and
+  // crashes the page the moment it's rendered. That's a pre-existing, app-wide gap (every other
+  // <Toast> usage in this codebase — settings, sync, posts, comments — has the same landmine,
+  // just not yet triggered); out of scope to fix everywhere from here, so this uses a
+  // Frame-independent confirmation instead.
+  const handleManualRefresh = () => {
+    setManualRefreshing(true);
+    loadAnalytics(dateRange, { silent: true }).finally(() => {
+      setManualRefreshing(false);
+      setShowRefreshToast(true);
+      setTimeout(() => setShowRefreshToast(false), 2500);
+    });
+  };
+
+  useEffect(() => {
+    loadAnalytics(dateRange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange]);
+
+  // Background refresh every 60s (no loading flash) so numbers stay current without a manual
+  // reload, plus a 1/min tick to keep the "Updated Xs ago" label live.
+  useEffect(() => {
+    const refreshTimer = setInterval(() => loadAnalytics(dateRange, { silent: true }), 60000);
+    const tickTimer = setInterval(() => setNowTick(Date.now()), 60000);
+    return () => {
+      clearInterval(refreshTimer);
+      clearInterval(tickTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange]);
+
+  const freshnessLabel = (() => {
+    if (!lastLoadedAt) return null;
+    const secs = Math.max(0, Math.round((nowTick - lastLoadedAt) / 1000));
+    if (secs < 60) return "Updated just now";
+    const mins = Math.round(secs / 60);
+    return `Updated ${mins}m ago`;
+  })();
 
   const stats = analytics?.stats;
 
   const exportCSV = () => {
-    const data = analytics?.daily;
-    if (!data?.length) return;
-    const headers = [
-      "Date",
-      "Views",
-      "Unique Visitors",
-      "Add to Cart",
-      "Checkouts",
-      "Conversions",
-      "Revenue",
-    ];
-    const rows = [headers];
-    data.forEach((d) => {
-      rows.push([
-        d.date,
-        d.views || 0,
-        d.uniqueVisitors || 0,
-        d.addToCart || 0,
-        d.checkouts || 0,
-        d.conversions || 0,
-        d.revenue || 0,
-      ]);
-    });
-    const csv = rows.map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "blog-analytics.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!analytics?.daily?.length) return;
+
+    downloadAnalyticsCsv("blog-analytics.csv", [
+      {
+        title: "Daily Totals",
+        headers: ["Date", "Views", "Unique Visitors", "Add to Cart", "Checkouts", "Conversions", "Revenue"],
+        rows: analytics.daily.map((d) => [
+          d.date, d.views || 0, d.uniqueVisitors || 0, d.addToCart || 0, d.checkouts || 0, d.conversions || 0, d.revenue || 0,
+        ]),
+      },
+      {
+        title: "Top Posts",
+        headers: ["Title", "Status", "Views", "Unique Visitors", "Add to Cart", "Conversions", "Revenue"],
+        rows: (analytics.topPosts || []).map((p) => [
+          p.title, p.status, p.views || 0, p.uniqueVisitors || 0, p.addToCart || 0, p.conversions || 0, p.revenue || 0,
+        ]),
+      },
+      {
+        title: "Device Breakdown",
+        headers: ["Device", "Count"],
+        rows: [
+          ["Desktop", analytics.deviceBreakdown?.desktop || 0],
+          ["Mobile", analytics.deviceBreakdown?.mobile || 0],
+          ["Tablet", analytics.deviceBreakdown?.tablet || 0],
+        ],
+      },
+      {
+        title: "Traffic Sources",
+        headers: ["Source", "Count"],
+        rows: (analytics.topSources || []).map((s) => [s.name, s.count]),
+      },
+      {
+        title: "Top Countries",
+        headers: ["Country", "Count"],
+        rows: (analytics.topCountries || []).map((c) => [c.code || "Unknown", c.count]),
+      },
+    ]);
   };
 
   return (
@@ -195,24 +202,70 @@ export default function Analytics() {
         { content: "Export CSV", icon: ExportIcon, onAction: exportCSV },
       ]}
     >
+      <Box paddingBlockEnd="400">
+        <InlineStack align="end" gap="300" blockAlign="center">
+          {showRefreshToast && (
+            <Badge tone="success" icon={CheckCircleIcon}>
+              Updated
+            </Badge>
+          )}
+          {freshnessLabel && (
+            <Text tone="subdued" variant="bodySm">
+              {freshnessLabel}
+            </Text>
+          )}
+          <Button
+            icon={RefreshIcon}
+            accessibilityLabel="Refresh analytics"
+            onClick={handleManualRefresh}
+            disabled={loading}
+            loading={manualRefreshing}
+          />
+          <DateRangePicker value={dateRange} onChange={setDateRange} />
+        </InlineStack>
+      </Box>
+
+      {error && (
+        <Box paddingBlockEnd="400">
+          <Banner
+            tone="critical"
+            title="Couldn't load analytics"
+            action={{ content: "Retry", onAction: () => loadAnalytics(dateRange) }}
+          >
+            <Text>{error}</Text>
+          </Banner>
+        </Box>
+      )}
+
       {loading ? (
         <Box padding="800" align="center">
           <Spinner />
         </Box>
-      ) : (
+      ) : error ? null : (
         <BlockStack gap="500">
+          {shopDomain && setupStatus && !setupStatus.analyticsTracker?.active && (
+            <EmbedRequirementBanner
+              active={setupStatus.analyticsTracker?.active}
+              themeSupportsAppEmbeds={setupStatus.themeSupportsAppEmbeds}
+              activateUrl={analyticsTrackerActivateUrl(shopDomain)}
+              featureName="Revenue and conversion tracking"
+              whatBreaks="Revenue, Add to Cart, Checkouts, and Conversions below will show as zero until this is enabled."
+            />
+          )}
           <Layout>
             {/* ── KPI Summary ────────────────────────────────────────── */}
             <Layout.Section>
               <KpiRow
+                loading={loading}
                 items={[
-                  { label: "Total Views", value: (stats?.totalViews ?? 0).toLocaleString() },
+                  { label: "Total Views", value: (stats?.totalViews ?? 0).toLocaleString(), trend: analytics?.trends?.views },
                   { label: "Unique Visitors", value: (stats?.totalUniqueVisitors ?? 0).toLocaleString() },
                   {
                     label: "Revenue",
                     value: `$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                    trend: analytics?.trends?.revenue,
                   },
-                  { label: "Overall Conv. Rate", value: `${stats?.conversionRate ?? "0.00"}%` },
+                  { label: "Overall Conv. Rate", value: `${stats?.conversionRate ?? "0.00"}%`, trend: analytics?.trends?.conversionRate },
                 ]}
               />
             </Layout.Section>
@@ -269,6 +322,11 @@ export default function Analytics() {
                   { key: "addToCart", label: "Add to Cart", color: "#e67e22" },
                   { key: "conversions", label: "Conversions", color: "#005bd3" },
                 ]}
+                showPeriodSelector={false}
+                controlledPeriod={analytics?.daily?.length || 1}
+                showComparison={showComparison}
+                onToggleComparison={setShowComparison}
+                compareData={analytics?.previousDaily || []}
               />
             </Layout.Section>
           </Layout>
@@ -290,7 +348,7 @@ export default function Analytics() {
             {/* ── Top Posts & Countries ─────────────────────────────────────────────── */}
             <Layout.Section variant="oneHalf">
               <Card>
-                <Box padding="400">
+                <Box padding="400" minHeight="240px">
                   <BlockStack gap="300">
                     <Text variant="headingMd" as="h3">Top performing posts</Text>
                     <Divider />
@@ -300,8 +358,18 @@ export default function Analytics() {
                         storefront automatically.
                       </Text>
                     )}
+                    <div style={{ maxHeight: 420, overflowY: "auto" }}>
                     {analytics?.topPosts?.map((p, i) => (
-                      <div key={p.id}>
+                      <div
+                        key={p.id}
+                        onClick={() => navigate(`/analytics/${p.id}`)}
+                        style={{ cursor: "pointer" }}
+                        role="link"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") navigate(`/analytics/${p.id}`);
+                        }}
+                      >
                         <InlineStack align="space-between" blockAlign="center">
                           <InlineStack gap="200" blockAlign="center">
                             <Box
@@ -371,6 +439,7 @@ export default function Analytics() {
                         )}
                       </div>
                     ))}
+                    </div>
                   </BlockStack>
                 </Box>
               </Card>

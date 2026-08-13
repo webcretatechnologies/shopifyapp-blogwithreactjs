@@ -19,7 +19,9 @@ api_version = "2025-10"
   [[webhooks.subscriptions]]
   topics = [
     "app/uninstalled",
-    "app_subscriptions/update"
+    "app_subscriptions/update",
+    "orders/create",
+    "checkouts/create"
   ]
   uri = "/api/webhooks"
 

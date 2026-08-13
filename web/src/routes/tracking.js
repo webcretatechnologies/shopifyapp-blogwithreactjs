@@ -21,9 +21,11 @@ import {
   detectDevice,
   detectSource,
   detectCountry,
+  validateEventValue,
 } from "../services/AnalyticsTrackingService.js";
 
 const router = express.Router();
+const prisma = new PrismaClient();
 
 // ─── 1x1 transparent GIF (base64-encoded) ────────────────────────────────
 const TRANSPARENT_PIXEL = Buffer.from(
@@ -71,9 +73,14 @@ async function handleViewTracking(req, res) {
     const post = await resolveTrackingKey(key);
     if (post) {
       const visitorHash = sid || hashVisitor(ip, ua);
+      const shopRow = await prisma.shop.findUnique({
+        where: { id: post.shopId },
+        select: { timezone: true },
+      });
       await trackView({
         postId: post.id,
         shopDomain: shop || "",
+        shopTimezone: shopRow?.timezone || "",
         userAgent: ua,
         referer: ref,
         acceptLang,
@@ -128,6 +135,28 @@ router.get("/pixel.gif", async (req, res) => {
   }
 });
 
+// ─── Abuse guard for /track/event ────────────────────────────────────────
+// A forged conversion event's `value` directly inflates a shop's reported revenue, and this
+// endpoint accepts arbitrary unauthenticated JSON — bound the value, restrict currency to a real
+// ISO 4217 code shape, and rate-limit per (ip, tracking key) to blunt trivial abuse without
+// adding new infra (in-memory, matching this file's existing patterns; resets on restart, which
+// is acceptable for a soft abuse guard rather than a hard security boundary).
+const EVENT_RATE_LIMIT = 20; // max events per window
+const EVENT_RATE_WINDOW_MS = 60 * 1000;
+const eventRateMap = new Map(); // `${ip}:${key}` -> { count, windowStart }
+
+function isRateLimited(ip, key) {
+  const rateKey = `${ip}:${key}`;
+  const now = Date.now();
+  const entry = eventRateMap.get(rateKey);
+  if (!entry || now - entry.windowStart > EVENT_RATE_WINDOW_MS) {
+    eventRateMap.set(rateKey, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > EVENT_RATE_LIMIT;
+}
+
 // ─── POST /track/event — Rich event tracking ────────────────────────────
 router.post("/event", express.json(), async (req, res) => {
   setCorsHeaders(res);
@@ -154,9 +183,18 @@ router.post("/event", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Missing tracking key (k)" });
     }
 
+    if (isRateLimited(ip, k)) {
+      return res.status(429).json({ error: "Too many events" });
+    }
+
     const validEvents = ["add_to_cart", "checkout", "conversion", "cta_click", "product_click"];
     if (!event || !validEvents.includes(event)) {
       return res.status(400).json({ error: `Invalid event type. Must be one of: ${validEvents.join(", ")}` });
+    }
+
+    const valueError = validateEventValue(value, currency);
+    if (valueError) {
+      return res.status(400).json({ error: valueError });
     }
 
     const post = await resolveTrackingKey(k);
@@ -164,9 +202,15 @@ router.post("/event", express.json(), async (req, res) => {
       return res.status(404).json({ error: "Post not found for tracking key" });
     }
 
+    const shopRow = await prisma.shop.findUnique({
+      where: { id: post.shopId },
+      select: { timezone: true },
+    });
+
     await trackEvent({
       postId: post.id,
       eventType: event,
+      shopTimezone: shopRow?.timezone || "",
       userAgent: ua,
       referer,
       ip,
@@ -200,12 +244,18 @@ router.get("/event.gif", async (req, res) => {
     const ua = req.headers["user-agent"] || "";
     const ip = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
 
-    if (key && eventType) {
+    if (key && eventType && !isRateLimited(ip, key)) {
       const post = await resolveTrackingKey(key);
-      if (post && !isBot(ua)) {
+      const valueError = validateEventValue(value, null);
+      if (post && !isBot(ua) && !valueError) {
+        const shopRow = await prisma.shop.findUnique({
+          where: { id: post.shopId },
+          select: { timezone: true },
+        });
         await trackEvent({
           postId: post.id,
           eventType,
+          shopTimezone: shopRow?.timezone || "",
           userAgent: ua,
           referer: ref,
           ip,

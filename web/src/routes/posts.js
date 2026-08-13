@@ -19,7 +19,7 @@ import {
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
 import { ArticleSyncService } from "../services/ArticleSyncService.js";
 import { ShopifyArticleParser } from "../services/ShopifyArticleParser.js";
-import { getShopAnalytics } from "../services/AnalyticsTrackingService.js";
+import { getShopAnalytics, getPostAnalytics } from "../services/AnalyticsTrackingService.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
@@ -1572,18 +1572,31 @@ function serializePost(post) {
   };
 }
 
+// Shared by both analytics routes below — the Analytics page's calendar/preset picker sends an
+// explicit ?from=YYYY-MM-DD&to=YYYY-MM-DD range; dashboard.jsx's simpler selector still sends
+// ?days=7|30|90. Prefer from/to when both are present and well-formed; otherwise fall back to
+// the days allowlist exactly as before (fully backward compatible).
+const DATE_QUERY_RE = /^\d{4}-\d{2}-\d{2}$/;
+function resolveRequestedRange(req) {
+  const { from, to } = req.query;
+  if (typeof from === "string" && typeof to === "string" && DATE_QUERY_RE.test(from) && DATE_QUERY_RE.test(to) && from <= to) {
+    return { from, to };
+  }
+  const ALLOWED_DAYS = [7, 30, 90];
+  const requestedDays = parseInt(req.query.days, 10);
+  return ALLOWED_DAYS.includes(requestedDays) ? requestedDays : 30;
+}
+
 // ─── GET /api/posts/analytics/summary — Dashboard analytics ──────────────────
 router.get("/analytics/summary", async (req, res) => {
   try {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
 
-    const ALLOWED_DAYS = [7, 30, 90];
-    const requestedDays = parseInt(req.query.days, 10);
-    const days = ALLOWED_DAYS.includes(requestedDays) ? requestedDays : 30;
+    const range = resolveRequestedRange(req);
 
     // Use the shared analytics service for comprehensive data
-    const analytics = await getShopAnalytics(shop.id, days);
+    const analytics = await getShopAnalytics(shop.id, range);
     if (!analytics) {
       return res.json({
         stats: { totalPosts: 0, published: 0, drafts: 0, totalViews: 0, totalUniqueVisitors: 0, totalAddToCart: 0, totalCheckouts: 0, totalConversions: 0, totalRevenue: 0, addToCartRate: "0.00", checkoutRate: "0.00", conversionRate: "0.00" },
@@ -1595,7 +1608,6 @@ router.get("/analytics/summary", async (req, res) => {
         topCountries: [],
         funnel: [],
         trends: {},
-        days,
       });
     }
 
@@ -1612,127 +1624,29 @@ router.get("/analytics/summary", async (req, res) => {
   }
 });
 
-// ─── POST /api/posts/:id/view — Track post view with enriched analytics ─────
-router.post("/:id/view", async (req, res) => {
+// ─── GET /api/posts/:id/analytics — Per-post analytics drill-down ────────────
+// Placed before the generic GET /:id route further below, same reasoning as
+// /analytics/summary above — otherwise Express would treat "analytics" as the :id parameter.
+router.get("/:id/analytics", async (req, res) => {
   try {
-    const postId = parseInt(req.params.id);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(404).json({ error: "Post not found" });
 
-    // ── Device Type ────────────────────────────────────────────────────────
-    const ua = (req.headers["user-agent"] || "").toLowerCase();
-    let deviceDesktop = 0, deviceMobile = 0, deviceTablet = 0;
-    if (/tablet|ipad|playbook|silk|android(?!.*mobile)/i.test(ua)) {
-      deviceTablet = 1;
-    } else if (/mobile|iphone|ipod|android|blackberry|opera mini|iemobile|wpdesktop/i.test(ua)) {
-      deviceMobile = 1;
-    } else {
-      deviceDesktop = 1;
-    }
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
 
-    // ── Traffic Source ─────────────────────────────────────────────────────
-    const referer = req.headers["referer"] || req.headers["referrer"] || "";
-    let source = "direct";
-    if (referer) {
-      try {
-        const refUrl = new URL(referer);
-        const hostname = refUrl.hostname.toLowerCase();
-        if (/google\./.test(hostname)) source = "google";
-        else if (/facebook\.|fb\.me|meta\./.test(hostname)) source = "facebook";
-        else if (/twitter\.|x\.com/.test(hostname)) source = "twitter";
-        else if (/linkedin\./.test(hostname)) source = "linkedin";
-        else if (/instagram\./.test(hostname)) source = "instagram";
-        else if (/pinterest\./.test(hostname)) source = "pinterest";
-        else if (/youtube\./.test(hostname)) source = "youtube";
-        else if (/bing\.|yahoo\.|duckduckgo\.|baidu\./i.test(hostname)) source = "search";
-        else if (/mail\.|outlook\.|yahoo\.com\/mail/.test(hostname)) source = "email";
-        else if (hostname === req.get("host") || hostname.includes(req.get("host") || "")) source = "internal";
-        else source = "other";
-      } catch {
-        source = "other";
-      }
-    }
-
-    // ── Country (roughly from Accept-Language) ─────────────────────────────
-    const acceptLang = req.headers["accept-language"] || "";
-    let country = "";
-    if (acceptLang) {
-      const match = acceptLang.match(/^[a-z]{2}[-_]([a-z]{2})\b/i);
-      if (match) country = match[1].toUpperCase();
-    }
-
-    // ── Unique Visitor (by IP, with TTL cleanup) ───────────────────────────
-    const rawIp = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
-    const dateStr = today.toISOString().split("T")[0];
-    const visitorKey = `${postId}:${dateStr}:${rawIp}`;
-    if (!req.app.locals._viewedIps) req.app.locals._viewedIps = new Map();
-    if (req.app.locals._viewedIps.size > 100000) {
-      const cutoff = Date.now() - 48 * 60 * 60 * 1000;
-      for (const [k] of req.app.locals._viewedIps) {
-        const [, entryDate] = k.split(":");
-        if (entryDate && new Date(entryDate).getTime() < cutoff) {
-          req.app.locals._viewedIps.delete(k);
-        }
-      }
-    }
-    const ipSeen = req.app.locals._viewedIps.has(visitorKey);
-    req.app.locals._viewedIps.set(visitorKey, Date.now());
-
-    // ── Update Analytics ───────────────────────────────────────────────────
-    const analytic = await prisma.postAnalytic.upsert({
-      where: { postId_date: { postId, date: today } },
-      update: {
-        views: { increment: 1 },
-        ...(!ipSeen ? { uniqueVisitors: { increment: 1 } } : {}),
-        deviceDesktop: { increment: deviceDesktop },
-        deviceMobile: { increment: deviceMobile },
-        deviceTablet: { increment: deviceTablet },
-      },
-      create: {
-        postId,
-        date: today,
-        views: 1,
-        uniqueVisitors: 1,
-        deviceDesktop,
-        deviceMobile,
-        deviceTablet,
-      },
+    const post = await prisma.post.findFirst({
+      where: { id, shopId: shop.id },
+      select: { id: true, title: true, slug: true, featuredImage: true, status: true },
     });
+    if (!post) return res.status(404).json({ error: "Post not found" });
 
-    // ── Update sources JSON ────────────────────────────────────────────────
-    const currentSources = (analytic.sources || {}) instanceof Buffer
-      ? JSON.parse(analytic.sources.toString())
-      : (analytic.sources || {});
-    const newSources = {
-      ...currentSources,
-      [source]: (currentSources[source] || 0) + 1,
-    };
+    const range = resolveRequestedRange(req);
+    const analytics = await getPostAnalytics(id, shop.id, range);
 
-    // ── Update countries JSON ──────────────────────────────────────────────
-    let newCountries = null;
-    if (country) {
-      const currentCountries = (analytic.countries || {}) instanceof Buffer
-        ? JSON.parse(analytic.countries.toString())
-        : (analytic.countries || {});
-      newCountries = {
-        ...currentCountries,
-        [country]: (currentCountries[country] || 0) + 1,
-      };
-    }
-
-    if (analytic.views > 0 || source !== "direct" || country) {
-      await prisma.postAnalytic.update({
-        where: { id: analytic.id },
-        data: {
-          sources: newSources,
-          ...(newCountries ? { countries: newCountries } : {}),
-        },
-      });
-    }
-
-    res.json({ success: true });
+    res.json({ post, ...analytics });
   } catch (err) {
-    console.error("POST /api/posts/:id/view error:", err);
+    console.error("GET /api/posts/:id/analytics error:", err);
     res.status(500).json({ error: err.message });
   }
 });

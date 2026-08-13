@@ -35,7 +35,7 @@ export default function TopSources({ sources = [] }) {
 
   return (
     <Card>
-      <Box padding="400">
+      <Box padding="400" minHeight="360px">
         <BlockStack gap="300">
           <Text variant="headingMd">Traffic Sources</Text>
           {sources.length === 0 ? (

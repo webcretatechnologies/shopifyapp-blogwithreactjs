@@ -96,6 +96,8 @@ import serveStatic from "serve-static";
 import shopify, { prisma } from "./shopify.js";
 import PrivacyWebhookHandlers from "./privacy.js";
 import { ArticleSyncService } from "./src/services/ArticleSyncService.js";
+import { getEmbedStatus, getMissingScopes } from "./src/services/ThemeEmbedStatusService.js";
+import { trackEvent } from "./src/services/AnalyticsTrackingService.js";
 import crypto from "crypto";
 import postRoutes from "./src/routes/posts.js";
 import settingsRoutes from "./src/routes/settings.js";
@@ -222,6 +224,25 @@ app.get(
           await registerShopifyArticleWebhooks(session.shop, restClient);
         } catch (whErr) {
           console.error("Article webhook registration error:", whErr);
+        }
+
+        // Register/sync the declarative webhook topics (ORDERS_CREATE, APP_UNINSTALLED, etc. —
+        // whatever's configured via shopify.processWebhooks' webhookHandlers below) against
+        // Shopify's Admin API. processWebhooks only wires up the INCOMING delivery handler for
+        // requests that arrive at /api/webhooks — it never actually tells Shopify to start
+        // sending them. Editing shopify.app.toml's [webhooks] list alone does not create the
+        // subscription for an already-installed shop; this explicit call is what does. Missing
+        // this call is why ORDERS_CREATE was added to the TOML but never actually subscribed,
+        // silently leaving orders/create webhooks undelivered.
+        try {
+          const registerResult = await shopify.api.webhooks.register({ session });
+          for (const [topic, results] of Object.entries(registerResult)) {
+            for (const r of results) {
+              if (!r.success) console.error(`[WebhookRegister] ${topic} failed:`, r.result);
+            }
+          }
+        } catch (whErr) {
+          console.error("Webhook subscription registration error:", whErr);
         }
       }
     } catch (err) {
@@ -353,6 +374,111 @@ app.post(
           }
         },
       },
+      // Server-side conversion tracking — Shopify checkout/thank-you pages are Shopify-hosted
+      // (not theme-rendered) for non-Plus stores, so client-side "thank you page" detection in
+      // extensions/analytics-tracker/assets/tracker.js can never reliably run there. Attribution
+      // instead travels through checkout as a cart attribute (blogger_source_post_id, written by
+      // tracker.js's writeCartAttribute()) — Shopify carries cart attributes through to the
+      // resulting order's note_attributes untouched, which this webhook reads back out.
+      ORDERS_CREATE: {
+        deliveryMethod: "http",
+        callbackUrl: "/api/webhooks",
+        callback: async (topic, shop, body) => {
+          try {
+            const order = JSON.parse(body);
+            const attrs = Array.isArray(order.note_attributes) ? order.note_attributes : [];
+            const postIdAttr = attrs.find((a) => a.name === "blogger_source_post_id")?.value;
+            if (!postIdAttr) return; // Order not attributed to any blog post — not an error.
+
+            const postId = Number(postIdAttr);
+            if (!Number.isInteger(postId)) return;
+
+            // Idempotency — Shopify webhook delivery is at-least-once; redelivery on a timeout
+            // or transient non-2xx must not double-count the same order's conversion.
+            const shopRecord = await prisma.shop.findUnique({ where: { domain: shop } });
+            if (!shopRecord) return;
+
+            try {
+              await prisma.processedOrderWebhook.create({
+                data: { shopId: shopRecord.id, orderId: String(order.id) },
+              });
+            } catch (err) {
+              if (err.code === "P2002") return; // Already processed this order.
+              throw err;
+            }
+
+            // Ownership check — the cart attribute is client-settable (devtools), so a tampered
+            // value could at most misattribute within the tamperer's own shop, never write to a
+            // post belonging to a different shop.
+            const post = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, shopId: true } });
+            if (!post || post.shopId !== shopRecord.id) return;
+
+            // Only note_attributes/total_price/currency/id are read from the payload — never
+            // customer PII (email, phone, shipping address, line items), keeping this out of
+            // Shopify's Protected Customer Data approval requirements (already special-cased
+            // elsewhere in this app — see src/routes/comments.js).
+            await trackEvent({
+              postId,
+              eventType: "conversion",
+              shopTimezone: shopRecord.timezone || "",
+              value: order.total_price != null ? parseFloat(order.total_price) : null,
+              currency: order.currency || null,
+            });
+          } catch (err) {
+            console.error("ORDERS_CREATE webhook error:", err);
+          }
+        },
+      },
+      // Server-side checkout-initiation tracking — same reasoning as ORDERS_CREATE above, but one
+      // step earlier. Client-side click/submit detection in tracker.js can only ever catch a
+      // *standard* storefront checkout button, on the merchant's own cart page, before navigation
+      // — it structurally cannot see accelerated/express checkout buttons (Shop Pay, Buy it now —
+      // rendered as a cross-origin iframe) or B2B/company checkout flows that don't originate from
+      // a normal cart page click at all. checkouts/create fires server-side the moment ANY
+      // checkout session begins, regardless of how — confirmed necessary after a real B2B test
+      // order completed with $0 checkouts recorded despite the click-based detection.
+      CHECKOUTS_CREATE: {
+        deliveryMethod: "http",
+        callbackUrl: "/api/webhooks",
+        callback: async (topic, shop, body) => {
+          try {
+            const checkout = JSON.parse(body);
+            const attrs = Array.isArray(checkout.note_attributes) ? checkout.note_attributes : [];
+            const postIdAttr = attrs.find((a) => a.name === "blogger_source_post_id")?.value;
+            if (!postIdAttr) return; // Checkout not attributed to any blog post — not an error.
+
+            const postId = Number(postIdAttr);
+            if (!Number.isInteger(postId)) return;
+
+            const shopRecord = await prisma.shop.findUnique({ where: { domain: shop } });
+            if (!shopRecord) return;
+
+            // Same idempotency table as ORDERS_CREATE, namespaced by a "checkout-" prefix so a
+            // checkout id can never collide with an order id in the shared unique constraint.
+            try {
+              await prisma.processedOrderWebhook.create({
+                data: { shopId: shopRecord.id, orderId: `checkout-${checkout.id}` },
+              });
+            } catch (err) {
+              if (err.code === "P2002") return; // Already processed this checkout.
+              throw err;
+            }
+
+            const post = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, shopId: true } });
+            if (!post || post.shopId !== shopRecord.id) return;
+
+            // No value/currency — "checkout" only increments the checkouts counter, not revenue
+            // (that's ORDERS_CREATE's job, once the purchase actually completes).
+            await trackEvent({
+              postId,
+              eventType: "checkout",
+              shopTimezone: shopRecord.timezone || "",
+            });
+          } catch (err) {
+            console.error("CHECKOUTS_CREATE webhook error:", err);
+          }
+        },
+      },
     },
   })
 );
@@ -438,48 +564,27 @@ app.get("/api/shop", async (_req, res) => {
   }
 });
 
-// Extension Status (Super Human verification via Theme API)
-app.get("/api/shop/extension-status", async (_req, res) => {
+// Setup status — one consolidated check for every "must be configured outside this app's own
+// settings pages" requirement: theme app-embed activation (analytics tracker + meta robots),
+// whether the merchant's theme supports app embeds at all, missing OAuth scopes, and whether
+// they've published a first post. See src/services/ThemeEmbedStatusService.js.
+app.get("/api/shop/setup-status", async (_req, res) => {
   try {
     const session = res.locals.shopify?.session;
-    const client = new shopify.api.clients.Rest({ session });
+    const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
 
-    // 1. Get the main published theme
-    const themesReq = await client.get({ path: "themes" });
-    const mainTheme = themesReq.body.themes.find((t) => t.role === "main");
-    
-    if (!mainTheme) return res.json({ active: false });
+    const [embedStatus, hasPosts] = await Promise.all([
+      getEmbedStatus(session),
+      shop ? prisma.post.count({ where: { shopId: shop.id } }).then((c) => c > 0) : Promise.resolve(false),
+    ]);
 
-    // 2. Get settings_data.json
-    try {
-      const assetReq = await client.get({
-        path: `themes/${mainTheme.id}/assets`,
-        query: { "asset[key]": "config/settings_data.json" }
-      });
-      
-      const settingsData = JSON.parse(assetReq.body.asset.value);
-      const blocks = settingsData.current?.blocks || {};
-      
-      let isActive = false;
-      for (const key in blocks) {
-        const block = blocks[key];
-        if (block.type && block.type.includes("app-embed") && block.disabled !== true) {
-          // Check if it belongs to our app (matches common slugs)
-          const typeLower = block.type.toLowerCase();
-          if (typeLower.includes("blogger") || typeLower.includes("analytics") || typeLower.includes("react")) {
-            isActive = true;
-            break;
-          }
-        }
-      }
-      
-      res.json({ active: isActive });
-    } catch (e) {
-      console.error("[ThemeAPI] Failed to read theme asset:", e.message);
-      res.json({ active: false });
-    }
+    res.json({
+      ...embedStatus,
+      hasPosts,
+      missingScopes: getMissingScopes(session),
+    });
   } catch (err) {
-    console.error("[ThemeAPI] Extension status error:", err.message);
+    console.error("[SetupStatus] error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -572,6 +677,25 @@ httpServer.listen(PORT, async () => {
         if (validSession) {
           const restClient = new shopify.api.clients.Rest({ session: validSession });
           await registerShopifyArticleWebhooks(shop.domain, restClient);
+
+          // Self-heal the declarative webhook subscriptions (APP_UNINSTALLED, ORDERS_CREATE,
+          // CHECKOUTS_CREATE, etc.) against whatever HOST/tunnel is current right now. In this
+          // dev environment the tunnel URL rotates on nearly every server restart, and
+          // shopify.api.webhooks.register() is idempotent — it updates each subscription's
+          // callbackUrl if it's changed, or creates it if missing — so running this on every
+          // boot keeps webhook delivery correct without needing a reauth or manual fix each
+          // time. This directly addresses the repeated "webhook worked, then silently stopped
+          // after a restart" failure mode hit multiple times this session.
+          try {
+            const registerResult = await shopify.api.webhooks.register({ session: validSession });
+            for (const [topic, results] of Object.entries(registerResult)) {
+              for (const r of results) {
+                if (!r.success) console.error(`[Startup] Webhook self-heal ${topic} failed for ${shop.domain}:`, r.result);
+              }
+            }
+          } catch (whErr) {
+            console.error(`[Startup] Webhook self-heal error for ${shop.domain}:`, whErr.message);
+          }
         }
       } catch (shopErr) {
         console.warn(`[Startup] Failed to register webhooks for ${shop.domain}:`, shopErr.message);

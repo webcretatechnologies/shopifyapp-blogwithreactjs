@@ -9,3 +9,8 @@ const APP_CLIENT_ID = "946c7f95fc6780b88559e90d45ad7f96";
 export function metaRobotsActivateUrl(shop) {
   return `https://${shop}/admin/themes/current/editor?context=apps&template=article&activateAppId=${APP_CLIENT_ID}/meta-robots`;
 }
+
+// Block handle "app-embed" matches the filename extensions/analytics-tracker/blocks/app-embed.liquid.
+export function analyticsTrackerActivateUrl(shop) {
+  return `https://${shop}/admin/themes/current/editor?context=apps&template=article&activateAppId=${APP_CLIENT_ID}/app-embed`;
+}

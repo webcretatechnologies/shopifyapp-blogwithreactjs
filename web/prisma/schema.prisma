@@ -47,6 +47,7 @@ model Shop {
   tags          Tag[]
   templates     Template[]
   webhookLogs   WebhookLog[]
+  processedOrderWebhooks ProcessedOrderWebhook[]
 }
 
 model AppPlan {
@@ -151,6 +152,7 @@ model Post {
   category              Category?         @relation(fields: [categoryId], references: [id])
   shop                  Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
   analytics             PostAnalytic[]
+  analyticsVisitors     AnalyticsVisitor[]
   blocks                PostBlock[]
   products              PostProduct[]
   tags                  PostTag[]
@@ -351,6 +353,39 @@ model PostAnalytic {
 
   @@unique([postId, date])
   @@index([postId])
+  @@index([date])
+}
+
+// Persists the per-post-per-day unique-visitor dedup that used to live only in an in-process
+// Map (global.__trackedVisitors) — that reset on every restart/deploy and couldn't be shared
+// across horizontally-scaled instances, silently inflating "unique visitors" in production.
+// A row existing for (postId, date, visitorHash) means that visitor was already counted that day.
+model AnalyticsVisitor {
+  id          Int      @id @default(autoincrement())
+  postId      Int
+  date        DateTime @db.Date
+  visitorHash String
+  createdAt   DateTime @default(now())
+
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, date, visitorHash])
+  @@index([postId, date])
+}
+
+// Idempotency guard for the orders/create webhook (server-side conversion tracking) — Shopify
+// webhook delivery is at-least-once, so the same order can be redelivered after a timeout or a
+// transient non-2xx response. Insert-then-catch-P2002 before processing, same pattern already
+// used for AnalyticsVisitor/PostAnalytic writes above.
+model ProcessedOrderWebhook {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  orderId   String
+  createdAt DateTime @default(now())
+
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, orderId])
 }
 
 model Feedback {

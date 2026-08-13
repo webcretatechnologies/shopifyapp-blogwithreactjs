@@ -47,10 +47,14 @@ export default function DeviceChart({ breakdown = { desktop: 0, mobile: 0, table
 
   return (
     <Card>
-      <Box padding="400">
+      <Box padding="400" minHeight="360px">
         <BlockStack gap="300">
           <Text variant="headingMd">Device Breakdown</Text>
-          <div style={{ maxWidth: "260px", margin: "0 auto" }}>
+          <div
+            style={{ maxWidth: "260px", margin: "0 auto" }}
+            role="img"
+            aria-label={`Device breakdown donut chart: ${total.toLocaleString()} total visits — Desktop ${breakdown.desktop.toLocaleString()}, Mobile ${breakdown.mobile.toLocaleString()}, Tablet ${breakdown.tablet.toLocaleString()}`}
+          >
             <ReactApexChart
               options={options}
               series={series}

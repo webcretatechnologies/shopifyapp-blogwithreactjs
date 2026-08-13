@@ -30,6 +30,7 @@ import {
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
+import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
 
 const LAYOUT_OPTIONS = [
   { label: "Full width", value: "full" },
@@ -118,6 +119,7 @@ export default function Settings() {
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
+  const [themeSupportsAppEmbeds, setThemeSupportsAppEmbeds] = useState(true);
   const [isSyncingTheme, setIsSyncingTheme] = useState(false);
   const [selectedTab, setSelectedTab] = useState(() => {
     const tabParam = searchParams.get("tab");
@@ -145,11 +147,27 @@ export default function Settings() {
       .finally(() => setIsFetching(false));
   }, []);
 
-  useEffect(() => {
-    fetch("/api/settings/meta-robots-status")
+  const fetchMetaRobotsStatus = () => {
+    fetch("/api/shop/setup-status")
       .then((r) => r.json())
-      .then((data) => setMetaRobotsActive(!!data.active))
+      .then((data) => {
+        setMetaRobotsActive(!!data.metaRobots?.active);
+        setThemeSupportsAppEmbeds(data.themeSupportsAppEmbeds !== false);
+      })
       .catch(() => setMetaRobotsActive(false));
+  };
+
+  useEffect(() => {
+    fetchMetaRobotsStatus();
+  }, []);
+
+  // Re-check silently when the merchant switches back from the theme editor tab.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchMetaRobotsStatus();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
   useEffect(() => {
@@ -664,15 +682,13 @@ export default function Settings() {
                     setting then applies automatically, no further setup.
                   </Text>
                   {metaRobotsActive === false && (
-                    <InlineStack align="end">
-                      <Button
-                        variant="primary"
-                        url={metaRobotsActivateUrl(window.shopify?.config?.shop || "")}
-                        target="_blank"
-                      >
-                        Activate now
-                      </Button>
-                    </InlineStack>
+                    <EmbedRequirementBanner
+                      active={false}
+                      themeSupportsAppEmbeds={themeSupportsAppEmbeds}
+                      activateUrl={metaRobotsActivateUrl(window.shopify?.config?.shop || "")}
+                      featureName="Search engine indexing controls"
+                      whatBreaks="Per-article Index/Noindex and Follow/Nofollow settings won't take effect on the live storefront."
+                    />
                   )}
                 </SectionCard>
               </Layout.Section>

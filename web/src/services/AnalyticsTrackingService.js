@@ -107,6 +107,55 @@ export function hashVisitor(ip, ua) {
 }
 
 /**
+ * Resolve "today" as a UTC-midnight Date matching the shop's local calendar day, so daily
+ * buckets (stored/compared as @db.Date) line up with the merchant's own timezone instead of
+ * the server process's — a merchant far from the server would otherwise see views attributed
+ * to the wrong day, worst near midnight/DST boundaries. Falls back to UTC when a shop has no
+ * timezone set.
+ */
+export function getShopLocalDateUtc(timezone) {
+  if (!timezone) {
+    const d = new Date();
+    d.setUTCHours(0, 0, 0, 0);
+    return d;
+  }
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+    return new Date(Date.UTC(Number(map.year), Number(map.month) - 1, Number(map.day)));
+  } catch {
+    const d = new Date();
+    d.setUTCHours(0, 0, 0, 0);
+    return d;
+  }
+}
+
+/**
+ * Validate an event's optional value/currency before it reaches trackEvent — bounds a forged
+ * `value` from inflating reported revenue, and restricts `currency` to a real ISO 4217 shape.
+ * Shared by both public event-ingest surfaces (tracking.js's /track/event, proxy.js's
+ * /api/proxy/event) so the same rule applies everywhere revenue can be reported.
+ */
+export function validateEventValue(value, currency) {
+  if (value != null) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 1_000_000) {
+      return "Invalid value";
+    }
+  }
+  if (currency != null && !/^[A-Z]{3}$/.test(String(currency).toUpperCase())) {
+    return "Invalid currency";
+  }
+  return null;
+}
+
+/**
  * Generate a short tracking key for a post.
  * Uses a random 8-character hex string.
  */
@@ -151,35 +200,36 @@ export async function resolveTrackingKey(key) {
 export async function trackView({
   postId,
   shopDomain = "",
+  shopTimezone = "",
   userAgent = "",
   referer = "",
   acceptLang = "",
   ip = "",
   visitorHash = "",
 }) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = getShopLocalDateUtc(shopTimezone);
 
   const device = detectDevice(userAgent);
   const source = detectSource(referer, shopDomain);
   const country = detectCountry(acceptLang);
 
-  // Deduplicate unique visitors in-memory (per process)
-  const dateStr = today.toISOString().split("T")[0];
+  // Deduplicate unique visitors via a persistent table (AnalyticsVisitor), not an in-process
+  // Map — a Map resets on every restart/deploy and isn't shared across horizontally-scaled
+  // instances, silently inflating "unique visitors". Insert-and-catch-P2002 is the same
+  // race-safe pattern used below for PostAnalytic itself.
   const visitorId = visitorHash || hashVisitor(ip, userAgent);
-  const dedupKey = `${postId}:${dateStr}:${visitorId}`;
-  
-  if (!global.__trackedVisitors) {
-    global.__trackedVisitors = new Map();
-    global.__trackedVisitorDate = dateStr;
+  let isNewVisitor = true;
+  try {
+    await prisma.analyticsVisitor.create({
+      data: { postId, date: today, visitorHash: visitorId },
+    });
+  } catch (err) {
+    if (err.code === "P2002") {
+      isNewVisitor = false;
+    } else {
+      throw err;
+    }
   }
-  if (global.__trackedVisitorDate !== dateStr) {
-    global.__trackedVisitors.clear();
-    global.__trackedVisitorDate = dateStr;
-  }
-  
-  const isNewVisitor = !global.__trackedVisitors.has(dedupKey);
-  global.__trackedVisitors.set(dedupKey, Date.now());
 
   // Atomic write: find → create → catch(P2002 race) → update
   // Prisma's upsert generates a fresh INSERT on every retry under MySQL concurrency,
@@ -258,6 +308,7 @@ export async function trackView({
 export async function trackEvent({
   postId,
   eventType,
+  shopTimezone = "",
   userAgent = "",
   referer = "",
   ip = "",
@@ -266,8 +317,7 @@ export async function trackEvent({
   value = null,
   currency = null,
 }) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = getShopLocalDateUtc(shopTimezone);
 
   const validEvents = ["add_to_cart", "checkout", "conversion", "cta_click", "product_click"];
   if (!validEvents.includes(eventType)) {
@@ -336,44 +386,62 @@ export async function trackEvent({
   return { success: true };
 }
 
-/**
- * Get comprehensive analytics for a shop, aggregated across all posts.
- */
-export async function getShopAnalytics(shopId, days = 30) {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  // Immediately-preceding window of equal length, used to compute period-over-period trends.
-  const previousSince = new Date(since.getTime() - days * 24 * 60 * 60 * 1000);
+// Upper bound on any single query's span — a pathological custom range (or a malformed request)
+// shouldn't be able to force a zero-fill loop / DB scan across tens of thousands of days.
+const MAX_RANGE_DAYS = 366;
 
-  const [totalPosts, published, drafts, recentAnalytics, topPostsGrouped, allAnalytics, previousAnalytics] = await Promise.all([
-    prisma.post.count({ where: { shopId } }),
-    prisma.post.count({ where: { shopId, status: "published" } }),
-    prisma.post.count({ where: { shopId, status: "draft" } }),
-    // Recent analytics (last N days)
+/**
+ * Normalizes either the legacy `days` count (a plain number — dashboard.jsx's simpler selector
+ * still uses this, unchanged) or an explicit `{ from, to }` date range (ISO date strings — the
+ * Analytics page's calendar/preset picker) into a single internal shape:
+ *   - since: inclusive lower bound (UTC midnight of the first included day)
+ *   - until: EXCLUSIVE upper bound (UTC midnight of the day AFTER the last included day)
+ *   - spanDays: number of calendar days covered (until - since, in days)
+ * Falls back to the 30-day default on any invalid input rather than throwing — a bad query param
+ * should degrade gracefully, not 500.
+ */
+function resolveRange(rangeOrDays) {
+  if (rangeOrDays && typeof rangeOrDays === "object" && rangeOrDays.from && rangeOrDays.to) {
+    const fromDate = new Date(`${rangeOrDays.from}T00:00:00.000Z`);
+    const toDate = new Date(`${rangeOrDays.to}T00:00:00.000Z`);
+    if (!isNaN(fromDate) && !isNaN(toDate) && fromDate <= toDate) {
+      const rawSpanDays = Math.round((toDate - fromDate) / (24 * 60 * 60 * 1000)) + 1; // inclusive of both ends
+      const spanDays = Math.min(rawSpanDays, MAX_RANGE_DAYS);
+      const until = new Date(fromDate.getTime() + spanDays * 24 * 60 * 60 * 1000);
+      return { since: fromDate, until, spanDays };
+    }
+    // Invalid range — fall through to the 30-day default below.
+  }
+  const days = Math.min(Math.max(Number(rangeOrDays) || 30, 1), MAX_RANGE_DAYS);
+  // Preserves the exact pre-existing days-based behavior: since anchored to "now" (not midnight),
+  // spanDays = days+1 so the zero-fill loop produces the same days+1 entries it always has.
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const spanDays = days + 1;
+  const until = new Date(since.getTime() + spanDays * 24 * 60 * 60 * 1000);
+  return { since, until, spanDays };
+}
+
+/**
+ * Shared aggregation core for both getShopAnalytics (all of a shop's posts) and
+ * getPostAnalytics (one post) — identical daily zero-fill, device/source/country totals,
+ * funnel, rates, and trend logic; only the `postWhere` filter (and whether top-posts ranking
+ * runs, which only makes sense shop-wide) differs between the two call sites.
+ */
+async function buildAnalyticsPayload(postWhere, range) {
+  const { since, until, spanDays } = range;
+  // Immediately-preceding window of equal length, used to compute period-over-period trends
+  // and the comparison-overlay series.
+  const previousSince = new Date(since.getTime() - spanDays * 24 * 60 * 60 * 1000);
+
+  const [recentAnalytics, allAnalytics, previousAnalytics] = await Promise.all([
+    // Recent analytics (selected range)
     prisma.postAnalytic.findMany({
-      where: {
-        post: { shopId },
-        date: { gte: since },
-      },
+      where: { ...postWhere, date: { gte: since, lt: until } },
       orderBy: { date: "asc" },
-      include: { post: { select: { title: true, slug: true, featuredImage: true } } },
     }),
-    // Top posts by views (selected timeframe)
-    prisma.postAnalytic.groupBy({
-      by: ["postId"],
-      where: {
-        post: { shopId },
-        date: { gte: since },
-      },
-      _sum: { views: true, addToCart: true, checkouts: true, conversions: true, revenue: true },
-      orderBy: { _sum: { views: "desc" } },
-      take: 10,
-    }),
-    // Aggregates for device/source/country (selected timeframe)
+    // Aggregates for device/source/country (selected range)
     prisma.postAnalytic.findMany({
-      where: {
-        post: { shopId },
-        date: { gte: since },
-      },
+      where: { ...postWhere, date: { gte: since, lt: until } },
       select: {
         uniqueVisitors: true,
         deviceDesktop: true,
@@ -388,29 +456,32 @@ export async function getShopAnalytics(shopId, days = 30) {
         countries: true,
       },
     }),
-    // Same-length prior window, for trend comparison
+    // Same-length prior window, for trend comparison + the comparison-overlay series
     prisma.postAnalytic.findMany({
-      where: {
-        post: { shopId },
-        date: { gte: previousSince, lt: since },
-      },
-      select: {
-        views: true,
-        conversions: true,
-        revenue: true,
-      },
+      where: { ...postWhere, date: { gte: previousSince, lt: since } },
+      select: { date: true, views: true, addToCart: true, conversions: true, revenue: true },
     }),
   ]);
 
   // ── Aggregate daily time series ──────────────────────────────────
-  const dailyMap = {};
-  const dailyBreakdown = {};
+  // Zero-fill every calendar day in the window, not just days that have a PostAnalytic row —
+  // a sparse series (e.g. only 3 real data points across a 30-day window) renders a smoothed
+  // line chart that visually implies a trend between distant points that doesn't exist.
+  const zeroDay = () => ({ views: 0, uniqueVisitors: 0, addToCart: 0, checkouts: 0, conversions: 0, revenue: 0 });
 
+  const dailyMap = {};
+  // Fixed iteration count (spanDays) rather than comparing against a live `new Date()` on each
+  // loop check — the latter is nondeterministic (can silently gain an extra bucket if the wall
+  // clock ticks past a day boundary mid-loop) and, critically, must produce exactly the same
+  // length as previousDaily below for the chart overlay to align point-for-point.
+  for (let i = 0; i < spanDays; i++) {
+    const d = new Date(since);
+    d.setUTCDate(d.getUTCDate() + i);
+    dailyMap[d.toISOString().split("T")[0]] = zeroDay();
+  }
   recentAnalytics.forEach((a) => {
     const dateKey = a.date.toISOString().split("T")[0];
-    if (!dailyMap[dateKey]) {
-      dailyMap[dateKey] = { views: 0, uniqueVisitors: 0, addToCart: 0, checkouts: 0, conversions: 0, revenue: 0 };
-    }
+    if (!dailyMap[dateKey]) dailyMap[dateKey] = zeroDay();
     dailyMap[dateKey].views += a.views || 0;
     dailyMap[dateKey].uniqueVisitors += a.uniqueVisitors || 0;
     dailyMap[dateKey].addToCart += a.addToCart || 0;
@@ -418,8 +489,28 @@ export async function getShopAnalytics(shopId, days = 30) {
     dailyMap[dateKey].conversions += a.conversions || 0;
     dailyMap[dateKey].revenue += a.revenue || 0;
   });
-
   const daily = Object.entries(dailyMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, d]) => ({ date, ...d }));
+
+  // Previous-period daily series, zero-filled the same way but indexed by day OFFSET rather
+  // than calendar date — the comparison overlay compares "day N of this period" against
+  // "day N of last period" positionally, not by matching real dates.
+  const prevDailyMap = {};
+  for (let i = 0; i < spanDays; i++) {
+    const d = new Date(previousSince);
+    d.setUTCDate(d.getUTCDate() + i);
+    prevDailyMap[d.toISOString().split("T")[0]] = zeroDay();
+  }
+  previousAnalytics.forEach((a) => {
+    const dateKey = a.date.toISOString().split("T")[0];
+    if (!prevDailyMap[dateKey]) prevDailyMap[dateKey] = zeroDay();
+    prevDailyMap[dateKey].views += a.views || 0;
+    prevDailyMap[dateKey].addToCart += a.addToCart || 0;
+    prevDailyMap[dateKey].conversions += a.conversions || 0;
+    prevDailyMap[dateKey].revenue += a.revenue || 0;
+  });
+  const previousDaily = Object.entries(prevDailyMap)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, d]) => ({ date, ...d }));
 
@@ -462,34 +553,6 @@ export async function getShopAnalytics(shopId, days = 30) {
         totals.totalCountries[key] = (totals.totalCountries[key] || 0) + val;
       }
     } catch { /* ignore */ }
-  });
-
-  // ── Enrich top posts ──────────────────────────────────────────────
-  const topPostIds = topPostsGrouped.map((t) => t.postId);
-  const topPostDetails = await prisma.post.findMany({
-    where: { id: { in: topPostIds }, shopId },
-    select: { id: true, title: true, slug: true, featuredImage: true, status: true },
-  });
-
-  const topPosts = topPostsGrouped.map((t) => {
-    const detail = topPostDetails.find((p) => p.id === t.postId) || {};
-    const sum = t._sum;
-    const views = sum.views || 0;
-    return {
-      id: t.postId,
-      title: detail.title || "Unknown",
-      slug: detail.slug || "",
-      featuredImage: detail.featuredImage || null,
-      status: detail.status,
-      views,
-      uniqueVisitors: sum.uniqueVisitors || 0,
-      addToCart: sum.addToCart || 0,
-      checkouts: sum.checkouts || 0,
-      conversions: sum.conversions || 0,
-      revenue: sum.revenue || 0,
-      addToCartRate: views > 0 ? ((sum.addToCart || 0) / views * 100).toFixed(2) : "0.00",
-      conversionRate: views > 0 ? ((sum.conversions || 0) / views * 100).toFixed(2) : "0.00",
-    };
   });
 
   // ── Sort sources and countries ────────────────────────────────────
@@ -549,9 +612,6 @@ export async function getShopAnalytics(shopId, days = 30) {
 
   return {
     stats: {
-      totalPosts,
-      published,
-      drafts,
       totalViews,
       totalUniqueVisitors: totals.totalUniqueVisitors,
       totalAddToCart,
@@ -563,7 +623,7 @@ export async function getShopAnalytics(shopId, days = 30) {
       conversionRate,
     },
     daily,
-    topPosts,
+    previousDaily,
     deviceBreakdown: {
       desktop: totals.deviceDesktop,
       mobile: totals.deviceMobile,
@@ -573,8 +633,78 @@ export async function getShopAnalytics(shopId, days = 30) {
     topCountries: sortedCountries,
     funnel,
     trends,
-    days,
+    days: spanDays,
+    from: since.toISOString().split("T")[0],
+    to: new Date(until.getTime() - 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   };
+}
+
+/**
+ * Get comprehensive analytics for a shop, aggregated across all posts.
+ * `rangeOrDays` is either a plain number of days (legacy — dashboard.jsx) or an explicit
+ * `{ from, to }` ISO date range (the Analytics page's calendar/preset picker).
+ */
+export async function getShopAnalytics(shopId, rangeOrDays = 30) {
+  const range = resolveRange(rangeOrDays);
+  const { since, until } = range;
+
+  const [totalPosts, published, drafts, payload, topPostsGrouped] = await Promise.all([
+    prisma.post.count({ where: { shopId } }),
+    prisma.post.count({ where: { shopId, status: "published" } }),
+    prisma.post.count({ where: { shopId, status: "draft" } }),
+    buildAnalyticsPayload({ post: { shopId } }, range),
+    // Top posts by views (selected range)
+    prisma.postAnalytic.groupBy({
+      by: ["postId"],
+      where: { post: { shopId }, date: { gte: since, lt: until } },
+      _sum: { views: true, addToCart: true, checkouts: true, conversions: true, revenue: true },
+      orderBy: { _sum: { views: "desc" } },
+      take: 10,
+    }),
+  ]);
+
+  // ── Enrich top posts ──────────────────────────────────────────────
+  const topPostIds = topPostsGrouped.map((t) => t.postId);
+  const topPostDetails = await prisma.post.findMany({
+    where: { id: { in: topPostIds }, shopId },
+    select: { id: true, title: true, slug: true, featuredImage: true, status: true },
+  });
+
+  const topPosts = topPostsGrouped.map((t) => {
+    const detail = topPostDetails.find((p) => p.id === t.postId) || {};
+    const sum = t._sum;
+    const views = sum.views || 0;
+    return {
+      id: t.postId,
+      title: detail.title || "Unknown",
+      slug: detail.slug || "",
+      featuredImage: detail.featuredImage || null,
+      status: detail.status,
+      views,
+      uniqueVisitors: sum.uniqueVisitors || 0,
+      addToCart: sum.addToCart || 0,
+      checkouts: sum.checkouts || 0,
+      conversions: sum.conversions || 0,
+      revenue: sum.revenue || 0,
+      addToCartRate: views > 0 ? ((sum.addToCart || 0) / views * 100).toFixed(2) : "0.00",
+      conversionRate: views > 0 ? ((sum.conversions || 0) / views * 100).toFixed(2) : "0.00",
+    };
+  });
+
+  return {
+    ...payload,
+    stats: { totalPosts, published, drafts, ...payload.stats },
+    topPosts,
+  };
+}
+
+/**
+ * Get analytics for a single post — same shape as getShopAnalytics minus totalPosts/
+ * published/drafts/topPosts (shop-wide-only concepts). Caller (the /:id/analytics route) is
+ * responsible for verifying the post belongs to shopId before calling this.
+ */
+export async function getPostAnalytics(postId, shopId, rangeOrDays = 30) {
+  return buildAnalyticsPayload({ postId, post: { shopId } }, resolveRange(rangeOrDays));
 }
 
 // ─── Helper ──────────────────────────────────────────────────────────────
