@@ -317,8 +317,8 @@ export default function SyncDashboard() {
         title="Sync Status"
         subtitle="Manage the 2-way synchronization between your app and Shopify"
         backAction={{
-          content: "Settings",
-          onAction: () => navigate("/settings?tab=advanced"),
+          content: "Dashboard",
+          onAction: () => navigate("/dashboard"),
         }}
         primaryAction={{
           content: reconciling ? "Reconciling..." : "Reconcile All",
