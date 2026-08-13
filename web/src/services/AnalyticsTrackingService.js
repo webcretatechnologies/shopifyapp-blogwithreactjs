@@ -373,15 +373,20 @@ export async function trackEvent({
     }
   }
 
-  // Update sources JSON with event context
-  const source = detectSource(referer);
-  const currentSources = parseJsonField(analytic.sources);
-  currentSources[`${eventType}_${source}`] = (currentSources[`${eventType}_${source}`] || 0) + 1;
-
-  await prisma.postAnalytic.update({
-    where: { id: analytic.id },
-    data: { sources: currentSources },
-  });
+  // NOTE: this used to also write an `${eventType}_${source}` key (e.g. "checkout_direct")
+  // into the same `sources` JSON field trackView() uses for pure referrer tracking (google,
+  // direct, internal, ...). The Traffic Sources widget aggregates every key in `sources`
+  // indiscriminately, so those event-tagged entries were showing up as if they were referrer
+  // sources ("add_to_cart_other", "checkout_direct" appearing next to "Internal" in the UI) —
+  // and nothing in the frontend ever consumed them as their own breakdown, so they served no
+  // purpose beyond corrupting that widget. Removed rather than given a separate field, since
+  // there's no current use case asking "which referrer converts best" — this event's referer
+  // is still available via `referer` above if that's wanted later.
+  //
+  // This also removes a second bug: the two writes (counter increment above, sources update
+  // below) were non-atomic separate DB calls — if anything interrupted between them (a server
+  // restart mid-request, a race), the funnel counter and the sources total could silently drift
+  // apart, exactly what surfaced as a mismatch (checkouts=2 vs checkout_direct=3) in production.
 
   return { success: true };
 }

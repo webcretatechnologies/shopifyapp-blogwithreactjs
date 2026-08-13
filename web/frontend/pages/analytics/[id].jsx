@@ -25,7 +25,7 @@ import TopSources from "../../components/analytics/TopSources";
 import FunnelChart from "../../components/analytics/FunnelChart";
 import CountryBreakdown from "../../components/analytics/CountryBreakdown";
 import DateRangePicker, { toISODateString } from "../../components/analytics/DateRangePicker";
-import { downloadAnalyticsCsv } from "../../utils/analyticsCsv";
+import { downloadAnalyticsCsv, roundMoney } from "../../utils/analyticsCsv";
 import EmbedRequirementBanner from "../../components/EmbedRequirementBanner";
 import { analyticsTrackerActivateUrl } from "../../utils/themeEmbedUtils";
 
@@ -131,14 +131,48 @@ export default function PostAnalytics() {
   const stats = analytics?.stats;
   const post = analytics?.post;
 
+  const hasExportData = !!analytics?.daily?.length;
+
   const exportCSV = () => {
-    if (!analytics?.daily?.length) return;
-    downloadAnalyticsCsv(`post-${id}-analytics.csv`, [
+    if (!hasExportData) return;
+    const s = analytics.stats || {};
+    const from = toISODateString(dateRange.start);
+    const to = toISODateString(dateRange.end);
+    const formatTrend = (t) => (t === null || t === undefined ? "—" : `${t > 0 ? "+" : ""}${t}%`);
+    const postSlug = (post?.title || `post-${id}`).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+    downloadAnalyticsCsv(`analytics_${postSlug}_${from}_to_${to}.csv`, [
+      {
+        title: "Report",
+        headers: ["Field", "Value"],
+        rows: [
+          ["Shop", shopDomain || ""],
+          ["Post", post?.title || ""],
+          ["Status", post?.status || ""],
+          ["Date range", `${from} to ${to}`],
+          ["Generated", new Date().toLocaleString()],
+        ],
+      },
+      {
+        title: "Summary",
+        headers: ["Metric", "Value", "vs. previous period"],
+        rows: [
+          ["Views", s.totalViews || 0, formatTrend(analytics.trends?.views)],
+          ["Unique Visitors", s.totalUniqueVisitors || 0, "—"],
+          ["Add to Cart", s.totalAddToCart || 0, "—"],
+          ["Checkouts", s.totalCheckouts || 0, "—"],
+          ["Conversions", s.totalConversions || 0, "—"],
+          ["Revenue", roundMoney(s.totalRevenue), formatTrend(analytics.trends?.revenue)],
+          ["Add to Cart Rate", `${s.addToCartRate ?? "0.00"}%`, "—"],
+          ["Checkout Rate", `${s.checkoutRate ?? "0.00"}%`, "—"],
+          ["Conversion Rate", `${s.conversionRate ?? "0.00"}%`, formatTrend(analytics.trends?.conversionRate)],
+        ],
+      },
       {
         title: "Daily Totals",
         headers: ["Date", "Views", "Unique Visitors", "Add to Cart", "Checkouts", "Conversions", "Revenue"],
         rows: analytics.daily.map((d) => [
-          d.date, d.views || 0, d.uniqueVisitors || 0, d.addToCart || 0, d.checkouts || 0, d.conversions || 0, d.revenue || 0,
+          d.date, d.views || 0, d.uniqueVisitors || 0, d.addToCart || 0, d.checkouts || 0, d.conversions || 0, roundMoney(d.revenue),
         ]),
       },
       {
@@ -153,7 +187,7 @@ export default function PostAnalytics() {
       {
         title: "Traffic Sources",
         headers: ["Source", "Count"],
-        rows: (analytics.topSources || []).map((s) => [s.name, s.count]),
+        rows: (analytics.topSources || []).map((s2) => [s2.name, s2.count]),
       },
       {
         title: "Top Countries",
@@ -170,7 +204,7 @@ export default function PostAnalytics() {
       subtitle="Views, funnel, devices, and traffic sources for this post"
       backAction={{ content: "Analytics", onAction: () => navigate("/analytics") }}
       secondaryActions={[
-        { content: "Export CSV", icon: ExportIcon, onAction: exportCSV },
+        { content: "Export CSV", icon: ExportIcon, onAction: exportCSV, disabled: !hasExportData },
       ]}
     >
       <Box paddingBlockEnd="400">
@@ -260,23 +294,19 @@ export default function PostAnalytics() {
             </Layout.Section>
           </Layout>
 
-          <Layout>
-            <Layout.Section variant="oneThird">
-              <FunnelChart funnel={analytics?.funnel || []} />
-            </Layout.Section>
-            <Layout.Section variant="oneThird">
-              <DeviceChart breakdown={analytics?.deviceBreakdown} />
-            </Layout.Section>
-            <Layout.Section variant="oneThird">
-              <TopSources sources={analytics?.topSources || []} />
-            </Layout.Section>
-          </Layout>
+          {/* Plain flexbox instead of Polaris <Layout>: Layout's own CSS sets
+              align-items: flex-start, so sibling cards in a Layout row never match height
+              regardless of minHeight. Flexbox's default align-items: stretch does this for free
+              without CSS Grid auto-fit's phantom-empty-track gap quirk. */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "stretch" }}>
+            <div style={{ flex: "1 1 280px" }}><FunnelChart funnel={analytics?.funnel || []} /></div>
+            <div style={{ flex: "1 1 280px" }}><DeviceChart breakdown={analytics?.deviceBreakdown} /></div>
+            <div style={{ flex: "1 1 280px" }}><TopSources sources={analytics?.topSources || []} /></div>
+          </div>
 
-          <Layout>
-            <Layout.Section variant="oneHalf">
-              <CountryBreakdown countries={analytics?.topCountries || []} />
-            </Layout.Section>
-          </Layout>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "stretch" }}>
+            <div style={{ flex: "1 1 320px" }}><CountryBreakdown countries={analytics?.topCountries || []} /></div>
+          </div>
         </BlockStack>
       )}
     </Page>

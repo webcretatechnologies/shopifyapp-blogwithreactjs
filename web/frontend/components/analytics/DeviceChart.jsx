@@ -46,6 +46,7 @@ export default function DeviceChart({ breakdown = { desktop: 0, mobile: 0, table
   };
 
   return (
+    <div style={{ height: "100%", display: "grid" }}>
     <Card>
       <Box padding="400" minHeight="360px">
         <BlockStack gap="300">
@@ -91,5 +92,6 @@ export default function DeviceChart({ breakdown = { desktop: 0, mobile: 0, table
         </BlockStack>
       </Box>
     </Card>
+    </div>
   );
 }

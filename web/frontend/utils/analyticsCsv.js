@@ -28,11 +28,21 @@ export function downloadAnalyticsCsv(filename, sections) {
     lines.push(...sectionToRows(s.title, s.headers, s.rows));
   });
   const csv = lines.join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
+  // Leading UTF-8 BOM — without it, Excel (still the most common CSV consumer for merchants)
+  // guesses the encoding from content and reliably mangles non-ASCII characters (accented post
+  // titles, country names, currency symbols) into garbled text. Every other consumer (Numbers,
+  // Google Sheets, a text editor) ignores the BOM harmlessly.
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/** Rounds to 2 decimals as a plain number (not a string) — avoids floating-point summation
+ * artifacts (e.g. 2147.398159129008 from repeated float addition) showing up raw in an export. */
+export function roundMoney(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
 }

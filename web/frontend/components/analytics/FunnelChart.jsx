@@ -6,6 +6,7 @@ export default function FunnelChart({ funnel = [] }) {
   const maxCount = Math.max(...funnel.map((f) => f.count), 1);
 
   return (
+    <div style={{ height: "100%", display: "grid" }}>
     <Card>
       <Box padding="400" minHeight="360px">
         <BlockStack gap="300">
@@ -60,5 +61,6 @@ export default function FunnelChart({ funnel = [] }) {
         </BlockStack>
       </Box>
     </Card>
+    </div>
   );
 }

@@ -5,6 +5,7 @@ export default function CountryBreakdown({ countries = [] }) {
   const total = countries.reduce((s, c) => s + c.count, 0);
 
   return (
+    <div style={{ height: "100%", display: "grid" }}>
     <Card>
       <Box padding="400" minHeight="240px">
         <BlockStack gap="300">
@@ -34,5 +35,6 @@ export default function CountryBreakdown({ countries = [] }) {
         </BlockStack>
       </Box>
     </Card>
+    </div>
   );
 }

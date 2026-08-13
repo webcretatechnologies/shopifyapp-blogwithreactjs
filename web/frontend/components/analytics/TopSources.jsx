@@ -34,6 +34,7 @@ export default function TopSources({ sources = [] }) {
   const total = sources.reduce((sum, s) => sum + s.count, 0);
 
   return (
+    <div style={{ height: "100%", display: "grid" }}>
     <Card>
       <Box padding="400" minHeight="360px">
         <BlockStack gap="300">
@@ -82,5 +83,6 @@ export default function TopSources({ sources = [] }) {
         </BlockStack>
       </Box>
     </Card>
+    </div>
   );
 }

@@ -33,7 +33,7 @@ import TopSources from "../components/analytics/TopSources";
 import FunnelChart from "../components/analytics/FunnelChart";
 import CountryBreakdown from "../components/analytics/CountryBreakdown";
 import DateRangePicker, { toISODateString } from "../components/analytics/DateRangePicker";
-import { downloadAnalyticsCsv } from "../utils/analyticsCsv";
+import { downloadAnalyticsCsv, roundMoney } from "../utils/analyticsCsv";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
 import { analyticsTrackerActivateUrl } from "../utils/themeEmbedUtils";
 
@@ -153,22 +153,52 @@ export default function Analytics() {
 
   const stats = analytics?.stats;
 
-  const exportCSV = () => {
-    if (!analytics?.daily?.length) return;
+  const hasExportData = !!analytics?.daily?.length;
 
-    downloadAnalyticsCsv("blog-analytics.csv", [
+  const exportCSV = () => {
+    if (!hasExportData) return;
+    const s = analytics.stats || {};
+    const from = toISODateString(dateRange.start);
+    const to = toISODateString(dateRange.end);
+    const formatTrend = (t) => (t === null || t === undefined ? "—" : `${t > 0 ? "+" : ""}${t}%`);
+
+    downloadAnalyticsCsv(`blog-analytics_${from}_to_${to}.csv`, [
+      {
+        title: "Report",
+        headers: ["Field", "Value"],
+        rows: [
+          ["Shop", shopDomain || ""],
+          ["Date range", `${from} to ${to}`],
+          ["Generated", new Date().toLocaleString()],
+        ],
+      },
+      {
+        title: "Summary",
+        headers: ["Metric", "Value", "vs. previous period"],
+        rows: [
+          ["Total Views", s.totalViews || 0, formatTrend(analytics.trends?.views)],
+          ["Unique Visitors", s.totalUniqueVisitors || 0, "—"],
+          ["Add to Cart", s.totalAddToCart || 0, "—"],
+          ["Checkouts", s.totalCheckouts || 0, "—"],
+          ["Conversions", s.totalConversions || 0, "—"],
+          ["Revenue", roundMoney(s.totalRevenue), formatTrend(analytics.trends?.revenue)],
+          ["Add to Cart Rate", `${s.addToCartRate ?? "0.00"}%`, "—"],
+          ["Checkout Rate", `${s.checkoutRate ?? "0.00"}%`, "—"],
+          ["Conversion Rate", `${s.conversionRate ?? "0.00"}%`, formatTrend(analytics.trends?.conversionRate)],
+        ],
+      },
       {
         title: "Daily Totals",
         headers: ["Date", "Views", "Unique Visitors", "Add to Cart", "Checkouts", "Conversions", "Revenue"],
         rows: analytics.daily.map((d) => [
-          d.date, d.views || 0, d.uniqueVisitors || 0, d.addToCart || 0, d.checkouts || 0, d.conversions || 0, d.revenue || 0,
+          d.date, d.views || 0, d.uniqueVisitors || 0, d.addToCart || 0, d.checkouts || 0, d.conversions || 0, roundMoney(d.revenue),
         ]),
       },
       {
         title: "Top Posts",
-        headers: ["Title", "Status", "Views", "Unique Visitors", "Add to Cart", "Conversions", "Revenue"],
+        headers: ["Title", "Status", "Views", "Unique Visitors", "Add to Cart", "Add to Cart Rate", "Conversions", "Conversion Rate", "Revenue"],
         rows: (analytics.topPosts || []).map((p) => [
-          p.title, p.status, p.views || 0, p.uniqueVisitors || 0, p.addToCart || 0, p.conversions || 0, p.revenue || 0,
+          p.title, p.status, p.views || 0, p.uniqueVisitors || 0, p.addToCart || 0, `${p.addToCartRate ?? "0.00"}%`, p.conversions || 0, `${p.conversionRate ?? "0.00"}%`, roundMoney(p.revenue),
         ]),
       },
       {
@@ -183,7 +213,7 @@ export default function Analytics() {
       {
         title: "Traffic Sources",
         headers: ["Source", "Count"],
-        rows: (analytics.topSources || []).map((s) => [s.name, s.count]),
+        rows: (analytics.topSources || []).map((s2) => [s2.name, s2.count]),
       },
       {
         title: "Top Countries",
@@ -199,7 +229,7 @@ export default function Analytics() {
       subtitle="Comprehensive insights into your blog's performance — views, conversions, and more"
       backAction={{ content: "Dashboard", onAction: () => navigate("/dashboard") }}
       secondaryActions={[
-        { content: "Export CSV", icon: ExportIcon, onAction: exportCSV },
+        { content: "Export CSV", icon: ExportIcon, onAction: exportCSV, disabled: !hasExportData },
       ]}
     >
       <Box paddingBlockEnd="400">
@@ -331,22 +361,23 @@ export default function Analytics() {
             </Layout.Section>
           </Layout>
 
-          <Layout>
-            {/* ── Funnel + Device + Sources ────────────────────────────── */}
-            <Layout.Section variant="oneThird">
-              <FunnelChart funnel={analytics?.funnel || []} />
-            </Layout.Section>
-            <Layout.Section variant="oneThird">
-              <DeviceChart breakdown={analytics?.deviceBreakdown} />
-            </Layout.Section>
-            <Layout.Section variant="oneThird">
-              <TopSources sources={analytics?.topSources || []} />
-            </Layout.Section>
-          </Layout>
+          {/* ── Funnel + Device + Sources ────────────────────────────── */}
+          {/* Plain flexbox instead of Polaris <Layout>: Layout's own CSS sets
+              align-items: flex-start (confirmed in its stylesheet), so sibling cards in a
+              Layout row can never match height regardless of minHeight — that only raises a
+              floor, it doesn't equalize against whichever card ends up tallest. Flexbox's default
+              align-items: stretch does this for free. (CSS Grid's auto-fit was tried first but can
+              silently collapse a phantom empty track and eat one of the gaps — flex-wrap avoids
+              that edge case entirely while still wrapping responsively.) */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "stretch" }}>
+            <div style={{ flex: "1 1 280px" }}><FunnelChart funnel={analytics?.funnel || []} /></div>
+            <div style={{ flex: "1 1 280px" }}><DeviceChart breakdown={analytics?.deviceBreakdown} /></div>
+            <div style={{ flex: "1 1 280px" }}><TopSources sources={analytics?.topSources || []} /></div>
+          </div>
 
-          <Layout>
-            {/* ── Top Posts & Countries ─────────────────────────────────────────────── */}
-            <Layout.Section variant="oneHalf">
+          {/* ── Top Posts & Countries ─────────────────────────────────────────────── */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "stretch" }}>
+            <div style={{ flex: "1 1 320px" }}>
               <Card>
                 <Box padding="400" minHeight="240px">
                   <BlockStack gap="300">
@@ -443,12 +474,10 @@ export default function Analytics() {
                   </BlockStack>
                 </Box>
               </Card>
-            </Layout.Section>
+            </div>
 
-            <Layout.Section variant="oneHalf">
-              <CountryBreakdown countries={analytics?.topCountries || []} />
-            </Layout.Section>
-          </Layout>
+            <div style={{ flex: "1 1 320px" }}><CountryBreakdown countries={analytics?.topCountries || []} /></div>
+          </div>
         </BlockStack>
       )}
     </Page>
