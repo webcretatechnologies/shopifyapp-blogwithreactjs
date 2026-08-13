@@ -561,6 +561,348 @@ export const BLOG_TEMPLATES = [
       ]),
     ],
   },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    key: "lookbook-style-guide",
+    name: "Lookbook / Style Guide",
+    description: "A visual, image-led lookbook showing products styled together — built for fashion, home, or beauty collections.",
+    category: "Commerce",
+    thumbnail: "📷",
+    accent: "#9d174d",
+    badge: "New",
+    preview: { hero: true, columns: 2, lines: 1, hasProducts: true },
+    blocks: [
+      hero({
+        heading: "The [Season] Lookbook",
+        subheading: "Curated looks, styled by our team — shop each one directly.",
+        minHeight: "380px",
+        showCta: false,
+      }),
+      section({ paddingTop: "32px", paddingBottom: "16px", maxWidth: "820px" }, [
+        rich(["A short intro to the season/theme and how to use this lookbook — mix, match, and shop each look below."]),
+      ]),
+      ...["Look One: [Style Name]", "Look Two: [Style Name]", "Look Three: [Style Name]"].map((title) =>
+        section({ paddingTop: "16px", paddingBottom: "24px" }, [
+          columns(2, [
+            [image(title)],
+            [
+              heading(title, 3),
+              rich(["Describe the look, the occasion it's built for, and what makes the pieces work together."]),
+              productGrid({ title: "Shop This Look", columns: "3", maxProducts: "3" }),
+            ],
+          ]),
+        ])
+      ),
+      section({ backgroundColor: "#f6f6f7", paddingTop: "28px", paddingBottom: "28px", borderRadius: "12px" }, [
+        heading("Shop the Full Collection", 2, { align: "center" }),
+        collectionBlock({ layout: "grid", columns: "4", maxProducts: "8" }),
+      ]),
+    ],
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    key: "collection-spotlight",
+    name: "Collection Spotlight",
+    description: "Introduces a full product collection with a bold hero and curated grid — ideal for new drops or seasonal launches.",
+    category: "Commerce",
+    thumbnail: "🗂️",
+    accent: "#0e7490",
+    badge: null,
+    preview: { hero: true, lines: 2, hasProducts: true },
+    blocks: [
+      hero({
+        heading: "Introducing the [Collection Name] Collection",
+        subheading: "[One line capturing the collection's theme or inspiration]",
+        minHeight: "400px",
+        showCta: true,
+        ctaText: "Shop the Collection",
+        ctaUrl: "/",
+      }),
+      section({ paddingTop: "36px", paddingBottom: "16px", maxWidth: "780px" }, [
+        heading("What Inspired This Collection", 2, { align: "center" }),
+        rich(["Tell the story behind the collection — the inspiration, the design process, or the problem it was built to solve."]),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        heading("Standout Pieces", 2),
+        columns(2, [
+          [image("Hero product 1"), buyButton({ layout: "vertical" })],
+          [image("Hero product 2"), buyButton({ layout: "vertical" })],
+        ]),
+      ]),
+      section({ backgroundColor: "#f6f6f7", paddingTop: "28px", paddingBottom: "28px", borderRadius: "12px" }, [
+        heading("Shop the Full Collection", 2, { align: "center" }),
+        collectionBlock({ layout: "grid", columns: "4", maxProducts: "8", showViewAll: true }),
+      ]),
+      section({ paddingTop: "24px", paddingBottom: "24px" }, [
+        faq("Collection FAQ", [
+          faqItem("When is this collection available?", "Give availability/launch details."),
+          faqItem("Is it a limited release?", "Clarify whether it's ongoing or limited-time."),
+        ]),
+      ]),
+    ],
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    key: "interview-qa",
+    name: "Interview / Q&A",
+    description: "A conversational Q&A format for founder interviews, expert spotlights, or customer conversations.",
+    category: "Editorial",
+    thumbnail: "🎙️",
+    accent: "#6d28d9",
+    badge: null,
+    preview: { columns: 2, lines: 2 },
+    blocks: [
+      section({ paddingTop: "16px", paddingBottom: "16px" }, [
+        heading("In Conversation With [Name]", 1),
+        columns(2, [
+          [image("Portrait of [Name]")],
+          [rich(["A short introduction — who this person is, their role, and why their perspective is worth reading."])],
+        ]),
+      ]),
+      divider(),
+      ...[1, 2, 3, 4, 5].map((n) =>
+        section({ paddingTop: "16px", paddingBottom: "16px" }, [
+          heading(`Q: [Question ${n}]?`, 3),
+          rich(["Their answer, in their own words — keep it conversational."]),
+        ])
+      ),
+      section({ backgroundColor: "#f6f6f7", paddingTop: "28px", paddingBottom: "28px", borderRadius: "12px" }, [
+        heading("Shop Their Picks", 2, { align: "center" }),
+        productSlider({ maxProducts: "6" }),
+      ]),
+    ],
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    key: "product-spotlight",
+    name: "Product Spotlight",
+    description: "A feature-focused deep dive on a single product's design, materials, and use cases — no pros/cons, just the story.",
+    category: "Commerce",
+    thumbnail: "🔦",
+    accent: "#a16207",
+    badge: null,
+    preview: { hero: true, columns: 2, lines: 2, hasProducts: true },
+    blocks: [
+      hero({
+        heading: "The Story Behind [Product Name]",
+        subheading: "Thoughtfully designed, built to last.",
+        minHeight: "380px",
+        showCta: false,
+      }),
+      section({ paddingTop: "32px", paddingBottom: "16px" }, [
+        columns(2, [
+          [image("Product detail shot")],
+          [
+            heading("Why We Made It", 2),
+            rich(["The origin story — the gap in the market, the customer need, or the idea that led to this product."]),
+          ],
+        ]),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        heading("Materials & Craftsmanship", 2),
+        rich(["Describe what it's made of and why those choices matter — quality, durability, sustainability, or sourcing."]),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        heading("Designed For", 2),
+        columns(3, [
+          [heading("Use Case One", 3), rich(["A short scenario where this product shines."])],
+          [heading("Use Case Two", 3), rich(["A short scenario where this product shines."])],
+          [heading("Use Case Three", 3), rich(["A short scenario where this product shines."])],
+        ]),
+      ]),
+      section({ backgroundColor: "#f6f6f7", paddingTop: "32px", paddingBottom: "32px", borderRadius: "12px" }, [
+        heading("Make It Yours", 2, { align: "center" }),
+        buyButton({ layout: "horizontal", showDescription: true }),
+      ]),
+    ],
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    key: "customer-case-study",
+    name: "Customer Success Story",
+    description: "Social-proof storytelling — a real customer's before-and-after results, told in their own words.",
+    category: "Editorial",
+    thumbnail: "🌟",
+    accent: "#b91c1c",
+    badge: "New",
+    preview: { columns: 2, lines: 2 },
+    blocks: [
+      section({ paddingTop: "16px", paddingBottom: "8px" }, [
+        heading("How [Customer Name] [Achieved a Specific Result]", 1),
+        rich(["A one-line summary of the outcome this story is about."]),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "16px" }, [
+        columns(2, [
+          [image("Customer photo")],
+          [
+            callout({
+              type: "quote",
+              title: "",
+              body: "\"A short, powerful quote from the customer, in their own words.\"",
+              emoji: "💬",
+            }),
+          ],
+        ]),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "16px" }, [
+        heading("The Challenge", 2),
+        rich(["What the customer was struggling with before finding this product/solution."]),
+      ]),
+      section({ paddingTop: "0px", paddingBottom: "16px" }, [
+        heading("The Solution", 2),
+        rich(["How they discovered and started using the product, and what changed."]),
+      ]),
+      section({ paddingTop: "0px", paddingBottom: "24px" }, [
+        heading("The Results", 2),
+        table(3, 2, [
+          ["Metric", "Result"],
+          ["[Metric one]", "[Result]"],
+          ["[Metric two]", "[Result]"],
+        ]),
+      ]),
+      section({ backgroundColor: "#f6f6f7", paddingTop: "28px", paddingBottom: "28px", borderRadius: "12px" }, [
+        heading("Get Started Like [Customer Name]", 2, { align: "center" }),
+        buyButton({ layout: "horizontal" }),
+      ]),
+    ],
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    key: "size-fit-guide",
+    name: "Size & Fit Guide",
+    description: "Helps shoppers pick the right size with clear measuring instructions and a size chart — reduces returns and support tickets.",
+    category: "Educational",
+    thumbnail: "📐",
+    accent: "#1e3a8a",
+    badge: null,
+    preview: { hasSteps: true, hasTable: true },
+    blocks: [
+      section({ paddingTop: "16px", paddingBottom: "8px" }, [
+        heading("[Category] Size & Fit Guide", 1),
+        rich(["A short intro reassuring the reader this guide will help them find the right size the first time."]),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        heading("How to Measure", 2),
+        ...[1, 2, 3].map((n) => rich([`Step ${n}: describe exactly what to measure and how.`])),
+        image("How to measure diagram"),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        heading("Size Chart", 2),
+        table(5, 4, [
+          ["Size", "Chest", "Waist", "Hip"],
+          ["S", "-", "-", "-"],
+          ["M", "-", "-", "-"],
+          ["L", "-", "-", "-"],
+          ["XL", "-", "-", "-"],
+        ]),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        callout({
+          type: "info",
+          title: "Between sizes?",
+          body: "Give a clear rule of thumb — e.g. \"size up for a relaxed fit, size down for a snug fit.\"",
+          emoji: "📏",
+        }),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        faq("Fit FAQ", [
+          faqItem("What if it doesn't fit?", "Summarize your exchange/return policy."),
+          faqItem("Does it run true to size?", "Give an honest, direct answer."),
+        ]),
+      ]),
+      section({ backgroundColor: "#f6f6f7", paddingTop: "28px", paddingBottom: "28px", borderRadius: "12px" }, [
+        heading("Shop Now You Know Your Size", 2, { align: "center" }),
+        productGrid({ columns: "4", maxProducts: "4" }),
+      ]),
+    ],
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    key: "trend-report",
+    name: "Trend Report",
+    description: "A forward-looking roundup of what's trending — builds authority and links straight to on-trend products.",
+    category: "Editorial",
+    thumbnail: "📈",
+    accent: "#c2410c",
+    badge: "Popular",
+    preview: { hero: true, lines: 1, hasProducts: true },
+    blocks: [
+      hero({
+        heading: "[Number] Trends to Watch This [Season/Year]",
+        subheading: "What's shaping the way people shop right now.",
+        minHeight: "340px",
+        showCta: false,
+      }),
+      section({ paddingTop: "32px", paddingBottom: "8px", maxWidth: "780px" }, [
+        rich(["A short intro on how these trends were identified and why they matter to the reader."]),
+        toc({ title: "This Year's Trends" }),
+      ]),
+      ...[1, 2, 3].map((n) =>
+        section({ paddingTop: "16px", paddingBottom: "24px" }, [
+          heading(`Trend ${n}: [Trend Name]`, 2),
+          columns(2, [
+            [image(`Trend ${n}`)],
+            [rich(["What this trend is, why it's gaining traction, and how shoppers can bring it into their own lives."])],
+          ]),
+          productGrid({ title: "Shop the Trend", columns: "3", maxProducts: "3" }),
+        ])
+      ),
+      section({ backgroundColor: "#f6f6f7", paddingTop: "28px", paddingBottom: "28px", borderRadius: "12px" }, [
+        heading("Stay Ahead of the Trends", 2, { align: "center" }),
+        button("Shop New Arrivals", { alignment: "center", url: "/" }),
+      ]),
+    ],
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    key: "care-maintenance-guide",
+    name: "Care & Maintenance Guide",
+    description: "Practical care instructions that extend product life and cut down support tickets — do's, don'ts, and troubleshooting.",
+    category: "Educational",
+    thumbnail: "🧼",
+    accent: "#065f46",
+    badge: null,
+    preview: { hasSteps: true, hasFaq: true },
+    blocks: [
+      section({ paddingTop: "16px", paddingBottom: "8px" }, [
+        heading("How to Care for Your [Product]", 1),
+        rich(["A short intro on why proper care matters and what this guide covers."]),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        heading("Do's and Don'ts", 2),
+        columns(2, [
+          [heading("✅ Do", 3), rich(["First recommended care practice.", "Second recommended care practice."])],
+          [heading("🚫 Don't", 3), rich(["First thing to avoid.", "Second thing to avoid."])],
+        ]),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        heading("Step-by-Step Care Routine", 2),
+        ...[1, 2, 3].map((n) => rich([`Step ${n}: describe exactly what to do.`])),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        callout({
+          type: "warning",
+          title: "Important",
+          body: "Call out one critical warning — e.g. a cleaning method or condition that can cause damage.",
+          emoji: "⚠️",
+        }),
+      ]),
+      section({ paddingTop: "8px", paddingBottom: "24px" }, [
+        faq("Troubleshooting", [
+          faqItem("What if it gets damaged?", "Explain repair options or warranty coverage."),
+          faqItem("How often should I clean/maintain it?", "Give a clear recommended frequency."),
+        ]),
+      ]),
+    ],
+  },
 ];
 
 export function getBlogTemplateSummaries() {
