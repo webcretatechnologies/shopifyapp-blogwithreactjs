@@ -7,7 +7,6 @@ import { useBuilderStore } from "../store/useBuilderStore";
 import { GripVertical, Trash2, Copy, ArrowUp, ArrowDown, EyeOff } from "lucide-react";
 import BlockErrorBoundary from "../BlockErrorBoundary";
 import BlockContextMenu from "./BlockContextMenu";
-import SavePatternModal from "../SavePatternModal";
 import { getActiveCenterY } from "../utils/treeUtils";
 
 const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
@@ -25,7 +24,6 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
 
   // Context menu state (mouse-only, see BlockContextMenu.jsx for accessibility note)
   const [contextMenu, setContextMenu] = useState(null);
-  const [showSavePatternModal, setShowSavePatternModal] = useState(false);
   const [justDropped, setJustDropped] = useState(false);
   const isReducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -375,18 +373,6 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          onSavePattern={() => {
-            setContextMenu(null);
-            setShowSavePatternModal(true);
-          }}
-        />
-      )}
-
-      {/* ── Save Pattern Modal ── */}
-      {showSavePatternModal && (
-        <SavePatternModal
-          blockId={id}
-          onClose={() => setShowSavePatternModal(false)}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import {
   Page,
   Layout,
@@ -39,6 +39,7 @@ import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon, Calendar
 import { DateTime } from "luxon";
 import confetti from "canvas-confetti";
 import DragDropBuilderContainer from "../../components/builder/DragDropBuilderContainer";
+import BlogTemplateGalleryModal from "../../components/builder/BlogTemplateGalleryModal";
 import { compileBlocksToHtml } from "../../utils/compileBlocksToHtml";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
 import ArticlePreview from "../../components/editor/ArticlePreview";
@@ -769,6 +770,7 @@ export const parseTags = (input) => {
 export default function PostEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const isEditing = Boolean(id);
 
   const [post, setPost] = useState({
@@ -818,6 +820,7 @@ export default function PostEditor() {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [showCongratsModal, setShowCongratsModal] = useState(false);
+  const [showTemplateGallery, setShowTemplateGallery] = useState(false);
   const [newPostId, setNewPostId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
@@ -1040,6 +1043,25 @@ export default function PostEditor() {
     loadShopifyBlogs();
     if (isEditing) loadPost();
   }, [isEditing, loadPost]);
+
+  // Arrived from the Blog Templates library (pages/templates/index.jsx) with a template
+  // pre-chosen — fetch its block tree and seed the builder before the user's first save. Only
+  // ever applies to a brand-new post; navigation state is consumed once so a page refresh doesn't
+  // re-apply it.
+  useEffect(() => {
+    const templateKey = location.state?.templateKey;
+    if (!templateKey || isEditing) return;
+    navigate(location.pathname, { replace: true, state: {} });
+    fetch(`/api/blog-templates/${templateKey}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.template?.blocks) {
+          setPost((p) => ({ ...p, contentJson: normalizeBlocksAst(d.template.blocks) }));
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing]);
 
   const isFieldDirty = (val1, val2) => {
     const clean1 = val1 === null || val1 === undefined ? "" : String(val1).trim();
@@ -1792,6 +1814,11 @@ export default function PostEditor() {
                   <Box paddingBlock="300" paddingInline="400">
                     <InlineStack align="space-between" blockAlign="center">
                       <Text variant="headingSm" as="h2">Content</Text>
+                      {!isEditing && (
+                        <Button onClick={() => setShowTemplateGallery(true)}>
+                          {post.contentJson?.length ? "Browse templates" : "Start from a template"}
+                        </Button>
+                      )}
                     </InlineStack>
                   </Box>
                   <Divider />
@@ -2466,6 +2493,17 @@ export default function PostEditor() {
         onCancel={() => { setShowScheduleLiveWarning(false); setScheduleModalError(null); }}
         loading={isScheduling}
       />
+
+      {!isEditing && (
+        <BlogTemplateGalleryModal
+          open={showTemplateGallery}
+          onClose={() => setShowTemplateGallery(false)}
+          onApply={(blocks) => {
+            const normalized = normalizeBlocksAst(blocks);
+            setPost((p) => ({ ...p, contentJson: normalized }));
+          }}
+        />
+      )}
 
       {showPreview && (
         <ArticlePreview

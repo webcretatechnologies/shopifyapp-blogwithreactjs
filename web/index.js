@@ -110,7 +110,7 @@ import trackingRoutes from "./src/routes/tracking.js";
 import publicStylesRoutes from "./src/routes/publicStyles.js";
 import sitemapIndexRoutes from "./src/routes/sitemapIndex.js";
 import relatedPostsRoutes from "./src/routes/relatedPosts.js";
-import patternRoutes from "./src/routes/patterns.js";
+import blogTemplateRoutes from "./src/routes/blogTemplates.js";
 
 // Process-level event handlers to prevent crashes from unhandled network errors
 process.on("unhandledRejection", (reason, promise) => {
@@ -611,8 +611,8 @@ app.use("/api/wizard", wizardRoutes);
 // Support
 app.use("/api/support", supportRoutes);
 
-// Reusable Patterns
-app.use("/api/patterns", patternRoutes);
+// Blog Templates library (full-page starter templates for the drag & drop Builder)
+app.use("/api/blog-templates", blogTemplateRoutes);
 
 // Super Admin API
 app.use("/admin-api", superAdminRoutes);

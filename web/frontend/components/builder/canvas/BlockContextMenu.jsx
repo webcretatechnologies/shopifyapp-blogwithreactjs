@@ -8,17 +8,16 @@
 
 import { useBuilderStore } from "../store/useBuilderStore";
 import { Popover, ActionList } from "@shopify/polaris";
-import { 
-  ChevronUpIcon, 
-  ChevronDownIcon, 
-  DuplicateIcon, 
-  ClipboardIcon, 
-  StarIcon, 
+import {
+  ChevronUpIcon,
+  ChevronDownIcon,
+  DuplicateIcon,
+  ClipboardIcon,
   DeleteIcon,
   SelectIcon
 } from "@shopify/polaris-icons";
 
-export default function BlockContextMenu({ blockId, x, y, onClose, onSavePattern }) {
+export default function BlockContextMenu({ blockId, x, y, onClose }) {
   const deleteBlock = useBuilderStore((s) => s.deleteBlock);
   const duplicateBlock = useBuilderStore((s) => s.duplicateBlock);
   const moveBlockUp = useBuilderStore((s) => s.moveBlockUp);
@@ -88,17 +87,6 @@ export default function BlockContextMenu({ blockId, x, y, onClose, onSavePattern
       onAction: handleCopy,
     },
   ];
-
-  if (onSavePattern) {
-    actionSection.push({
-      content: "Save as Pattern",
-      icon: StarIcon,
-      onAction: () => {
-        onSavePattern(blockId);
-        onClose();
-      },
-    });
-  }
 
   sections.push({ items: actionSection });
 
