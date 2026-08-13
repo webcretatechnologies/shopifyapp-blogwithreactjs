@@ -1167,6 +1167,19 @@ export default function PostEditor() {
     };
   }, []);
 
+  // Navigating away (back arrow, "Articles" breadcrumb, Translate/Comments) while isDirty is
+  // true unmounts this page before the isDirty-watching effect above ever gets a chance to hide
+  // the save bar again, and by then the route has already swapped underneath it — so the
+  // top-of-admin "Unsaved changes" chrome is left stuck showing on whichever page loads next.
+  // Every exit from the editor must explicitly await hide() first, same as the working
+  // save/discard paths already do, before triggering navigation.
+  const leaveEditor = async (path) => {
+    if (window.shopify?.saveBar) {
+      try { await window.shopify.saveBar.hide(saveBarId); } catch (e) { }
+    }
+    navigate(path);
+  };
+
   const handleField = (field) => (value) =>
     setPost((p) => ({ ...p, [field]: value }));
 
@@ -1570,7 +1583,7 @@ export default function PostEditor() {
         { method: "DELETE" },
       );
       if (!res.ok) throw new Error("Delete failed");
-      navigate("/posts");
+      leaveEditor("/posts");
     } catch (err) {
       setError(err.message);
       setIsDeleting(false);
@@ -1682,7 +1695,7 @@ export default function PostEditor() {
         </div>
       )}
       <TitleBar title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}>
-        <button variant="breadcrumb" onClick={() => navigate("/")}>
+        <button variant="breadcrumb" onClick={() => leaveEditor("/")}>
           Articles
         </button>
         <button
@@ -1693,12 +1706,12 @@ export default function PostEditor() {
           {isSavingHeader ? "Saving..." : (post.status === "published" ? "Save & Sync" : "Save Draft")}
         </button>
         {isEditing && (
-          <button onClick={() => navigate(`/posts/${id}/translate`)}>
+          <button onClick={() => leaveEditor(`/posts/${id}/translate`)}>
             Translate Article
           </button>
         )}
         {isEditing && post.shopifyArticle?.shopifyArticleId && (
-          <button onClick={() => navigate(`/comments?article_id=${post.shopifyArticle.shopifyArticleId}`)}>
+          <button onClick={() => leaveEditor(`/comments?article_id=${post.shopifyArticle.shopifyArticleId}`)}>
             Manage Comments
           </button>
         )}
@@ -1774,7 +1787,7 @@ export default function PostEditor() {
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
       <Page
         fullWidth
-        backAction={{ content: "Articles", onAction: () => navigate("/posts") }}
+        backAction={{ content: "Articles", onAction: () => leaveEditor("/posts") }}
         title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
         titleMetadata={statusBadge}
       >
