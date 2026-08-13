@@ -16,6 +16,7 @@ import {
   DataTable,
 } from "@shopify/polaris";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Check,
   ArrowRight,
@@ -136,6 +137,7 @@ const CARD_STYLES = `
 `;
 
 export default function Plans() {
+  const navigate = useNavigate();
   const [activePlan, setActivePlan] = useState("");
   const [postCount, setPostCount] = useState(0);
   const [postLimit, setPostLimit] = useState(10);
@@ -313,6 +315,7 @@ export default function Plans() {
   return (
     <Page
       title="Plans & Billing"
+      backAction={{ content: "Dashboard", onAction: () => navigate("/dashboard") }}
       subtitle="Simple, transparent plans designed to scale with your content strategy"
     >
       <style>{CARD_STYLES}</style>

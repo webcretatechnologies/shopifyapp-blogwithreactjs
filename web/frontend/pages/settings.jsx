@@ -303,6 +303,7 @@ export default function Settings() {
       )}
       <Page
         title="Settings"
+        backAction={{ content: "Dashboard", onAction: () => navigate("/dashboard") }}
         subtitle="Configure global blog appearance and behavior"
       >
         <Layout>

@@ -236,6 +236,7 @@ export default function Blogs() {
     <Frame>
       <Page
       title="Blogs"
+      backAction={{ content: "Articles", onAction: () => navigate("/posts") }}
       primaryAction={{
         content: "Add blog",
         onAction: () => navigate("/blogs/new"),

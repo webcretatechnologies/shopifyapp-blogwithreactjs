@@ -128,6 +128,7 @@ export default function BlogTemplatesLibrary() {
     <Page
       fullWidth
       title="Blog Templates"
+      backAction={{ content: "Dashboard", onAction: () => navigate("/dashboard") }}
       subtitle="Pre-built, professionally structured layouts for the drag & drop builder — pick one to start a new post."
     >
       <TitleBar title="Blog Templates" />

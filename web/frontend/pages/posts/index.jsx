@@ -531,6 +531,7 @@ export default function Articles() {
       )}
       <Page
         title="Articles"
+        backAction={{ content: "Dashboard", onAction: () => navigate("/dashboard") }}
         subtitle={
           shopInfo
             ? `${shopInfo.domain} · Plan: ${shopInfo.planKey?.toUpperCase() || "FREE"}`
