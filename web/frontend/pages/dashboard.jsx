@@ -172,6 +172,7 @@ export default function Dashboard() {
         secondaryActions={[
           { content: "Manage articles", onAction: () => navigate("/posts") },
           { content: "Import posts", onAction: () => navigate("/posts/import") },
+          { content: "View full analytics", onAction: () => navigate("/analytics") },
         ]}
       >
         <Layout>
@@ -251,6 +252,10 @@ export default function Dashboard() {
                   trend: analytics?.trends?.views,
                 },
                 {
+                  label: "Unique visitors",
+                  value: (stats?.totalUniqueVisitors ?? 0).toLocaleString(),
+                },
+                {
                   label: "Revenue",
                   value: `$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
                   trend: analytics?.trends?.revenue,
@@ -291,91 +296,98 @@ export default function Dashboard() {
           </Layout.Section>
 
           {/* ── Funnel + Top Posts ──────────────────── */}
-          <Layout.Section variant="oneHalf">
-            <Card>
-              <Box padding="400">
-                <BlockStack gap="300">
-                  <Text variant="headingMd" as="h3">Conversion funnel</Text>
-                  <Divider />
-                  {analyticsLoading ? (
-                    <SkeletonBodyText lines={4} />
-                  ) : analytics?.funnel?.length ? (
-                    <MiniFunnel funnel={analytics.funnel} />
-                  ) : (
-                    <Text tone="subdued" variant="bodySm">
-                      {setupStatus?.analyticsTracker?.active
-                        ? "No funnel data yet for this period."
-                        : "No funnel data yet. Enable storefront tracking above to start collecting it."}
-                    </Text>
-                  )}
-                </BlockStack>
-              </Box>
-            </Card>
-          </Layout.Section>
-
-          <Layout.Section variant="oneHalf">
-            {analyticsLoading ? (
-              <Card>
-                <Box padding="400">
-                  <BlockStack gap="300">
-                    <Text variant="headingMd" as="h3">Top posts</Text>
-                    <Divider />
-                    <SkeletonBodyText lines={5} />
-                  </BlockStack>
-                </Box>
-              </Card>
-            ) : analytics?.topPosts?.length > 0 ? (
-              <Card>
-                <Box padding="400">
-                  <BlockStack gap="300">
-                    <Text variant="headingMd" as="h3">Top posts</Text>
-                    <Divider />
+          {/* Plain flexbox (not Polaris <Layout>) so the two cards stretch to equal height —
+              Layout's own CSS uses align-items: flex-start, so sibling cards in a Layout row
+              never match height regardless of minHeight (same fix as the Analytics page). */}
+          <Layout.Section>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "stretch", width: "100%", boxSizing: "border-box" }}>
+              <div style={{ flex: "1 1 0", minWidth: 0, display: "grid" }}>
+                <Card>
+                  <Box padding="400">
                     <BlockStack gap="300">
-                      {analytics.topPosts.slice(0, 5).map((p, index) => (
-                        <div key={p.id}>
-                          <InlineStack align="space-between" blockAlign="center">
-                            <BlockStack gap="050">
-                              <div style={{ maxWidth: "200px" }}>
-                                <Text variant="bodySm" fontWeight="semibold" truncate>
-                                  {p.title || "Untitled"}
-                                </Text>
-                              </div>
-                              <Badge tone={p.status === "published" ? "success" : "info"}>
-                                {p.status}
-                              </Badge>
-                            </BlockStack>
-                            <BlockStack gap="025" align="end">
-                              <Text variant="bodySm" tone="subdued">
-                                {(p.views || 0).toLocaleString()} views
-                              </Text>
-                              {p.conversions > 0 && (
-                                <Text variant="bodyXs" tone="success">
-                                  {p.conversions} conversions
-                                </Text>
-                              )}
-                            </BlockStack>
-                          </InlineStack>
-                        </div>
-                      ))}
+                      <Text variant="headingMd" as="h3">Conversion funnel</Text>
+                      <Divider />
+                      {analyticsLoading ? (
+                        <SkeletonBodyText lines={4} />
+                      ) : analytics?.funnel?.length ? (
+                        <MiniFunnel funnel={analytics.funnel} />
+                      ) : (
+                        <Text tone="subdued" variant="bodySm">
+                          {setupStatus?.analyticsTracker?.active
+                            ? "No funnel data yet for this period."
+                            : "No funnel data yet. Enable storefront tracking above to start collecting it."}
+                        </Text>
+                      )}
                     </BlockStack>
-                  </BlockStack>
-                </Box>
-              </Card>
-            ) : (
-              <Card>
-                <Box padding="400">
-                  <BlockStack gap="300">
-                    <Text variant="headingMd" as="h3">Top posts</Text>
-                    <Divider />
-                    <Text tone="subdued" variant="bodySm">
-                      {setupStatus?.analyticsTracker?.active
-                        ? "No performance data yet for this period. Check back once your posts start getting traffic."
-                        : "No performance data yet. Enable storefront tracking above to start collecting it."}
-                    </Text>
-                  </BlockStack>
-                </Box>
-              </Card>
-            )}
+                  </Box>
+                </Card>
+              </div>
+
+              <div style={{ flex: "1 1 0", minWidth: 0, display: "grid" }}>
+                {analyticsLoading ? (
+                  <Card>
+                    <Box padding="400">
+                      <BlockStack gap="300">
+                        <Text variant="headingMd" as="h3">Top posts</Text>
+                        <Divider />
+                        <SkeletonBodyText lines={5} />
+                      </BlockStack>
+                    </Box>
+                  </Card>
+                ) : analytics?.topPosts?.length > 0 ? (
+                  <Card>
+                    <Box padding="400">
+                      <BlockStack gap="300">
+                        <Text variant="headingMd" as="h3">Top posts</Text>
+                        <Divider />
+                        <BlockStack gap="300">
+                          {analytics.topPosts.slice(0, 5).map((p, index) => (
+                            <div key={p.id}>
+                              <InlineStack align="space-between" blockAlign="center">
+                                <BlockStack gap="050">
+                                  <div style={{ maxWidth: "200px" }}>
+                                    <Text variant="bodySm" fontWeight="semibold" truncate>
+                                      {p.title || "Untitled"}
+                                    </Text>
+                                  </div>
+                                  <Badge tone={p.status === "published" ? "success" : "info"}>
+                                    {p.status}
+                                  </Badge>
+                                </BlockStack>
+                                <BlockStack gap="025" align="end">
+                                  <Text variant="bodySm" tone="subdued">
+                                    {(p.views || 0).toLocaleString()} views
+                                  </Text>
+                                  {p.conversions > 0 && (
+                                    <Text variant="bodyXs" tone="success">
+                                      {p.conversions} conversions
+                                    </Text>
+                                  )}
+                                </BlockStack>
+                              </InlineStack>
+                            </div>
+                          ))}
+                        </BlockStack>
+                      </BlockStack>
+                    </Box>
+                  </Card>
+                ) : (
+                  <Card>
+                    <Box padding="400">
+                      <BlockStack gap="300">
+                        <Text variant="headingMd" as="h3">Top posts</Text>
+                        <Divider />
+                        <Text tone="subdued" variant="bodySm">
+                          {setupStatus?.analyticsTracker?.active
+                            ? "No performance data yet for this period. Check back once your posts start getting traffic."
+                            : "No performance data yet. Enable storefront tracking above to start collecting it."}
+                        </Text>
+                      </BlockStack>
+                    </Box>
+                  </Card>
+                )}
+              </div>
+            </div>
           </Layout.Section>
         </Layout>
       </Page>

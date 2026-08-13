@@ -814,6 +814,54 @@ router.get("/plan/features", async (req, res) => {
   }
 });
 
+// ─── GET /api/posts/meta/dashboard-extras — cheap counts + upcoming scheduled posts +
+// plan usage + recent sync issues, all in one round trip for the Dashboard page ─────────
+router.get("/meta/dashboard-extras", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const now = new Date();
+    const [totalPosts, draftCount, scheduledCount, notSyncedCount, upcoming, syncIssues] =
+      await Promise.all([
+        prisma.post.count({ where: { shopId: shop.id } }),
+        prisma.post.count({ where: { shopId: shop.id, status: "draft" } }),
+        prisma.post.count({ where: { shopId: shop.id, status: "scheduled" } }),
+        prisma.post.count({ where: { shopId: shop.id, shopifyArticle: null } }),
+        prisma.post.findMany({
+          where: { shopId: shop.id, status: "scheduled", publishedAt: { gt: now } },
+          orderBy: { publishedAt: "asc" },
+          take: 5,
+          select: { id: true, title: true, publishedAt: true },
+        }),
+        prisma.articleSyncLog.findMany({
+          where: { shopId: shop.id, status: { in: ["error", "conflict"] } },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          select: { id: true, postId: true, direction: true, eventType: true, status: true, message: true, createdAt: true },
+        }),
+      ]);
+
+    const postIds = [...new Set(syncIssues.map((s) => s.postId).filter(Boolean))];
+    const relatedPosts = postIds.length
+      ? await prisma.post.findMany({ where: { id: { in: postIds } }, select: { id: true, title: true } })
+      : [];
+    const postTitleById = Object.fromEntries(relatedPosts.map((p) => [p.id, p.title]));
+
+    res.json({
+      drafts: draftCount,
+      scheduled: scheduledCount,
+      notSynced: notSyncedCount,
+      upcoming: upcoming.map((p) => ({ id: p.id, title: p.title, publishedAt: p.publishedAt })),
+      planUsage: { plan: shop.planKey, used: totalPosts, limit: getArticleLimit(shop.planKey) },
+      syncIssues: syncIssues.map((s) => ({ ...s, postTitle: s.postId ? postTitleById[s.postId] || null : null })),
+    });
+  } catch (err) {
+    console.error("GET /api/posts/meta/dashboard-extras error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/posts/upload — Media upload ────────────────────────────────────
 router.post("/upload", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });

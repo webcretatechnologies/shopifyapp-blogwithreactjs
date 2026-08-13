@@ -213,8 +213,16 @@ export default function Articles() {
   const [queryValue, setQueryValue] = useState("");
   const [sortSelected, setSortSelected] = useState(["createdAt desc"]);
   
-  const [statusFilter, setStatusFilter] = useState([]);
-  const [syncFilter, setSyncFilter] = useState([]);
+  // Seeded from the URL (e.g. Dashboard's "12 drafts" / "3 not synced" links use
+  // /posts?status=draft or /posts?syncStatus=not_synced) so arriving from those links lands on
+  // an already-filtered list instead of the unfiltered "All" view.
+  const initialParams = new URLSearchParams(window.location.search);
+  const [statusFilter, setStatusFilter] = useState(
+    initialParams.get("status") ? [initialParams.get("status")] : []
+  );
+  const [syncFilter, setSyncFilter] = useState(
+    initialParams.get("syncStatus") ? [initialParams.get("syncStatus")] : []
+  );
   const [tagFilter, setTagFilter] = useState("");
 
   const fetchPosts = useCallback(async () => {
