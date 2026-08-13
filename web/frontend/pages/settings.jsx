@@ -38,26 +38,6 @@ const LAYOUT_OPTIONS = [
   { label: "Narrow (max 640px)", value: "narrow" },
 ];
 
-const LANGUAGE_OPTIONS = [
-  { label: "English", value: "en" },
-  { label: "Arabic (RTL)", value: "ar" },
-  { label: "French", value: "fr" },
-  { label: "German", value: "de" },
-  { label: "Spanish", value: "es" },
-  { label: "Japanese", value: "ja" },
-  { label: "Chinese (Simplified)", value: "zh" },
-  { label: "Portuguese", value: "pt" },
-  { label: "Dutch", value: "nl" },
-  { label: "Italian", value: "it" },
-];
-
-const TOC_POSITION_OPTIONS = [
-  { label: "Left sidebar", value: "left" },
-  { label: "Right sidebar", value: "right" },
-  { label: "Top of article", value: "top" },
-  { label: "Floating sticky", value: "floating" },
-];
-
 const RELATED_POSTS_OPTIONS = ["2", "3", "4", "6"].map((n) => ({
   label: `${n} posts`,
   value: n,
@@ -93,9 +73,6 @@ const DEFAULT_SETTINGS = {
   textColor: "#202223",
   buttonRadius: "4",
   blogLayout: "centered",
-  language: "en",
-  showToc: false,
-  tocPosition: "left",
   showReadingTime: true,
   showAuthor: true,
   showPublishedDate: true,
@@ -584,26 +561,13 @@ export default function Settings() {
             {selectedTab === 1 && (
               <>
                 <Layout.Section>
-                  <SectionCard title="Language & localization">
-                    <Select
-                      label="Default blog language"
-                      options={LANGUAGE_OPTIONS}
-                      value={settings.language}
-                      onChange={set("language")}
-                      helpText="Used for new articles. Translations can be managed per-article."
-                    />
-                    {settings.language === "ar" && (
-                      <Banner tone="warning">
-                        Arabic is a right-to-left (RTL) language. The blog layout will
-                        automatically switch to RTL mode.
-                      </Banner>
-                    )}
+                  <SectionCard title="Author defaults">
                     <TextField
                       label="Default author name"
                       value={settings.defaultAuthor}
                       onChange={set("defaultAuthor")}
                       placeholder="Your name or store name..."
-                      helpText="Pre-filled in the author field for new articles"
+                      helpText="Pre-filled in the author field for new articles, and used as the byline on any article whose own author field is left blank."
                       autoComplete="off"
                     />
                   </SectionCard>
@@ -611,6 +575,12 @@ export default function Settings() {
 
                 <Layout.Section>
                   <SectionCard title="Article display options">
+                    <Text tone="subdued" variant="bodySm">
+                      Reading time, author, and published date control a byline this app adds
+                      inside the article content. If your theme already shows its own date or
+                      author near the title (common on Dawn and similar themes), that's rendered
+                      by the theme itself and isn't affected by these toggles.
+                    </Text>
                     <InlineGrid columns={2} gap="300">
                       <Checkbox
                         label="Show reading time"
@@ -632,22 +602,7 @@ export default function Settings() {
                         checked={settings.showRelatedPosts}
                         onChange={set("showRelatedPosts")}
                       />
-                      <Checkbox
-                        label="Enable table of contents (TOC)"
-                        checked={settings.showToc}
-                        onChange={set("showToc")}
-                      />
                     </InlineGrid>
-                    {settings.showToc && (
-                      <Box paddingInlineStart="600">
-                        <Select
-                          label="TOC position"
-                          options={TOC_POSITION_OPTIONS}
-                          value={settings.tocPosition}
-                          onChange={set("tocPosition")}
-                        />
-                      </Box>
-                    )}
                     {settings.showRelatedPosts && (
                       <Box paddingInlineStart="600">
                         <Select

@@ -663,7 +663,7 @@ async function logSyncEvent({
 // ══════════════════════════════════════════════════════════════════════════════
 export async function buildStorefrontHtmlForPost(post, rawHtml, validSession, graphqlClient, jsonLdOverrides = {}) {
   let storefrontHtml = await EditorContentCompiler.compileForStorefront(
-    rawHtml, validSession, graphqlClient, post.shop.domain, post.id, post.customCss
+    rawHtml, validSession, graphqlClient, post.shop.domain, post.id, post.customCss, post.author, post.publishedAt
   );
 
   let storeCurrency = "USD";

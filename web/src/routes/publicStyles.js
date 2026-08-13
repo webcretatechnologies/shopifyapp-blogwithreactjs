@@ -24,13 +24,13 @@ const router = express.Router();
 // ─── Abuse guard ──────────────────────────────────────────────────────────
 // Public endpoint backed by a DB read — short in-process cache bounds how often that happens
 // per shop, independent of the browser's own Cache-Control behavior below.
-const CACHE_TTL_MS = 90 * 1000;
+const CACHE_TTL_MS = 15 * 1000;
 const cssCache = new Map(); // shopDomain -> { css, expiresAt }
 
 router.get("/", async (req, res) => {
   res.setHeader("Content-Type", "text/css; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cache-Control", "public, max-age=120");
+  res.setHeader("Cache-Control", "public, max-age=15");
 
   const shopDomain = String(req.query.shop || "").trim();
   if (!shopDomain) {

@@ -1039,6 +1039,22 @@ export default function PostEditor() {
     } catch { }
   };
 
+  // Pre-fill the Author field from Settings → Content & display → "Default author name" so
+  // merchants who always credit the same person/store stop retyping it on every new post.
+  // Only for brand-new posts, and only if the field is still untouched by the time it resolves.
+  useEffect(() => {
+    if (isEditing) return;
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        const defaultAuthor = d.settings?.defaultAuthor;
+        if (defaultAuthor) {
+          setPost((p) => (p.author ? p : { ...p, author: defaultAuthor }));
+        }
+      })
+      .catch(() => {});
+  }, [isEditing]);
+
   useEffect(() => {
     loadShopifyBlogs();
     if (isEditing) loadPost();
@@ -1447,7 +1463,12 @@ export default function PostEditor() {
       const res = await fetch("/api/posts/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentHtml: htmlToPreview, customCss: post.customCss }),
+        body: JSON.stringify({
+          contentHtml: htmlToPreview,
+          customCss: post.customCss,
+          author: post.author,
+          publishedAt: post.publishedAt || new Date().toISOString(),
+        }),
       });
       const data = await res.json();
       if (data.contentHtml) {

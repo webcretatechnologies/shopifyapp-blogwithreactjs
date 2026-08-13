@@ -1362,16 +1362,18 @@ ${this.generateGlobalCss(settings)}
     text-align: center !important;
   }
 
-  .blogger-reading-time {
-    display: ${settings.showReadingTime === false || settings.showReadingTime === "false" ? "none !important" : "inline-block"};
-  }
-
-  .blogger-author {
-    display: ${settings.showAuthor === false || settings.showAuthor === "false" ? "none !important" : "inline-block"};
-  }
-
-  .blogger-published-date {
-    display: ${settings.showPublishedDate === false || settings.showPublishedDate === "false" ? "none !important" : "inline-block"};
+  /* Show/hide for .blogger-author / .blogger-published-date / .blogger-reading-time is
+     deliberately NOT set here — it's served live from /styles.css (publicStyles.js) instead, so
+     toggling those Settings applies to every already-published post on its next storefront view
+     instead of requiring a resync (same reasoning as the layout-width link below). */
+  .blogger-byline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 20px;
+    font-size: 0.9em;
+    color: #6d7175;
   }
 
   .blogger-related-posts {
@@ -1481,10 +1483,6 @@ ${this.generateGlobalCss(settings)}
     overflow: hidden;
   }
 
-  .blogger-toc {
-    display: ${settings.showToc === false || settings.showToc === "false" ? "none !important" : "block"};
-    float: ${settings.tocPosition === "left" ? "left" : settings.tocPosition === "right" ? "right" : "none"};
-  }
 
   /* Table styling for Tiptap native tables */
   .blogger-article-container table {
@@ -1552,15 +1550,19 @@ ${this.generateGlobalCss(settings)}
   }
 
   /**
-   * Raw CSS for JUST the blog article layout width — the one appearance setting that's live
-   * and site-wide (served from the public `/styles.css` endpoint, linked from every
-   * newly-synced article). Deliberately narrow in scope: colors and font are intentionally
-   * NOT part of this shared stylesheet (see generateGlobalCss's docblock for why), so this
-   * only ever needs `settings.blogLayout`.
+   * Raw CSS for the settings that need to be LIVE and site-wide (served from the public
+   * `/styles.css` endpoint, linked from every newly-synced article): layout width, plus the
+   * byline element toggles (show author / published date / reading time). Colors and font are
+   * intentionally NOT part of this shared stylesheet (see generateGlobalCss's docblock for why)
+   * — those still bake at sync time. The byline elements themselves (.blogger-author etc.) are
+   * always baked into the article HTML (see compileForStorefront); only their visibility lives
+   * here, so toggling these Settings applies to every already-published post on its next
+   * storefront view instead of requiring a resync.
    */
   static generateLayoutCss(settings, { important = true } = {}) {
     const bang = important ? " !important" : "";
     const layoutWidth = settings.blogLayout === "centered" ? "800px" : settings.blogLayout === "narrow" ? "640px" : "100%";
+    const isOff = (v) => v === false || v === "false";
     return `  :root {
     --blogger-layout-width: ${layoutWidth};
   }
@@ -1569,6 +1571,18 @@ ${this.generateGlobalCss(settings)}
     max-width: var(--blogger-layout-width)${bang};
     margin-left: auto !important;
     margin-right: auto !important;
+  }
+
+  .blogger-author {
+    display: ${isOff(settings.showAuthor) ? `none${bang}` : "inline-flex"};
+  }
+
+  .blogger-published-date {
+    display: ${isOff(settings.showPublishedDate) ? `none${bang}` : "inline-flex"};
+  }
+
+  .blogger-reading-time {
+    display: ${isOff(settings.showReadingTime) ? `none${bang}` : "inline-flex"};
   }`;
   }
 
@@ -1656,9 +1670,9 @@ ${this.generateGlobalCss(settings)}
     </div>`;
   }
 
-  static async compileForStorefront(contentHtml, session = null, shopifyClient = null, shopDomain = null, postId = null, customCss = null) {
+  static async compileForStorefront(contentHtml, session = null, shopifyClient = null, shopDomain = null, postId = null, customCss = null, author = null, publishedAt = null) {
     const compiled = await this.compile(contentHtml, session, shopifyClient);
-    
+
     const domain = shopDomain || session?.shop;
     let settings = {};
     if (domain) {
@@ -1762,6 +1776,38 @@ ${this.generateGlobalCss(settings)}
       ? `<div data-custom-footer data-shop="${escapeHtml(domain)}"></div>`
       : "";
 
-    return `${fallbackStyles}${liveStylesLink}${customCssBlock}${liveScriptTag}${headerPlaceholder}\n<div class="blogger-article-container">\n${compiled}\n${relatedPostsHtml}\n</div>${footerPlaceholder}`;
+    // Byline (author / published date / reading time) — the data itself is baked (it's real
+    // per-post content, same posture as customCssBlock above), but each element's visibility is
+    // controlled purely by CSS served live from /styles.css (see publicStyles.js), so toggling
+    // "Show author name" etc. in Settings applies to every already-published post on its next
+    // storefront view — no resync — same reasoning as relatedPostsHtml/headerPlaceholder above.
+    // Author falls back to Settings → Content & display → "Default author name" when the post
+    // itself has none set, so that setting has a real effect instead of being write-only.
+    const bylineAuthor = (author && String(author).trim()) || (settings.defaultAuthor && String(settings.defaultAuthor).trim()) || "";
+    const bylineParts = [];
+    if (bylineAuthor) {
+      bylineParts.push(`<span class="blogger-author">By ${escapeHtml(bylineAuthor)}</span>`);
+    }
+    if (publishedAt) {
+      const d = new Date(publishedAt);
+      if (!isNaN(d.getTime())) {
+        const formatted = d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+        bylineParts.push(`<span class="blogger-published-date">${escapeHtml(formatted)}</span>`);
+      }
+    }
+    const plainText = compiled.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    if (plainText) {
+      const minutes = Math.max(1, Math.round(plainText.split(" ").length / 200));
+      bylineParts.push(`<span class="blogger-reading-time">${minutes} min read</span>`);
+    }
+    // No explicit "·" separator elements between parts — each part's visibility is controlled
+    // independently by live CSS (author/date/reading-time can each be toggled off), and a
+    // separator sibling wouldn't know to hide itself when its neighbor does. Spacing comes from
+    // the container's flex `gap` instead, so there's never an orphaned dot.
+    const bylineHtml = bylineParts.length
+      ? `<div class="blogger-byline">${bylineParts.join("")}</div>\n`
+      : "";
+
+    return `${fallbackStyles}${liveStylesLink}${customCssBlock}${liveScriptTag}${headerPlaceholder}\n<div class="blogger-article-container">\n${bylineHtml}${compiled}\n${relatedPostsHtml}\n</div>${footerPlaceholder}`;
   }
 }

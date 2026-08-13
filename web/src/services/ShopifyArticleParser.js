@@ -305,6 +305,17 @@ export class ShopifyArticleParser {
     // duplicating (and re-duplicating) indefinitely.
     $(".blogger-related-posts").remove();
 
+    // Byline (author / published date / reading time — EditorContentCompiler.compileForStorefront)
+    // and the custom header/footer placeholders (Settings → Advanced) are the same class of
+    // app-generated, sync-time-only markup with no data-type to re-edit. Without stripping them
+    // here, a webhook reconcile round-trips them into real blocks in the canvas (the byline in
+    // particular gets torn into separate "By X" / date / "N min read" text blocks, visible and
+    // editable in the builder — confirmed live: this exact pollution is what showed up in the
+    // canvas after a sync-back).
+    $(".blogger-byline").remove();
+    $("[data-custom-header]").remove();
+    $("[data-custom-footer]").remove();
+
     // Remove blogger-article-container wrapper but keep inner content
     $(".blogger-article-container").each((_, el) => {
       const $el = $(el);
