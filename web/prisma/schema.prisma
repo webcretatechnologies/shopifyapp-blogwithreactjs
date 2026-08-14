@@ -458,12 +458,76 @@ model SubscriptionPlan {
   price       Decimal  @db.Decimal(10, 2)
   currency    String   @default("USD")
   interval    String   @default("EVERY_30_DAYS")
+  trialDays   Int      @default(0)
   description String?  @db.Text
   features    Json?
   isActive    Boolean  @default(true)
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  couponPlans CouponPlan[]
+}
+
+// ── Billing Coupons — SaaS subscription discount codes ─────────────────────
+// Applied to a merchant's subscription to THIS app via Shopify's real Billing API
+// (appSubscriptionCreate's discount field), not a storefront/customer discount. A discount can
+// only ever be attached at appSubscriptionCreate time — Shopify's own billing engine owns the
+// discount's clock after that, so there is no "edit a live subscription's discount" concept here.
+model Coupon {
+  id             Int      @id @default(autoincrement())
+  code           String   @unique @db.VarChar(40)
+  discountType   String   @default("PERCENTAGE") @db.VarChar(20) // PERCENTAGE | FIXED_AMOUNT
+  percentOff     Decimal? @db.Decimal(5, 2)
+  amountOff      Decimal? @db.Decimal(10, 2)
+  durationMonths Int
+  description    String?  @db.Text
+  active         Boolean  @default(true)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  totalUses      Int?                                               // null = unlimited
+  usesPerStore   Int      @default(1)
+  appliesTo      String   @default("ALL_PAID_PLANS") @db.VarChar(20) // ALL_PAID_PLANS | SPECIFIC_PLANS | SPECIFIC_STORES
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  plans          CouponPlan[]
+  shops          CouponShop[]
+  claims         CouponClaim[]
+}
+
+model CouponPlan {
+  id       Int              @id @default(autoincrement())
+  couponId Int
+  coupon   Coupon           @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  planId   Int
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, planId])
+}
+
+model CouponShop {
+  id         Int    @id @default(autoincrement())
+  couponId   Int
+  coupon     Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  shopDomain String
+
+  @@unique([couponId, shopDomain])
+}
+
+model CouponClaim {
+  id                  Int      @id @default(autoincrement())
+  couponId            Int
+  coupon              Coupon   @relation(fields: [couponId], references: [id])
+  shopDomain          String
+  planTier            String   // SubscriptionPlan.name, matching how Shop.planKey is stored
+  priceBeforeDiscount Decimal  @db.Decimal(10, 2)
+  discountedPrice     Decimal  @db.Decimal(10, 2)
+  currencyCode        String   @db.VarChar(10)
+  status              String   @default("PENDING") @db.VarChar(20) // PENDING | APPROVED | DECLINED | CANCELLED | EXPIRED
+  shopifyChargeId     String   @unique
+  createdAt           DateTime @default(now())
+
+  @@index([shopDomain])
+  @@index([couponId])
 }
 
 model SuperAdmin {

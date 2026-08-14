@@ -30,9 +30,13 @@ export default function App() {
               <a href="/settings">{t("Navigation.settings")}</a>
             </NavMenu>
           )}
-          <Box paddingBlockEnd="1600">
+          {isAdminPath ? (
             <Routes pages={pages} />
-          </Box>
+          ) : (
+            <Box paddingBlockEnd="1600">
+              <Routes pages={pages} />
+            </Box>
+          )}
         </QueryProvider>
       </BrowserRouter>
     </PolarisProvider>

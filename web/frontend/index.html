@@ -18,6 +18,13 @@
     </script>
 
     <meta name="shopify-api-key" content="%VITE_SHOPIFY_API_KEY%" />
+    <!-- Must stay exactly here: a literal, synchronous, non-module first-loaded <script> tag
+         pointing straight at Shopify's CDN. App Bridge enforces this itself and hard-aborts
+         ("must be included as the first <script> tag... Do not use async, defer or type=module")
+         if it's instead injected dynamically — which is what broke the embedded merchant app when
+         this was changed to a conditional runtime-injected script to silence a harmless
+         console-only "missing shop" error on the separate, non-embedded /admin/* panel. That
+         error doesn't affect the admin panel's functionality, so it's not worth breaking this. -->
     <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
   </head>
   <body>

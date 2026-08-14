@@ -2,7 +2,6 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
-import EmailService from "../services/EmailService.js";
 import { refreshPlanFeaturesCache } from "../services/PlanFeatureService.js";
 
 const router = express.Router();
@@ -10,35 +9,6 @@ const prisma = new PrismaClient();
 
 const SECRET = process.env.SHOPIFY_API_SECRET || "super-admin-secret-key-123";
 const ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD || "changeme-in-production";
-
-// Pre-defined templates for Email Center
-const EMAIL_TEMPLATES = {
-  welcome: {
-    name: "Welcome Email",
-    subject: "Welcome to Blogger!",
-    body: "Hi {shop_name},\n\nWelcome to Blogger! We're excited to have you on board.\n\nIf you need any help, reply to this email.\n\nBest,\nThe Blogger Team",
-  },
-  deactivation_notice: {
-    name: "Deactivation Notice",
-    subject: "Your Blogger subscription has been deactivated",
-    body: "Hi {shop_name},\n\nYour subscription to Blogger on {domain} has been deactivated.\n\nIf this was a mistake, please reply to this email.\n\nBest,\nThe Blogger Team",
-  },
-  plan_upgrade_prompt: {
-    name: "Plan Upgrade Prompt",
-    subject: "Unlock more with Blogger Pro",
-    body: "Hi {shop_name},\n\nYou're currently on the Free plan. Upgrade to Pro to unlock premium features.\n\nReply to this email to learn more.\n\nBest,\nThe Blogger Team",
-  },
-  payment_failed: {
-    name: "Payment Failed Alert",
-    subject: "Action required: Payment failed for Blogger",
-    body: "Hi {shop_name},\n\nWe were unable to process your payment for Blogger. Please update your billing details in Shopify.\n\nBest,\nThe Blogger Team",
-  },
-  monthly_newsletter: {
-    name: "Monthly Newsletter",
-    subject: "Blogger — Monthly Update",
-    body: "Hi {shop_name},\n\nHere's what's new this month at Blogger...\n\n[Add your content here]\n\nBest,\nThe Blogger Team",
-  },
-};
 
 // ─── Middleware: Validate Super Admin Token ──────────────────────────────────
 export function validateSuperAdmin(req, res, next) {
@@ -406,28 +376,6 @@ router.post("/stores/:domain/deactivate", validateSuperAdmin, async (req, res) =
       data: { uninstalledAt: new Date() },
     });
 
-    const session = await prisma.session.findFirst({
-      where: { shop: domain },
-      select: { email: true },
-    });
-
-    // Send deactivation notification email
-    if (session?.email) {
-      const personalSubject = EMAIL_TEMPLATES.deactivation_notice.subject.replace("{app_name}", "Blogger");
-      const personalBody = EMAIL_TEMPLATES.deactivation_notice.body
-        .replace("{shop_name}", domain)
-        .replace("{domain}", domain)
-        .replace("{app_name}", "Blogger");
-
-      await EmailService.sendEmail({
-        to: session.email,
-        subject: personalSubject,
-        body: personalBody,
-        template: "deactivation_notice",
-        shopDomain: domain,
-      });
-    }
-
     // Log Activity
     await prisma.adminActivityLog.create({
       data: {
@@ -460,25 +408,6 @@ router.post("/stores/:domain/reactivate", validateSuperAdmin, async (req, res) =
       data: { uninstalledAt: null },
     });
 
-    const session = await prisma.session.findFirst({
-      where: { shop: domain },
-      select: { email: true },
-    });
-
-    // Send reactivation notification email
-    if (session?.email) {
-      const personalSubject = `Your Blogger subscription has been reactivated!`;
-      const personalBody = `Hi ${domain},\n\nWe're happy to inform you that your Blogger subscription for ${domain} has been reactivated successfully.\n\nBest,\nThe Blogger Team`;
-
-      await EmailService.sendEmail({
-        to: session.email,
-        subject: personalSubject,
-        body: personalBody,
-        template: "reactivation",
-        shopDomain: domain,
-      });
-    }
-
     // Log Activity
     await prisma.adminActivityLog.create({
       data: {
@@ -490,39 +419,6 @@ router.post("/stores/:domain/reactivate", validateSuperAdmin, async (req, res) =
     });
 
     res.json({ success: true, store: updated });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── POST /admin-api/stores/:domain/email — Send individual email ───────────
-router.post("/admin-api/stores/:domain/email", validateSuperAdmin, async (req, res) => {
-  try {
-    const { domain } = req.params;
-    const { subject, body } = req.body;
-
-    if (!subject || !body) {
-      return res.status(400).json({ error: "Subject and body are required" });
-    }
-
-    const session = await prisma.session.findFirst({
-      where: { shop: domain },
-      select: { email: true },
-    });
-
-    if (!session || !session.email) {
-      return res.status(400).json({ error: "No email address found on file for this shop session." });
-    }
-
-    const result = await EmailService.sendEmail({
-      to: session.email,
-      subject,
-      body,
-      template: "custom",
-      shopDomain: domain,
-    });
-
-    res.json({ success: true, message: `Email sent to ${session.email} successfully.`, result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -644,100 +540,6 @@ router.post("/stores/:domain/delete", validateSuperAdmin, async (req, res) => {
   }
 });
 
-// ─── GET /admin-api/emails — Audit sent email logs ────────────────────────────
-router.get("/emails", validateSuperAdmin, async (req, res) => {
-  try {
-    const { page = "1", limit = "20" } = req.query;
-    const take = parseInt(limit, 10);
-    const skip = (parseInt(page, 10) - 1) * take;
-
-    const [emails, total] = await Promise.all([
-      prisma.emailLog.findMany({
-        orderBy: { createdAt: "desc" },
-        take,
-        skip,
-      }),
-      prisma.emailLog.count(),
-    ]);
-
-    res.json({ emails, total, page: parseInt(page, 10), limit: take });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── GET /admin-api/emails/templates — Retrieve presets ───────────────────────
-router.get("/emails/templates", validateSuperAdmin, (req, res) => {
-  res.json({ templates: EMAIL_TEMPLATES });
-});
-
-// ─── POST /admin-api/emails/send-bulk — Send bulk personalized emails ─────────
-router.post("/emails/send-bulk", validateSuperAdmin, async (req, res) => {
-  try {
-    const { recipientType, recipientPlanId, subject, body, templateKey } = req.body;
-
-    if (!subject || !body) {
-      return res.status(400).json({ error: "Subject and body are required" });
-    }
-
-    // Resolve target stores based on filters
-    const where = {};
-    if (recipientType === "active") {
-      where.uninstalledAt = null;
-    } else if (recipientType === "deactivated") {
-      where.uninstalledAt = { not: null };
-    } else if (recipientType === "by_plan" && recipientPlanId) {
-      where.planKey = { contains: recipientPlanId };
-    }
-
-    const shops = await prisma.shop.findMany({ where });
-    let sentCount = 0;
-
-    for (const shop of shops) {
-      const session = await prisma.session.findFirst({
-        where: { shop: shop.domain },
-        select: { email: true },
-      });
-
-      if (session?.email) {
-        // Substitute placeholders
-        const personalSubject = subject
-          .replace(/{shop_name}/g, shop.domain)
-          .replace(/{domain}/g, shop.domain)
-          .replace(/{app_name}/g, "Blogger");
-
-        const personalBody = body
-          .replace(/{shop_name}/g, shop.domain)
-          .replace(/{domain}/g, shop.domain)
-          .replace(/{app_name}/g, "Blogger");
-
-        await EmailService.sendEmail({
-          to: session.email,
-          subject: personalSubject,
-          body: personalBody,
-          template: templateKey || "custom",
-          shopDomain: shop.domain,
-        });
-
-        sentCount++;
-      }
-    }
-
-    // Log Activity
-    await prisma.adminActivityLog.create({
-      data: {
-        action: `Sent bulk customized email to ${sentCount} store(s)`,
-        targetType: "email",
-        meta: { recipientType, recipientPlanId, subject, sentCount },
-      },
-    });
-
-    res.json({ success: true, message: `Successfully queued/sent emails to ${sentCount} store(s).` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ─── GET /admin-api/activities — Audit admin logs ────────────────────────────
 router.get("/activities", validateSuperAdmin, async (req, res) => {
   try {
@@ -755,63 +557,6 @@ router.get("/activities", validateSuperAdmin, async (req, res) => {
     ]);
 
     res.json({ activities, total, page: parseInt(page, 10), limit: take });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── GET /admin-api/settings — Retrieve billing enabled setting ───────────────
-router.get("/settings", validateSuperAdmin, async (req, res) => {
-  try {
-    const pricingSetting = await prisma.adminSetting.findUnique({
-      where: { key: "pricing_enabled" },
-    });
-    
-    const testModeSetting = await prisma.adminSetting.findUnique({
-      where: { key: "billing_test_mode" },
-    });
-
-    res.json({
-      pricingEnabled: pricingSetting ? pricingSetting.value === "true" : true,
-      billingTestMode: testModeSetting ? testModeSetting.value === "true" : true,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── POST /admin-api/settings — Update billing settings ───────────────────────
-router.post("/settings", validateSuperAdmin, async (req, res) => {
-  try {
-    const { pricingEnabled, billingTestMode } = req.body;
-
-    if (pricingEnabled !== undefined) {
-      const value = pricingEnabled ? "true" : "false";
-      await prisma.adminSetting.upsert({
-        where: { key: "pricing_enabled" },
-        create: { key: "pricing_enabled", value },
-        update: { value },
-      });
-    }
-
-    if (billingTestMode !== undefined) {
-      const value = billingTestMode ? "true" : "false";
-      await prisma.adminSetting.upsert({
-        where: { key: "billing_test_mode" },
-        create: { key: "billing_test_mode", value },
-        update: { value },
-      });
-    }
-
-    await prisma.adminActivityLog.create({
-      data: {
-        action: `Pricing toggled to: ${value}`,
-        targetType: "setting",
-        meta: { pricingEnabled: value },
-      },
-    });
-
-    res.json({ success: true, pricingEnabled });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -889,7 +634,21 @@ router.get("/pricing/plans", validateSuperAdmin, async (req, res) => {
     const plans = await prisma.subscriptionPlan.findMany({
       orderBy: { sortOrder: 'asc' },
     });
-    res.json({ plans });
+
+    // Subscriber count per plan — one groupBy, merged in. Matches the same case-insensitive
+    // substring convention PlanFeatureService.getFeaturesForPlan and the revenue-analytics route
+    // already use for mapping a Shop.planKey to a plan bucket, since planKey is set from either
+    // the live Shopify subscription name or this plan's own `name` field (see billing.js /check).
+    const grouped = await prisma.shop.groupBy({ by: ["planKey"], _count: true });
+    const plansWithCounts = plans.map((plan) => {
+      const planNameLower = plan.name.toLowerCase();
+      const subscriberCount = grouped
+        .filter((g) => (g.planKey || "").toLowerCase() === planNameLower)
+        .reduce((sum, g) => sum + g._count, 0);
+      return { ...plan, subscriberCount };
+    });
+
+    res.json({ plans: plansWithCounts });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -898,7 +657,7 @@ router.get("/pricing/plans", validateSuperAdmin, async (req, res) => {
 // ─── POST /admin-api/pricing/plans — Create a new dynamic subscription plan ──
 router.post("/pricing/plans", validateSuperAdmin, async (req, res) => {
   try {
-    const { name, title, price, currency, interval, description, features, isActive, sortOrder } = req.body;
+    const { name, title, price, currency, interval, trialDays, description, features, isActive, sortOrder } = req.body;
     const newPlan = await prisma.subscriptionPlan.create({
       data: {
         name,
@@ -906,6 +665,7 @@ router.post("/pricing/plans", validateSuperAdmin, async (req, res) => {
         price,
         currency,
         interval,
+        trialDays: trialDays !== undefined ? parseInt(trialDays, 10) || 0 : 0,
         description,
         features: Array.isArray(features) ? features : [],
         isActive: isActive !== undefined ? isActive : true,
@@ -922,7 +682,7 @@ router.post("/pricing/plans", validateSuperAdmin, async (req, res) => {
 router.put("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { name, title, price, currency, interval, description, features, isActive, sortOrder } = req.body;
+    const { name, title, price, currency, interval, trialDays, description, features, isActive, sortOrder } = req.body;
     const updatedPlan = await prisma.subscriptionPlan.update({
       where: { id },
       data: {
@@ -931,6 +691,7 @@ router.put("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
         ...(price !== undefined && { price }),
         ...(currency && { currency }),
         ...(interval && { interval }),
+        ...(trialDays !== undefined && { trialDays: parseInt(trialDays, 10) || 0 }),
         ...(description !== undefined && { description }),
         ...(features && { features: Array.isArray(features) ? features : [] }),
         ...(isActive !== undefined && { isActive }),
@@ -1120,43 +881,308 @@ router.get("/revenue/export", validateSuperAdmin, async (req, res) => {
   }
 });
 
-// ─── GET /admin-api/chats — Retrieve all active chat rooms & messages ──────────
-router.get("/chats", validateSuperAdmin, (req, res) => {
-  const chatHistory = req.app.get("chatHistory") || {};
-  res.json({ chats: chatHistory });
+// ═══════════════════════════════════════════════════════════════════════════
+//  BILLING COUPONS — SaaS subscription discount codes
+// ═══════════════════════════════════════════════════════════════════════════
+
+const COUPON_CODE_RE = /^[A-Z0-9_-]+$/;
+const COUNTED_CLAIM_STATUSES = ["PENDING", "APPROVED"];
+
+function validateCouponPayload(body) {
+  const code = String(body.code || "").trim().toUpperCase();
+  if (!code || !COUPON_CODE_RE.test(code)) {
+    return { error: "Code must be uppercase letters, numbers, underscores, or hyphens only." };
+  }
+  const discountType = body.discountType === "FIXED_AMOUNT" ? "FIXED_AMOUNT" : "PERCENTAGE";
+  const percentOff = discountType === "PERCENTAGE" ? parseFloat(body.percentOff) : null;
+  const amountOff = discountType === "FIXED_AMOUNT" ? parseFloat(body.amountOff) : null;
+  if (discountType === "PERCENTAGE" && (!(percentOff > 0) || percentOff > 100)) {
+    return { error: "Percent off must be a number between 0 and 100." };
+  }
+  if (discountType === "FIXED_AMOUNT" && !(amountOff > 0)) {
+    return { error: "Amount off must be a positive number." };
+  }
+  const durationMonths = parseInt(body.durationMonths, 10);
+  if (!(durationMonths > 0)) {
+    return { error: "Duration (months) must be a positive integer." };
+  }
+  const appliesTo = ["SPECIFIC_PLANS", "SPECIFIC_STORES"].includes(body.appliesTo)
+    ? body.appliesTo
+    : "ALL_PAID_PLANS";
+
+  return {
+    data: {
+      code,
+      discountType,
+      percentOff,
+      amountOff,
+      durationMonths,
+      description: body.description || null,
+      active: body.active !== undefined ? Boolean(body.active) : true,
+      startsAt: body.startsAt ? new Date(body.startsAt) : null,
+      endsAt: body.endsAt ? new Date(body.endsAt) : null,
+      totalUses: body.totalUses !== undefined && body.totalUses !== null && body.totalUses !== ""
+        ? parseInt(body.totalUses, 10) : null,
+      usesPerStore: body.usesPerStore ? parseInt(body.usesPerStore, 10) : 1,
+      appliesTo,
+    },
+    planIds: Array.isArray(body.planIds) ? body.planIds.map((id) => parseInt(id, 10)) : [],
+    shopDomains: Array.isArray(body.shopDomains)
+      ? body.shopDomains.map((d) => String(d).trim()).filter(Boolean)
+      : [],
+  };
+}
+
+// Re-syncs a coupon's CouponPlan/CouponShop join rows to exactly match what was submitted —
+// simplest robust approach for a small join-table set (delete then recreate inside a
+// transaction), same posture as the rest of this admin CRUD surface.
+async function syncCouponRelations(couponId, planIds, shopDomains) {
+  await prisma.$transaction([
+    prisma.couponPlan.deleteMany({ where: { couponId } }),
+    prisma.couponShop.deleteMany({ where: { couponId } }),
+    ...(planIds.length
+      ? [prisma.couponPlan.createMany({ data: planIds.map((planId) => ({ couponId, planId })) })]
+      : []),
+    ...(shopDomains.length
+      ? [prisma.couponShop.createMany({ data: shopDomains.map((shopDomain) => ({ couponId, shopDomain })) })]
+      : []),
+  ]);
+}
+
+// ─── GET /admin-api/coupons — List all coupons ───────────────────────────────
+router.get("/coupons", validateSuperAdmin, async (req, res) => {
+  try {
+    const coupons = await prisma.coupon.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        plans: { include: { plan: { select: { id: true, name: true, title: true } } } },
+        shops: true,
+        _count: { select: { claims: { where: { status: { in: COUNTED_CLAIM_STATUSES } } } } },
+      },
+    });
+    res.json({ coupons });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// ─── POST /admin-api/chats/:room/reply — Reply to a chat room ───────────────
-router.post("/chats/:room/reply", validateSuperAdmin, (req, res) => {
-  const { room } = req.params;
-  const { message } = req.body;
-  const chatHistory = req.app.get("chatHistory") || {};
-  const io = req.app.get("io");
+// ─── POST /admin-api/coupons — Create a coupon ───────────────────────────────
+router.post("/coupons", validateSuperAdmin, async (req, res) => {
+  try {
+    const { data, error, planIds, shopDomains } = validateCouponPayload(req.body);
+    if (error) return res.status(400).json({ error });
 
-  if (!chatHistory[room]) {
-    chatHistory[room] = [];
+    const existing = await prisma.coupon.findUnique({ where: { code: data.code } });
+    if (existing) return res.status(400).json({ error: "A coupon with this code already exists." });
+
+    const coupon = await prisma.coupon.create({ data });
+    if (data.appliesTo === "SPECIFIC_PLANS" || data.appliesTo === "SPECIFIC_STORES") {
+      await syncCouponRelations(coupon.id, planIds, shopDomains);
+    }
+
+    await prisma.adminActivityLog.create({
+      data: {
+        action: `Created coupon: ${coupon.code}`,
+        targetType: "coupon",
+        targetId: coupon.id,
+        meta: { code: coupon.code, discountType: coupon.discountType },
+      },
+    });
+
+    res.json({ success: true, coupon });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PUT /admin-api/coupons/:id — Edit a coupon ──────────────────────────────
+router.put("/coupons/:id", validateSuperAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { data, error, planIds, shopDomains } = validateCouponPayload(req.body);
+    if (error) return res.status(400).json({ error });
+
+    const codeOwner = await prisma.coupon.findUnique({ where: { code: data.code } });
+    if (codeOwner && codeOwner.id !== id) {
+      return res.status(400).json({ error: "A coupon with this code already exists." });
+    }
+
+    const coupon = await prisma.coupon.update({ where: { id }, data });
+    await syncCouponRelations(coupon.id, planIds, shopDomains);
+
+    await prisma.adminActivityLog.create({
+      data: {
+        action: `Updated coupon: ${coupon.code}`,
+        targetType: "coupon",
+        targetId: coupon.id,
+        meta: { code: coupon.code },
+      },
+    });
+
+    res.json({ success: true, coupon });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /admin-api/coupons/:id/toggle — Flip active on/off from the list row ──
+router.post("/coupons/:id/toggle", validateSuperAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const coupon = await prisma.coupon.findUnique({ where: { id } });
+    if (!coupon) return res.status(404).json({ error: "Coupon not found" });
+
+    const updated = await prisma.coupon.update({ where: { id }, data: { active: !coupon.active } });
+
+    await prisma.adminActivityLog.create({
+      data: {
+        action: `${updated.active ? "Activated" : "Deactivated"} coupon: ${updated.code}`,
+        targetType: "coupon",
+        targetId: id,
+        meta: { code: updated.code },
+      },
+    });
+
+    res.json({ success: true, coupon: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Shared by GET /coupons/usage (JSON, for the UI) and GET /coupons/usage/export (CSV) so both
+// surfaces always agree — the export is never allowed to drift from what the screen shows.
+//
+// KPI semantics (deliberately narrower than the CouponClaim "used" definition used elsewhere):
+// only status "APPROVED" counts toward money figures here — a PENDING claim is an in-flight
+// checkout that was never actually approved by Shopify, so it costs nothing yet and would
+// overstate real discount spend if included. The table below still lists PENDING rows (an admin
+// needs to see they exist), just excluded from the KPI totals.
+async function buildCouponUsageRows(query) {
+  const { from, to, couponId, status, search } = query;
+
+  const where = {};
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = new Date(from);
+    if (to) where.createdAt.lte = new Date(`${to}T23:59:59.999Z`);
+  }
+  if (couponId) where.couponId = parseInt(couponId, 10);
+  if (status) where.status = status;
+  if (search) {
+    where.OR = [
+      { shopDomain: { contains: search } },
+      { coupon: { code: { contains: search } } },
+    ];
   }
 
-  const reply = {
-    room,
-    sender: "Support",
-    senderName: "Support",
-    text: message,
-    message: message,
-    timestamp: new Date().toISOString(),
+  const claims = await prisma.couponClaim.findMany({
+    where,
+    include: { coupon: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const plans = await prisma.subscriptionPlan.findMany({ select: { name: true, interval: true } });
+  const intervalByPlanName = Object.fromEntries(plans.map((p) => [p.name, p.interval]));
+
+  const now = new Date();
+  const rows = claims.map((claim) => {
+    const isAnnual = intervalByPlanName[claim.planTier] === "ANNUAL";
+    const priceBeforeDiscount = Number(claim.priceBeforeDiscount);
+    const discountedPrice = Number(claim.discountedPrice);
+    const saving = Math.round((priceBeforeDiscount - discountedPrice) * 100) / 100;
+    const cycles = isAnnual ? Math.max(1, Math.round(claim.coupon.durationMonths / 12)) : claim.coupon.durationMonths;
+    const total = Math.round(discountedPrice * cycles * 100) / 100;
+    const fullPriceFrom = new Date(claim.createdAt);
+    fullPriceFrom.setMonth(fullPriceFrom.getMonth() + claim.coupon.durationMonths);
+    const counted = claim.status === "APPROVED";
+    const stillActive = counted && fullPriceFrom > now;
+
+    return {
+      id: claim.id,
+      claimedAt: claim.createdAt,
+      couponId: claim.couponId,
+      couponCode: claim.coupon.code,
+      shopDomain: claim.shopDomain,
+      planTier: claim.planTier,
+      cycle: isAnnual ? "Yearly" : "Monthly",
+      price: discountedPrice,
+      saving,
+      cycles,
+      total,
+      fullPriceFrom,
+      status: claim.status,
+      counted,
+      stillActive,
+    };
+  });
+
+  const countedRows = rows.filter((r) => r.counted);
+  const kpis = {
+    claims: countedRows.length,
+    stores: new Set(countedRows.map((r) => r.shopDomain)).size,
+    activeDiscounts: countedRows.filter((r) => r.stillActive).length,
+    discountPerMonth: Math.round(
+      countedRows.filter((r) => r.stillActive)
+        .reduce((sum, r) => sum + (r.cycle === "Yearly" ? r.saving / 12 : r.saving), 0) * 100
+    ) / 100,
+    committedDiscount: Math.round(countedRows.reduce((sum, r) => sum + r.saving * r.cycles, 0) * 100) / 100,
   };
 
-  chatHistory[room].push(reply);
+  return { rows, kpis };
+}
 
-  if (chatHistory[room].length > 100) {
-    chatHistory[room] = chatHistory[room].slice(-100);
+// ─── GET /admin-api/coupons/usage — Coupon usage analytics (JSON) ───────────
+router.get("/coupons/usage", validateSuperAdmin, async (req, res) => {
+  try {
+    const { rows, kpis } = await buildCouponUsageRows(req.query);
+    res.json({ rows, kpis });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
+});
 
-  if (io) {
-    io.to(room).emit("new_message", reply);
+// ─── GET /admin-api/coupons/usage/export — Coupon usage analytics (CSV) ─────
+router.get("/coupons/usage/export", validateSuperAdmin, async (req, res) => {
+  try {
+    const { rows } = await buildCouponUsageRows(req.query);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="coupon-usage-${Date.now()}.csv"`);
+    res.write("Claimed,Coupon,Store,Plan,Cycle,Price,Saving,Cycles,Total,Full Price From,Status\n");
+    for (const r of rows) {
+      res.write(
+        `"${r.claimedAt.toISOString().slice(0, 10)}","${r.couponCode}","${r.shopDomain}","${r.planTier}",` +
+        `"${r.cycle}",${r.price.toFixed(2)},${r.saving.toFixed(2)},${r.cycles},${r.total.toFixed(2)},` +
+        `"${r.fullPriceFrom.toISOString().slice(0, 10)}","${r.status}"\n`
+      );
+    }
+    res.end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
+});
 
-  res.json({ success: true, reply });
+// ─── DELETE /admin-api/coupons/:id — Delete a coupon ─────────────────────────
+router.delete("/coupons/:id", validateSuperAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const coupon = await prisma.coupon.findUnique({ where: { id } });
+    if (!coupon) return res.status(404).json({ error: "Coupon not found" });
+
+    await prisma.coupon.delete({ where: { id } });
+
+    await prisma.adminActivityLog.create({
+      data: {
+        action: `Deleted coupon: ${coupon.code}`,
+        targetType: "coupon",
+        targetId: id,
+        meta: { code: coupon.code },
+      },
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;

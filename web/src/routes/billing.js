@@ -1,5 +1,7 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
+import { getArticleLimit, buildTieredPlanFeatures } from "../services/PlanFeatureService.js";
+import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 
 const router = express.Router();
 
@@ -10,7 +12,21 @@ router.get("/plans", async (req, res) => {
       where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
     });
-    res.json({ plans });
+    // Price-ascending, matching the order the pricing page itself sorts cards into — the "based
+    // on" plan a diffed bullet list refers to has to be the same one the merchant sees to its
+    // immediate left.
+    const byPriceAsc = [...plans].sort((a, b) => Number(a.price) - Number(b.price));
+    const tiered = buildTieredPlanFeatures(byPriceAsc.map((p) => p.name));
+    // Replaces the plan's own stored `features` marketing copy with a checklist built straight
+    // from its live PlanFeature gating (Sync Features/Sync Limits in Super Admin) — what the
+    // merchant sees now always matches what they actually get, and each tier only lists what's
+    // new versus the plan below it instead of repeating shared baseline features on every card.
+    const plansWithFeatures = byPriceAsc.map((plan, index) => ({
+      ...plan,
+      features: tiered[index].bullets,
+      basedOnPlanTitle: tiered[index].basedOnIndex !== null ? byPriceAsc[tiered[index].basedOnIndex].title : null,
+    }));
+    res.json({ plans: plansWithFeatures });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch plans" });
   }
@@ -61,6 +77,20 @@ router.get("/check", async (req, res) => {
           data: { planKey: activePlan }
         });
       }
+
+      // Reconcile any pending coupon claim now that Shopify confirms this subscription is
+      // actually active — a discount can only ever be attached at appSubscriptionCreate time, so
+      // this is just bookkeeping (the discount itself is already live on the real subscription
+      // regardless of this flag), but it lets the admin panel show real APPROVED counts instead
+      // of everything sitting at PENDING forever. Best-effort: never blocks the billing check.
+      try {
+        await prisma.couponClaim.updateMany({
+          where: { shopifyChargeId: activeSub.id, status: "PENDING" },
+          data: { status: "APPROVED" },
+        });
+      } catch (err) {
+        console.error("Failed to reconcile coupon claim status:", err);
+      }
     } else {
       // Fallback to check DB
       const dbPlan = await prisma.appPlan.findFirst({
@@ -80,16 +110,11 @@ router.get("/check", async (req, res) => {
       }
     }
 
-    // Determine post limits based on plan
-    let postLimit = 10;
-    const lowerPlan = activePlan.toLowerCase();
-    if (lowerPlan === "free") {
-      postLimit = 10;
-    } else if (lowerPlan.includes("starter")) {
-      postLimit = 50;
-    } else if (lowerPlan.includes("pro") || lowerPlan.includes("business")) {
-      postLimit = null; // Unlimited
-    }
+    // Article limit is sourced from PlanFeatureService's DB-backed "article_limit" PlanFeature
+    // row (the same source Super Admin's Sync Limits modal edits) — previously this route kept
+    // its own separate hardcoded copy, so an admin editing article_limit had no effect here and
+    // the merchant billing page could show a stale limit.
+    const postLimit = getArticleLimit(activePlan);
 
     res.status(200).json({ activePlan, postCount, postLimit });
   } catch (error) {
@@ -102,7 +127,7 @@ router.get("/check", async (req, res) => {
 router.post("/request", async (req, res) => {
   try {
         const session = res.locals.shopify.session;
-    const { plan, host } = req.body;
+    const { plan, host, couponCode } = req.body;
 
     if (plan === "free") {
       return res.status(200).json({ confirmationUrl: null, isFree: true });
@@ -115,6 +140,16 @@ router.post("/request", async (req, res) => {
 
     if (!dbPlan || !dbPlan.isActive) {
       return res.status(400).json({ error: "Invalid or inactive plan selected" });
+    }
+
+    // Re-validate the coupon server-side even though the client already previewed it via
+    // /coupon/validate — that preview is only a UX convenience, never trusted for the actual
+    // discount sent to Shopify. A stale/expired/already-used code submitted anyway is silently
+    // ignored (the subscription still proceeds at full price) rather than blocking the upgrade.
+    let appliedCoupon = null;
+    if (couponCode) {
+      const couponResult = await validateCouponForShop(couponCode, session.shop, dbPlan.name);
+      if (couponResult.ok) appliedCoupon = couponResult.coupon;
     }
 
     // Fetch the test mode setting
@@ -133,8 +168,8 @@ router.post("/request", async (req, res) => {
     let interval = dbPlan.interval === "ANNUAL" ? "ANNUAL" : "EVERY_30_DAYS";
 
     const mutation = `
-      mutation appSubscriptionCreate($name: String!, $lineItems: [AppSubscriptionLineItemInput!]!, $returnUrl: URL!, $test: Boolean) {
-        appSubscriptionCreate(name: $name, lineItems: $lineItems, returnUrl: $returnUrl, test: $test) {
+      mutation appSubscriptionCreate($name: String!, $lineItems: [AppSubscriptionLineItemInput!]!, $returnUrl: URL!, $test: Boolean, $trialDays: Int) {
+        appSubscriptionCreate(name: $name, lineItems: $lineItems, returnUrl: $returnUrl, test: $test, trialDays: $trialDays) {
           appSubscription {
             id
           }
@@ -151,6 +186,9 @@ router.post("/request", async (req, res) => {
       name: dbPlan.name,
       returnUrl: returnUrl,
       test: isTestMode,
+      // 0/undefined/null all mean "no trial" to Shopify's API — dbPlan.trialDays defaults to 0
+      // in the DB, so this only sends a real value when Super Admin's Edit Core modal set one.
+      trialDays: dbPlan.trialDays > 0 ? dbPlan.trialDays : undefined,
       lineItems: [
         {
           plan: {
@@ -159,7 +197,20 @@ router.post("/request", async (req, res) => {
                 amount: parseFloat(dbPlan.price),
                 currencyCode: dbPlan.currency || "USD"
               },
-              interval: interval
+              interval: interval,
+              // discount is nested inside this same AppSubscriptionLineItemInput object, not a
+              // separate top-level mutation argument — confirmed against the live Admin GraphQL
+              // schema (percentage is a 0-1 fraction, e.g. 0.2 for 20% off, not 20).
+              ...(appliedCoupon
+                ? {
+                    discount: {
+                      durationLimitInIntervals: appliedCoupon.durationMonths,
+                      value: appliedCoupon.discountType === "PERCENTAGE"
+                        ? { percentage: appliedCoupon.percentOff / 100 }
+                        : { amount: appliedCoupon.amountOff },
+                    },
+                  }
+                : {}),
             }
           }
         }
@@ -174,10 +225,44 @@ router.post("/request", async (req, res) => {
       return res.status(400).json({ error: data.userErrors[0].message });
     }
 
+    // Record the coupon claim now that Shopify has accepted the subscription (the discount is
+    // already locked in on Shopify's side regardless of this — this is bookkeeping for the admin
+    // panel's usage counts, not something the charge itself depends on).
+    const shopifyChargeId = data?.appSubscription?.id;
+    if (appliedCoupon && shopifyChargeId) {
+      const discountedPrice = applyCouponDiscount(parseFloat(dbPlan.price), appliedCoupon);
+      await prisma.couponClaim.create({
+        data: {
+          couponId: appliedCoupon.id,
+          shopDomain: session.shop,
+          planTier: dbPlan.name,
+          priceBeforeDiscount: dbPlan.price,
+          discountedPrice,
+          currencyCode: dbPlan.currency || "USD",
+          status: "PENDING",
+          shopifyChargeId,
+        },
+      }).catch((err) => console.error("Failed to record coupon claim:", err));
+    }
+
     res.status(200).json({ confirmationUrl: data.confirmationUrl });
   } catch (error) {
     console.error("Failed to request billing:", error);
     res.status(500).json({ error: "Failed to request billing" });
+  }
+});
+
+// Preview a coupon code before committing to a plan — never trusted for the real charge (see
+// the re-validation inside POST /request above).
+router.post("/coupon/validate", async (req, res) => {
+  try {
+    const session = res.locals.shopify.session;
+    const { code, planTier } = req.body;
+    const result = await validateCouponForShop(code, session.shop, planTier || null);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Failed to validate coupon:", error);
+    res.status(500).json({ ok: false, error: "Failed to validate coupon" });
   }
 });
 

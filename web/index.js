@@ -90,7 +90,6 @@ console.error = (...args) => {
 
 
 import express from "express";
-import { Server as SocketIOServer } from "socket.io";
 import serveStatic from "serve-static";
 
 import shopify, { prisma } from "./shopify.js";
@@ -137,45 +136,6 @@ const STATIC_PATH =
 
 const app = express();
 const httpServer = createServer(app);
-
-// ─── Socket.IO — Custom In-App Chat ────────────────────────────────────────────
-const io = new SocketIOServer(httpServer, {
-  path: "/chat-socket",
-  cors: { origin: "*" },
-});
-
-// In-memory chat store (use DB/Redis for production)
-const chatHistory = {};
-
-app.set("chatHistory", chatHistory);
-app.set("io", io);
-
-io.on("connection", (socket) => {
-  socket.on("join_room", ({ room }) => {
-    socket.join(room);
-    // Send chat history to the joining client
-    socket.emit("history", chatHistory[room] || []);
-  });
-
-  socket.on("send_message", (msg) => {
-    const room = msg.room;
-    if (!room) return;
-    if (!chatHistory[room]) chatHistory[room] = [];
-    chatHistory[room].push(msg);
-    // Keep last 100 messages per room
-    if (chatHistory[room].length > 100) chatHistory[room] = chatHistory[room].slice(-100);
-    // Broadcast to all in the room (except sender for replies; sender already added optimistically)
-    socket.to(room).emit("new_message", msg);
-  });
-
-  socket.on("admin_reply", (msg) => {
-    const room = msg.room;
-    if (!room) return;
-    if (!chatHistory[room]) chatHistory[room] = [];
-    chatHistory[room].push(msg);
-    io.to(room).emit("new_message", msg);
-  });
-});
 
 import proxyRoutes from "./src/routes/proxy.js";
 

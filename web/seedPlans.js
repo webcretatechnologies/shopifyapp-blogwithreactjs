@@ -28,41 +28,6 @@ async function main() {
       features: ["Unlimited articles", "All templates", "24/7 support", "Custom CSS/JS"],
       sortOrder: 3,
     },
-    {
-      name: "Blogger Business",
-      title: "Business",
-      price: 19.99,
-      description: "Advanced features for enterprises.",
-      features: ["Unlimited everything", "Dedicated account manager", "White-glove onboarding"],
-      sortOrder: 4,
-    },
-    {
-      name: "Blogger Starter Annual",
-      title: "Starter",
-      price: 39.99,
-      interval: "ANNUAL",
-      description: "Perfect for growing blogs (billed annually).",
-      features: ["Up to 50 articles", "Premium templates", "Priority support", "No branding"],
-      sortOrder: 5,
-    },
-    {
-      name: "Blogger Pro Annual",
-      title: "Pro",
-      price: 79.99,
-      interval: "ANNUAL",
-      description: "For professional content creators (billed annually).",
-      features: ["Unlimited articles", "All templates", "24/7 support", "Custom CSS/JS"],
-      sortOrder: 6,
-    },
-    {
-      name: "Blogger Business Annual",
-      title: "Business",
-      price: 159.99,
-      interval: "ANNUAL",
-      description: "Advanced features for enterprises (billed annually).",
-      features: ["Unlimited everything", "Dedicated account manager", "White-glove onboarding"],
-      sortOrder: 7,
-    }
   ];
 
   for (const plan of plans) {

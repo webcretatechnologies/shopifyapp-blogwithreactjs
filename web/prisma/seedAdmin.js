@@ -4,8 +4,8 @@ import bcrypt from "bcrypt";
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = "admin@example.com";
-  const plainPassword = "password123";
+  const email = "admin@webcreta.com";
+  const plainPassword = "webcreta@#7707";
 
   console.log(`Seeding Super Admin...`);
   
