@@ -34,7 +34,8 @@ import {
   CodeAddIcon,
 } from "@shopify/polaris-icons";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { smartBackAction } from "../../../utils/smartBack";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  DOM / HTML PARSING & BLOCK TRANSLATION HELPERS
@@ -666,6 +667,7 @@ function getBlockIcon(type) {
 export default function PostTranslationPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [post, setPost] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -1108,8 +1110,7 @@ export default function PostTranslationPage() {
 
       <Page
         backAction={{
-          content: "Back to Edit",
-          onAction: () => navigate(`/posts/${id}/edit`),
+          ...smartBackAction(navigate, location, `/posts/${id}/edit`, "Back to Edit"),
           icon: ArrowLeftIcon,
         }}
         title="Translate Post"

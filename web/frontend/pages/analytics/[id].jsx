@@ -3,7 +3,8 @@
  * (pages/analytics.jsx), scoped to a single post.
  */
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { smartBackAction } from "../../utils/smartBack";
 import {
   Page,
   Layout,
@@ -40,6 +41,7 @@ const DEFAULT_RANGE = (() => {
 export default function PostAnalytics() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -202,7 +204,7 @@ export default function PostAnalytics() {
       title={post?.title || "Post analytics"}
       titleMetadata={post?.status && <Badge tone={post.status === "published" ? "success" : "info"}>{post.status}</Badge>}
       subtitle="Views, funnel, devices, and traffic sources for this post"
-      backAction={{ content: "Analytics", onAction: () => navigate("/analytics") }}
+      backAction={smartBackAction(navigate, location, "/analytics", "Analytics")}
       secondaryActions={[
         { content: "Export CSV", icon: ExportIcon, onAction: exportCSV, disabled: !hasExportData },
       ]}

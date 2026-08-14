@@ -28,7 +28,8 @@ import {
   Spinner,
 } from "@shopify/polaris";
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { smartBackAction } from "../utils/smartBack";
 import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
 
@@ -87,6 +88,7 @@ const SAVE_BAR_ID = "settings-save-bar";
 
 export default function Settings() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   // Snapshot of the last-loaded/last-saved settings — the baseline the contextual save bar
@@ -303,7 +305,7 @@ export default function Settings() {
       )}
       <Page
         title="Settings"
-        backAction={{ content: "Dashboard", onAction: () => navigate("/dashboard") }}
+        backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
         subtitle="Configure global blog appearance and behavior"
       >
         <Layout>

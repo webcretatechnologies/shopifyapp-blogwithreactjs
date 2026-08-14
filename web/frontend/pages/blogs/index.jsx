@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { smartBackAction } from "../../utils/smartBack";
 import {
   Page,
   Layout,
@@ -69,6 +70,7 @@ function BlogActionPopover({ blog, onDelete }) {
 
 export default function Blogs() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [blogs, setBlogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState(null);
@@ -236,7 +238,7 @@ export default function Blogs() {
     <Frame>
       <Page
       title="Blogs"
-      backAction={{ content: "Articles", onAction: () => navigate("/posts") }}
+      backAction={smartBackAction(navigate, location, "/posts", "Articles")}
       primaryAction={{
         content: "Add blog",
         onAction: () => navigate("/blogs/new"),

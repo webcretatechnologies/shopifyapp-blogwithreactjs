@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { smartBackAction } from "../../utils/smartBack";
 import {
   Page,
   Layout,
@@ -103,6 +104,7 @@ function BlankTemplateCard({ onUse }) {
  */
 export default function BlogTemplatesLibrary() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -128,7 +130,7 @@ export default function BlogTemplatesLibrary() {
     <Page
       fullWidth
       title="Blog Templates"
-      backAction={{ content: "Dashboard", onAction: () => navigate("/dashboard") }}
+      backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
       subtitle="Pre-built, professionally structured layouts for the drag & drop builder — pick one to start a new post."
     >
       <TitleBar title="Blog Templates" />

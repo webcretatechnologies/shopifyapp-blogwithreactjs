@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { smartBackAction } from "../../utils/smartBack";
 import { DateTime } from "luxon";
 import {
   Page,
@@ -186,6 +187,7 @@ function PostActionPopover({ post, onDelete, onClone }) {
 
 export default function Articles() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [posts, setPosts] = useState([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -531,7 +533,7 @@ export default function Articles() {
       )}
       <Page
         title="Articles"
-        backAction={{ content: "Dashboard", onAction: () => navigate("/dashboard") }}
+        backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
         subtitle={
           shopInfo
             ? `${shopInfo.domain} · Plan: ${shopInfo.planKey?.toUpperCase() || "FREE"}`

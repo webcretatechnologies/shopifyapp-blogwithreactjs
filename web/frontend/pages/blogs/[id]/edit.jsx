@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { smartBackAction } from "../../../utils/smartBack";
 import {
   Page,
   Layout,
@@ -24,6 +25,7 @@ import { EditIcon, DeleteIcon } from "@shopify/polaris-icons";
 
 export default function EditBlog() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
 
   const [blogData, setBlogData] = useState(null);
@@ -290,7 +292,7 @@ export default function EditBlog() {
       )}
 
       <Page
-      backAction={{ content: "Blogs", onAction: () => navigate("/blogs") }}
+      backAction={smartBackAction(navigate, location, "/blogs", "Blogs")}
       title={blogData?.title || originalData?.title || "Edit blog"}
       secondaryActions={[
         {

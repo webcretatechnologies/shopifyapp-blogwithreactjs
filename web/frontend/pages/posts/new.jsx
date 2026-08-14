@@ -52,6 +52,7 @@ import ShopifyRichTextEditor from "../../components/editor/ShopifyRichTextEditor
 import ArticleComments from "../../components/comments/ArticleComments";
 import { metaRobotsActivateUrl } from "../../utils/themeEmbedUtils";
 import RelatedPostsPicker from "../../components/RelatedPostsPicker";
+import { smartBackAction } from "../../utils/smartBack";
 
 const stripHtml = (html) => {
   if (!html) return "";
@@ -1808,7 +1809,7 @@ export default function PostEditor() {
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
       <Page
         fullWidth
-        backAction={{ content: "Articles", onAction: () => leaveEditor("/posts") }}
+        backAction={smartBackAction(leaveEditor, location, "/posts", "Articles")}
         title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
         titleMetadata={statusBadge}
       >

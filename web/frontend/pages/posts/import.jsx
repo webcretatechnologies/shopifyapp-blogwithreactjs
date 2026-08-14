@@ -22,7 +22,8 @@ import {
   Thumbnail,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { smartBackAction } from "../../utils/smartBack";
 import { ImportIcon, ArrowLeftIcon } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 
@@ -30,6 +31,7 @@ const PER_PAGE = 20;
 
 export default function ArticleImporter() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   // ─── Blog selection ───────────────────────────────────────────────────────
   const [blogs, setBlogs] = useState([]);
@@ -417,9 +419,7 @@ export default function ArticleImporter() {
       />
 
       <Page
-        breadcrumbs={[
-          { content: "Articles", onAction: () => navigate("/posts") },
-        ]}
+        backAction={smartBackAction(navigate, location, "/posts", "Articles")}
         title="Import from Shopify"
         subtitle="Select articles from your existing Shopify blogs to import into the visual editor."
       >

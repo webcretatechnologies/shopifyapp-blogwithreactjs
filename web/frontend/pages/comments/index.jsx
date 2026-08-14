@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
+import { smartBackAction } from "../../utils/smartBack";
 import {
   Page,
   Layout,
@@ -60,6 +61,7 @@ function stripHtml(html) {
 export default function Comments() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const articleIdParam = searchParams.get("article_id");
 
   const [comments, setComments] = useState([]);
@@ -359,7 +361,7 @@ export default function Comments() {
     <Frame>
       <Page
         title="Comments"
-        backAction={{ content: "Articles", onAction: () => navigate("/posts") }}
+        backAction={smartBackAction(navigate, location, "/posts", "Articles")}
         subtitle={articleIdParam ? "Filtered by specific article" : "Manage all article comments across your store"}
         fullWidth
       >

@@ -3,7 +3,8 @@
  * Shows comprehensive metrics: views, add-to-cart, conversions, funnel, sources, devices, countries.
  */
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { smartBackAction } from "../utils/smartBack";
 import {
   Page,
   Layout,
@@ -48,6 +49,7 @@ const DEFAULT_RANGE = (() => {
 // ─── Main Page ────────────────────────────────────────────────────────────
 export default function Analytics() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -227,7 +229,7 @@ export default function Analytics() {
     <Page
       title="Analytics"
       subtitle="Comprehensive insights into your blog's performance — views, conversions, and more"
-      backAction={{ content: "Dashboard", onAction: () => navigate("/dashboard") }}
+      backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
       secondaryActions={[
         { content: "Export CSV", icon: ExportIcon, onAction: exportCSV, disabled: !hasExportData },
       ]}

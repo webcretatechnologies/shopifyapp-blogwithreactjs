@@ -2,7 +2,8 @@
  * Sync Dashboard — View sync status for all posts, force re-sync, reconcile, and see sync logs.
  */
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { smartBackAction } from "../utils/smartBack";
 import {
   Page,
   Layout,
@@ -41,6 +42,7 @@ const SYNC_MODE_MAP = {
 
 export default function SyncDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reconciling, setReconciling] = useState(false);
@@ -316,10 +318,7 @@ export default function SyncDashboard() {
       <Page
         title="Sync Status"
         subtitle="Manage the 2-way synchronization between your app and Shopify"
-        backAction={{
-          content: "Dashboard",
-          onAction: () => navigate("/dashboard"),
-        }}
+        backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
         primaryAction={{
           content: reconciling ? "Reconciling..." : "Reconcile All",
           onAction: handleReconcile,
