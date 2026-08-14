@@ -107,6 +107,7 @@ export default function Settings() {
   });
   const [sitemapStatus, setSitemapStatus] = useState(null);
   const [isLoadingSitemap, setIsLoadingSitemap] = useState(true);
+  const [features, setFeatures] = useState({});
 
   const set = (key) => (value) => setSettings((s) => ({ ...s, [key]: value }));
 
@@ -138,6 +139,10 @@ export default function Settings() {
 
   useEffect(() => {
     fetchMetaRobotsStatus();
+    fetch("/api/posts/plan/features")
+      .then((r) => r.json())
+      .then((d) => setFeatures(d.features || {}))
+      .catch(() => {});
   }, []);
 
   // Re-check silently when the merchant switches back from the theme editor tab.
@@ -325,7 +330,11 @@ export default function Settings() {
                   <SectionCard
                     title="Branding & colors"
                     trailing={
-                      <Button onClick={handleSyncFromTheme} loading={isSyncingTheme}>
+                      <Button
+                        onClick={handleSyncFromTheme}
+                        loading={isSyncingTheme}
+                        disabled={!features.theme_style_sync?.enabled}
+                      >
                         Sync from theme
                       </Button>
                     }

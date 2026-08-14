@@ -2,7 +2,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
-import { refreshPlanFeaturesCache } from "../services/PlanFeatureService.js";
+import { refreshPlanFeaturesCache, buildFeatureComparisonTable } from "../services/PlanFeatureService.js";
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -569,6 +569,18 @@ router.get("/pricing/features", validateSuperAdmin, async (req, res) => {
       orderBy: [{ plan: "asc" }, { featureKey: "asc" }],
     });
     res.json({ features });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /admin-api/pricing/comparison — Feature comparison matrix (Free/Starter/Pro) ──
+// Every cell is computed live from the same PlanFeature rows the modals above edit — never
+// hand-typed copy, so this table can't drift out of sync with what's actually gated.
+router.get("/pricing/comparison", validateSuperAdmin, async (req, res) => {
+  try {
+    const rows = buildFeatureComparisonTable(["free", "starter", "pro"]);
+    res.json({ rows, planLabels: ["Free", "Starter", "Pro"] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

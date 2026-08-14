@@ -13,6 +13,7 @@ import shopify from "../../shopify.js";
 import {
   getFeaturesForPlan,
   getArticleLimit,
+  getFeatureLimit,
   maxSectionsForPlan,
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
@@ -26,6 +27,51 @@ const router = express.Router();
 
 const RICH_SNIPPET_TYPES = ["BlogPosting", "Article", "NewsArticle", "None"];
 const prisma = new PrismaClient();
+
+// Downgrades SEO-adjacent fields to their plan-appropriate defaults instead of rejecting the
+// whole post save — these are optional fields embedded in a much larger multi-field save, so a
+// locked field should silently not persist rather than destroy an otherwise-valid save (unlike
+// clone/schedule/reconcile/etc., which are single-purpose action routes where a hard 403 is right).
+function sanitizeSeoFields(shop, body) {
+  const seoAdvanced = isFeatureEnabled(shop.planKey, "seo_advanced");
+  const metaRobots = isFeatureEnabled(shop.planKey, "meta_robots");
+  const richSnippets = isFeatureEnabled(shop.planKey, "rich_snippets");
+  const xmlSitemap = isFeatureEnabled(shop.planKey, "xml_sitemap");
+  return {
+    canonicalUrl: seoAdvanced ? (body.canonicalUrl || null) : null,
+    ogTitle: seoAdvanced ? (body.ogTitle || null) : null,
+    ogDescription: seoAdvanced ? (body.ogDescription || null) : null,
+    ogImage: seoAdvanced ? (body.ogImage || null) : null,
+    metaRobotsNoindex: metaRobots ? !!body.metaRobotsNoindex : false,
+    metaRobotsNofollow: metaRobots ? !!body.metaRobotsNofollow : false,
+    excludeFromSitemap: xmlSitemap ? !!body.excludeFromSitemap : false,
+    richSnippetType: richSnippets && RICH_SNIPPET_TYPES.includes(body.richSnippetType)
+      ? body.richSnippetType
+      : "BlogPosting",
+  };
+}
+
+// Same downgrade posture as sanitizeSeoFields, but for PUT's partial-update semantics: a locked
+// field's incoming value is ignored (existing post value wins) rather than reset to a default,
+// since an update should never silently blank out a value the post already had.
+function sanitizeSeoFieldsForUpdate(shop, body, post) {
+  const seoAdvanced = isFeatureEnabled(shop.planKey, "seo_advanced");
+  const metaRobots = isFeatureEnabled(shop.planKey, "meta_robots");
+  const richSnippets = isFeatureEnabled(shop.planKey, "rich_snippets");
+  const xmlSitemap = isFeatureEnabled(shop.planKey, "xml_sitemap");
+  return {
+    canonicalUrl: seoAdvanced && body.canonicalUrl !== undefined ? body.canonicalUrl : post.canonicalUrl,
+    ogTitle: seoAdvanced && body.ogTitle !== undefined ? body.ogTitle : post.ogTitle,
+    ogDescription: seoAdvanced && body.ogDescription !== undefined ? body.ogDescription : post.ogDescription,
+    ogImage: seoAdvanced && body.ogImage !== undefined ? body.ogImage : post.ogImage,
+    metaRobotsNoindex: metaRobots && body.metaRobotsNoindex !== undefined ? !!body.metaRobotsNoindex : post.metaRobotsNoindex,
+    metaRobotsNofollow: metaRobots && body.metaRobotsNofollow !== undefined ? !!body.metaRobotsNofollow : post.metaRobotsNofollow,
+    excludeFromSitemap: xmlSitemap && body.excludeFromSitemap !== undefined ? !!body.excludeFromSitemap : post.excludeFromSitemap,
+    richSnippetType: richSnippets && body.richSnippetType !== undefined
+      ? (RICH_SNIPPET_TYPES.includes(body.richSnippetType) ? body.richSnippetType : "BlogPosting")
+      : post.richSnippetType,
+  };
+}
 
 // ─── Multer (file uploads) ─────────────────────────────────────────────────────
 const storage = multer.diskStorage({
@@ -221,14 +267,7 @@ router.post("/", async (req, res) => {
         editorMode: "builder",
         metaTitle: metaTitle || null,
         metaDescription: metaDescription || null,
-        canonicalUrl: canonicalUrl || null,
-        ogTitle: ogTitle || null,
-        ogDescription: ogDescription || null,
-        ogImage: ogImage || null,
-        metaRobotsNoindex: !!metaRobotsNoindex,
-        metaRobotsNofollow: !!metaRobotsNofollow,
-        excludeFromSitemap: !!excludeFromSitemap,
-        richSnippetType: RICH_SNIPPET_TYPES.includes(richSnippetType) ? richSnippetType : "BlogPosting",
+        ...sanitizeSeoFields(shop, req.body),
       },
     });
 
@@ -242,8 +281,10 @@ router.post("/", async (req, res) => {
       await syncProducts(shop.id, post.id, productSliderProducts);
     }
 
-    // Sync manual related-posts override
-    if (Array.isArray(relatedPostIds)) {
+    // Sync manual related-posts override — silently ignored (not 403'd) when not entitled, so a
+    // locked field never destroys the rest of an otherwise-valid post save; the automatic fallback
+    // in RelatedPostsService still applies since no PostRelatedPost rows get created.
+    if (Array.isArray(relatedPostIds) && (relatedPostIds.length === 0 || isFeatureEnabled(shop.planKey, "related_posts_manual"))) {
       await syncRelatedPosts(shop.id, post.id, relatedPostIds);
     }
 
@@ -361,16 +402,7 @@ router.put("/:id", async (req, res) => {
         editorMode: finalEditorMode,
         metaTitle: metaTitle !== undefined ? metaTitle : post.metaTitle,
         metaDescription: metaDescription !== undefined ? metaDescription : post.metaDescription,
-        canonicalUrl: canonicalUrl !== undefined ? canonicalUrl : post.canonicalUrl,
-        ogTitle: ogTitle !== undefined ? ogTitle : post.ogTitle,
-        ogDescription: ogDescription !== undefined ? ogDescription : post.ogDescription,
-        ogImage: ogImage !== undefined ? ogImage : post.ogImage,
-        metaRobotsNoindex: metaRobotsNoindex !== undefined ? !!metaRobotsNoindex : post.metaRobotsNoindex,
-        metaRobotsNofollow: metaRobotsNofollow !== undefined ? !!metaRobotsNofollow : post.metaRobotsNofollow,
-        excludeFromSitemap: excludeFromSitemap !== undefined ? !!excludeFromSitemap : post.excludeFromSitemap,
-        richSnippetType: richSnippetType !== undefined
-          ? (RICH_SNIPPET_TYPES.includes(richSnippetType) ? richSnippetType : "BlogPosting")
-          : post.richSnippetType,
+        ...sanitizeSeoFieldsForUpdate(shop, req.body, post),
         updatedAt: new Date(),
       },
     });
@@ -383,7 +415,7 @@ router.put("/:id", async (req, res) => {
       await syncProducts(shop.id, post.id, productSliderProducts);
     }
 
-    if (Array.isArray(relatedPostIds)) {
+    if (Array.isArray(relatedPostIds) && (relatedPostIds.length === 0 || isFeatureEnabled(shop.planKey, "related_posts_manual"))) {
       await syncRelatedPosts(shop.id, post.id, relatedPostIds);
     }
 
@@ -533,7 +565,12 @@ router.post("/:id/clone", async (req, res) => {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
 
-    // 1. Plan limit check
+    // 1. Plan gate — duplicating articles is a Starter+ action
+    if (!isFeatureEnabled(shop.planKey, "clone_article")) {
+      return res.status(403).json({ error: "Duplicating articles is available on Starter and above. Please upgrade to clone this article." });
+    }
+
+    // 2. Plan limit check
     const limit = getArticleLimit(shop.planKey);
     if (limit !== null) {
       const count = await prisma.post.count({ where: { shopId: shop.id } });
@@ -544,7 +581,7 @@ router.post("/:id/clone", async (req, res) => {
       }
     }
 
-    // 2. Fetch source post with all relations
+    // 3. Fetch source post with all relations
     const sourcePost = await prisma.post.findFirst({
       where: { id: parseInt(req.params.id), shopId: shop.id },
       include: {
@@ -685,6 +722,9 @@ router.post("/:id/publish", async (req, res) => {
       }
       if (scheduledDate <= new Date()) {
         return res.status(422).json({ error: "Scheduled date must be in the future." });
+      }
+      if (!isFeatureEnabled(shop.planKey, "post_scheduling")) {
+        return res.status(403).json({ error: "Scheduled publishing is available on Starter and above. Please upgrade or publish immediately instead." });
       }
     }
 
@@ -1027,6 +1067,25 @@ router.post("/shopify/blogs", async (req, res) => {
   try {
     const session = res.locals.shopify?.session;
     if (!session) return res.status(401).json({ error: "Unauthorized" });
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const maxBlogs = getFeatureLimit(shop.planKey, "max_blogs");
+    if (maxBlogs !== null) {
+      const client = new shopify.api.clients.Graphql({ session });
+      const countResult = await client.request(`
+        query CountBlogs($first: Int!) {
+          blogs(first: $first) { nodes { id } }
+        }
+      `, { variables: { first: maxBlogs + 1 } });
+      const existingCount = countResult.data?.blogs?.nodes?.length || 0;
+      if (existingCount >= maxBlogs) {
+        return res.status(403).json({
+          error: `You've reached your plan limit of ${maxBlogs} blog${maxBlogs === 1 ? "" : "s"}. Please upgrade to create more.`,
+        });
+      }
+    }
+
     const { title, handle, commentPolicy, templateSuffix, seoTitle, seoDescription } = req.body;
 
     const metafields = [];
@@ -1635,16 +1694,43 @@ function resolveRequestedRange(req) {
   return ALLOWED_DAYS.includes(requestedDays) ? requestedDays : 30;
 }
 
+// Zeroes out (never deletes) the conversion/revenue/funnel/source/country fields for a plan
+// without analytics_advanced — keeps the response shape identical either way so nothing consuming
+// this payload has to special-case a missing key, it just sees "no data" for the Pro-only metrics.
+function stripAdvancedAnalytics(analytics) {
+  if (!analytics) return analytics;
+  return {
+    ...analytics,
+    stats: {
+      ...analytics.stats,
+      totalAddToCart: 0,
+      totalCheckouts: 0,
+      totalConversions: 0,
+      totalRevenue: 0,
+      addToCartRate: "0.00",
+      checkoutRate: "0.00",
+      conversionRate: "0.00",
+    },
+    topSources: [],
+    topCountries: [],
+    funnel: [],
+    trends: analytics.trends ? { ...analytics.trends, revenue: null, conversionRate: null } : analytics.trends,
+  };
+}
+
 // ─── GET /api/posts/analytics/summary — Dashboard analytics ──────────────────
 router.get("/analytics/summary", async (req, res) => {
   try {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
+    if (!isFeatureEnabled(shop.planKey, "analytics_dashboard")) {
+      return res.status(403).json({ error: "Analytics is available on Starter and above. Please upgrade to view your analytics." });
+    }
 
     const range = resolveRequestedRange(req);
 
     // Use the shared analytics service for comprehensive data
-    const analytics = await getShopAnalytics(shop.id, range);
+    let analytics = await getShopAnalytics(shop.id, range);
     if (!analytics) {
       return res.json({
         stats: { totalPosts: 0, published: 0, drafts: 0, totalViews: 0, totalUniqueVisitors: 0, totalAddToCart: 0, totalCheckouts: 0, totalConversions: 0, totalRevenue: 0, addToCartRate: "0.00", checkoutRate: "0.00", conversionRate: "0.00" },
@@ -1657,6 +1743,9 @@ router.get("/analytics/summary", async (req, res) => {
         funnel: [],
         trends: {},
       });
+    }
+    if (!isFeatureEnabled(shop.planKey, "analytics_advanced")) {
+      analytics = stripAdvancedAnalytics(analytics);
     }
 
     // Keep backward-compatible dailyViews field
@@ -1682,6 +1771,9 @@ router.get("/:id/analytics", async (req, res) => {
 
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
+    if (!isFeatureEnabled(shop.planKey, "analytics_dashboard")) {
+      return res.status(403).json({ error: "Analytics is available on Starter and above. Please upgrade to view your analytics." });
+    }
 
     const post = await prisma.post.findFirst({
       where: { id, shopId: shop.id },
@@ -1690,7 +1782,10 @@ router.get("/:id/analytics", async (req, res) => {
     if (!post) return res.status(404).json({ error: "Post not found" });
 
     const range = resolveRequestedRange(req);
-    const analytics = await getPostAnalytics(id, shop.id, range);
+    let analytics = await getPostAnalytics(id, shop.id, range);
+    if (!isFeatureEnabled(shop.planKey, "analytics_advanced")) {
+      analytics = stripAdvancedAnalytics(analytics);
+    }
 
     res.json({ post, ...analytics });
   } catch (err) {
@@ -1730,6 +1825,9 @@ router.post("/reconcile", async (req, res) => {
   try {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
+    if (!isFeatureEnabled(shop.planKey, "sync_actions")) {
+      return res.status(403).json({ error: "Bulk reconcile is available on Starter and above. Please upgrade to use this feature." });
+    }
 
     const linkedPosts = await prisma.post.findMany({
       where: {
@@ -1767,6 +1865,9 @@ router.post("/bulk-resync", async (req, res) => {
   try {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
+    if (!isFeatureEnabled(shop.planKey, "sync_actions")) {
+      return res.status(403).json({ error: "Bulk re-sync is available on Starter and above. Please upgrade to use this feature." });
+    }
 
     const linkedPosts = await prisma.post.findMany({
       where: {
@@ -1898,6 +1999,9 @@ router.post("/:id/resolve-conflict", async (req, res) => {
   try {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
+    if (!isFeatureEnabled(shop.planKey, "sync_actions")) {
+      return res.status(403).json({ error: "Conflict resolution is available on Starter and above. Please upgrade to use this feature." });
+    }
 
     const { resolutions } = req.body;
     if (!resolutions || typeof resolutions !== "object") {
@@ -2255,6 +2359,9 @@ router.post("/:id/translations", async (req, res) => {
     const { locale, title, excerpt, contentHtml, metaTitle, metaDescription } = req.body;
 
     if (!locale) return res.status(422).json({ error: "Locale is required" });
+    if (!isFeatureEnabled(shop.planKey, "translations")) {
+      return res.status(403).json({ error: "Translations are available on the Pro plan. Please upgrade to translate this article." });
+    }
 
     const translation = await prisma.postTranslation.upsert({
       where: { postId_locale: { postId, locale } },
@@ -2281,6 +2388,9 @@ router.post("/:id/translate-auto", async (req, res) => {
     const postId = parseInt(req.params.id);
     const { locale } = req.body;
     if (!locale) return res.status(422).json({ error: "Locale is required" });
+    if (!isFeatureEnabled(shop.planKey, "translations")) {
+      return res.status(403).json({ error: "Auto-translate is available on the Pro plan. Please upgrade to use this feature." });
+    }
 
     const post = await prisma.post.findFirst({
       where: { id: postId, shopId: shop.id },

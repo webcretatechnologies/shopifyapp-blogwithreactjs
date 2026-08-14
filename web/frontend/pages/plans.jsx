@@ -14,6 +14,7 @@ import {
   ProgressBar,
   Banner,
   TextField,
+  Spinner,
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
 import { useState, useEffect } from "react";
@@ -33,6 +34,10 @@ export default function Plans() {
   const [activePlan, setActivePlan] = useState("");
   const [postCount, setPostCount] = useState(0);
   const [postLimit, setPostLimit] = useState(10);
+  const [sectionLimit, setSectionLimit] = useState(null);
+  const [blogCount, setBlogCount] = useState(0);
+  const [blogLimit, setBlogLimit] = useState(null);
+  const [billingCycle, setBillingCycle] = useState(null);
   const [dynamicPlans, setDynamicPlans] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,6 +66,10 @@ export default function Plans() {
       setActivePlan(checkData.activePlan || "free");
       setPostCount(checkData.postCount || 0);
       setPostLimit(checkData.postLimit ?? 10);
+      setSectionLimit(checkData.sectionLimit ?? null);
+      setBlogCount(checkData.blogCount || 0);
+      setBlogLimit(checkData.blogLimit ?? null);
+      setBillingCycle(checkData.billingCycle || null);
       setDynamicPlans(plansData.plans || []);
     } catch (err) {
       console.error("Failed to load plans data:", err);
@@ -136,11 +145,19 @@ export default function Plans() {
   const postLimitLabel = postLimit === null ? "Unlimited" : `${postLimit} Limit`;
   const usagePct = postLimit === null ? 0 : Math.min(100, Math.round((postCount / postLimit) * 100));
 
+  const blogLimitLabel = blogLimit === null ? "Unlimited" : `${blogLimit} Limit`;
+  const blogUsagePct = blogLimit === null ? 0 : Math.min(100, Math.round((blogCount / blogLimit) * 100));
+
+  const formatDate = (isoOrDate) => {
+    if (!isoOrDate) return null;
+    return new Date(isoOrDate).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+  };
+
   const sortedPlans = [...dynamicPlans].sort((a, b) => Number(a.price) - Number(b.price));
 
   return (
     <Page
-      title="Billing & Plans"
+      title="Plans & Billing"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
     >
       <Layout>
@@ -159,6 +176,19 @@ export default function Plans() {
           </Layout.Section>
         )}
 
+        {isLoading && (
+          <Layout.Section>
+            <Box padding="1600">
+              <InlineStack align="center">
+                <BlockStack gap="300" inlineAlign="center">
+                  <Spinner accessibilityLabel="Loading plans" size="large" />
+                  <Text as="p" tone="subdued">Loading your plan and billing details…</Text>
+                </BlockStack>
+              </InlineStack>
+            </Box>
+          </Layout.Section>
+        )}
+
         {!isLoading && (
           <Layout.Section>
             <Card>
@@ -170,6 +200,24 @@ export default function Plans() {
                 <Text as="p" variant="bodySm" tone="subdued">
                   Usage limits reset at the start of your next 30-day billing cycle.
                 </Text>
+
+                {billingCycle && (
+                  <Banner tone={billingCycle.isTrial ? "info" : "success"}>
+                    <Text as="p" variant="bodySm">
+                      {billingCycle.isTrial ? (
+                        <>
+                          Free trial — <strong>{billingCycle.trialDaysRemaining} day{billingCycle.trialDaysRemaining === 1 ? "" : "s"} left</strong>
+                          {billingCycle.trialEndsAt ? `, then billing starts ${formatDate(billingCycle.trialEndsAt)}` : ""}.
+                        </>
+                      ) : billingCycle.renewsOn ? (
+                        <>Renews on <strong>{formatDate(billingCycle.renewsOn)}</strong>.</>
+                      ) : (
+                        "Active subscription."
+                      )}
+                      {billingCycle.isTestCharge && " (Test charge — no real payment will be collected.)"}
+                    </Text>
+                  </Banner>
+                )}
 
                 <InlineGrid columns={{ xs: 1, sm: 2 }} gap="800">
                   <BlockStack gap="200">
@@ -185,12 +233,37 @@ export default function Plans() {
                       </Text>
                     </InlineStack>
                   </BlockStack>
+
+                  <BlockStack gap="200">
+                    <InlineStack align="space-between">
+                      <Text as="strong" variant="bodySm">Shopify Blogs</Text>
+                      <Badge tone="info">{blogLimitLabel}</Badge>
+                    </InlineStack>
+                    <ProgressBar progress={blogUsagePct} tone="success" size="small" />
+                    <InlineStack align="space-between" blockAlign="baseline">
+                      <Text as="strong" variant="bodySm">{blogCount}</Text>
+                      <Text as="p" variant="bodyXs" tone="subdued">
+                        {blogLimit === null ? "Unlimited" : `${blogUsagePct}% used`}
+                      </Text>
+                    </InlineStack>
+                  </BlockStack>
                 </InlineGrid>
+
+                <Divider />
+
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="span" variant="bodySm" tone="subdued">Sections per article</Text>
+                  <Text as="span" variant="bodySm" fontWeight="medium">
+                    {sectionLimit === null ? "Unlimited" : `Up to ${sectionLimit}`}
+                  </Text>
+                </InlineStack>
               </BlockStack>
             </Card>
           </Layout.Section>
         )}
 
+        {!isLoading && (
+        <>
         <Layout.Section>
           <Box paddingBlockStart="600" paddingBlockEnd="400">
             <BlockStack gap="100">
@@ -356,6 +429,8 @@ export default function Plans() {
             })}
           </InlineGrid>
         </Layout.Section>
+        </>
+        )}
       </Layout>
     </Page>
   );

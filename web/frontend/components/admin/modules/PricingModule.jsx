@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Card, Box, Text, BlockStack, InlineStack, Banner, Divider, Button } from "@shopify/polaris";
+import { Card, Box, Text, BlockStack, InlineStack, Banner, Divider, Button, DataTable, Badge } from "@shopify/polaris";
 import { RefreshCw } from "lucide-react";
 import ConfirmActionModal from "../../ConfirmActionModal";
 import PlanCard from "../PlanCard";
@@ -19,6 +19,8 @@ const BLANK_PLAN = {
 export default function PricingModule({ active, adminFetch, showToast, setError }) {
   const [features, setFeatures] = useState([]);
   const [dynamicPlans, setDynamicPlans] = useState([]);
+  const [comparisonRows, setComparisonRows] = useState([]);
+  const [planLabels, setPlanLabels] = useState(["Free", "Starter", "Pro"]);
 
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
@@ -35,6 +37,9 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
       setFeatures(featuresData.features || []);
       const plansData = await adminFetch("/admin-api/pricing/plans");
       setDynamicPlans(plansData.plans || []);
+      const comparisonData = await adminFetch("/admin-api/pricing/comparison");
+      setComparisonRows(comparisonData.rows || []);
+      setPlanLabels(comparisonData.planLabels || ["Free", "Starter", "Pro"]);
     } catch (err) {
       setError(err.message);
     }
@@ -185,6 +190,35 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
                 </div>
               ))}
             </div>
+          </BlockStack>
+        </Box>
+      </Card>
+
+      <Card>
+        <Box padding="500">
+          <BlockStack gap="400">
+            <div>
+              <Text variant="headingLg" as="h3">Feature Comparison</Text>
+              <Text variant="bodySm" tone="subdued">
+                Every cell reads live off the same Sync Features/Sync Limits data above — edit a
+                toggle there and this table (and the merchant pricing page) updates immediately.
+              </Text>
+            </div>
+            <DataTable
+              columnContentTypes={["text", "text", "text", "text"]}
+              headings={["Feature", ...planLabels]}
+              rows={comparisonRows.map((row) => [
+                `${row.number}. ${row.feature}`,
+                ...row.cells.map((cell) => (
+                  <InlineStack gap="150" blockAlign="center" wrap={false}>
+                    <Badge tone={cell.icon === "yes" ? "success" : cell.icon === "partial" ? "attention" : undefined}>
+                      {cell.icon === "yes" ? "✅" : cell.icon === "partial" ? "⚙️" : "❌"}
+                    </Badge>
+                    {cell.text && <Text as="span" variant="bodySm">{cell.text}</Text>}
+                  </InlineStack>
+                )),
+              ])}
+            />
           </BlockStack>
         </Box>
       </Card>

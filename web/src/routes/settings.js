@@ -1,6 +1,7 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
 import ThemeStyleService from "../services/ThemeStyleService.js";
+import { isFeatureEnabled } from "../services/PlanFeatureService.js";
 
 const router = express.Router();
 
@@ -19,6 +20,11 @@ router.get("/theme-style-tokens", async (req, res) => {
   try {
     const session = res.locals.shopify?.session;
     if (!session) return res.status(401).json({ error: "Unauthorized" });
+
+    const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
+    if (!isFeatureEnabled(shop?.planKey, "theme_style_sync")) {
+      return res.status(403).json({ error: "Syncing colors from your theme is available on Starter and above. Please upgrade to use this feature." });
+    }
 
     const tokens = await ThemeStyleService.fetchThemeStyleTokens(shopify, session);
     res.json(tokens);
@@ -135,8 +141,13 @@ router.post("/", async (req, res) => {
       "customFooterCode"
     ];
 
+    const customCodeAllowed = isFeatureEnabled(shop.planKey, "custom_code_injection");
+
     // Upsert all modified setting parameters
     for (const key of supportedKeys) {
+      // Custom header/footer code injection is Pro-only — silently skip the save rather than
+      // reject the whole settings form, same posture as the SEO field sanitization in posts.js.
+      if ((key === "customHeaderCode" || key === "customFooterCode") && !customCodeAllowed) continue;
       if (req.body[key] !== undefined) {
         const valStr = String(req.body[key]);
         await prisma.shopSetting.upsert({

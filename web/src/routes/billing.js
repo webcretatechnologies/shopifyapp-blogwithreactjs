@@ -1,6 +1,6 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
-import { getArticleLimit, buildTieredPlanFeatures } from "../services/PlanFeatureService.js";
+import { getArticleLimit, maxSectionsForPlan, getFeatureLimit, buildTieredPlanFeatures } from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 
 const router = express.Router();
@@ -58,6 +58,10 @@ router.get("/check", async (req, res) => {
             id
             name
             status
+            test
+            trialDays
+            createdAt
+            currentPeriodEnd
           }
         }
       }
@@ -115,8 +119,49 @@ router.get("/check", async (req, res) => {
     // its own separate hardcoded copy, so an admin editing article_limit had no effect here and
     // the merchant billing page could show a stale limit.
     const postLimit = getArticleLimit(activePlan);
+    const sectionLimit = maxSectionsForPlan(activePlan);
 
-    res.status(200).json({ activePlan, postCount, postLimit });
+    // Live Shopify blog count vs this plan's max_blogs cap — same GraphQL query already used to
+    // enforce the cap at creation time (POST /shopify/blogs), reused here purely for display.
+    let blogCount = 0;
+    try {
+      const blogsResult = await client.request(`
+        query CountBlogs {
+          blogs(first: 250) { nodes { id } }
+        }
+      `);
+      blogCount = blogsResult.data?.blogs?.nodes?.length || 0;
+    } catch (err) {
+      console.error("Failed to count Shopify blogs for usage display:", err);
+    }
+    const blogLimit = getFeatureLimit(activePlan, "max_blogs");
+
+    // Trial/renewal info — only meaningful when there's a real active subscription (Free has
+    // neither a trial clock nor a renewal date).
+    let billingCycle = null;
+    if (activeSub) {
+      const trialDays = activeSub.trialDays || 0;
+      const createdAt = activeSub.createdAt ? new Date(activeSub.createdAt) : null;
+      const trialEndsAt = trialDays > 0 && createdAt
+        ? new Date(createdAt.getTime() + trialDays * 24 * 60 * 60 * 1000)
+        : null;
+      const isTrial = trialEndsAt ? trialEndsAt > new Date() : false;
+      const trialDaysRemaining = isTrial
+        ? Math.max(0, Math.ceil((trialEndsAt - new Date()) / (24 * 60 * 60 * 1000)))
+        : 0;
+      billingCycle = {
+        isTrial,
+        trialDaysRemaining,
+        trialEndsAt,
+        renewsOn: activeSub.currentPeriodEnd || null,
+        isTestCharge: !!activeSub.test,
+      };
+    }
+
+    res.status(200).json({
+      activePlan, postCount, postLimit, sectionLimit,
+      blogCount, blogLimit, billingCycle,
+    });
   } catch (error) {
     console.error("Failed to check billing:", error);
     res.status(500).json({ error: "Failed to check billing status" });
@@ -152,11 +197,12 @@ router.post("/request", async (req, res) => {
       if (couponResult.ok) appliedCoupon = couponResult.coupon;
     }
 
-    // Fetch the test mode setting
-    const testModeSetting = await prisma.adminSetting.findUnique({
-      where: { key: "billing_test_mode" }
-    });
-    const isTestMode = testModeSetting ? testModeSetting.value === "true" : true;
+    // Test mode is controlled by BILLING_TEST_MODE in the root .env — while it's set, every
+    // appSubscriptionCreate call goes through as a Shopify "test charge" (no real money moves,
+    // shows a "This is a test charge" banner on Shopify's approval screen). Flip it to "false"
+    // once real, paying charges should go out. Previously this was a DB row toggled from a Super
+    // Admin UI control that no longer exists — env var is the new single source of truth.
+    const isTestMode = process.env.BILLING_TEST_MODE !== "false";
 
     let returnUrl = `https://${shopify.api.config.hostName}/?shop=${session.shop}`;
     if (host) {

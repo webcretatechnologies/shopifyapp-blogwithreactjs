@@ -53,6 +53,7 @@ export default function Analytics() {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isLocked, setIsLocked] = useState(false);
   const [dateRange, setDateRange] = useState(DEFAULT_RANGE);
   const [showComparison, setShowComparison] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState(null);
@@ -85,12 +86,18 @@ export default function Analytics() {
     if (!silent) {
       setLoading(true);
       setError(null);
+      setIsLocked(false);
     }
     const from = toISODateString(range.start);
     const to = toISODateString(range.end);
     return fetch(`/api/posts/analytics/summary?from=${from}&to=${to}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Request failed (${r.status})`);
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          const err = new Error(body.error || `Request failed (${r.status})`);
+          err.status = r.status;
+          throw err;
+        }
         return r.json();
       })
       .then((d) => {
@@ -101,7 +108,11 @@ export default function Analytics() {
       })
       .catch((err) => {
         if (!silent) {
-          setError(err.message || "Failed to load analytics");
+          if (err.status === 403) {
+            setIsLocked(true);
+          } else {
+            setError(err.message || "Failed to load analytics");
+          }
           setLoading(false);
         }
         // Silent background refreshes fail quietly — the last good data stays on screen rather
@@ -257,7 +268,15 @@ export default function Analytics() {
         </InlineStack>
       </Box>
 
-      {error && (
+      {isLocked && (
+        <Box paddingBlockEnd="400">
+          <Banner tone="warning" title="Analytics is available on Starter and above">
+            <Text>Please upgrade your plan to view your blog's analytics.</Text>
+          </Banner>
+        </Box>
+      )}
+
+      {error && !isLocked && (
         <Box paddingBlockEnd="400">
           <Banner
             tone="critical"
@@ -273,7 +292,7 @@ export default function Analytics() {
         <Box padding="800" align="center">
           <Spinner />
         </Box>
-      ) : error ? null : (
+      ) : error || isLocked ? null : (
         <BlockStack gap="500">
           {shopDomain && setupStatus && !setupStatus.analyticsTracker?.active && (
             <EmbedRequirementBanner

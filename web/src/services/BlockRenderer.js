@@ -35,6 +35,24 @@ class BlockRenderer {
 
   renderBlocks(blocks) {
     if (!Array.isArray(blocks) || blocks.length === 0) return "";
+
+    // Pre-pass: collect every heading across the whole post (not just blocks preceding a Table of
+    // Contents block) so a TOC block links to every section regardless of where it's placed.
+    // renderHeading() below consumes this list in the same order via _headingRenderIndex — that
+    // only works because both passes iterate `blocks` in the same order.
+    this.tocHeadings = [];
+    this._headingRenderIndex = 0;
+    let headingCounter = 0;
+    blocks.forEach((block) => {
+      if (block && block.type === "heading") {
+        const s = block.settings || block;
+        const levelStr = String(s.level || "2");
+        const level = parseInt(levelStr.replace(/\D/g, ""), 10) || 2;
+        const text = (s.text || s.content || "").trim();
+        if (text) this.tocHeadings.push({ id: `toc-heading-${headingCounter++}`, level, text });
+      }
+    });
+
     const parts = blocks.map((block) => this.renderBlock(block));
     let html = parts.join("\n");
 
@@ -113,6 +131,8 @@ class BlockRenderer {
         return this.renderSpacer(s);
       case "html":
         return this.renderCustomHtml(s);
+      case "TableOfContents":
+        return this.renderTableOfContents(s);
       default:
         if (s.data && typeof s.data === "string" && s.data.trim()) {
           return `<p>${this.esc(s.data)}</p>\n`;
@@ -221,7 +241,11 @@ class BlockRenderer {
     const level = parseInt(levelStr.replace(/\D/g, ""), 10) || 2;
     const text = this.esc(s.text || s.content || "");
     const align = s.align || "left";
-    return `<h${level} class="blog-heading blog-heading--h${level}" style="text-align:${align}">${text}</h${level}>`;
+    const heading = this.tocHeadings && this._headingRenderIndex < this.tocHeadings.length
+      ? this.tocHeadings[this._headingRenderIndex++]
+      : null;
+    const idAttr = heading ? ` id="${heading.id}"` : "";
+    return `<h${level} class="blog-heading blog-heading--h${level}"${idAttr} style="text-align:${align}">${text}</h${level}>`;
   }
 
   renderText(s) {
@@ -875,6 +899,29 @@ class BlockRenderer {
 
   renderCustomHtml(s) {
     return s.code || s.html || "";
+  }
+
+  /**
+   * Flat (not nested-tree) anchor-link list into this.tocHeadings, indented by relative level.
+   * Simpler than the editor preview's nested-tree rendering (compileBlocksToHtml.js), but produces
+   * real working anchor links on the actual storefront page, which previously fell through to the
+   * default no-op case here and rendered nothing at all.
+   */
+  renderTableOfContents(s) {
+    const title = this.esc(s.title || "Table of Contents");
+    const levels = new Set((Array.isArray(s.levels) ? s.levels : [2, 3]).map(Number));
+    const headings = (this.tocHeadings || []).filter((h) => levels.has(h.level));
+    if (headings.length === 0) return "";
+
+    const minLevel = Math.min(...headings.map((h) => h.level));
+    const items = headings
+      .map((h) => `<li style="margin:6px 0;padding-left:${(h.level - minLevel) * 16}px;"><a href="#${h.id}" style="color:#1a1a1a;text-decoration:none;">${this.esc(h.text)}</a></li>`)
+      .join("\n");
+
+    return `<nav class="blog-toc" style="border:1px solid #e1e3e5;border-radius:12px;padding:16px 20px;margin:16px 0;background:#fafafa;">\n`
+      + `<p style="margin:0 0 10px;font-weight:700;font-size:15px;color:#202223;">${title}</p>\n`
+      + `<ul style="list-style:none;margin:0;padding:0;">\n${items}\n</ul>\n`
+      + `</nav>\n`;
   }
 
   // ─── Slider Infrastructure ────────────────────────────────────────────────

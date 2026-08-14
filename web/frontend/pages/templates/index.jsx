@@ -19,7 +19,7 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { SearchIcon, PlusIcon } from "@shopify/polaris-icons";
 import TemplateThumbnail from "../../components/builder/TemplateThumbnail";
 
-function TemplateCard({ accent, badge, name, description, preview, onUse }) {
+function TemplateCard({ accent, badge, name, description, preview, onUse, locked }) {
   return (
     <div
       style={{
@@ -28,6 +28,7 @@ function TemplateCard({ accent, badge, name, description, preview, onUse }) {
         border: "1px solid #e3e1de",
         background: "#fff",
         cursor: "pointer",
+        position: "relative",
         transition: "box-shadow 120ms ease, transform 120ms ease",
       }}
       onClick={onUse}
@@ -46,7 +47,21 @@ function TemplateCard({ accent, badge, name, description, preview, onUse }) {
         }}
       >
         <Text variant="headingSm" as="h3" tone="text-inverse">{name}</Text>
-        {badge && (
+        {locked ? (
+          <span
+            style={{
+              background: "rgba(255,255,255,0.92)",
+              color: accent,
+              fontSize: "11px",
+              fontWeight: 700,
+              padding: "2px 8px",
+              borderRadius: "999px",
+              flexShrink: 0,
+            }}
+          >
+            Starter+
+          </span>
+        ) : badge && (
           <span
             style={{
               background: "rgba(255,255,255,0.92)",
@@ -108,6 +123,7 @@ export default function BlogTemplatesLibrary() {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [features, setFeatures] = useState({});
 
   useEffect(() => {
     fetch("/api/blog-templates")
@@ -115,6 +131,10 @@ export default function BlogTemplatesLibrary() {
       .then((d) => setTemplates(d.templates || []))
       .catch(() => setTemplates([]))
       .finally(() => setLoading(false));
+    fetch("/api/posts/plan/features")
+      .then((r) => r.json())
+      .then((d) => setFeatures(d.features || {}))
+      .catch(() => {});
   }, []);
 
   const filteredTemplates = useMemo(() => {
@@ -123,7 +143,10 @@ export default function BlogTemplatesLibrary() {
     return templates.filter((t) => t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q));
   }, [templates, query]);
 
-  const useTemplate = (key) => navigate("/posts/new", { state: { templateKey: key } });
+  const useTemplate = (key, locked) => {
+    if (locked) return; // upgrade banner explains why; card itself no-ops rather than erroring
+    navigate("/posts/new", { state: { templateKey: key } });
+  };
   const useBlank = () => navigate("/posts/new");
 
   return (
@@ -166,17 +189,21 @@ export default function BlogTemplatesLibrary() {
             ) : (
               <InlineGrid columns={{ xs: 1, sm: 2, md: 3, lg: 4 }} gap="400">
                 <BlankTemplateCard onUse={useBlank} />
-                {filteredTemplates.map((t) => (
-                  <TemplateCard
-                    key={t.key}
-                    accent={t.accent}
-                    badge={t.badge}
-                    name={t.name}
-                    description={t.description}
-                    preview={t.preview}
-                    onUse={() => useTemplate(t.key)}
-                  />
-                ))}
+                {filteredTemplates.map((t) => {
+                  const locked = t.tier === "paid" && !features.templates_premium?.enabled;
+                  return (
+                    <TemplateCard
+                      key={t.key}
+                      accent={t.accent}
+                      badge={t.badge}
+                      name={t.name}
+                      description={t.description}
+                      preview={t.preview}
+                      locked={locked}
+                      onUse={() => useTemplate(t.key, locked)}
+                    />
+                  );
+                })}
               </InlineGrid>
             )}
           </BlockStack>

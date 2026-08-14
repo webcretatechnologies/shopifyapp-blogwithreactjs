@@ -1036,7 +1036,9 @@ export default function PostEditor() {
       const blogsData = await blogsRes.json();
       const featData = await featuresRes.json();
       setShopifyBlogs(blogsData.blogs || []);
-      if (!isEditing) setFeatures(featData.features || {});
+      // Was previously only set for new posts, so plan-gated UI (Schedule, SEO fields, etc.)
+      // always rendered as locked when editing an existing post, regardless of the real plan.
+      setFeatures(featData.features || {});
     } catch { }
   };
 
@@ -1998,9 +2000,12 @@ export default function PostEditor() {
                                 options={RICH_SNIPPET_OPTIONS}
                                 value={seoData.richSnippetType}
                                 onChange={(val) => setSeoData((s) => ({ ...s, richSnippetType: val }))}
+                                disabled={!features.rich_snippets?.enabled}
                               />
                               <Text variant="bodySm" tone="subdued">
-                                Controls the JSON-LD schema type published with this article for Google rich results. Choose "None" to disable structured data for this article.
+                                {features.rich_snippets?.enabled
+                                  ? "Controls the JSON-LD schema type published with this article for Google rich results. Choose \"None\" to disable structured data for this article."
+                                  : "Available on Starter and above."}
                               </Text>
                             </BlockStack>
 
@@ -2015,6 +2020,7 @@ export default function PostEditor() {
                                   metaRobotsNoindex: val.startsWith("NOINDEX"),
                                   metaRobotsNofollow: val.endsWith("NOFOLLOW"),
                                 }))}
+                                disabled={!features.meta_robots?.enabled}
                               />
                               {metaRobotsActive === false ? (
                                 <Banner tone="warning" title="One-time setup needed">
@@ -2052,6 +2058,7 @@ export default function PostEditor() {
                                   ...s,
                                   excludeFromSitemap: val === "yes",
                                 }))}
+                                disabled={!features.xml_sitemap?.enabled}
                               />
                               <Text variant="bodySm" tone="subdued">
                                 Shopify's own sitemap.xml can't exclude individual posts — this
@@ -2128,9 +2135,12 @@ export default function PostEditor() {
                           helpText={
                             post.status === "scheduled" && post.publishedAt
                               ? `Scheduled for ${formatInShopTz(post.publishedAt)} (${shopTimezone})`
-                              : null
+                              : !features.post_scheduling?.enabled
+                                ? "Available on Starter and above"
+                                : null
                           }
                           checked={visibilityMode === "schedule"}
+                          disabled={!features.post_scheduling?.enabled}
                           id="visibility-schedule"
                           name="visibility"
                           onChange={() => setVisibilityMode("schedule")}
@@ -2420,11 +2430,18 @@ export default function PostEditor() {
                   <Box padding="400">
                     <BlockStack gap="300">
                       <Text variant="headingSm" as="h2">Related posts</Text>
-                      <RelatedPostsPicker
-                        value={relatedPostsSelection}
-                        onChange={setRelatedPostsSelection}
-                        excludePostId={post.id}
-                      />
+                      {features.related_posts_manual?.enabled ? (
+                        <RelatedPostsPicker
+                          value={relatedPostsSelection}
+                          onChange={setRelatedPostsSelection}
+                          excludePostId={post.id}
+                        />
+                      ) : (
+                        <Text variant="bodySm" tone="subdued">
+                          Related posts are picked automatically on this plan. Upgrade to Starter
+                          or above to manually choose which articles show here.
+                        </Text>
+                      )}
                     </BlockStack>
                   </Box>
                 </Card>

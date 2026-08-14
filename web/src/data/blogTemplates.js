@@ -905,6 +905,15 @@ export const BLOG_TEMPLATES = [
   },
 ];
 
+// A small starter set stays free (enough to try the template system); the rest is Starter+ — see
+// `templates_premium` in PlanFeatureService.js. Kept as a lookup here rather than a field on every
+// template object so the plan/pricing decision lives in one place, not scattered across 18 entries.
+const FREE_TEMPLATE_KEYS = new Set(["how-to-guide", "faq-support-article", "buying-guide"]);
+
+export function isTemplateFree(key) {
+  return FREE_TEMPLATE_KEYS.has(key);
+}
+
 export function getBlogTemplateSummaries() {
   return BLOG_TEMPLATES.map(({ key, name, description, category, thumbnail, accent, badge, preview }) => ({
     key,
@@ -915,6 +924,7 @@ export function getBlogTemplateSummaries() {
     accent: accent || "#303030",
     badge: badge || null,
     preview: preview || {},
+    tier: FREE_TEMPLATE_KEYS.has(key) ? "free" : "paid",
   }));
 }
 

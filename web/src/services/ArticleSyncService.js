@@ -21,6 +21,7 @@ import { ShopifyArticleParser } from "./ShopifyArticleParser.js";
 import BlockRenderer from "./BlockRenderer.js";
 import { ensureTrackingKey } from "./AnalyticsTrackingService.js";
 import JsonLdService from "./JsonLdService.js";
+import { isFeatureEnabled } from "./PlanFeatureService.js";
 
 const prisma = new PrismaClient();
 
@@ -768,6 +769,11 @@ ${analyticsBlockEnd}`;
   );
   if (jsonLdScript) {
     storefrontHtml = `<!-- BLOG_JSONLD_START -->\n${jsonLdScript}\n<!-- BLOG_JSONLD_END -->\n` + storefrontHtml;
+  }
+
+  // ── "Powered by" branding badge (Free plan only — Starter+ can remove it) ──────────
+  if (!isFeatureEnabled(post.shop?.planKey, "remove_branding")) {
+    storefrontHtml += `\n<div style="text-align:center;padding:12px 0;font-size:12px;color:#8c9196;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">Powered by Blogger</div>`;
   }
 
   return storefrontHtml;

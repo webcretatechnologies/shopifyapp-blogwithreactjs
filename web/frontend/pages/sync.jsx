@@ -52,6 +52,7 @@ export default function SyncDashboard() {
   const [selectedTab, setSelectedTab] = useState(0);
   const [syncLogs, setSyncLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [features, setFeatures] = useState({});
 
   const tabs = [
     { id: "posts", content: "Posts" },
@@ -90,6 +91,10 @@ export default function SyncDashboard() {
 
   useEffect(() => {
     fetchPosts();
+    fetch("/api/posts/plan/features")
+      .then((r) => r.json())
+      .then((d) => setFeatures(d.features || {}))
+      .catch(() => {});
   }, [fetchPosts]);
 
   useEffect(() => {
@@ -323,6 +328,7 @@ export default function SyncDashboard() {
           content: reconciling ? "Reconciling..." : "Reconcile All",
           onAction: handleReconcile,
           loading: reconciling,
+          disabled: !features.sync_actions?.enabled,
         }}
         secondaryActions={[
           {
@@ -330,6 +336,7 @@ export default function SyncDashboard() {
             icon: RefreshIcon,
             onAction: handleBulkResync,
             loading: bulkResyncing,
+            disabled: !features.sync_actions?.enabled,
           },
           {
             content: "Refresh",
@@ -359,6 +366,18 @@ export default function SyncDashboard() {
               </p>
             </Banner>
           </Layout.Section>
+
+          {!features.sync_actions?.enabled && (
+            <Layout.Section>
+              <Banner tone="warning">
+                <p>
+                  <strong>Reconcile All</strong> and <strong>Resync All Posts</strong> are available
+                  on Starter and above. Please upgrade to use these — Force Sync on individual posts
+                  stays available on every plan.
+                </p>
+              </Banner>
+            </Layout.Section>
+          )}
 
           <Layout.Section>
             <Card>

@@ -690,6 +690,8 @@ export default function PostTranslationPage() {
   // Block AST & Block Translations
   const [originalBlocks, setOriginalBlocks] = useState([]);
   const [blockTranslations, setBlockTranslations] = useState({});
+  const [features, setFeatures] = useState({});
+  const [featuresLoaded, setFeaturesLoaded] = useState(false);
 
   // Label for selected locale
   const selectedLocaleObj = useMemo(() => {
@@ -739,6 +741,11 @@ export default function PostTranslationPage() {
     loadPost();
     loadTranslations();
     loadLocales();
+    fetch("/api/posts/plan/features")
+      .then((r) => r.json())
+      .then((d) => setFeatures(d.features || {}))
+      .catch(() => {})
+      .finally(() => setFeaturesLoaded(true));
   }, [id, loadTranslations, loadLocales]);
 
   // Helper to re-hydrate block translation state from translated HTML/blocks
@@ -1061,6 +1068,18 @@ export default function PostTranslationPage() {
           <Box padding="800" align="center">
             <Spinner />
           </Box>
+        </Page>
+      </Frame>
+    );
+  }
+
+  if (featuresLoaded && !features.translations?.enabled) {
+    return (
+      <Frame>
+        <Page title="Translate" backAction={{ onAction: () => navigate(-1) }}>
+          <Banner tone="warning" title="Translations are a Pro plan feature">
+            <p>Please upgrade to Pro to translate this article into other languages.</p>
+          </Banner>
         </Page>
       </Frame>
     );
