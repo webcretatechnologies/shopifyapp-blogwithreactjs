@@ -620,27 +620,6 @@ router.post("/pricing/features/:id", validateSuperAdmin, async (req, res) => {
   }
 });
 
-// ─── POST /admin-api/pricing/features/reset — Reset features to defaults ──────
-router.post("/pricing/features/reset", validateSuperAdmin, async (req, res) => {
-  try {
-    // Delete existing features and trigger re-seed in PlanFeatureService
-    await prisma.planFeature.deleteMany({});
-    await refreshPlanFeaturesCache();
-
-    // Log Activity
-    await prisma.adminActivityLog.create({
-      data: {
-        action: `Reset Plan Features to system defaults`,
-        targetType: "setting",
-      },
-    });
-
-    res.json({ success: true, message: "Successfully reset all plan features to defaults." });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ─── GET /admin-api/pricing/plans — Get all dynamic subscription plans ───────
 router.get("/pricing/plans", validateSuperAdmin, async (req, res) => {
   try {

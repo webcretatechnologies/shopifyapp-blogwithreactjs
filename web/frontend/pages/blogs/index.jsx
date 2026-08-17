@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../utils/smartBack";
+import UpgradePrompt from "../../components/UpgradePrompt";
 import {
   Page,
   Layout,
@@ -18,8 +19,7 @@ import {
   InlineStack,
   Popover,
   ActionList,
-  Frame,
-  Banner
+  Frame
 } from "@shopify/polaris";
 import {
   PlusIcon,
@@ -263,10 +263,11 @@ export default function Blogs() {
       <Layout>
         {atBlogLimit && (
           <Layout.Section>
-            <Banner tone="warning">
-              You've reached your plan's limit of {blogLimit} blog{blogLimit === 1 ? "" : "s"}.
-              Upgrade your plan to create more.
-            </Banner>
+            <UpgradePrompt
+              requiredPlan="Starter"
+              title={`You've reached your plan's limit of ${blogLimit} blog${blogLimit === 1 ? "" : "s"}`}
+              description="Upgrade your plan to create more blogs."
+            />
           </Layout.Section>
         )}
         <Layout.Section>

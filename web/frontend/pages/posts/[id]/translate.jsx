@@ -36,6 +36,7 @@ import {
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../../utils/smartBack";
+import UpgradePrompt from "../../../components/UpgradePrompt";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  DOM / HTML PARSING & BLOCK TRANSLATION HELPERS
@@ -1077,9 +1078,15 @@ export default function PostTranslationPage() {
     return (
       <Frame>
         <Page title="Translate" backAction={{ onAction: () => navigate(-1) }}>
-          <Banner tone="warning" title="Translations are a Pro plan feature">
-            <p>Please upgrade to Pro to translate this article into other languages.</p>
-          </Banner>
+          <Layout>
+            <Layout.Section>
+              <UpgradePrompt
+                requiredPlan="Pro"
+                title="Multi Language Translation is a Pro feature"
+                description="Upgrade to Pro to translate this article into other languages."
+              />
+            </Layout.Section>
+          </Layout>
         </Page>
       </Frame>
     );

@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../utils/smartBack";
+import UpgradePrompt from "../components/UpgradePrompt";
 import {
   Page,
   Layout,
@@ -270,9 +271,11 @@ export default function Analytics() {
 
       {isLocked && (
         <Box paddingBlockEnd="400">
-          <Banner tone="warning" title="Analytics is available on Starter and above">
-            <Text>Please upgrade your plan to view your blog's analytics.</Text>
-          </Banner>
+          <UpgradePrompt
+            requiredPlan="Starter"
+            title="Analytics is available on Starter and above"
+            description="Upgrade your plan to view your blog's performance."
+          />
         </Box>
       )}
 

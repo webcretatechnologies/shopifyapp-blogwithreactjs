@@ -1,10 +1,22 @@
-import { Modal, FormLayout, TextField, Checkbox } from "@shopify/polaris";
+import { Modal, FormLayout, TextField, Select, Checkbox } from "@shopify/polaris";
+
+const BILLING_INTERVAL_OPTIONS = [
+  { label: "Every 30 Days", value: "EVERY_30_DAYS" },
+  { label: "Annual", value: "ANNUAL" },
+];
 
 /**
- * "Edit Core" — the plan's own fields (name/title/price/currency/interval/trial/description/
- * active/sort order). Controlled by the parent: `plan` is the draft object, `onChange(updatedPlan)`
- * replaces it wholesale (same shape `setEditingPlan` used before this was extracted), `onSave`
- * persists via the existing POST/PUT `/admin-api/pricing/plans[/:id]` logic.
+ * "Edit Core" — the plan's own fields (name/title/price/interval/trial/description/active/sort
+ * order). Controlled by the parent: `plan` is the draft object, `onChange(updatedPlan)` replaces
+ * it wholesale (same shape `setEditingPlan` used before this was extracted), `onSave` persists via
+ * the existing POST/PUT `/admin-api/pricing/plans[/:id]` logic.
+ *
+ * No currency field — every plan is USD-only by design (PricingModule.jsx's BLANK_PLAN already
+ * defaults new plans to "USD", and the backend still accepts/stores whatever's on the plan
+ * record), so there's nothing here for an admin to misconfigure. Billing Interval is a Select, not
+ * free text — Shopify's appSubscriptionCreate only accepts exactly "EVERY_30_DAYS" or "ANNUAL"
+ * (billing.js), and a typo'd interval would silently fail at real charge time with no validation
+ * anywhere before that.
  *
  * The merchant-facing marketing "features" bullet list intentionally isn't editable here — it
  * lived in this same modal as a raw one-per-line textarea, easy to confuse with the separate
@@ -52,21 +64,14 @@ export default function EditPlanCoreModal({ open, plan, onChange, onSave, onClos
               autoComplete="off"
               prefix="$"
             />
-            <TextField
-              label="Currency"
-              value={plan.currency}
-              onChange={set("currency")}
-              autoComplete="off"
+            <Select
+              label="Billing Interval"
+              options={BILLING_INTERVAL_OPTIONS}
+              value={plan.interval}
+              onChange={set("interval")}
             />
           </FormLayout.Group>
           <FormLayout.Group>
-            <TextField
-              label="Billing Interval"
-              value={plan.interval}
-              onChange={set("interval")}
-              autoComplete="off"
-              helpText="EVERY_30_DAYS or ANNUAL"
-            />
             <TextField
               label="Trial Period (Days)"
               value={String(plan.trialDays ?? 0)}
@@ -75,14 +80,14 @@ export default function EditPlanCoreModal({ open, plan, onChange, onSave, onClos
               autoComplete="off"
               helpText="0 = no free trial"
             />
+            <TextField
+              label="Sort Order"
+              value={String(plan.sortOrder ?? 0)}
+              onChange={(v) => onChange({ ...plan, sortOrder: parseInt(v, 10) || 0 })}
+              type="number"
+              autoComplete="off"
+            />
           </FormLayout.Group>
-          <TextField
-            label="Sort Order"
-            value={String(plan.sortOrder ?? 0)}
-            onChange={(v) => onChange({ ...plan, sortOrder: parseInt(v, 10) || 0 })}
-            type="number"
-            autoComplete="off"
-          />
           <TextField
             label="Description"
             value={plan.description || ""}

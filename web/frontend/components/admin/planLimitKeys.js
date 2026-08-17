@@ -17,7 +17,7 @@ export function isLimitKey(featureKey) {
 // showing them was the exact confusion this list fixes).
 //
 // `keys: [...]` is the underlying PlanFeature featureKey(s) this bullet toggles — a bullet
-// backed by more than one key (e.g. "Shopify Product Blocks" covers 6 block-type keys; "Meta
+// backed by more than one key (e.g. "Shopify Product Blocks" covers 7 block-type keys; "Meta
 // Robots & Rich Snippets" covers 2) is ONE checkbox that flips all of them together, same as it's
 // sold as one line item, not several an admin has to reconcile by hand. `keys: []` means the
 // bullet has no backing gate at all (e.g. "Drag & Drop Builder", "Author" — always on for every
@@ -42,7 +42,7 @@ export const TIER_BULLETS = {
   ],
   starter: [
     { label: "Clone Article", keys: ["clone_article"] },
-    { label: "Shopify Product Blocks", keys: ["product", "product_text", "product_sidebar", "product_slider", "product_switcher", "featured_product"] },
+    { label: "Shopify Product Blocks", keys: ["product", "product_card", "product_text", "product_sidebar", "product_slider", "product_switcher", "featured_product"] },
     { label: "FAQ Block", keys: ["faq"] },
     { label: "Table Of Content", keys: ["toc"] },
     { label: "2 Way Sync", keys: ["sync_actions"] },

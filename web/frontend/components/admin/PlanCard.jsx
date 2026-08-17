@@ -53,7 +53,7 @@ export default function PlanCard({ plan, features, onEditCore, onSyncFeatures, o
               <Button onClick={() => onSyncFeatures(plan)}>Sync Features ({featureCount})</Button>
               <Button onClick={() => onSyncLimits(plan)}>Sync Limits ({limitCount})</Button>
             </InlineStack>
-            <Button variant="plain" tone="critical" onClick={() => onDelete(plan)}>
+            <Button tone="critical" onClick={() => onDelete(plan)}>
               Delete Billing Tier
             </Button>
           </BlockStack>

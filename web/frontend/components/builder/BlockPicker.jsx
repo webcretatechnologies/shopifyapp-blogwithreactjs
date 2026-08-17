@@ -25,6 +25,7 @@ import {
 import { nanoid } from "./store/nanoid";
 import LayersPanel from "./sidebar/LayersPanel";
 import { useDraggable } from "@dnd-kit/core";
+import { useNavigate } from "react-router-dom";
 
 // Maps an insertable block type to the PlanFeature key that gates it on the real published page
 // (EditorContentCompiler.js — see its device_visibility/toc/faq/product-family enforcement).
@@ -36,11 +37,14 @@ const BLOCK_TYPE_GATE = {
   TableOfContents: "toc",
   FaqBlock: "faq",
   BuyButton: "product",
+  ProductCard: "product_card",
   ProductGrid: "product_switcher",
   ProductSlider: "product_slider",
 };
 
 function DraggableBlockItem({ type, entry, onClick, isRailMode, locked }) {
+  const navigate = useNavigate();
+  const onUpgradeClick = useBuilderStore((s) => s.onUpgradeClick);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `new-block-${type}`,
     data: { isNew: true, type, settings: entry.defaultSettings },
@@ -50,15 +54,21 @@ function DraggableBlockItem({ type, entry, onClick, isRailMode, locked }) {
   const pointerListeners = locked ? {} : { ...listeners };
   delete pointerListeners.onKeyDown;
 
+  // A locked tile isn't a dead end — clicking it takes the merchant straight to the upgrade
+  // page instead of silently doing nothing, same as every other gated surface in the app now.
+  // Route through the save-aware handler (registered by posts/new.jsx) so a dirty editor
+  // doesn't leave the contextual save bar stuck visible after the navigate.
+  const handleClick = locked ? (onUpgradeClick || (() => navigate("/plans"))) : onClick;
+
   return (
     <button
       ref={setNodeRef}
       {...pointerListeners}
       {...attributes}
       type="button"
-      onClick={onClick}
-      aria-label={locked ? `${entry.label} — requires a plan upgrade` : `Add ${entry.label}`}
-      title={locked ? "This feature isn't included on your current plan. Upgrade to unlock it." : undefined}
+      onClick={handleClick}
+      aria-label={locked ? `${entry.label} — requires a plan upgrade, click to upgrade now` : `Add ${entry.label}`}
+      title={locked ? "This feature isn't included on your current plan — click to upgrade now." : undefined}
       style={isRailMode ? {
         width: "36px",
         height: "36px",
@@ -123,20 +133,19 @@ function DraggableBlockItem({ type, entry, onClick, isRailMode, locked }) {
         <div
           style={{
             position: "absolute",
-            top: isRailMode ? "-4px" : "4px",
-            right: isRailMode ? "-4px" : "4px",
-            width: "16px",
-            height: "16px",
+            top: isRailMode ? "-5px" : "4px",
+            right: isRailMode ? "-5px" : "4px",
+            width: "17px",
+            height: "17px",
             borderRadius: "50%",
-            background: "var(--p-color-bg-surface-secondary)",
-            border: "1px solid var(--p-color-border)",
+            background: "var(--p-color-bg-fill-success)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "var(--p-color-icon-subdued)",
+            color: "var(--p-color-icon-success-on-bg-fill, #fff)",
           }}
         >
-          <Icon source={LockIcon} />
+          <Icon source={LockIcon} tone="inherit" />
         </div>
       )}
       {isRailMode ? (
@@ -162,6 +171,11 @@ function DraggableBlockItem({ type, entry, onClick, isRailMode, locked }) {
           <Text variant="bodySm" alignment="center" fontWeight="medium" tone={locked ? "subdued" : undefined}>
             {entry.label}
           </Text>
+          {locked && (
+            <Text variant="bodyXs" alignment="center" fontWeight="semibold" tone="success">
+              Upgrade to unlock
+            </Text>
+          )}
         </>
       )}
     </button>

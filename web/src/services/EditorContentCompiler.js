@@ -262,6 +262,7 @@ export class EditorContentCompiler {
     const tocEntitled = isFeatureEnabled(planKey, "toc");
     const faqEntitled = isFeatureEnabled(planKey, "faq");
     const productEntitled = isFeatureEnabled(planKey, "product");
+    const productCardEntitled = isFeatureEnabled(planKey, "product_card");
     const productSidebarEntitled = isFeatureEnabled(planKey, "product_sidebar");
     const featuredProductEntitled = isFeatureEnabled(planKey, "featured_product");
     const productSwitcherEntitled = isFeatureEnabled(planKey, "product_switcher");
@@ -424,7 +425,9 @@ export class EditorContentCompiler {
             break;
           case "productCard":
           case "ProductCard":
-            compiledHtml = this.renderProductCard(attrs);
+            // Now part of the Shopify Product Blocks family (Starter+) — previously ungated,
+            // meaning any plan could insert and publish it regardless of entitlement.
+            compiledHtml = productCardEntitled ? this.renderProductCard(attrs) : "";
             break;
           case "htmlBlock":
           case "HtmlBlock":

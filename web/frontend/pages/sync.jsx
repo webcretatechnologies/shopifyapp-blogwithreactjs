@@ -4,6 +4,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../utils/smartBack";
+import UpgradePrompt from "../components/UpgradePrompt";
 import {
   Page,
   Layout,
@@ -369,13 +370,11 @@ export default function SyncDashboard() {
 
           {!features.sync_actions?.enabled && (
             <Layout.Section>
-              <Banner tone="warning">
-                <p>
-                  <strong>Reconcile All</strong> and <strong>Resync All Posts</strong> are available
-                  on Starter and above. Please upgrade to use these — Force Sync on individual posts
-                  stays available on every plan.
-                </p>
-              </Banner>
+              <UpgradePrompt
+                requiredPlan="Starter"
+                title="Reconcile All and Resync All Posts are Starter features"
+                description="Force Sync on individual posts stays available on every plan."
+              />
             </Layout.Section>
           )}
 

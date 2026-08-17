@@ -24,6 +24,15 @@ export const useBuilderStore = create((set, get) => ({
   pendingDeleteBlockIds: [],
   isDeleteModalOpen: false,
 
+  // Lets deeply-nested Builder components (e.g. SettingsPanel's device-visibility "Upgrade Now"
+  // banner) trigger the host page's real "save unsaved changes, then go to Billing" flow instead
+  // of navigating straight there — a plain navigate() from this deep in the tree would leave the
+  // post editor's contextual save bar stuck visible on whatever page loads next, since a route
+  // change doesn't unmount it and nothing would ever tell it to hide. posts/new.jsx registers its
+  // handler here on mount; falls back to a plain navigate (UpgradePrompt's own default) if unset.
+  onUpgradeClick: null,
+  setOnUpgradeClick: (fn) => set({ onUpgradeClick: fn }),
+
   _commit(recipe) {
     const current = { blocksById: get().blocksById, rootIds: get().rootIds };
     const [nextState, patches, inversePatches] = produceWithPatches(current, recipe);

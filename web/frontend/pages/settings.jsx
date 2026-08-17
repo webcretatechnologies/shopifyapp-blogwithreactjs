@@ -32,6 +32,8 @@ import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { smartBackAction } from "../utils/smartBack";
 import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
+import UpgradePrompt from "../components/UpgradePrompt";
+import ConfirmActionModal from "../components/ConfirmActionModal";
 import { APP_NAME } from "../utils/appName";
 
 const LAYOUT_OPTIONS = [
@@ -110,10 +112,38 @@ export default function Settings() {
   const [sitemapStatus, setSitemapStatus] = useState(null);
   const [isLoadingSitemap, setIsLoadingSitemap] = useState(true);
   const [features, setFeatures] = useState({});
+  const [showUpgradeSaveConfirm, setShowUpgradeSaveConfirm] = useState(false);
+  const [isSavingForUpgrade, setIsSavingForUpgrade] = useState(false);
 
   const set = (key) => (value) => setSettings((s) => ({ ...s, [key]: value }));
 
   const isDirty = JSON.stringify(settings) !== JSON.stringify(originalSettings);
+
+  // Same problem/fix as posts/new.jsx's handleUpgradeNow: the default UpgradePrompt behavior
+  // (navigate("/plans") directly) left the contextual save bar stuck visible on the Billing page
+  // afterward, since a route change doesn't unmount it. Ask before discarding unsaved settings
+  // rather than silently losing them, since Billing is enough of a detour that it shouldn't be a
+  // surprise.
+  const handleUpgradeNow = () => {
+    if (isDirty) {
+      setShowUpgradeSaveConfirm(true);
+    } else {
+      navigate("/plans");
+    }
+  };
+
+  const confirmSaveThenUpgrade = async () => {
+    setIsSavingForUpgrade(true);
+    try {
+      const ok = await handleSave();
+      if (ok) {
+        setShowUpgradeSaveConfirm(false);
+        navigate("/plans");
+      }
+    } finally {
+      setIsSavingForUpgrade(false);
+    }
+  };
 
   useEffect(() => {
     fetch("/api/settings")
@@ -208,8 +238,10 @@ export default function Settings() {
       if (window.shopify?.saveBar) {
         try { await window.shopify.saveBar.hide(SAVE_BAR_ID); } catch (e) { }
       }
+      return true;
     } catch {
       setToast({ content: "Failed to save settings", error: true });
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -310,6 +342,16 @@ export default function Settings() {
           onDismiss={() => setToast(null)}
         />
       )}
+      <ConfirmActionModal
+        open={showUpgradeSaveConfirm}
+        title="Save changes before upgrading?"
+        body="You have unsaved settings. Save them before going to the Billing page, or cancel to keep editing."
+        confirmText="Save & Continue"
+        confirmTone="primary"
+        onConfirm={confirmSaveThenUpgrade}
+        onCancel={() => setShowUpgradeSaveConfirm(false)}
+        loading={isSavingForUpgrade}
+      />
       <Page
         title="Settings"
         backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
@@ -742,10 +784,12 @@ export default function Settings() {
                   trailing={<Badge tone="attention">Advanced</Badge>}
                 >
                   {!features.custom_code_injection?.enabled && (
-                    <Banner tone="info">
-                      Custom Global Header &amp; Footer is a Pro plan feature. Upgrade your plan to
-                      use it.
-                    </Banner>
+                    <UpgradePrompt
+                      onUpgrade={handleUpgradeNow}
+                      requiredPlan="Pro"
+                      title="Custom Global Header & Footer is a Pro feature"
+                      description="Inject your own CSS or JavaScript above and below every published article."
+                    />
                   )}
                   <TextField
                     label="Custom header code"
@@ -773,22 +817,22 @@ export default function Settings() {
               </Layout.Section>
 
               <Layout.Section>
-                <SectionCard
-                  title="Branding"
-                  trailing={!features.remove_branding?.enabled ? <Badge tone="attention">Starter+</Badge> : undefined}
-                >
-                  {!features.remove_branding?.enabled ? (
-                    <Banner tone="info">
-                      {`Removing the "Powered by ${APP_NAME}" badge is a Starter plan feature. Upgrade your plan to control whether it's shown.`}
-                    </Banner>
-                  ) : (
-                    <Checkbox
-                      label={`Show "Powered by ${APP_NAME}" badge on published articles`}
-                      checked={settings.showPoweredByBadge}
-                      onChange={set("showPoweredByBadge")}
-                      helpText="Your plan lets you remove this badge — it's hidden by default. Check this if you'd like to keep showing it anyway."
+                <SectionCard title="Branding">
+                  {!features.remove_branding?.enabled && (
+                    <UpgradePrompt
+                      onUpgrade={handleUpgradeNow}
+                      requiredPlan="Starter"
+                      title={`Remove the "Powered by ${APP_NAME}" badge`}
+                      description="Control whether it's shown on your published articles."
                     />
                   )}
+                  <Checkbox
+                    label={`Show "Powered by ${APP_NAME}" badge on published articles`}
+                    checked={features.remove_branding?.enabled ? settings.showPoweredByBadge : true}
+                    disabled={!features.remove_branding?.enabled}
+                    onChange={set("showPoweredByBadge")}
+                    helpText="Your plan lets you remove this badge — it's hidden by default. Check this if you'd like to keep showing it anyway."
+                  />
                 </SectionCard>
               </Layout.Section>
 

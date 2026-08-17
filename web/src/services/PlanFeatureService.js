@@ -28,6 +28,7 @@ const PLAN_DEFAULTS = {
     featured_product: { enabled: false, limit: null },
     blog: { enabled: true, limit: 3 },
     product: { enabled: false, limit: null },
+    product_card: { enabled: false, limit: null },
     product_text: { enabled: false, limit: null },
     product_sidebar: { enabled: false, limit: null },
     product_slider: { enabled: false, limit: null },
@@ -72,6 +73,7 @@ const PLAN_DEFAULTS = {
     featured_product: { enabled: true, limit: null },
     blog: { enabled: true, limit: 5 },
     product: { enabled: true, limit: null },
+    product_card: { enabled: true, limit: null },
     product_text: { enabled: true, limit: null },
     product_sidebar: { enabled: true, limit: null },
     product_slider: { enabled: true, limit: null },
@@ -116,6 +118,7 @@ const PLAN_DEFAULTS = {
     featured_product: { enabled: true, limit: null },
     blog: { enabled: true, limit: null },
     product: { enabled: true, limit: null },
+    product_card: { enabled: true, limit: null },
     product_text: { enabled: true, limit: null },
     product_sidebar: { enabled: true, limit: null },
     product_slider: { enabled: true, limit: null },
@@ -160,6 +163,7 @@ const PLAN_DEFAULTS = {
     featured_product: { enabled: true, limit: null },
     blog: { enabled: true, limit: null },
     product: { enabled: true, limit: null },
+    product_card: { enabled: true, limit: null },
     product_text: { enabled: true, limit: null },
     product_sidebar: { enabled: true, limit: null },
     product_slider: { enabled: true, limit: null },
@@ -329,7 +333,7 @@ const MASTER_BULLETS = [
   { label: "Blog Comments", keys: [] },
   { label: "Import Shopify Blogs", keys: [] },
   { label: "Clone Article", keys: ["clone_article"] },
-  { label: "Shopify Product Blocks", keys: ["product", "product_text", "product_sidebar", "product_slider", "product_switcher", "featured_product"] },
+  { label: "Shopify Product Blocks", keys: ["product", "product_card", "product_text", "product_sidebar", "product_slider", "product_switcher", "featured_product"] },
   { label: "FAQ Block", keys: ["faq"] },
   { label: "Table Of Content", keys: ["toc"] },
   { label: "2 Way Sync", keys: ["sync_actions"] },
@@ -447,7 +451,7 @@ const FEATURE_COMPARISON_ROWS = [
   },
   {
     feature: "Shopify Product Blocks",
-    cell: (f) => (["product", "product_text", "product_sidebar", "product_switcher", "product_slider", "featured_product"].some((k) => f[k]?.enabled)
+    cell: (f) => (["product", "product_card", "product_text", "product_sidebar", "product_switcher", "product_slider", "featured_product"].some((k) => f[k]?.enabled)
       ? { icon: "yes", text: "" }
       : { icon: "no", text: "" }),
   },

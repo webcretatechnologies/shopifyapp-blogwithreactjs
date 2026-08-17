@@ -1,14 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, Box, Text, BlockStack, InlineStack, Banner, Divider, Button } from "@shopify/polaris";
-import { RefreshCw } from "lucide-react";
 import ConfirmActionModal from "../../ConfirmActionModal";
 import PlanCard from "../PlanCard";
 import EditPlanCoreModal from "../EditPlanCoreModal";
 import SyncFeaturesModal from "../SyncFeaturesModal";
 import SyncLimitsModal from "../SyncLimitsModal";
 import { planFeatureBucket } from "../planLimitKeys";
-
-const RefreshIcon = (props) => <RefreshCw size={16} {...props} />;
 
 const BLANK_PLAN = {
   name: "", title: "", price: "0.00", currency: "USD", interval: "EVERY_30_DAYS",
@@ -61,20 +58,6 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
       setError(err.message);
       throw err;
     }
-  };
-
-  const handleResetFeatures = () => {
-    setConfirmAction({
-      title: "Restore default feature limits?",
-      body: "All custom feature rules will be overwritten and restored to system defaults.",
-      confirmText: "Restore defaults",
-      confirmTone: "critical",
-      onConfirm: async () => {
-        await adminFetch("/admin-api/pricing/features/reset", { method: "POST" });
-        showToast("Plan features restored to system defaults");
-        load();
-      },
-    });
   };
 
   const handleSavePlan = async () => {
@@ -151,14 +134,9 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
                   live-synced with the merchant billing page.
                 </Text>
               </div>
-              <InlineStack gap="200">
-                <Button tone="critical" onClick={handleResetFeatures} icon={RefreshIcon}>
-                  Reset Features to Defaults
-                </Button>
-                <Button variant="primary" onClick={() => { setEditingPlan(BLANK_PLAN); setShowPlanModal(true); }}>
-                  Add Billing Plan
-                </Button>
-              </InlineStack>
+              <Button variant="primary" onClick={() => { setEditingPlan(BLANK_PLAN); setShowPlanModal(true); }}>
+                Add Billing Plan
+              </Button>
             </InlineStack>
             <Banner tone="info">
               <Text as="p" variant="bodySm">

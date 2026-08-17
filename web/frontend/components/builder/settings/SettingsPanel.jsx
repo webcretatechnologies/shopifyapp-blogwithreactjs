@@ -18,6 +18,7 @@ import { useCallback, useRef, useState, useEffect } from "react";
 import { useBuilderStore } from "../store/useBuilderStore";
 import SettingsControls from "./SettingsControls";
 import { BlockRegistry } from "../BlockRegistry";
+import UpgradePrompt from "../../UpgradePrompt";
 import { 
   Box, 
   InlineStack, 
@@ -72,6 +73,7 @@ export default function SettingsPanel() {
   const clearSelection = useBuilderStore((s) => s.clearSelection);
   const requestDeleteSelectedBlocks = useBuilderStore((s) => s.requestDeleteSelectedBlocks);
   const deviceMode = useBuilderStore((s) => s.deviceMode);
+  const onUpgradeClick = useBuilderStore((s) => s.onUpgradeClick);
 
   const { handleLive, handleCommit } = useDebouncedCommit(selectedBlockId);
 
@@ -179,10 +181,13 @@ export default function SettingsPanel() {
             </Box>
 
             {!deviceVisibilityEntitled && (
-              <Box paddingBlockEnd="200">
-                <Text variant="bodySm" tone="subdued">
-                  Hide-on-device is a Pro plan feature. Upgrade to make these controls take effect on your published articles.
-                </Text>
+              <Box paddingBlockEnd="300">
+                <UpgradePrompt
+                  onUpgrade={onUpgradeClick || undefined}
+                  requiredPlan="Pro"
+                  title="Hide-on-device is a Pro feature"
+                  description="These controls take effect on your published articles once you upgrade."
+                />
               </Box>
             )}
 
@@ -218,7 +223,7 @@ export default function SettingsPanel() {
                 </div>
               ))}
             </Box>
-            
+
             <Box paddingBlockStart="200">
               <Text tone="subdued" variant="bodySm">
                 Hidden blocks still appear in the editor with an overlay. They are fully hidden on the live storefront.

@@ -39,6 +39,7 @@ import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon, Calendar
 import { DateTime } from "luxon";
 import confetti from "canvas-confetti";
 import DragDropBuilderContainer from "../../components/builder/DragDropBuilderContainer";
+import UpgradePrompt from "../../components/UpgradePrompt";
 import BlogTemplateGalleryModal from "../../components/builder/BlogTemplateGalleryModal";
 import { compileBlocksToHtml } from "../../utils/compileBlocksToHtml";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
@@ -821,6 +822,8 @@ export default function PostEditor() {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [showCongratsModal, setShowCongratsModal] = useState(false);
+  const [showUpgradeSaveConfirm, setShowUpgradeSaveConfirm] = useState(false);
+  const [isSavingForUpgrade, setIsSavingForUpgrade] = useState(false);
   const [showTemplateGallery, setShowTemplateGallery] = useState(false);
   const [newPostId, setNewPostId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -1198,6 +1201,42 @@ export default function PostEditor() {
     }
     navigate(path);
   };
+
+  // "Upgrade Now" inside any of this page's plan-gate banners used to call the default
+  // navigate("/plans") directly — which, with unsaved edits in progress, left the contextual
+  // save bar visibly stuck at the top of the admin on the Billing page (a full route change
+  // doesn't unmount it, and nothing ever told it to hide). Unlike the other exits above (back
+  // arrow, breadcrumbs), which silently abandon in-progress edits, going to Billing is enough of
+  // a detour that losing unsaved work by accident would be a bad surprise — so this one asks
+  // first instead of silently discarding.
+  const handleUpgradeNow = () => {
+    if (isDirty) {
+      setShowUpgradeSaveConfirm(true);
+    } else {
+      leaveEditor("/plans");
+    }
+  };
+
+  const confirmSaveThenUpgrade = async () => {
+    setIsSavingForUpgrade(true);
+    try {
+      const savedId = await handleSave(post.status, "general");
+      if (savedId) {
+        setShowUpgradeSaveConfirm(false);
+        await leaveEditor("/plans");
+      }
+    } finally {
+      setIsSavingForUpgrade(false);
+    }
+  };
+
+  // Makes handleUpgradeNow reachable from deeply-nested Builder components (e.g. SettingsPanel's
+  // device-visibility upgrade banner) that have no direct prop path to this page's save/dirty
+  // state — see useBuilderStore's onUpgradeClick doc comment.
+  useEffect(() => {
+    useBuilderStore.getState().setOnUpgradeClick(() => handleUpgradeNow);
+    return () => useBuilderStore.getState().setOnUpgradeClick(null);
+  });
 
   const handleField = (field) => (value) =>
     setPost((p) => ({ ...p, [field]: value }));
@@ -2002,11 +2041,18 @@ export default function PostEditor() {
                                 onChange={(val) => setSeoData((s) => ({ ...s, richSnippetType: val }))}
                                 disabled={!features.rich_snippets?.enabled}
                               />
-                              <Text variant="bodySm" tone="subdued">
-                                {features.rich_snippets?.enabled
-                                  ? "Controls the JSON-LD schema type published with this article for Google rich results. Choose \"None\" to disable structured data for this article."
-                                  : "Available on Starter and above."}
-                              </Text>
+                              {features.rich_snippets?.enabled ? (
+                                <Text variant="bodySm" tone="subdued">
+                                  Controls the JSON-LD schema type published with this article for Google rich results. Choose "None" to disable structured data for this article.
+                                </Text>
+                              ) : (
+                                <UpgradePrompt
+                                  onUpgrade={handleUpgradeNow}
+                                  requiredPlan="Starter"
+                                  title="Rich snippets — Starter feature"
+                                  description="Controls the JSON-LD schema type published with this article for Google rich results."
+                                />
+                              )}
                             </BlockStack>
 
                             {/* Meta Robots */}
@@ -2060,14 +2106,23 @@ export default function PostEditor() {
                                 }))}
                                 disabled={!features.xml_sitemap?.enabled}
                               />
-                              <Text variant="bodySm" tone="subdued">
-                                Shopify's own sitemap.xml can't exclude individual posts — this
-                                only takes effect on the app's separate sitemap, found under
-                                Settings → Sitemap & Indexing, which you submit to Search Console/
-                                Bing instead. Independent of Meta robots above — a post can stay
-                                indexable while still being left out of that sitemap. Noindex'd
-                                posts are always excluded regardless of this setting.
-                              </Text>
+                              {features.xml_sitemap?.enabled ? (
+                                <Text variant="bodySm" tone="subdued">
+                                  Shopify's own sitemap.xml can't exclude individual posts — this
+                                  only takes effect on the app's separate sitemap, found under
+                                  Settings → Sitemap & Indexing, which you submit to Search Console/
+                                  Bing instead. Independent of Meta robots above — a post can stay
+                                  indexable while still being left out of that sitemap. Noindex'd
+                                  posts are always excluded regardless of this setting.
+                                </Text>
+                              ) : (
+                                <UpgradePrompt
+                                  onUpgrade={handleUpgradeNow}
+                                  requiredPlan="Pro"
+                                  title="XML sitemap control — Pro feature"
+                                  description="Exclude individual posts from the app's sitemap, submitted separately to Search Console/Bing."
+                                />
+                              )}
                             </BlockStack>
                           </BlockStack>
                         </>
@@ -2077,25 +2132,32 @@ export default function PostEditor() {
                 </Card>
 
                 {/* Custom CSS (plan-gated) */}
-                {features.custom_css?.enabled && (
-                  <Card>
-                    <Box padding="400">
-                      <BlockStack gap="300">
-                        <Text variant="headingSm" as="h2">Custom CSS</Text>
-                        <TextField
-                          label="Custom CSS"
-                          labelHidden
-                          value={post.customCss || ""}
-                          onChange={handleField("customCss")}
-                          multiline={6}
-                          placeholder="/* Add custom styles for this article */"
-                          monospaced
-                          autoComplete="off"
+                <Card>
+                  <Box padding="400">
+                    <BlockStack gap="300">
+                      <Text variant="headingSm" as="h2">Custom CSS</Text>
+                      {!features.custom_css?.enabled && (
+                        <UpgradePrompt
+                          onUpgrade={handleUpgradeNow}
+                          requiredPlan="Starter"
+                          title="Custom CSS is a Starter feature"
+                          description="Add custom styles to this specific article."
                         />
-                      </BlockStack>
-                    </Box>
-                  </Card>
-                )}
+                      )}
+                      <TextField
+                        label="Custom CSS"
+                        labelHidden
+                        value={post.customCss || ""}
+                        onChange={handleField("customCss")}
+                        multiline={6}
+                        disabled={!features.custom_css?.enabled}
+                        placeholder="/* Add custom styles for this article */"
+                        monospaced
+                        autoComplete="off"
+                      />
+                    </BlockStack>
+                  </Box>
+                </Card>
               </BlockStack>
             </Layout.Section>
 
@@ -2110,6 +2172,14 @@ export default function PostEditor() {
                   <Box padding="400">
                     <BlockStack gap="300">
                       <Text variant="headingSm" as="h2">Visibility</Text>
+                      {!features.post_scheduling?.enabled && (
+                        <UpgradePrompt
+                          onUpgrade={handleUpgradeNow}
+                          requiredPlan="Pro"
+                          title="Blog Post Scheduling is a Pro feature"
+                          description="Upgrade to Pro to schedule articles for future publication."
+                        />
+                      )}
                       <BlockStack gap="200">
                         <RadioButton
                           label="Hidden (Draft)"
@@ -2135,9 +2205,7 @@ export default function PostEditor() {
                           helpText={
                             post.status === "scheduled" && post.publishedAt
                               ? `Scheduled for ${formatInShopTz(post.publishedAt)} (${shopTimezone})`
-                              : !features.post_scheduling?.enabled
-                                ? "Available on Starter and above"
-                                : null
+                              : null
                           }
                           checked={visibilityMode === "schedule"}
                           disabled={!features.post_scheduling?.enabled}
@@ -2437,10 +2505,12 @@ export default function PostEditor() {
                           excludePostId={post.id}
                         />
                       ) : (
-                        <Text variant="bodySm" tone="subdued">
-                          Related posts are picked automatically on this plan. Upgrade to Starter
-                          or above to manually choose which articles show here.
-                        </Text>
+                        <UpgradePrompt
+                          onUpgrade={handleUpgradeNow}
+                          requiredPlan="Starter"
+                          title="Related posts are picked automatically on this plan"
+                          description="Upgrade to manually choose which articles show here."
+                        />
                       )}
                     </BlockStack>
                   </Box>
@@ -2544,6 +2614,18 @@ export default function PostEditor() {
         error={scheduleModalError}
         onCancel={() => { setShowScheduleLiveWarning(false); setScheduleModalError(null); }}
         loading={isScheduling}
+      />
+
+      {/* ─── "Upgrade Now" With Unsaved Changes ─── */}
+      <ConfirmActionModal
+        open={showUpgradeSaveConfirm}
+        title="Save changes before upgrading?"
+        body="You have unsaved changes on this article. Save them before going to the Billing page, or cancel to keep editing."
+        confirmText="Save & Continue"
+        confirmTone="primary"
+        onConfirm={confirmSaveThenUpgrade}
+        onCancel={() => setShowUpgradeSaveConfirm(false)}
+        loading={isSavingForUpgrade}
       />
 
       {!isEditing && (
