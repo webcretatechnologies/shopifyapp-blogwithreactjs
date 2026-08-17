@@ -257,12 +257,14 @@ export default function SyncDashboard() {
               size="slim"
               icon={RefreshIcon}
               loading={isSyncing}
-              disabled={!post.shopifyArticle?.shopifyBlogId}
+              disabled={!post.shopifyArticle?.shopifyBlogId || !features.sync_actions?.enabled}
               onClick={() => forceSync(post)}
               title={
-                !post.shopifyArticle?.shopifyBlogId
-                  ? "Post is not linked to a Shopify blog"
-                  : "Force sync to Shopify"
+                !features.sync_actions?.enabled
+                  ? "Force Sync is available on Starter and above"
+                  : !post.shopifyArticle?.shopifyBlogId
+                    ? "Post is not linked to a Shopify blog"
+                    : "Force sync to Shopify"
               }
             >
               Sync
@@ -372,8 +374,8 @@ export default function SyncDashboard() {
             <Layout.Section>
               <UpgradePrompt
                 requiredPlan="Starter"
-                title="Reconcile All and Resync All Posts are Starter features"
-                description="Force Sync on individual posts stays available on every plan."
+                title="Force Sync, Reconcile All, and Resync All Posts are Starter features"
+                description="Your posts still stay in sync automatically — Shopify-side edits keep pulling in on every plan. Upgrade to manually push, bulk-resync, or reconcile posts on demand."
               />
             </Layout.Section>
           )}

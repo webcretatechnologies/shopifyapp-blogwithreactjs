@@ -1780,6 +1780,9 @@ router.post("/:id/force-sync", async (req, res) => {
   try {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
+    if (!isFeatureEnabled(shop.planKey, "sync_actions")) {
+      return res.status(403).json({ error: "Force Sync is available on Starter and above. Please upgrade to use this feature." });
+    }
 
     const post = await prisma.post.findFirst({
       where: { id: parseInt(req.params.id), shopId: shop.id },

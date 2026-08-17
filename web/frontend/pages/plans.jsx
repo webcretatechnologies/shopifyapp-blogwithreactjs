@@ -20,6 +20,7 @@ import { CheckIcon } from "@shopify/polaris-icons";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { smartBackAction } from "../utils/smartBack";
+import ConfirmActionModal from "../components/ConfirmActionModal";
 
 function intervalSuffix(interval) {
   return interval === "ANNUAL" ? "/year" : "/month";
@@ -133,6 +134,23 @@ export default function Plans() {
     setCouponError("");
   };
 
+  // Downgrading (including to Free) previously fired immediately on click — no confirmation step,
+  // unlike upgrades which at least go through Shopify's own approval screen. A downgrade takes
+  // effect immediately and can mean losing access to paid features or cancelling the real Shopify
+  // subscription outright, so it gets the same "are you sure" treatment as other consequential
+  // actions in this app (ConfirmActionModal).
+  const [downgradeTarget, setDowngradeTarget] = useState(null);
+
+  const requestDowngrade = (plan) => setDowngradeTarget(plan);
+  const cancelDowngrade = () => setDowngradeTarget(null);
+  const confirmDowngrade = async () => {
+    if (!downgradeTarget) return;
+    const succeeded = await handleSubscribe(downgradeTarget.name);
+    // Keep the modal open on failure so its own error banner is actually visible — the page-level
+    // Banner behind it is invisible while a modal overlay is open (see ConfirmActionModal's docblock).
+    if (succeeded) setDowngradeTarget(null);
+  };
+
   const handleSubscribe = async (planName) => {
     setError("");
     setIsSubmitting(true);
@@ -156,12 +174,14 @@ export default function Plans() {
           await fetchBillingData();
           showPlanToast("You're now on the Free plan");
         }
-      } else {
-        const err = await res.json();
-        setError(err.error || "Failed to process subscription.");
+        return true;
       }
+      const err = await res.json();
+      setError(err.error || "Failed to process subscription.");
+      return false;
     } catch (err) {
       console.error(err);
+      return false;
     } finally {
       setIsSubmitting(false);
       setSubmittingTier(null);
@@ -455,7 +475,11 @@ export default function Plans() {
                           tone={isCurrent ? "success" : undefined}
                           loading={isSubmitting && submittingTier === plan.name}
                           disabled={isCurrent || isSubmitting}
-                          onClick={() => handleSubscribe(plan.name)}
+                          onClick={() =>
+                            price > currentPrice
+                              ? handleSubscribe(plan.name)
+                              : requestDowngrade(plan)
+                          }
                         >
                           {isCurrent
                             ? "Current Plan"
@@ -474,6 +498,41 @@ export default function Plans() {
         </>
         )}
       </Layout>
+
+      <ConfirmActionModal
+        open={!!downgradeTarget}
+        title={
+          downgradeTarget && Number(downgradeTarget.price) === 0
+            ? "Downgrade to the Free plan?"
+            : `Downgrade to ${downgradeTarget?.title} Plan?`
+        }
+        body={
+          downgradeTarget && (
+            <BlockStack gap="200">
+              <Text as="p" variant="bodyMd">
+                This takes effect immediately — you'll lose access to any {currentPlanTitle}-only
+                features right away, not at the end of your current billing period.
+              </Text>
+              {Number(downgradeTarget.price) === 0 && (
+                <Text as="p" variant="bodyMd">
+                  Your current Shopify subscription will be cancelled and you won't be billed
+                  again.
+                </Text>
+              )}
+              <Text as="p" variant="bodyMd" tone="subdued">
+                Already-published articles stay live either way — this only affects what you can
+                do going forward (article limits, blocked features, etc.).
+              </Text>
+            </BlockStack>
+          )
+        }
+        confirmText={`Downgrade to ${downgradeTarget?.title || ""} Plan`}
+        confirmTone="warning"
+        onConfirm={confirmDowngrade}
+        onCancel={cancelDowngrade}
+        loading={isSubmitting && submittingTier === downgradeTarget?.name}
+        error={error || undefined}
+      />
     </Page>
   );
 }

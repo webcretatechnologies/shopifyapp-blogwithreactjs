@@ -285,14 +285,19 @@ app.post(
               const shopRecord = await prisma.shop.findUnique({ where: { domain: shop } });
               if (shopRecord) {
                 const isActive = status === 'ACTIVE';
-                
-                // Deactivate previous plans
-                if (isActive) {
-                  await prisma.appPlan.updateMany({
-                    where: { shopId: shopRecord.id, isActive: true },
-                    data: { isActive: false }
-                  });
-                }
+
+                // Deactivate previous plans — unconditionally, not just when the new status is
+                // ACTIVE. Previously this only ran on activation, so a CANCELLED (or EXPIRED/
+                // DECLINED) event left whatever AppPlan row was last active still marked
+                // isActive:true forever — a zombie row that billing.js's /check fallback query
+                // (`appPlan.findFirst({ isActive: true })`, used whenever Shopify itself reports
+                // no live subscription) would then trust over the real, correct "no plan" state,
+                // making a merchant who'd genuinely cancelled/downgraded still show as being on
+                // their old paid plan.
+                await prisma.appPlan.updateMany({
+                  where: { shopId: shopRecord.id, isActive: true },
+                  data: { isActive: false }
+                });
 
                 await prisma.appPlan.create({
                   data: {

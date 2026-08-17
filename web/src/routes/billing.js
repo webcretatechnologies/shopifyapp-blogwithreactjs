@@ -167,6 +167,43 @@ router.post("/request", async (req, res) => {
     const { plan, host, couponCode } = req.body;
 
     if (plan === "free") {
+      // Previously this just returned success without doing anything — no real Shopify
+      // subscription was ever cancelled and shop.planKey never changed, so a merchant on a paid
+      // plan who clicked "Downgrade to Free" saw a success toast while silently staying on their
+      // current plan (and kept being billed for it). Actually cancel whatever subscription is
+      // live, same as any other billing-state change, before reporting success.
+      const client = new shopify.api.clients.Graphql({ session });
+      const activeRes = await client.request(`
+        query {
+          currentAppInstallation {
+            activeSubscriptions { id status }
+          }
+        }
+      `);
+      const activeSub = (activeRes.data?.currentAppInstallation?.activeSubscriptions || [])
+        .find((sub) => sub.status === "ACTIVE");
+
+      if (activeSub) {
+        const cancelRes = await client.request(`
+          mutation CancelSubscription($id: ID!) {
+            appSubscriptionCancel(id: $id) {
+              appSubscription { id status }
+              userErrors { field message }
+            }
+          }
+        `, { variables: { id: activeSub.id } });
+
+        const userErrors = cancelRes.data?.appSubscriptionCancel?.userErrors;
+        if (userErrors?.length > 0) {
+          return res.status(400).json({ error: userErrors[0].message });
+        }
+      }
+
+      const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
+      if (shop && shop.planKey !== "free") {
+        await prisma.shop.update({ where: { id: shop.id }, data: { planKey: "free" } });
+      }
+
       return res.status(200).json({ confirmationUrl: null, isFree: true });
     }
 
