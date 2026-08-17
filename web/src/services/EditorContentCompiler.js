@@ -256,17 +256,19 @@ export class EditorContentCompiler {
     if (!contentHtml) return "";
 
     // planKey null (no shop context resolved, e.g. an editor session with no domain) is treated
-    // as "free" by isFeatureEnabled — the safe default for every gate below, never "everything
-    // enabled".
+    // as "free" by isFeatureEnabled — the safe default for the device-visibility gate below, never
+    // "everything enabled".
+    //
+    // toc/faq/product/product_card/product_sidebar/featured_product/product_switcher/
+    // product_slider are deliberately NOT re-checked here (they used to be, each with its own
+    // Entitled flag gating this same compile step) — gatekeeping only applies at the point a
+    // merchant ADDS one of these blocks (BlockPicker.jsx's BLOCK_TYPE_GATE, which blocks insertion
+    // when not entitled). A block that's already in an article keeps rendering exactly as before
+    // even after a downgrade; re-checking entitlement on every compile meant a merchant who added
+    // an FAQ/TOC/product block while on Starter, then downgraded to Free, would see that block
+    // silently go blank on the very next sync — the block was gone, not just un-addable going
+    // forward, which is a different and much harsher policy than intended.
     const deviceVisibilityEntitled = isFeatureEnabled(planKey, "device_visibility");
-    const tocEntitled = isFeatureEnabled(planKey, "toc");
-    const faqEntitled = isFeatureEnabled(planKey, "faq");
-    const productEntitled = isFeatureEnabled(planKey, "product");
-    const productCardEntitled = isFeatureEnabled(planKey, "product_card");
-    const productSidebarEntitled = isFeatureEnabled(planKey, "product_sidebar");
-    const featuredProductEntitled = isFeatureEnabled(planKey, "featured_product");
-    const productSwitcherEntitled = isFeatureEnabled(planKey, "product_switcher");
-    const productSliderEntitled = isFeatureEnabled(planKey, "product_slider");
 
     // Reset and fetch store currency for this compile run
     _storeCurrency = null;
@@ -358,11 +360,10 @@ export class EditorContentCompiler {
             break;
           }
           case "TableOfContents":
-            // toc is a Starter+ gate. Nothing previously enforced it — the block was fully
-            // ungated in practice despite PLAN_DEFAULTS recording Free as false — so a Free shop
-            // that inserted one would silently keep getting it rendered forever. Render as empty
-            // rather than leaving the div untouched, so it's actually gone from the output.
-            compiledHtml = tocEntitled ? this.renderTableOfContents(attrs, allHeadings) : "";
+            // toc is a Starter+ gate, enforced at insertion (BlockPicker.jsx), not here — see the
+            // docblock above compile()'s entitlement consts for why an already-added block always
+            // keeps rendering regardless of the shop's current plan.
+            compiledHtml = this.renderTableOfContents(attrs, allHeadings);
             break;
           case "HeroSection":
             compiledHtml = this.renderHero(attrs);
@@ -394,33 +395,32 @@ export class EditorContentCompiler {
             compiledHtml = this.renderCtaButton(attrs);
             break;
           // product/product_sidebar/featured_product/product_switcher/product_slider are all
-          // Starter+ gates (unified single unlock, per PLAN_DEFAULTS). Previously fully ungated
-          // in practice — a Free shop that inserted a product block via the editor kept getting
-          // it rendered on the real page forever. Rendered as empty rather than left untouched
-          // so an unentitled block is actually gone from the output, matching the toc posture.
+          // Starter+ gates (unified single unlock, per PLAN_DEFAULTS), enforced at insertion
+          // (BlockPicker.jsx) — not re-checked here, same reasoning as the TableOfContents case
+          // above: an already-added block keeps rendering regardless of the shop's current plan.
           case "buyButton":
           case "BuyButton":
           case "product":
           case "Product":
-            compiledHtml = productEntitled ? this.renderBuyButton(attrs) : "";
+            compiledHtml = this.renderBuyButton(attrs);
             break;
           case "product_sidebar":
           case "ProductSidebar":
-            compiledHtml = productSidebarEntitled ? this.renderBuyButton(attrs) : "";
+            compiledHtml = this.renderBuyButton(attrs);
             break;
           case "featured_product":
           case "FeaturedProduct":
-            compiledHtml = featuredProductEntitled ? this.renderBuyButton(attrs) : "";
+            compiledHtml = this.renderBuyButton(attrs);
             break;
           case "productGrid":
           case "ProductGrid":
           case "product_switcher":
           case "ProductSwitcher":
-            compiledHtml = productSwitcherEntitled ? await this.renderProductGrid(attrs, shopifySession, shopifyClient) : "";
+            compiledHtml = await this.renderProductGrid(attrs, shopifySession, shopifyClient);
             break;
           case "product_slider":
           case "ProductSlider":
-            compiledHtml = productSliderEntitled ? await this.renderProductSlider(attrs, shopifySession, shopifyClient) : "";
+            compiledHtml = await this.renderProductSlider(attrs, shopifySession, shopifyClient);
             break;
           case "collection":
           case "Collection":
@@ -439,9 +439,9 @@ export class EditorContentCompiler {
             break;
           case "productCard":
           case "ProductCard":
-            // Now part of the Shopify Product Blocks family (Starter+) — previously ungated,
-            // meaning any plan could insert and publish it regardless of entitlement.
-            compiledHtml = productCardEntitled ? this.renderProductCard(attrs) : "";
+            // Part of the Shopify Product Blocks family (Starter+), gated at insertion only —
+            // see the docblock above compile()'s entitlement consts.
+            compiledHtml = this.renderProductCard(attrs);
             break;
           case "htmlBlock":
           case "HtmlBlock":
@@ -455,7 +455,9 @@ export class EditorContentCompiler {
           case "FaqBlock":
           case "faq":
           case "FAQ":
-            compiledHtml = faqEntitled ? this.renderFaqBlock(attrs) : "";
+            // faq is a Starter+ gate, enforced at insertion only — see the docblock above
+            // compile()'s entitlement consts.
+            compiledHtml = this.renderFaqBlock(attrs);
             break;
           default:
             // Unsupported/container types (columnLayout, column, calloutBlock,
@@ -533,6 +535,27 @@ export class EditorContentCompiler {
   // Mirrors compileBlocksToHtml.js's "TableOfContents" case (non-collapsible list only — the
   // reconcile-echo path this serves has no client-side JS runtime to power the collapsible
   // <details> chevron interaction, so it always renders the plain list variant).
+  // Builds a parent/child tree from a flat, document-order heading list, exactly mirroring
+  // TableOfContentsPreview.jsx's buildTocTree() and compileBlocksToHtml.js's buildTocNodes() —
+  // a heading becomes a child of the nearest preceding heading with a strictly lower level.
+  static buildTocTree(headings) {
+    const rootNodes = [];
+    const stack = [];
+    headings.forEach((h) => {
+      const node = { ...h, children: [] };
+      while (stack.length > 0 && stack[stack.length - 1].level >= h.level) {
+        stack.pop();
+      }
+      if (stack.length === 0) {
+        rootNodes.push(node);
+      } else {
+        stack[stack.length - 1].children.push(node);
+      }
+      stack.push(node);
+    });
+    return rootNodes;
+  }
+
   static renderTableOfContents(attrs, allHeadings) {
     const title = attrs.title || "Table of Contents";
     const levels = attrs.levels || [2, 3];
@@ -544,15 +567,30 @@ export class EditorContentCompiler {
     if (matching.length === 0) return "";
 
     const minLevel = Math.min(...matching.map((h) => h.level));
-    const Tag = listStyle === "numbered" ? "ol" : "ul";
-    const listType = listStyle === "numbered" ? "decimal" : "disc";
+    const tree = this.buildTocTree(matching);
 
-    const itemsHtml = matching
-      .map((h) => {
-        const isMain = h.level === minLevel;
-        return `<li style="font-size: 14px; margin: 6px 0; display: list-item;"><a href="#${h.id}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};">${h.text}</a></li>`;
-      })
-      .join("\n");
+    // Mirrors compileBlocksToHtml.js's renderTocNodesHtml() — nested sub-headings get their own
+    // indented <ol>/<ul> (lower-alpha/circle) instead of continuing the parent's flat numbering.
+    const renderNodes = (items, isRoot) => {
+      if (!items || items.length === 0) return "";
+      const Tag = listStyle === "numbered" ? "ol" : "ul";
+      const paddingLeft = isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px";
+      const marginTop = isRoot ? "0" : "6px";
+      const marginBottom = isRoot ? "0" : "2px";
+      const listType = listStyle === "numbered" ? (isRoot ? "decimal" : "lower-alpha") : (isRoot ? "disc" : "circle");
+
+      const itemsHtml = items
+        .map((h) => {
+          const isMain = h.level === minLevel;
+          const childrenHtml = h.children && h.children.length > 0 ? renderNodes(h.children, false) : "";
+          return `<li style="font-size: 14px; margin: 6px 0; display: list-item;"><a href="#${h.id}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};">${h.text}</a>${childrenHtml}</li>`;
+        })
+        .join("\n");
+
+      return `<${Tag} style="margin: ${marginTop} 0 ${marginBottom} 0; padding-left: ${paddingLeft}; list-style-type: ${listType};">\n${itemsHtml}\n</${Tag}>`;
+    };
+
+    const listHtml = renderNodes(tree, true);
 
     // Matches the canvas's onMouseEnter/onMouseLeave underline toggle (TableOfContentsPreview.jsx)
     // and compileBlocksToHtml.js's own hover rule — inline `style` attributes can't express
@@ -563,9 +601,7 @@ export class EditorContentCompiler {
 
     return `${hoverStyle}<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
   <div style="font-weight: 700; font-size: 16px; color: ${textColor}; margin-bottom: 12px;">${title}</div>
-  <${Tag} style="margin: 0; padding-left: 18px; list-style-type: ${listType};">
-${itemsHtml}
-  </${Tag}>
+${listHtml}
 </div>`;
   }
 
