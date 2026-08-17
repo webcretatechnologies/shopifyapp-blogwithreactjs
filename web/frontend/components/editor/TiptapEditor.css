@@ -91,6 +91,22 @@
   height: 0;
 }
 
+/* Explicit <p> margin — without this, unselected blocks (RichTextBlockPreview's static
+   dangerouslySetInnerHTML render, which borrows the .ProseMirror class name for styling only,
+   never mounting a real editor instance) fall back to the browser's default UA-stylesheet <p>
+   margin (~1em top/bottom) until the moment *any* Tiptap editor first mounts anywhere on the
+   page and injects its own base stylesheet globally — which then retroactively tightens every
+   .ProseMirror p on the page, including blocks never directly clicked. That's why blocks showed
+   large gaps by default but rendered tight the instant any block was selected. Setting it here
+   removes the dependency on that lazy, editor-instance-triggered injection entirely. */
+.tiptap-content .ProseMirror p {
+  margin: 0 0 0.5em 0;
+}
+
+.tiptap-content .ProseMirror p:last-child {
+  margin-bottom: 0;
+}
+
 .tiptap-content h1, .tiptap-content .ProseMirror h1 { font-size: 2em; font-weight: 700; margin: 0.5em 0; }
 .tiptap-content h2, .tiptap-content .ProseMirror h2 { font-size: 1.5em; font-weight: 700; margin: 0.5em 0; }
 .tiptap-content h3, .tiptap-content .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin: 0.5em 0; }
