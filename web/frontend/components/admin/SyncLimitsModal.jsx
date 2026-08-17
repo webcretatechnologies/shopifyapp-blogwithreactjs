@@ -3,7 +3,7 @@ import { Modal, Text, BlockStack, FormLayout, TextField } from "@shopify/polaris
 import { isLimitKey } from "./planLimitKeys";
 
 /**
- * Numeric usage caps (article_limit, blog, blog_select, section_limit) for one plan — the
+ * Numeric usage caps (article_limit, blog, blog_select, max_blogs) for one plan — the
  * "Sync Limits" action on a plan card. Plain labeled number fields with one batch "Sync Limits"
  * action, same posture as Sync Features. Same underlying PlanFeature rows/API, just the
  * numeric-limit partition instead of the boolean-toggle one — `enabled` isn't exposed here since

@@ -414,6 +414,7 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
                       value={editingCoupon.percentOff}
                       onChange={set("percentOff")}
                       type="number"
+                      max={99}
                       suffix="%"
                       autoComplete="off"
                       helpText="Capped at 99% — Shopify rejects a $0 subscription."

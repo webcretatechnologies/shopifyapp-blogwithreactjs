@@ -17,7 +17,7 @@ async function main() {
       sortOrder: 1,
     },
     {
-      name: "Blogger Starter",
+      name: "Starter Plan",
       title: "Starter",
       price: 4.99,
       description: "Built for growing stores",
@@ -25,7 +25,7 @@ async function main() {
       sortOrder: 2,
     },
     {
-      name: "Blogger Pro",
+      name: "Pro Plan",
       title: "Pro",
       price: 9.99,
       description: "For professional content creators",

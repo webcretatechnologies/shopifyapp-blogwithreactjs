@@ -32,6 +32,7 @@ import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { smartBackAction } from "../utils/smartBack";
 import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
+import { APP_NAME } from "../utils/appName";
 
 const LAYOUT_OPTIONS = [
   { label: "Full width", value: "full" },
@@ -82,6 +83,7 @@ const DEFAULT_SETTINGS = {
   defaultAuthor: "",
   customHeaderCode: "",
   customFooterCode: "",
+  showPoweredByBadge: false,
 };
 
 const SAVE_BAR_ID = "settings-save-bar";
@@ -739,11 +741,18 @@ export default function Settings() {
                   title="Custom code injection"
                   trailing={<Badge tone="attention">Advanced</Badge>}
                 >
+                  {!features.custom_code_injection?.enabled && (
+                    <Banner tone="info">
+                      Custom Global Header &amp; Footer is a Pro plan feature. Upgrade your plan to
+                      use it.
+                    </Banner>
+                  )}
                   <TextField
                     label="Custom header code"
                     value={settings.customHeaderCode}
                     onChange={set("customHeaderCode")}
                     multiline={4}
+                    disabled={!features.custom_code_injection?.enabled}
                     placeholder="<!-- Paste custom CSS or JavaScript to show above every article -->"
                     autoComplete="off"
                     helpText="Shown at the top of every published article, and applies live within seconds of saving — no need to resync individual posts. Note: this is part of the article body, not your theme's <head> — apps aren't permitted to edit theme files directly."
@@ -754,11 +763,32 @@ export default function Settings() {
                     value={settings.customFooterCode}
                     onChange={set("customFooterCode")}
                     multiline={4}
+                    disabled={!features.custom_code_injection?.enabled}
                     placeholder="<!-- Paste custom scripts to show below every article -->"
                     autoComplete="off"
                     helpText="Shown at the end of every published article, and applies live within seconds of saving — no need to resync individual posts."
                     monospaced
                   />
+                </SectionCard>
+              </Layout.Section>
+
+              <Layout.Section>
+                <SectionCard
+                  title="Branding"
+                  trailing={!features.remove_branding?.enabled ? <Badge tone="attention">Starter+</Badge> : undefined}
+                >
+                  {!features.remove_branding?.enabled ? (
+                    <Banner tone="info">
+                      {`Removing the "Powered by ${APP_NAME}" badge is a Starter plan feature. Upgrade your plan to control whether it's shown.`}
+                    </Banner>
+                  ) : (
+                    <Checkbox
+                      label={`Show "Powered by ${APP_NAME}" badge on published articles`}
+                      checked={settings.showPoweredByBadge}
+                      onChange={set("showPoweredByBadge")}
+                      helpText="Your plan lets you remove this badge — it's hidden by default. Check this if you'd like to keep showing it anyway."
+                    />
+                  )}
                 </SectionCard>
               </Layout.Section>
 

@@ -22,7 +22,7 @@
     "welcome": "Bon retour!",
     "overview": "Voici l'aperçu de votre blog.",
     "setupGuide": "Guide de configuration",
-    "setupDesc": "Suivez ces étapes pour intégrer pleinement Blogger à votre vitrine.",
+    "setupDesc": "Suivez ces étapes pour intégrer pleinement {{appName}} à votre vitrine.",
     "embedApp": "Intégrer le bloc d'application",
     "embedDesc": "Activez le bloc d'intégration de l'application dans votre éditeur de thème.",
     "writePost": "Rédiger le premier article",

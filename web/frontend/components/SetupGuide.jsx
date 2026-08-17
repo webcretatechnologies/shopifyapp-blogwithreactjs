@@ -3,6 +3,7 @@ import { Card, Box, Text, BlockStack, InlineStack, ProgressBar, Button, Icon, Di
 import { CheckCircleIcon, XIcon, ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
 import { useNavigate } from "react-router-dom";
 import { metaRobotsActivateUrl, analyticsTrackerActivateUrl } from "../utils/themeEmbedUtils";
+import { APP_NAME } from "../utils/appName";
 
 // Fixed width for the leading icon/number column so every row's title text starts at the exact
 // same x-position, regardless of whether that row shows a numbered circle or a checkmark icon.
@@ -33,7 +34,7 @@ export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive
   const steps = [
     {
       id: 1,
-      title: "Activate Blogger Analytics on your storefront",
+      title: `Activate ${APP_NAME} Analytics on your storefront`,
       description: embedUnsupportedCopy
         ? "Your current theme doesn't support app embeds (requires Online Store 2.0). Switch to an Online Store 2.0 theme to enable live visitor tracking."
         : "Enable the Blog Analytics Tracker App Embed in your Theme Editor to start collecting live visitor data.",

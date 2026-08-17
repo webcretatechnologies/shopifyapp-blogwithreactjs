@@ -37,7 +37,6 @@ const PLAN_DEFAULTS = {
     hero: { enabled: true, limit: null },
     announcement: { enabled: true, limit: null },
     custom_css: { enabled: false, limit: null },
-    custom_js: { enabled: false, limit: null },
     article_limit: { enabled: true, limit: 5 },
     blog_select: { enabled: false, limit: null },
     toc: { enabled: false, limit: null },
@@ -82,7 +81,6 @@ const PLAN_DEFAULTS = {
     hero: { enabled: true, limit: null },
     announcement: { enabled: true, limit: null },
     custom_css: { enabled: true, limit: null },
-    custom_js: { enabled: false, limit: null },
     article_limit: { enabled: true, limit: 20 },
     blog_select: { enabled: true, limit: 1 },
     toc: { enabled: true, limit: null },
@@ -127,7 +125,6 @@ const PLAN_DEFAULTS = {
     hero: { enabled: true, limit: null },
     announcement: { enabled: true, limit: null },
     custom_css: { enabled: true, limit: null },
-    custom_js: { enabled: true, limit: null },
     article_limit: { enabled: true, limit: null },
     blog_select: { enabled: true, limit: null },
     toc: { enabled: true, limit: null },
@@ -172,7 +169,6 @@ const PLAN_DEFAULTS = {
     hero: { enabled: true, limit: null },
     announcement: { enabled: true, limit: null },
     custom_css: { enabled: true, limit: null },
-    custom_js: { enabled: true, limit: null },
     article_limit: { enabled: true, limit: null },
     blog_select: { enabled: true, limit: null },
     toc: { enabled: true, limit: null },
@@ -285,24 +281,6 @@ export function getArticleLimit(planKey) {
   return getFeatureLimit(planKey, "article_limit");
 }
 
-// DB-driven (PlanFeature "section_limit" row per plan, editable from Super Admin's Sync Limits
-// modal) — the hardcoded map is now only a last-resort fallback if that row is somehow missing,
-// not the primary source. Previously this was hardcoded here with no admin UI to change it.
-const FALLBACK_SECTION_LIMITS = { free: 5, starter: 15, pro: null, business: null };
-
-export function maxSectionsForPlan(planKey) {
-  const features = getFeaturesForPlan(planKey);
-  if (features && "section_limit" in features) {
-    return features.section_limit?.limit ?? null;
-  }
-  const plan = (planKey || "free").toLowerCase().trim();
-  let key = "free";
-  if (plan.includes("starter")) key = "starter";
-  else if (plan.includes("pro")) key = "pro";
-  else if (plan.includes("business")) key = "business";
-  return FALLBACK_SECTION_LIMITS[key] ?? null;
-}
-
 function resolvePlanBucket(planKey) {
   const plan = (planKey || "free").toLowerCase().trim();
   if (plan.includes("starter")) return "starter";
@@ -312,66 +290,104 @@ function resolvePlanBucket(planKey) {
 }
 
 // The merchant pricing page's bullet list is the merchant's own exact, literal, hand-specified
-// copy — not auto-composed from raw featureKey labels. Each tier below is additive ("Starter =
+// copy — not auto-composed from raw featureKey labels. Each tier is additive ("Starter =
 // everything in Free, plus ...", "Pro = everything in Starter, plus ..."), matching how the page
-// itself presents it with an "All X Plan features +" banner. Article/section-count rows use the
-// real live limit from PlanFeature so they never drift if an admin changes a cap later; every
-// other row is fixed text, deliberately — the merchant asked for exact wording and an exact count
-// per tier, not an auto-generated summary of every underlying toggle.
-const TIER_ROWS = {
-  free: [
-    () => "Drag & Drop Builder",
-    (f) => `Up to ${f.article_limit?.limit ?? 5} Articles`,
-    (f) => `Up to ${f.section_limit?.limit ?? 15} Sections Per Article`,
-    () => "Analytics Dashboard",
-    () => "SEO Meta (basic)",
-    () => "Author",
-    () => "Blog Management",
-    () => "Blog Templates",
-    () => "Sync Theme Colors",
-    () => "Blog Comments",
-  ],
-  starter: [
-    (f) => `Up to ${f.article_limit?.limit ?? 20} Articles`,
-    (f) => `Up to ${f.section_limit?.limit ?? 30} Sections Per Article`,
-    () => "Clone Article",
-    () => "Shopify Product Blocks",
-    () => "FAQ Block",
-    () => "Table Of Content",
-    () => "2 Way Sync",
-    () => "Meta Robots & Rich Snippets",
-    () => "Custom CSS",
-    () => "Analytics Dashboard",
-    () => "Related Posts",
-  ],
-  pro: [
-    () => "Unlimited Articles",
-    () => "Unlimited Sections Per Article",
-    () => "Blog Post Scheduling",
-    () => "Multi Language Translation",
-    () => "Hide Sections Based on Device",
-    () => "XML sitemap",
-    () => "Custom Global Header & Footer",
-    () => "Advanced Analytics",
-  ],
+// itself presents it with an "All X Plan features +" banner.
+//
+// A bullet is NOT pinned to a fixed tier. Each entry in MASTER_BULLETS is `{ label, keys }` —
+// `keys` are the PlanFeature featureKey(s) it represents (several keys, e.g. "Shopify Product
+// Blocks", only count as satisfied when EVERY one of them is enabled); `keys: []` marks a bullet
+// with no backing gate at all (always-on copy like "Drag & Drop Builder") that's simply pinned to
+// Free, where it's written. Every other bullet is shown on whichever tier is the FIRST (cheapest,
+// scanning Free -> Starter -> Pro) to have it enabled — never on more than one tier at once, and
+// never on none if it's enabled anywhere. This is what makes Sync Features fully live and
+// two-way: disabling a bullet's keys on the tier it's currently shown on doesn't delete it from
+// the page, it re-appears on the next tier up that still has it enabled (e.g. disable "FAQ Block"
+// on Starter while it's still enabled on Pro — it now shows on Pro instead of vanishing);
+// enabling it on a cheaper tier pulls it back down. Disabling it everywhere is the only way to
+// make it disappear entirely, which is correct — there's genuinely nothing to sell at that point.
+//
+// The article-count bullet is handled separately per tier (own wording, own live limit) since
+// it's numeric and always present, never a moving boolean.
+const ARTICLE_LIMIT_RENDER = {
+  free: (f) => `Up to ${f.article_limit?.limit ?? 5} Articles`,
+  starter: (f) => `Up to ${f.article_limit?.limit ?? 20} Articles`,
+  pro: () => "Unlimited Articles",
 };
-TIER_ROWS.business = TIER_ROWS.pro; // dead tier, mirrors pro
+ARTICLE_LIMIT_RENDER.business = ARTICLE_LIMIT_RENDER.pro;
 
-/**
- * Builds the merchant-facing "what's included" bullet list for one plan in isolation — the full
- * literal TIER_ROWS list for that plan's bucket (not a diff against any other plan). Used by
- * Super Admin's plan cards, where each plan needs to be inspected on its own.
- */
-export function buildFeatureBulletsForPlan(planKey) {
-  const features = getFeaturesForPlan(planKey);
-  const bucket = resolvePlanBucket(planKey);
-  return TIER_ROWS[bucket].map((row) => row(features));
+const PRICE_ORDER = ["free", "starter", "pro"];
+
+const MASTER_BULLETS = [
+  { label: "Drag & Drop Builder", keys: [] },
+  { label: "Analytics Dashboard", keys: ["analytics_dashboard"] },
+  { label: "SEO Meta (basic)", keys: [] },
+  { label: "Author", keys: [] },
+  { label: "Blog Management", keys: [] },
+  { label: "Blog Templates", keys: [] },
+  { label: "Sync Theme Colors", keys: ["theme_style_sync"] },
+  { label: "Blog Comments", keys: [] },
+  { label: "Import Shopify Blogs", keys: [] },
+  { label: "Clone Article", keys: ["clone_article"] },
+  { label: "Shopify Product Blocks", keys: ["product", "product_text", "product_sidebar", "product_slider", "product_switcher", "featured_product"] },
+  { label: "FAQ Block", keys: ["faq"] },
+  { label: "Table Of Content", keys: ["toc"] },
+  { label: "2 Way Sync", keys: ["sync_actions"] },
+  { label: "Meta Robots & Rich Snippets", keys: ["meta_robots", "rich_snippets"] },
+  { label: "Custom CSS", keys: ["custom_css"] },
+  { label: "Related Posts", keys: ["related_posts_manual"] },
+  { label: "Remove \"Powered By\" Branding", keys: ["remove_branding"] },
+  { label: "Blog Post Scheduling", keys: ["post_scheduling"] },
+  { label: "Multi Language Translation", keys: ["translations"] },
+  { label: "Hide Sections Based on Device", keys: ["device_visibility"] },
+  { label: "XML sitemap", keys: ["xml_sitemap"] },
+  { label: "Custom Global Header & Footer", keys: ["custom_code_injection"] },
+  { label: "Advanced Analytics", keys: ["analytics_advanced"] },
+];
+
+function isBulletEnabled(bullet, features) {
+  return bullet.keys.length === 0 || bullet.keys.every((k) => features[k]?.enabled);
+}
+
+function getFeaturesByPriceTier() {
+  return { free: getFeaturesForPlan("free"), starter: getFeaturesForPlan("starter"), pro: getFeaturesForPlan("pro") };
+}
+
+// `bucket` may be "business" (a dead tier that mirrors pro) — treated as pro's position for the
+// purposes of "which tier is this" in the Free->Starter->Pro scan, but rendered with the
+// business bucket's own article-limit row (which mirrors pro's value in the DB anyway).
+function buildBulletsForBucket(bucket, featuresByPriceTier) {
+  const ownFeatures = bucket === "business" ? getFeaturesForPlan("business") : featuresByPriceTier[bucket];
+  const articleRender = ARTICLE_LIMIT_RENDER[bucket] || ARTICLE_LIMIT_RENDER.pro;
+  const bullets = [articleRender(ownFeatures)];
+  const comparableTier = bucket === "business" ? "pro" : bucket;
+  for (const bullet of MASTER_BULLETS) {
+    if (bullet.keys.length === 0) {
+      if (bucket === "free") bullets.push(bullet.label);
+      continue;
+    }
+    const firstEnabledTier = PRICE_ORDER.find((tier) => isBulletEnabled(bullet, featuresByPriceTier[tier]));
+    if (firstEnabledTier === comparableTier) bullets.push(bullet.label);
+  }
+  return bullets;
 }
 
 /**
- * Builds the merchant-facing pricing page's per-plan bullet lists straight from TIER_ROWS — the
- * merchant's own exact, literal copy per tier, additive ("Starter = Free's list is implied via the
- * 'All Free Plan features +' banner, then exactly its own rows; Pro likewise off Starter").
+ * Builds the merchant-facing "what's included" bullet list for one plan in isolation. Needs every
+ * tier's live features (not just this plan's own) to correctly compute which tier a movable
+ * bullet currently floats to — see MASTER_BULLETS above. Used by Super Admin's plan cards, where
+ * each plan needs to be inspected on its own.
+ */
+export function buildFeatureBulletsForPlan(planKey) {
+  const bucket = resolvePlanBucket(planKey);
+  return buildBulletsForBucket(bucket, getFeaturesByPriceTier());
+}
+
+/**
+ * Builds the merchant-facing pricing page's per-plan bullet lists — the merchant's own exact,
+ * literal copy per tier, additive ("Starter = Free's list is implied via the 'All Free Plan
+ * features +' banner, then exactly its own rows; Pro likewise off Starter"), with every movable
+ * bullet placed on whichever tier currently has it enabled first (see MASTER_BULLETS above).
  * `planKeysAscendingByPrice` must already be sorted cheapest-first (the same order the pricing
  * page renders cards in).
  *
@@ -379,10 +395,10 @@ export function buildFeatureBulletsForPlan(planKey) {
  * the plan this one's "All X Plan features +" banner refers to (null for the cheapest/first plan).
  */
 export function buildTieredPlanFeatures(planKeysAscendingByPrice) {
+  const featuresByPriceTier = getFeaturesByPriceTier();
   return planKeysAscendingByPrice.map((planKey, index) => {
-    const features = getFeaturesForPlan(planKey);
     const bucket = resolvePlanBucket(planKey);
-    const bullets = TIER_ROWS[bucket].map((row) => row(features));
+    const bullets = buildBulletsForBucket(bucket, featuresByPriceTier);
     return { basedOnIndex: index > 0 ? index - 1 : null, bullets };
   });
 }

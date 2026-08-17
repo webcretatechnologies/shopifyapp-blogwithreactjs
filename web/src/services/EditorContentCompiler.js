@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import shopify, { prisma } from "../../shopify.js";
 import { formatPrice } from "../utils/priceUtils.js";
 import ThemeStyleService from "./ThemeStyleService.js";
+import { isFeatureEnabled } from "./PlanFeatureService.js";
 
 // The app's own public base URL — HOST already includes the protocol (e.g.
 // "https://xxx.trycloudflare.com" in dev, the real production domain in prod). This is the
@@ -27,6 +28,45 @@ function unwrapNestedSettings(val) {
 
 // In-memory cache for store currency (per compile run)
 let _storeCurrency = null;
+
+// Mirrors frontend/utils/headingSlugUtils.js's slugifyHeading exactly — kept as a local copy
+// (rather than importing across the frontend/src boundary) since this is the only piece needed
+// server-side: computing the same deterministic anchor id a Heading block would get so
+// TableOfContents links resolve, and RichText id injection isn't needed here.
+function slugifyHeadingServer(text) {
+  if (!text || typeof text !== "string") return "heading";
+  const clean = text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  if (!clean) return "heading";
+  const slug = clean
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return slug || "heading";
+}
+
+// Mirrors compileBlocksToHtml.js's VISIBILITY_CSS/applyVisibilityWrapper — the client-side
+// editor preview already supports hideOnMobile/hideOnTablet/hideOnDesktop block settings, but
+// this server-side compiler (the one that actually produces the published storefront HTML) had
+// no equivalent, so hide-on-device silently did nothing on the real page regardless of plan.
+const VISIBILITY_CSS = `<style>
+  @media (max-width: 767px)  { .builder-hide-mobile  { display: none !important; } }
+  @media (min-width: 768px) and (max-width: 1023px) { .builder-hide-tablet  { display: none !important; } }
+  @media (min-width: 1024px) { .builder-hide-desktop { display: none !important; } }
+</style>`;
+
+function applyVisibilityWrapperServer(html, attrs) {
+  if (!html) return html;
+  const classes = [];
+  if (attrs.hideOnMobile) classes.push("builder-hide-mobile");
+  if (attrs.hideOnTablet) classes.push("builder-hide-tablet");
+  if (attrs.hideOnDesktop) classes.push("builder-hide-desktop");
+  if (classes.length === 0) return html;
+  return `<div class="${classes.join(" ")}">${html}</div>`;
+}
 
 async function fetchStoreCurrency(shopifyClient) {
   if (_storeCurrency) return _storeCurrency;
@@ -168,6 +208,41 @@ function buildGoogleFontsLinkTag(fontFamilyValue) {
   return `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${familyParam}:wght@400;600;700&display=swap">`;
 }
 
+// Extracts and maps a div[data-type] element's data-* attributes into a plain settings object.
+// Factored out of compile()'s main loop so the heading pre-pass (needed for TableOfContents
+// anchor ids) can read the same attrs a Heading div will compile with, without duplicating the
+// legacy-flat-vs-kebab-case attribute mapping logic.
+function extractAttrs(el) {
+  const attrs = {};
+  for (const [attrName, attrVal] of Object.entries(el.attribs)) {
+    if (attrName.startsWith("data-") && attrName !== "data-type") {
+      const nameWithoutData = attrName.slice(5);
+      const mappedKey =
+        ATTR_MAP[nameWithoutData] ||
+        nameWithoutData.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+
+      let val = attrVal;
+      if (val === "true") {
+        val = true;
+      } else if (val === "false") {
+        val = false;
+      } else if (val && (val.startsWith("{") || val.startsWith("["))) {
+        try {
+          val = JSON.parse(val);
+        } catch (e) {
+          // keep as string
+        }
+      }
+      if (mappedKey === "settings" && val && typeof val === "object" && !Array.isArray(val)) {
+        Object.assign(attrs, unwrapNestedSettings(val));
+      } else {
+        attrs[mappedKey] = val;
+      }
+    }
+  }
+  return attrs;
+}
+
 export class EditorContentCompiler {
   /**
    * Compiles the raw contentHtml with tiptap block wrappers into fully styled storefront HTML.
@@ -177,8 +252,20 @@ export class EditorContentCompiler {
    * @param {object} [shopifyClient] Instantiated GraphQL client (optional)
    * @returns {Promise<string>} Storefront compiled HTML
    */
-  static async compile(contentHtml, shopifySession = null, shopifyClient = null) {
+  static async compile(contentHtml, shopifySession = null, shopifyClient = null, planKey = null) {
     if (!contentHtml) return "";
+
+    // planKey null (no shop context resolved, e.g. an editor session with no domain) is treated
+    // as "free" by isFeatureEnabled — the safe default for every gate below, never "everything
+    // enabled".
+    const deviceVisibilityEntitled = isFeatureEnabled(planKey, "device_visibility");
+    const tocEntitled = isFeatureEnabled(planKey, "toc");
+    const faqEntitled = isFeatureEnabled(planKey, "faq");
+    const productEntitled = isFeatureEnabled(planKey, "product");
+    const productSidebarEntitled = isFeatureEnabled(planKey, "product_sidebar");
+    const featuredProductEntitled = isFeatureEnabled(planKey, "featured_product");
+    const productSwitcherEntitled = isFeatureEnabled(planKey, "product_switcher");
+    const productSliderEntitled = isFeatureEnabled(planKey, "product_slider");
 
     // Reset and fetch store currency for this compile run
     _storeCurrency = null;
@@ -187,47 +274,34 @@ export class EditorContentCompiler {
     const $ = cheerio.load(contentHtml, null, false);
     const divs = $("div[data-type]");
 
+    // Pre-pass: collect Heading-block anchor ids in document order, matching
+    // slugifyHeadingServer/dedup rules exactly, so TableOfContents (processed as just another
+    // div[data-type] in this same walk, in arbitrary order relative to its target headings) can
+    // link to them, and so the Heading case below can inject the same id onto the real <h#> tag.
+    const allHeadings = [];
+    const slugCounts = {};
+    for (let i = 0; i < divs.length; i++) {
+      const $el = $(divs[i]);
+      if ($el.attr("data-type") !== "Heading") continue;
+      const hAttrs = extractAttrs(divs[i]);
+      const level = Number(hAttrs.level || 2);
+      const text = String(hAttrs.text || "").replace(/<[^>]*>/g, "").trim();
+      if (!text) continue;
+      const baseSlug = slugifyHeadingServer(text);
+      slugCounts[baseSlug] = (slugCounts[baseSlug] || 0) + 1;
+      const id = slugCounts[baseSlug] === 1 ? baseSlug : `${baseSlug}-${slugCounts[baseSlug] - 1}`;
+      allHeadings.push({ id, text, level });
+    }
+    let _headingCursor = 0;
+    let usedVisibilityCss = false;
+
     for (let i = 0; i < divs.length; i++) {
       const el = divs[i];
       const $el = $(el);
       const type = $el.attr("data-type");
 
       // Extract and map all data- attributes
-      const attrs = {};
-      for (const [attrName, attrVal] of Object.entries(el.attribs)) {
-        if (attrName.startsWith("data-") && attrName !== "data-type") {
-          const nameWithoutData = attrName.slice(5);
-          // Legacy blocks use flat lowercase names (ATTR_MAP); new nodes use
-          // kebab-case (data-full-width -> fullWidth)
-          const mappedKey =
-            ATTR_MAP[nameWithoutData] ||
-            nameWithoutData.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-
-          let val = attrVal;
-          if (val === "true") {
-            val = true;
-          } else if (val === "false") {
-            val = false;
-          } else if (val && (val.startsWith("{") || val.startsWith("["))) {
-            try {
-              val = JSON.parse(val);
-            } catch (e) {
-              // keep as string
-            }
-          }
-          // A literal `data-settings` attribute IS the block's settings object, never a
-          // normal field named "settings" — merge its own fields directly instead of nesting
-          // it under a "settings" key. Same fix as ShopifyArticleParser._convertDataBlock;
-          // without it, this function would re-introduce the nested-settings corruption bug
-          // even after that parser-side fix, since this is a second, independent place that
-          // reads the exact same data-* attributes.
-          if (mappedKey === "settings" && val && typeof val === "object" && !Array.isArray(val)) {
-            Object.assign(attrs, unwrapNestedSettings(val));
-          } else {
-            attrs[mappedKey] = val;
-          }
-        }
-      }
+      const attrs = extractAttrs(el);
 
       // Pass store currency to each block
       attrs._storeCurrency = storeCurrency;
@@ -260,8 +334,29 @@ export class EditorContentCompiler {
           // real visible HTML — a post's headings/paragraphs/images could go invisible on
           // the storefront with no error anywhere. Added to match compileBlocksToHtml.js's
           // (the primary, client-side compiler's) rendering exactly.
-          case "Heading":
-            compiledHtml = this.renderHeading(attrs);
+          case "Heading": {
+            // Consumes allHeadings in the same document-order sequence the pre-pass built it in,
+            // so the anchor id matches exactly what TableOfContents links to below.
+            const headingEntry = allHeadings[_headingCursor];
+            _headingCursor++;
+            compiledHtml = this.renderHeading(attrs, headingEntry?.id);
+            break;
+          }
+          case "TableOfContents":
+            // toc is a Starter+ gate. Nothing previously enforced it — the block was fully
+            // ungated in practice despite PLAN_DEFAULTS recording Free as false — so a Free shop
+            // that inserted one would silently keep getting it rendered forever. Render as empty
+            // rather than leaving the div untouched, so it's actually gone from the output.
+            compiledHtml = tocEntitled ? this.renderTableOfContents(attrs, allHeadings) : "";
+            break;
+          case "HeroSection":
+            compiledHtml = this.renderHero(attrs);
+            break;
+          case "ButtonBlock":
+            compiledHtml = this.renderButtonBlock(attrs);
+            break;
+          case "Html":
+            compiledHtml = attrs.code || "";
             break;
           case "RichText":
             compiledHtml = this.renderRichText(attrs);
@@ -283,25 +378,34 @@ export class EditorContentCompiler {
           case "ctaButton":
             compiledHtml = this.renderCtaButton(attrs);
             break;
+          // product/product_sidebar/featured_product/product_switcher/product_slider are all
+          // Starter+ gates (unified single unlock, per PLAN_DEFAULTS). Previously fully ungated
+          // in practice — a Free shop that inserted a product block via the editor kept getting
+          // it rendered on the real page forever. Rendered as empty rather than left untouched
+          // so an unentitled block is actually gone from the output, matching the toc posture.
           case "buyButton":
           case "BuyButton":
           case "product":
           case "Product":
+            compiledHtml = productEntitled ? this.renderBuyButton(attrs) : "";
+            break;
           case "product_sidebar":
           case "ProductSidebar":
+            compiledHtml = productSidebarEntitled ? this.renderBuyButton(attrs) : "";
+            break;
           case "featured_product":
           case "FeaturedProduct":
-            compiledHtml = this.renderBuyButton(attrs);
+            compiledHtml = featuredProductEntitled ? this.renderBuyButton(attrs) : "";
             break;
           case "productGrid":
           case "ProductGrid":
           case "product_switcher":
           case "ProductSwitcher":
-            compiledHtml = await this.renderProductGrid(attrs, shopifySession, shopifyClient);
+            compiledHtml = productSwitcherEntitled ? await this.renderProductGrid(attrs, shopifySession, shopifyClient) : "";
             break;
           case "product_slider":
           case "ProductSlider":
-            compiledHtml = await this.renderProductSlider(attrs, shopifySession, shopifyClient);
+            compiledHtml = productSliderEntitled ? await this.renderProductSlider(attrs, shopifySession, shopifyClient) : "";
             break;
           case "collection":
           case "Collection":
@@ -334,7 +438,7 @@ export class EditorContentCompiler {
           case "FaqBlock":
           case "faq":
           case "FAQ":
-            compiledHtml = this.renderFaqBlock(attrs);
+            compiledHtml = faqEntitled ? this.renderFaqBlock(attrs) : "";
             break;
           default:
             // Unsupported/container types (columnLayout, column, calloutBlock,
@@ -344,6 +448,16 @@ export class EditorContentCompiler {
       } catch (err) {
         console.error(`Error compiling block of type ${type}:`, err);
         compiledHtml = `<div style="padding: 16px; border: 1px dashed red; color: red;">Error rendering section: ${type}</div>`;
+      }
+
+      // device_visibility is a Pro-tier gate (see PlanFeatureService PLAN_DEFAULTS) — a shop
+      // not entitled to it can still set hideOnMobile/hideOnDesktop in the editor (the settings
+      // panel UI itself doesn't block it either), but those flags are silently ignored here on
+      // the real published page, same posture as other feature gates that reject/ignore rather
+      // than error on save.
+      if (compiledHtml && deviceVisibilityEntitled && (attrs.hideOnMobile || attrs.hideOnTablet || attrs.hideOnDesktop)) {
+        compiledHtml = applyVisibilityWrapperServer(compiledHtml, attrs);
+        usedVisibilityCss = true;
       }
 
       // Replace the wrapper div with the fully compiled block HTML to prevent double borders.
@@ -369,7 +483,7 @@ export class EditorContentCompiler {
       }
     }
 
-    return $.html();
+    return (usedVisibilityCss ? VISIBILITY_CSS : "") + $.html();
   }
 
   static renderDivider(attrs) {
@@ -389,13 +503,60 @@ export class EditorContentCompiler {
 
   // Mirrors compileBlocksToHtml.js's "Heading" case for visual consistency between the two
   // compilers.
-  static renderHeading(attrs) {
+  static renderHeading(attrs, anchorId) {
     const level = attrs.level || 2;
     const align = attrs.align || "left";
     const color = attrs.color || "#202223";
     const text = attrs.text || "";
     const fontSize = attrs.fontSize ? `font-size: ${attrs.fontSize};` : "";
-    return `<h${level} class="builder-heading-block" style="text-align: ${align}; color: ${color}; ${fontSize} margin: 16px 0 8px;">${text}</h${level}>`;
+    const idAttr = anchorId ? ` id="${anchorId}"` : "";
+    return `<h${level}${idAttr} class="builder-heading-block" style="text-align: ${align}; color: ${color}; ${fontSize} margin: 16px 0 8px;">${text}</h${level}>`;
+  }
+
+  // Mirrors compileBlocksToHtml.js's "TableOfContents" case (non-collapsible list only — the
+  // reconcile-echo path this serves has no client-side JS runtime to power the collapsible
+  // <details> chevron interaction, so it always renders the plain list variant).
+  static renderTableOfContents(attrs, allHeadings) {
+    const title = attrs.title || "Table of Contents";
+    const levels = attrs.levels || [2, 3];
+    const listStyle = attrs.listStyle || "bullet";
+    const textColor = attrs.textColor || "#202223";
+
+    const allowedLevels = new Set((Array.isArray(levels) ? levels : [levels]).map(Number));
+    const matching = (allHeadings || []).filter((h) => allowedLevels.has(h.level));
+    if (matching.length === 0) return "";
+
+    const minLevel = Math.min(...matching.map((h) => h.level));
+    const Tag = listStyle === "numbered" ? "ol" : "ul";
+    const listType = listStyle === "numbered" ? "decimal" : "disc";
+
+    const itemsHtml = matching
+      .map((h) => {
+        const isMain = h.level === minLevel;
+        return `<li style="font-size: 14px; margin: 6px 0; display: list-item;"><a href="#${h.id}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};">${h.text}</a></li>`;
+      })
+      .join("\n");
+
+    return `<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
+  <div style="font-weight: 700; font-size: 16px; color: ${textColor}; margin-bottom: 12px;">${title}</div>
+  <${Tag} style="margin: 0; padding-left: 18px; list-style-type: ${listType};">
+${itemsHtml}
+  </${Tag}>
+</div>`;
+  }
+
+  // Mirrors compileBlocksToHtml.js's "ButtonBlock" case exactly (field names differ from the
+  // legacy ctaButton/renderCtaButton pair above — backgroundColor/alignment, not color/align).
+  static renderButtonBlock(attrs) {
+    const text = attrs.text || "Click Here";
+    const url = attrs.url || "#";
+    const align = attrs.alignment || attrs.align || "center";
+    const color = attrs.backgroundColor || attrs.color || "#008060";
+    const textColor = attrs.textColor || "#ffffff";
+    const br = (attrs.borderRadius !== undefined ? attrs.borderRadius : 4) + "px";
+    return `<div class="builder-button-block" style="text-align: ${align}; margin: 16px 0;">
+        <a href="${url}" style="display: inline-block; background-color: ${color}; color: ${textColor}; padding: 12px 24px; border-radius: ${br}; font-weight: 600; text-decoration: none;">${text}</a>
+      </div>`;
   }
 
   // Mirrors compileBlocksToHtml.js's "RichText" case. That version also supports a Tiptap
@@ -1671,18 +1832,17 @@ ${this.generateGlobalCss(settings)}
   }
 
   static async compileForStorefront(contentHtml, session = null, shopifyClient = null, shopDomain = null, postId = null, customCss = null, author = null, publishedAt = null) {
-    const compiled = await this.compile(contentHtml, session, shopifyClient);
-
     const domain = shopDomain || session?.shop;
     let settings = {};
+    let shopRow = null;
     if (domain) {
       try {
-        const shop = await prisma.shop.findUnique({
+        shopRow = await prisma.shop.findUnique({
           where: { domain },
           include: { settings: true }
         });
-        if (shop && shop.settings) {
-          settings = shop.settings.reduce((acc, setting) => {
+        if (shopRow && shopRow.settings) {
+          settings = shopRow.settings.reduce((acc, setting) => {
             let val = setting.value;
             if (val === "true") val = true;
             else if (val === "false") val = false;
@@ -1694,6 +1854,8 @@ ${this.generateGlobalCss(settings)}
         console.error("compileForStorefront: Error loading settings:", err);
       }
     }
+
+    const compiled = await this.compile(contentHtml, session, shopifyClient, shopRow?.planKey || null);
 
     // Font is never a stored/editable setting — always fetched live from the shop's current
     // theme so it stays correct for any store without merchant setup, and automatically

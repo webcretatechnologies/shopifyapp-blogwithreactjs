@@ -34,7 +34,6 @@ export default function Plans() {
   const [activePlan, setActivePlan] = useState("");
   const [postCount, setPostCount] = useState(0);
   const [postLimit, setPostLimit] = useState(10);
-  const [sectionLimit, setSectionLimit] = useState(null);
   const [blogCount, setBlogCount] = useState(0);
   const [blogLimit, setBlogLimit] = useState(null);
   const [billingCycle, setBillingCycle] = useState(null);
@@ -66,7 +65,6 @@ export default function Plans() {
       setActivePlan(checkData.activePlan || "free");
       setPostCount(checkData.postCount || 0);
       setPostLimit(checkData.postLimit ?? 10);
-      setSectionLimit(checkData.sectionLimit ?? null);
       setBlogCount(checkData.blogCount || 0);
       setBlogLimit(checkData.blogLimit ?? null);
       setBillingCycle(checkData.billingCycle || null);
@@ -248,15 +246,6 @@ export default function Plans() {
                     </InlineStack>
                   </BlockStack>
                 </InlineGrid>
-
-                <Divider />
-
-                <InlineStack align="space-between" blockAlign="center">
-                  <Text as="span" variant="bodySm" tone="subdued">Sections per article</Text>
-                  <Text as="span" variant="bodySm" fontWeight="medium">
-                    {sectionLimit === null ? "Unlimited" : `Up to ${sectionLimit}`}
-                  </Text>
-                </InlineStack>
               </BlockStack>
             </Card>
           </Layout.Section>

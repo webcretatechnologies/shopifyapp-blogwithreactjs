@@ -11,27 +11,43 @@ import {
   Spinner,
   InlineStack
 } from "@shopify/polaris";
-import { 
-  SearchIcon, 
-  LayoutBlockIcon, 
-  MagicIcon, 
+import {
+  SearchIcon,
+  LayoutBlockIcon,
+  MagicIcon,
   StarIcon,
   ThemeTemplateIcon,
   DeleteIcon,
   PlusIcon,
-  ListBulletedIcon
+  ListBulletedIcon,
+  LockIcon
 } from "@shopify/polaris-icons";
 import { nanoid } from "./store/nanoid";
 import LayersPanel from "./sidebar/LayersPanel";
 import { useDraggable } from "@dnd-kit/core";
 
-function DraggableBlockItem({ type, entry, onClick, isRailMode }) {
+// Maps an insertable block type to the PlanFeature key that gates it on the real published page
+// (EditorContentCompiler.js — see its device_visibility/toc/faq/product-family enforcement).
+// Before this, the picker let every plan drag in any block with zero indication that a
+// lower-tier shop's copy of it would silently compile to nothing at Save & Sync — a merchant
+// could build an entire section around a FAQ block on Free and only discover it never rendered
+// after publishing. Types not listed here have no gate (available at every plan).
+const BLOCK_TYPE_GATE = {
+  TableOfContents: "toc",
+  FaqBlock: "faq",
+  BuyButton: "product",
+  ProductGrid: "product_switcher",
+  ProductSlider: "product_slider",
+};
+
+function DraggableBlockItem({ type, entry, onClick, isRailMode, locked }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `new-block-${type}`,
     data: { isNew: true, type, settings: entry.defaultSettings },
+    disabled: locked,
   });
 
-  const pointerListeners = { ...listeners };
+  const pointerListeners = locked ? {} : { ...listeners };
   delete pointerListeners.onKeyDown;
 
   return (
@@ -41,21 +57,23 @@ function DraggableBlockItem({ type, entry, onClick, isRailMode }) {
       {...attributes}
       type="button"
       onClick={onClick}
-      aria-label={`Add ${entry.label}`}
+      aria-label={locked ? `${entry.label} — requires a plan upgrade` : `Add ${entry.label}`}
+      title={locked ? "This feature isn't included on your current plan. Upgrade to unlock it." : undefined}
       style={isRailMode ? {
         width: "36px",
         height: "36px",
         borderRadius: "6px",
         border: "1px solid var(--p-color-border-subdued)",
         background: "var(--p-color-bg-surface)",
-        color: "#008060",
+        color: locked ? "var(--p-color-icon-disabled)" : "#008060",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        cursor: isDragging ? "grabbing" : "grab",
+        cursor: locked ? "not-allowed" : (isDragging ? "grabbing" : "grab"),
         transition: "all 0.15s ease",
         outline: "none",
-        opacity: isDragging ? 0.5 : 1,
+        opacity: locked ? 0.5 : (isDragging ? 0.5 : 1),
+        position: "relative",
       } : {
         display: "flex",
         flexDirection: "column",
@@ -67,13 +85,14 @@ function DraggableBlockItem({ type, entry, onClick, isRailMode }) {
         border: "1px solid var(--p-color-border)",
         borderRadius: "8px",
         padding: "10px 6px",
-        cursor: isDragging ? "grabbing" : "grab",
+        cursor: locked ? "not-allowed" : (isDragging ? "grabbing" : "grab"),
         transition: "all 0.15s cubic-bezier(0.4, 0, 0.2, 1)",
         outline: "none",
-        opacity: isDragging ? 0.5 : 1,
+        opacity: locked ? 0.55 : (isDragging ? 0.5 : 1),
+        position: "relative",
       }}
       onMouseEnter={(e) => {
-        if (isDragging) return;
+        if (isDragging || locked) return;
         e.currentTarget.style.borderColor = "#008060";
         e.currentTarget.style.background = isRailMode ? "#f4f6f8" : "#f4f8f6";
         if (!isRailMode) {
@@ -82,7 +101,7 @@ function DraggableBlockItem({ type, entry, onClick, isRailMode }) {
         }
       }}
       onMouseLeave={(e) => {
-        if (isDragging) return;
+        if (isDragging || locked) return;
         e.currentTarget.style.borderColor = isRailMode ? "var(--p-color-border-subdued)" : "var(--p-color-border)";
         e.currentTarget.style.background = "var(--p-color-bg-surface)";
         if (!isRailMode) {
@@ -91,6 +110,7 @@ function DraggableBlockItem({ type, entry, onClick, isRailMode }) {
         }
       }}
       onFocus={(e) => {
+        if (locked) return;
         e.currentTarget.style.borderColor = "#008060";
         e.currentTarget.style.boxShadow = "0 0 0 2px rgba(0,128,96,0.2)";
       }}
@@ -99,8 +119,28 @@ function DraggableBlockItem({ type, entry, onClick, isRailMode }) {
         e.currentTarget.style.boxShadow = "none";
       }}
     >
+      {locked && (
+        <div
+          style={{
+            position: "absolute",
+            top: isRailMode ? "-4px" : "4px",
+            right: isRailMode ? "-4px" : "4px",
+            width: "16px",
+            height: "16px",
+            borderRadius: "50%",
+            background: "var(--p-color-bg-surface-secondary)",
+            border: "1px solid var(--p-color-border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--p-color-icon-subdued)",
+          }}
+        >
+          <Icon source={LockIcon} />
+        </div>
+      )}
       {isRailMode ? (
-        <div style={{ display: "flex", alignItems: "center", color: "#008060" }}>
+        <div style={{ display: "flex", alignItems: "center", color: locked ? "var(--p-color-icon-disabled)" : "#008060" }}>
           {entry.icon}
         </div>
       ) : (
@@ -110,16 +150,16 @@ function DraggableBlockItem({ type, entry, onClick, isRailMode }) {
               width: "32px",
               height: "32px",
               borderRadius: "50%",
-              background: "#e8f5f0",
+              background: locked ? "var(--p-color-bg-surface-secondary)" : "#e8f5f0",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "#008060",
+              color: locked ? "var(--p-color-icon-disabled)" : "#008060",
             }}
           >
             {entry.icon}
           </div>
-          <Text variant="bodySm" alignment="center" fontWeight="medium">
+          <Text variant="bodySm" alignment="center" fontWeight="medium" tone={locked ? "subdued" : undefined}>
             {entry.label}
           </Text>
         </>
@@ -145,7 +185,26 @@ export default function BlockPicker({ isRailMode = false }) {
   const selectedBlockId = useBuilderStore((s) => s.selectedBlockId);
   const blocksById = useBuilderStore((s) => s.blocksById);
 
+  // Which gated block types this shop's plan doesn't include — drives the locked/disabled state
+  // below. Fetched once per mount; Sync Features changes an admin makes take effect on this
+  // shop's next editor load, same freshness as every other plan-gated UI in the app.
+  const [lockedTypes, setLockedTypes] = useState(new Set());
+  useEffect(() => {
+    fetch("/api/posts/plan/features")
+      .then((r) => r.json())
+      .then((d) => {
+        const locked = new Set();
+        for (const [type, gateKey] of Object.entries(BLOCK_TYPE_GATE)) {
+          if (!d.features?.[gateKey]?.enabled) locked.add(type);
+        }
+        setLockedTypes(locked);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleAddBlock = async (type) => {
+    if (lockedTypes.has(type)) return; // gated for this plan — refuse to insert, same as the
+    // real compiler will refuse to render it if bypassed some other way
     let targetParentId = null;
     if (selectedBlockId && blocksById[selectedBlockId]) {
       const sel = blocksById[selectedBlockId];
@@ -274,11 +333,12 @@ export default function BlockPicker({ isRailMode = false }) {
                   const entry = BlockRegistry[type];
                   if (!entry) return null;
                   return (
-                    <DraggableBlockItem 
-                      key={type} 
-                      type={type} 
-                      entry={entry} 
-                      onClick={() => handleAddBlock(type)} 
+                    <DraggableBlockItem
+                      key={type}
+                      type={type}
+                      entry={entry}
+                      onClick={() => handleAddBlock(type)}
+                      locked={lockedTypes.has(type)}
                       isRailMode={true}
                     />
                   );
@@ -422,11 +482,12 @@ export default function BlockPicker({ isRailMode = false }) {
                       {filteredTypes.map((type) => {
                         const entry = BlockRegistry[type];
                         return (
-                          <DraggableBlockItem 
-                            key={type} 
-                            type={type} 
-                            entry={entry} 
-                            onClick={() => handleAddBlock(type)} 
+                          <DraggableBlockItem
+                            key={type}
+                            type={type}
+                            entry={entry}
+                            onClick={() => handleAddBlock(type)}
+                            locked={lockedTypes.has(type)}
                           />
                         );
                       })}

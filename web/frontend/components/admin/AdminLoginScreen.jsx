@@ -1,6 +1,7 @@
 import { Card, TextField, Button, FormLayout, Text, Banner, BlockStack, InlineStack, Icon } from "@shopify/polaris";
 import { Shield } from "lucide-react";
 import { ViewIcon, HideIcon } from "@shopify/polaris-icons";
+import { APP_NAME } from "../../utils/appName";
 
 /** Pre-auth screen for the Super Admin panel — shown whenever there's no valid session token. */
 export default function AdminLoginScreen({
@@ -30,7 +31,7 @@ export default function AdminLoginScreen({
               <InlineStack align="center" gap="200">
                 <Shield size={36} color="#10b981" />
                 <Text variant="headingXl" as="h1">
-                  Blogger Console
+                  {APP_NAME} Console
                 </Text>
               </InlineStack>
               <Text variant="bodyMd" tone="subdued" alignment="center">

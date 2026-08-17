@@ -14,7 +14,6 @@ import {
   getFeaturesForPlan,
   getArticleLimit,
   getFeatureLimit,
-  maxSectionsForPlan,
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
@@ -243,7 +242,8 @@ router.post("/", async (req, res) => {
     const finalContentHtml = await EditorContentCompiler.compile(
       reqContentHtml || "",
       session,
-      client
+      client,
+      shop.planKey
     );
 
     const post = await prisma.post.create({
@@ -258,7 +258,11 @@ router.post("/", async (req, res) => {
         featuredImage: featuredImage || null,
         contentJson: blocks,
         contentHtml: finalContentHtml,
-        customCss: customCss || null,
+        // custom_css is a Starter+ gate — the frontend already hides this field's UI for Free
+        // shops, but nothing previously stopped a Free shop from posting it directly to this
+        // API and having it actually render (custom_css IS wired into the real storefront
+        // compiler, unlike customJs below, which has no render path at any tier).
+        customCss: isFeatureEnabled(shop.planKey, "custom_css") ? (customCss || null) : null,
         customJs: customJs || null,
         productSliderPosition,
         productSliderSource,
@@ -356,14 +360,7 @@ router.put("/:id", async (req, res) => {
       relatedPostIds,
     } = req.body;
 
-    // Check section limit
-    const sectionLimit = maxSectionsForPlan(shop.planKey);
     const blocks = contentJson !== undefined ? (Array.isArray(contentJson) ? contentJson : []) : post.contentJson || [];
-    if (sectionLimit !== null && blocks.length > sectionLimit) {
-      return res.status(403).json({
-        error: `Your plan allows a maximum of ${sectionLimit} sections per article.`,
-      });
-    }
 
     const finalEditorMode = editorMode || post.editorMode || "builder";
     let finalContentHtml = post.contentHtml;
@@ -376,7 +373,8 @@ router.put("/:id", async (req, res) => {
       finalContentHtml = await EditorContentCompiler.compile(
         reqContentHtml,
         session,
-        client
+        client,
+        shop.planKey
       );
     }
 
@@ -392,7 +390,7 @@ router.put("/:id", async (req, res) => {
         featuredImage: featuredImage !== undefined ? featuredImage : post.featuredImage,
         contentJson: blocks,
         contentHtml: finalContentHtml,
-        customCss: customCss !== undefined ? customCss : post.customCss,
+        customCss: isFeatureEnabled(shop.planKey, "custom_css") && customCss !== undefined ? customCss : post.customCss,
         customJs: customJs !== undefined ? customJs : post.customJs,
         ...(productSliderPosition && { productSliderPosition }),
         ...(productSliderSource && { productSliderSource }),

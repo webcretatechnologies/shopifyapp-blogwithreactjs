@@ -18,7 +18,8 @@ import {
   InlineStack,
   Popover,
   ActionList,
-  Frame
+  Frame,
+  Banner
 } from "@shopify/polaris";
 import {
   PlusIcon,
@@ -134,6 +135,20 @@ export default function Blogs() {
     fetchBlogs();
   }, [fetchBlogs]);
 
+  // max_blogs is a numeric per-plan cap (Free 1, Starter 3, Pro unlimited) already enforced
+  // server-side (POST /shopify/blogs) — this was previously invisible in the UI: a merchant at
+  // the cap would only find out by clicking "Add blog", filling out the whole form, and getting
+  // a generic error toast on submit. Now shown proactively as a usage count and a disabled
+  // "Add blog" button once reached.
+  const [blogLimit, setBlogLimit] = useState(null);
+  useEffect(() => {
+    fetch("/api/posts/plan/features")
+      .then((r) => r.json())
+      .then((d) => setBlogLimit(d.features?.max_blogs?.limit ?? null))
+      .catch(() => {});
+  }, []);
+  const atBlogLimit = blogLimit !== null && blogs.length >= blogLimit;
+
   const handleDelete = (blog) => {
     setDeleteTargetBlog(blog);
     setConfirmBlogName("");
@@ -242,9 +257,18 @@ export default function Blogs() {
       primaryAction={{
         content: "Add blog",
         onAction: () => navigate("/blogs/new"),
+        disabled: atBlogLimit,
       }}
     >
       <Layout>
+        {atBlogLimit && (
+          <Layout.Section>
+            <Banner tone="warning">
+              You've reached your plan's limit of {blogLimit} blog{blogLimit === 1 ? "" : "s"}.
+              Upgrade your plan to create more.
+            </Banner>
+          </Layout.Section>
+        )}
         <Layout.Section>
           <Card padding="0">
             <IndexFilters
@@ -290,7 +314,7 @@ export default function Blogs() {
                 !isLoading && (
                   <EmptyState
                     heading="Manage your blogs"
-                    action={{ content: "Add blog", onAction: () => navigate("/blogs/new") }}
+                    action={atBlogLimit ? undefined : { content: "Add blog", onAction: () => navigate("/blogs/new") }}
                     image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                   >
                     <p>Blogs are a great way to build a community around your products and brand.</p>

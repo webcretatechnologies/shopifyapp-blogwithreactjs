@@ -138,16 +138,24 @@ router.post("/", async (req, res) => {
       "relatedPostsCount",
       "defaultAuthor",
       "customHeaderCode",
-      "customFooterCode"
+      "customFooterCode",
+      "showPoweredByBadge"
     ];
 
     const customCodeAllowed = isFeatureEnabled(shop.planKey, "custom_code_injection");
+    // remove_branding (Starter+) is what lets a shop remove the "Powered by" badge at all — a
+    // Free shop's preference here would be inert anyway (ArticleSyncService.js's badge-injection
+    // logic always shows the badge when the shop isn't entitled, regardless of this setting), but
+    // skipping the save keeps the same defense-in-depth posture as the custom code fields above
+    // rather than leaving a stray, never-consulted value sitting in the DB.
+    const removeBrandingAllowed = isFeatureEnabled(shop.planKey, "remove_branding");
 
     // Upsert all modified setting parameters
     for (const key of supportedKeys) {
       // Custom header/footer code injection is Pro-only — silently skip the save rather than
       // reject the whole settings form, same posture as the SEO field sanitization in posts.js.
       if ((key === "customHeaderCode" || key === "customFooterCode") && !customCodeAllowed) continue;
+      if (key === "showPoweredByBadge" && !removeBrandingAllowed) continue;
       if (req.body[key] !== undefined) {
         const valStr = String(req.body[key]);
         await prisma.shopSetting.upsert({

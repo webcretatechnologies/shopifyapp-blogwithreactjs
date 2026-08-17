@@ -14,7 +14,7 @@
  *     commit directly via updateBlockSettings (one undo entry per change).
  */
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import { useBuilderStore } from "../store/useBuilderStore";
 import SettingsControls from "./SettingsControls";
 import { BlockRegistry } from "../BlockRegistry";
@@ -74,6 +74,19 @@ export default function SettingsPanel() {
   const deviceMode = useBuilderStore((s) => s.deviceMode);
 
   const { handleLive, handleCommit } = useDebouncedCommit(selectedBlockId);
+
+  // device_visibility is a Pro-tier gate — the editor previously let every plan set
+  // hideOnMobile/hideOnDesktop with no indication it wouldn't actually apply on the real
+  // published page for non-Pro shops (see EditorContentCompiler.js's deviceVisibilityEntitled
+  // enforcement, which now silently drops these flags server-side for Free/Starter). Disabling
+  // the controls here just makes that restriction visible instead of surprising.
+  const [deviceVisibilityEntitled, setDeviceVisibilityEntitled] = useState(true);
+  useEffect(() => {
+    fetch("/api/posts/plan/features")
+      .then((r) => r.json())
+      .then((d) => setDeviceVisibilityEntitled(!!d.features?.device_visibility?.enabled))
+      .catch(() => {});
+  }, []);
 
   if (selectedBlockIds.length > 1) {
     return (
@@ -165,6 +178,14 @@ export default function SettingsPanel() {
               </InlineStack>
             </Box>
 
+            {!deviceVisibilityEntitled && (
+              <Box paddingBlockEnd="200">
+                <Text variant="bodySm" tone="subdued">
+                  Hide-on-device is a Pro plan feature. Upgrade to make these controls take effect on your published articles.
+                </Text>
+              </Box>
+            )}
+
             <Box style={{ display: "flex", flexDirection: "column", gap: "var(--p-space-200)" }}>
               {[
                 { key: "hideOnDesktop", label: "Hide on Desktop", icon: DesktopIcon },
@@ -186,11 +207,12 @@ export default function SettingsPanel() {
                   <Checkbox
                     label={
                       <span style={{ display: "flex", alignItems: "center", gap: "var(--p-space-150)", color: settings[key] ? "var(--p-color-text-critical)" : "var(--p-color-text)" }}>
-                        <Icon source={icon} tone={settings[key] ? "critical" : "base"} /> 
+                        <Icon source={icon} tone={settings[key] ? "critical" : "base"} />
                         {label}
                       </span>
                     }
                     checked={!!settings[key]}
+                    disabled={!deviceVisibilityEntitled}
                     onChange={(newChecked) => updateBlockSettings(selectedBlock.id, { [key]: newChecked })}
                   />
                 </div>

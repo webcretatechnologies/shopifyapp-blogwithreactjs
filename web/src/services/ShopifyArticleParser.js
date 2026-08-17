@@ -316,6 +316,13 @@ export class ShopifyArticleParser {
     $("[data-custom-header]").remove();
     $("[data-custom-footer]").remove();
 
+    // "Powered by Blogger" badge (ArticleSyncService.buildStorefrontHtmlForPost) — same class of
+    // app-generated, sync-time-only markup as the byline above, and the same live bug: originally
+    // shipped with no class/id/attribute at all, so it round-tripped into a real, editable,
+    // deletable block with nothing distinguishing it from merchant content. Now marked with
+    // .blogger-powered-by-badge specifically so it can be excluded here.
+    $(".blogger-powered-by-badge").remove();
+
     // Remove blogger-article-container wrapper but keep inner content
     $(".blogger-article-container").each((_, el) => {
       const $el = $(el);

@@ -1,5 +1,5 @@
 import { Card, Box, BlockStack, InlineStack, Text, Badge, Button } from "@shopify/polaris";
-import { isLimitKey, planFeatureBucket } from "./planLimitKeys";
+import { isLimitKey, planFeatureBucket, CUMULATIVE_TIER_BULLETS } from "./planLimitKeys";
 
 /**
  * One SubscriptionPlan rendered as a card: name/slug, price/interval, trial period, live
@@ -11,7 +11,9 @@ import { isLimitKey, planFeatureBucket } from "./planLimitKeys";
 export default function PlanCard({ plan, features, onEditCore, onSyncFeatures, onSyncLimits, onDelete }) {
   const bucket = planFeatureBucket(plan.name);
   const bucketFeatures = features.filter((f) => f.plan === bucket);
-  const featureCount = bucketFeatures.filter((f) => !isLimitKey(f.featureKey)).length;
+  // Matches SyncFeaturesModal's own bullet count exactly (CUMULATIVE_TIER_BULLETS for this
+  // bucket) — not the raw DB row count, so the badge and the modal it opens always agree.
+  const featureCount = (CUMULATIVE_TIER_BULLETS[bucket] || []).length;
   const limitCount = bucketFeatures.filter((f) => isLimitKey(f.featureKey)).length;
 
   return (

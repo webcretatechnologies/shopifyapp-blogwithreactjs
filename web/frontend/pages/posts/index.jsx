@@ -121,7 +121,7 @@ function CloneArticleModal({ open, title, onTitleChange, onConfirm, onCancel, lo
 }
 
 // ─── Post Action Popover ──────────────────────────────────────────────────────
-function PostActionPopover({ post, onDelete, onClone }) {
+function PostActionPopover({ post, onDelete, onClone, cloneEnabled }) {
   const navigate = useNavigate();
   const [popoverActive, setPopoverActive] = useState(false);
 
@@ -141,10 +141,15 @@ function PostActionPopover({ post, onDelete, onClone }) {
 
   const actionItems = [];
 
-  // Duplicate action — always first
+  // Duplicate action — always first. Disabled (not hidden) when the plan doesn't include it, so
+  // it's still discoverable as a thing this app can do — clicking a hidden feature that quietly
+  // doesn't exist reads worse than seeing exactly why it's unavailable. Backend still enforces
+  // this independently (POST /:id/clone checks clone_article) — this is UX, not the real gate.
   actionItems.push({
     content: "Duplicate",
     icon: DuplicateIcon,
+    disabled: !cloneEnabled,
+    helpText: cloneEnabled ? undefined : "Requires a plan upgrade",
     onAction: () => {
       togglePopoverActive();
       onClone();
@@ -259,6 +264,14 @@ export default function Articles() {
       setShopInfo(data.shop);
     } catch {}
   };
+
+  const [features, setFeatures] = useState({});
+  useEffect(() => {
+    fetch("/api/posts/plan/features")
+      .then((r) => r.json())
+      .then((d) => setFeatures(d.features || {}))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetchPosts();
@@ -515,6 +528,7 @@ export default function Articles() {
             post={post}
             onDelete={() => handleDelete(post)}
             onClone={() => handleClone(post)}
+            cloneEnabled={!!features.clone_article?.enabled}
           />
         </div>
       </IndexTable.Cell>

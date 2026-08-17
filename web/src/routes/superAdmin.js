@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import { refreshPlanFeaturesCache, buildFeatureComparisonTable } from "../services/PlanFeatureService.js";
+import { countedClaimsWhere } from "../services/CouponService.js";
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -735,7 +736,7 @@ router.get("/revenue/analytics", validateSuperAdmin, async (req, res) => {
     const dbPlans = await prisma.subscriptionPlan.findMany();
     const pricingRates = {};
     dbPlans.forEach(p => {
-      // Map names to lowercase key, e.g. "Blogger Starter" -> "starter"
+      // Map names to lowercase key, e.g. "Starter Plan" -> "starter"
       const lowerName = p.name.toLowerCase();
       if (lowerName.includes("starter")) pricingRates.starter = parseFloat(p.price);
       else if (lowerName.includes("pro")) pricingRates.pro = parseFloat(p.price);
@@ -829,7 +830,7 @@ router.get("/revenue/export", validateSuperAdmin, async (req, res) => {
     const dbPlans = await prisma.subscriptionPlan.findMany();
     const pricingRates = {};
     dbPlans.forEach(p => {
-      // Map names to lowercase key, e.g. "Blogger Starter" -> "starter"
+      // Map names to lowercase key, e.g. "Starter Plan" -> "starter"
       const lowerName = p.name.toLowerCase();
       if (lowerName.includes("starter")) pricingRates.starter = parseFloat(p.price);
       else if (lowerName.includes("pro")) pricingRates.pro = parseFloat(p.price);
@@ -898,7 +899,6 @@ router.get("/revenue/export", validateSuperAdmin, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const COUPON_CODE_RE = /^[A-Z0-9_-]+$/;
-const COUNTED_CLAIM_STATUSES = ["PENDING", "APPROVED"];
 
 function validateCouponPayload(body) {
   const code = String(body.code || "").trim().toUpperCase();
@@ -908,8 +908,13 @@ function validateCouponPayload(body) {
   const discountType = body.discountType === "FIXED_AMOUNT" ? "FIXED_AMOUNT" : "PERCENTAGE";
   const percentOff = discountType === "PERCENTAGE" ? parseFloat(body.percentOff) : null;
   const amountOff = discountType === "FIXED_AMOUNT" ? parseFloat(body.amountOff) : null;
-  if (discountType === "PERCENTAGE" && (!(percentOff > 0) || percentOff > 100)) {
-    return { error: "Percent off must be a number between 0 and 100." };
+  // Capped at 99%, not 100 — a 100%-off coupon produces a $0 subscription line item, which
+  // Shopify's appSubscriptionCreate rejects with a userError at real charge time (billing.js),
+  // surfacing as a generic "Failed to process subscription" with no indication the coupon was
+  // the cause. The admin UI's own field already advertises this cap; the backend now actually
+  // enforces it instead of silently allowing 100 through.
+  if (discountType === "PERCENTAGE" && (!(percentOff > 0) || percentOff > 99)) {
+    return { error: "Percent off must be a number between 0 and 99 (100% would produce a $0 charge, which Shopify rejects)." };
   }
   if (discountType === "FIXED_AMOUNT" && !(amountOff > 0)) {
     return { error: "Amount off must be a positive number." };
@@ -969,7 +974,7 @@ router.get("/coupons", validateSuperAdmin, async (req, res) => {
       include: {
         plans: { include: { plan: { select: { id: true, name: true, title: true } } } },
         shops: true,
-        _count: { select: { claims: { where: { status: { in: COUNTED_CLAIM_STATUSES } } } } },
+        _count: { select: { claims: { where: countedClaimsWhere() } } },
       },
     });
     res.json({ coupons });

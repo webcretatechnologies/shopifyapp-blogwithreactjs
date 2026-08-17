@@ -1,6 +1,6 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
-import { getArticleLimit, maxSectionsForPlan, getFeatureLimit, buildTieredPlanFeatures } from "../services/PlanFeatureService.js";
+import { getArticleLimit, getFeatureLimit, buildTieredPlanFeatures } from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 
 const router = express.Router();
@@ -119,7 +119,6 @@ router.get("/check", async (req, res) => {
     // its own separate hardcoded copy, so an admin editing article_limit had no effect here and
     // the merchant billing page could show a stale limit.
     const postLimit = getArticleLimit(activePlan);
-    const sectionLimit = maxSectionsForPlan(activePlan);
 
     // Live Shopify blog count vs this plan's max_blogs cap — same GraphQL query already used to
     // enforce the cap at creation time (POST /shopify/blogs), reused here purely for display.
@@ -159,7 +158,7 @@ router.get("/check", async (req, res) => {
     }
 
     res.status(200).json({
-      activePlan, postCount, postLimit, sectionLimit,
+      activePlan, postCount, postLimit,
       blogCount, blogLimit, billingCycle,
     });
   } catch (error) {

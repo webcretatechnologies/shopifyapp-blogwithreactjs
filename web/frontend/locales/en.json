@@ -22,7 +22,7 @@
     "welcome": "Welcome back!",
     "overview": "Here's your blog overview.",
     "setupGuide": "Setup Guide",
-    "setupDesc": "Complete these steps to fully integrate Blogger into your storefront.",
+    "setupDesc": "Complete these steps to fully integrate {{appName}} into your storefront.",
     "embedApp": "Embed App Block",
     "embedDesc": "Enable the app embed block in your theme editor.",
     "writePost": "Write First Post",

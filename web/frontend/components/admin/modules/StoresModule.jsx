@@ -26,7 +26,7 @@ export default function StoresModule({ active, token, adminFetch, showToast, set
 
   const [overrideModalActive, setOverrideModalActive] = useState(false);
   const [selectedStoreDomain, setSelectedStoreDomain] = useState("");
-  const [overridePlan, setOverridePlan] = useState("Blogger Pro");
+  const [overridePlan, setOverridePlan] = useState("Pro Plan");
   const [overrideExpiry, setOverrideExpiry] = useState("");
 
   const [detailModalActive, setDetailModalActive] = useState(false);
@@ -176,9 +176,9 @@ export default function StoresModule({ active, token, adminFetch, showToast, set
                   options={[
                     { label: "All Plans", value: "all" },
                     { label: "Free tier", value: "free" },
-                    { label: "Blogger Starter", value: "Blogger Starter" },
-                    { label: "Blogger Pro", value: "Blogger Pro" },
-                    { label: "Blogger Business", value: "Blogger Business" },
+                    { label: "Starter Plan", value: "Starter Plan" },
+                    { label: "Pro Plan", value: "Pro Plan" },
+                    { label: "Business Plan", value: "Business Plan" },
                   ]}
                   value={planFilter}
                   onChange={(val) => { setPlanFilter(val); setStoresPage(1); }}
@@ -316,9 +316,9 @@ export default function StoresModule({ active, token, adminFetch, showToast, set
             <Select
               label="Target Custom Gating Plan Level"
               options={[
-                { label: "Blogger Starter", value: "Blogger Starter" },
-                { label: "Blogger Pro", value: "Blogger Pro" },
-                { label: "Blogger Business", value: "Blogger Business" },
+                { label: "Starter Plan", value: "Starter Plan" },
+                { label: "Pro Plan", value: "Pro Plan" },
+                { label: "Business Plan", value: "Business Plan" },
                 { label: "Free tier", value: "free" },
               ]}
               value={overridePlan}

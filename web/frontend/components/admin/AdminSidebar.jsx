@@ -1,5 +1,6 @@
 import { Text, BlockStack } from "@shopify/polaris";
 import { LayoutDashboard, Store, Settings, Ticket, FileText, LogOut, Shield } from "lucide-react";
+import { APP_NAME } from "../../utils/appName";
 
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard Overview", icon: LayoutDashboard },
@@ -34,7 +35,7 @@ export default function AdminSidebar({ activeSection, onSelect, onLogout }) {
       >
         <Shield size={24} color="#008060" />
         <Text variant="headingMd" as="span">
-          <span style={{ color: "#202223", fontWeight: 700 }}>Blogger</span>
+          <span style={{ color: "#202223", fontWeight: 700 }}>{APP_NAME}</span>
           <span
             style={{
               color: "#008060",

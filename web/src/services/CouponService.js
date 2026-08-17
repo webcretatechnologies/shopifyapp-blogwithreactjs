@@ -6,12 +6,36 @@
  * (POST /api/billing/request, which re-runs this exact same validation server-side — the preview
  * is never trusted for the actual discount that gets sent to Shopify).
  *
- * "Used" for totalUses/usesPerStore purposes = claims with status PENDING or APPROVED (a real
- * charge attempt happened); DECLINED/CANCELLED/EXPIRED don't count against the limit.
+ * "Used" for totalUses/usesPerStore purposes = claims with status APPROVED, or status PENDING
+ * and still recent (see PENDING_CLAIM_GRACE_MS) — DECLINED/CANCELLED/EXPIRED never count.
+ *
+ * Nothing in this codebase ever actually transitions a claim to DECLINED/CANCELLED/EXPIRED (the
+ * only status write anywhere is PENDING -> APPROVED, in GET /api/billing/check, and only once
+ * Shopify reports the matching subscription active) — so a merchant who closes the Shopify
+ * approval tab, or explicitly declines, leaves a claim stuck at PENDING forever. Without the
+ * recency check below, that claim would count against usesPerStore/totalUses permanently, even
+ * though no discount was ever actually granted — directly contradicting this service's own
+ * documented behavior above and the Super Admin coupon UI's help text ("an abandoned checkout
+ * does not burn a use"). A real Shopify approval redirect completes in well under a minute;
+ * anything still PENDING after the grace window is treated as abandoned, not in-flight.
  */
 import { prisma } from "../../shopify.js";
 
-const COUNTED_CLAIM_STATUSES = ["PENDING", "APPROVED"];
+const PENDING_CLAIM_GRACE_MS = 60 * 60 * 1000; // 1 hour
+
+// Exported so Super Admin's coupon usage-count badge (superAdmin.js) can apply the exact same
+// "counted" definition as real enforcement — a duplicate, drifted copy of this predicate is
+// exactly how the bug this comment is attached to went unnoticed: the admin's usage number and
+// the actual limit check disagreed with each other.
+export function countedClaimsWhere(extra) {
+  return {
+    ...extra,
+    OR: [
+      { status: "APPROVED" },
+      { status: "PENDING", createdAt: { gte: new Date(Date.now() - PENDING_CLAIM_GRACE_MS) } },
+    ],
+  };
+}
 
 export function couponDiscountLabel(coupon) {
   return coupon.discountType === "PERCENTAGE"
@@ -54,7 +78,7 @@ export async function validateCouponForShop(code, shopDomain, planTier = null) {
 
   if (coupon.totalUses !== null) {
     const totalClaims = await prisma.couponClaim.count({
-      where: { couponId: coupon.id, status: { in: COUNTED_CLAIM_STATUSES } },
+      where: countedClaimsWhere({ couponId: coupon.id }),
     });
     if (totalClaims >= coupon.totalUses) {
       return { ok: false, error: "This coupon has reached its usage limit." };
@@ -62,7 +86,7 @@ export async function validateCouponForShop(code, shopDomain, planTier = null) {
   }
 
   const storeClaims = await prisma.couponClaim.count({
-    where: { couponId: coupon.id, shopDomain, status: { in: COUNTED_CLAIM_STATUSES } },
+    where: countedClaimsWhere({ couponId: coupon.id, shopDomain }),
   });
   if (storeClaims >= coupon.usesPerStore) {
     return { ok: false, error: "You've already used this coupon." };

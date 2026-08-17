@@ -7,9 +7,9 @@ const DownloadIcon = (props) => <Download size={16} {...props} />;
 
 const PLAN_ROWS = [
   { key: "free", label: "Free Plan", color: "#9ca3af", tone: "default" },
-  { key: "starter", label: "Blogger Starter ($4.99)", color: "#60a5fa", tone: "info" },
-  { key: "pro", label: "Blogger Pro ($9.99)", color: "#10b981", tone: "success" },
-  { key: "business", label: "Blogger Business ($19.99)", color: "#a78bfa", tone: "attention" },
+  { key: "starter", label: "Starter Plan ($4.99)", color: "#60a5fa", tone: "info" },
+  { key: "pro", label: "Pro Plan ($9.99)", color: "#10b981", tone: "success" },
+  { key: "business", label: "Business Plan ($19.99)", color: "#a78bfa", tone: "attention" },
 ];
 
 /** Dashboard Overview — KPI cards, plan distribution, monthly churn/signups, recent onboarding. */
