@@ -138,7 +138,18 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
       const allowedLevels = new Set(levels.map(Number));
       const matchingHeadings = allHeadings.filter((h) => allowedLevels.has(h.level));
 
-      if (matchingHeadings.length === 0) return "";
+      // Matches TableOfContentsPreview.jsx's canvas placeholder exactly — previously this
+      // returned "" here, so a merchant who saw the canvas's own "No headings found" explanation
+      // while editing then hit Preview and had it silently vanish with zero indication why,
+      // looking like the block itself was broken rather than just needing H2/H3 headings to link
+      // to. The live storefront compiler (EditorContentCompiler.js) deliberately keeps the silent
+      // "" behavior instead — a real customer-facing page shouldn't show internal debug copy.
+      if (matchingHeadings.length === 0) {
+        return `<div style="padding: 16px 20px; background: #f9fafb; border: 1px dashed #c9cccf; border-radius: 8px; text-align: center; color: #6d7175; margin: 12px 0;">
+  <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: #202223;">${title}</div>
+  <div style="font-size: 13px;">No headings found — add an H2 or H3 to populate this list</div>
+</div>`;
+      }
 
       const minLevel = Math.min(...matchingHeadings.map((h) => h.level));
 
@@ -246,6 +257,12 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
         }
         .sp-toc-details[open] .toc-chevron {
           transform: rotate(180deg);
+        }
+        /* Matches the canvas's onMouseEnter/onMouseLeave underline toggle
+           (TableOfContentsPreview.jsx) — inline style attributes on the links themselves can't
+           express hover state, so it needs a real rule here. */
+        .sp-toc-details a:hover, .sp-toc-block a:hover {
+          text-decoration: underline !important;
         }
       </style>`;
 

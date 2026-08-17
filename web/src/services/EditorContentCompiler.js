@@ -276,15 +276,29 @@ export class EditorContentCompiler {
     const divs = $("div[data-type]");
 
     // Pre-pass: collect Heading-block anchor ids in document order, matching
-    // slugifyHeadingServer/dedup rules exactly, so TableOfContents (processed as just another
-    // div[data-type] in this same walk, in arbitrary order relative to its target headings) can
-    // link to them, and so the Heading case below can inject the same id onto the real <h#> tag.
+    // slugifyHeadingServer/dedup rules exactly, so TableOfContents can link to them, and so the
+    // Heading case below can inject the same id onto the real <h#> tag.
+    //
+    // Two different upstream formats reach this function, and both need to be recognized here:
+    //   1. Legacy/reconciled content (e.g. ShopifyArticleParser's echo-reconstruction) wraps every
+    //      block, headings included, in <div data-type="Heading">, converted to a real <h#> by the
+    //      "Heading" case in the main switch below.
+    //   2. compileBlocksToHtml.js (the AST compiler that actually powers both the Preview button
+    //      and Save & Sync, per posts/new.jsx's buildPayload/handlePreviewClick) renders headings
+    //      directly as real <h1>-<h6> tags with data-type="Heading" already on them — never a div.
+    // The pre-pass previously only scanned `divs` (div[data-type] elements), so format 2's headings
+    // were invisible to it — allHeadings came back empty, and TableOfContents's own case further
+    // below (which DOES correctly match its div[data-type="TableOfContents"] wrapper either way)
+    // then overwrote its own already-correct compileBlocksToHtml.js output with an empty string,
+    // believing there were no headings to link to, even though the headings were right there and
+    // rendering fine on their own. Scanning h1–h6[data-type="Heading"] here as well (in addition to
+    // the div form) fixes TOC without touching how either format's headings are themselves compiled.
+    const headingEls = $("div[data-type=\"Heading\"], h1[data-type=\"Heading\"], h2[data-type=\"Heading\"], h3[data-type=\"Heading\"], h4[data-type=\"Heading\"], h5[data-type=\"Heading\"], h6[data-type=\"Heading\"]");
     const allHeadings = [];
     const slugCounts = {};
-    for (let i = 0; i < divs.length; i++) {
-      const $el = $(divs[i]);
-      if ($el.attr("data-type") !== "Heading") continue;
-      const hAttrs = extractAttrs(divs[i]);
+    for (let i = 0; i < headingEls.length; i++) {
+      const el = headingEls[i];
+      const hAttrs = extractAttrs(el);
       const level = Number(hAttrs.level || 2);
       const text = String(hAttrs.text || "").replace(/<[^>]*>/g, "").trim();
       if (!text) continue;
@@ -540,7 +554,14 @@ export class EditorContentCompiler {
       })
       .join("\n");
 
-    return `<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
+    // Matches the canvas's onMouseEnter/onMouseLeave underline toggle (TableOfContentsPreview.jsx)
+    // and compileBlocksToHtml.js's own hover rule — inline `style` attributes can't express
+    // :hover, so this needs a real <style> block. Previously missing entirely here (this function
+    // only started actually running server-side once the heading-detection fix above let it), so
+    // TOC links showed the hover underline in the Builder canvas but nowhere else.
+    const hoverStyle = `<style>.sp-toc-block a:hover { text-decoration: underline !important; }</style>\n`;
+
+    return `${hoverStyle}<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
   <div style="font-weight: 700; font-size: 16px; color: ${textColor}; margin-bottom: 12px;">${title}</div>
   <${Tag} style="margin: 0; padding-left: 18px; list-style-type: ${listType};">
 ${itemsHtml}
