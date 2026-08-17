@@ -52,7 +52,11 @@ export default function EditPlanCoreModal({ open, plan, onChange, onSave, onClos
               value={plan.name}
               onChange={set("name")}
               autoComplete="off"
-              helpText="Must match Shopify's subscription name — also what Shop.planKey is set to"
+              helpText={
+                plan.id && plan.subscriberCount > 0
+                  ? `${plan.subscriberCount} store${plan.subscriberCount === 1 ? "" : "s"} already subscribed under the current slug — renaming it won't change their existing Shopify subscription name, which can affect plan-feature matching for them.`
+                  : "Must match Shopify's subscription name — also what Shop.planKey is set to"
+              }
             />
           </FormLayout.Group>
           <FormLayout.Group>
@@ -61,8 +65,17 @@ export default function EditPlanCoreModal({ open, plan, onChange, onSave, onClos
               value={String(plan.price)}
               onChange={set("price")}
               type="number"
+              min={0}
+              step={0.01}
               autoComplete="off"
               prefix="$"
+              error={
+                plan.price === "" || plan.price === null
+                  ? "Price is required"
+                  : Number.isFinite(Number(plan.price)) && Number(plan.price) >= 0
+                    ? undefined
+                    : "Price must be 0 or greater"
+              }
             />
             <Select
               label="Billing Interval"
@@ -77,8 +90,10 @@ export default function EditPlanCoreModal({ open, plan, onChange, onSave, onClos
               value={String(plan.trialDays ?? 0)}
               onChange={set("trialDays")}
               type="number"
+              min={0}
               autoComplete="off"
               helpText="0 = no free trial"
+              error={Number(plan.trialDays) < 0 ? "Trial period can't be negative" : undefined}
             />
             <TextField
               label="Sort Order"

@@ -12,19 +12,27 @@ router.get("/plans", async (req, res) => {
       where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
     });
-    // Price-ascending, matching the order the pricing page itself sorts cards into — the "based
-    // on" plan a diffed bullet list refers to has to be the same one the merchant sees to its
-    // immediate left.
+    // Bullet-diffing needs a strict low-to-high price order internally — each tier's bullets are
+    // computed as "what's new vs the plan directly below it in price" — so this pass always runs
+    // price-ascending regardless of the admin's chosen display order.
     const byPriceAsc = [...plans].sort((a, b) => Number(a.price) - Number(b.price));
     const tiered = buildTieredPlanFeatures(byPriceAsc.map((p) => p.name));
-    // Replaces the plan's own stored `features` marketing copy with a checklist built straight
-    // from its live PlanFeature gating (Sync Features/Sync Limits in Super Admin) — what the
-    // merchant sees now always matches what they actually get, and each tier only lists what's
-    // new versus the plan below it instead of repeating shared baseline features on every card.
-    const plansWithFeatures = byPriceAsc.map((plan, index) => ({
+    const featuresByPlanId = new Map(
+      byPriceAsc.map((plan, index) => [
+        plan.id,
+        {
+          features: tiered[index].bullets,
+          basedOnPlanTitle: tiered[index].basedOnIndex !== null ? byPriceAsc[tiered[index].basedOnIndex].title : null,
+        },
+      ])
+    );
+    // Card *display* order, however, is the admin's own Sort Order (already the `plans` array's
+    // order, per the query above) — previously this route discarded that entirely and always
+    // returned price-ascending, so editing Sort Order in Super Admin had no visible effect on the
+    // real merchant Billing page.
+    const plansWithFeatures = plans.map((plan) => ({
       ...plan,
-      features: tiered[index].bullets,
-      basedOnPlanTitle: tiered[index].basedOnIndex !== null ? byPriceAsc[tiered[index].basedOnIndex].title : null,
+      ...featuresByPlanId.get(plan.id),
     }));
     res.json({ plans: plansWithFeatures });
   } catch (error) {

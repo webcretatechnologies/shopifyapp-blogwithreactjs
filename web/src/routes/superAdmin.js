@@ -6,6 +6,23 @@ import { refreshPlanFeaturesCache, buildFeatureComparisonTable } from "../servic
 import { countedClaimsWhere } from "../services/CouponService.js";
 
 const router = express.Router();
+
+// Shared by the create/update plan routes below. Catches what the frontend form's own `type`
+// attributes/guards don't: an emptied price field (parseFloat("") => NaN => JSON.stringify(NaN)
+// => `null` over the wire, which previously hit SubscriptionPlan.price's non-nullable Decimal
+// column and surfaced as a raw multi-line PrismaClientValidationError to the admin), plus
+// negative price/trialDays, which had no guard anywhere before this.
+function validatePlanFields({ price, trialDays }) {
+  if (price !== undefined) {
+    const n = Number(price);
+    if (!Number.isFinite(n) || n < 0) return "Price must be a number of 0 or greater.";
+  }
+  if (trialDays !== undefined) {
+    const n = parseInt(trialDays, 10);
+    if (!Number.isFinite(n) || n < 0) return "Trial period must be 0 or more days.";
+  }
+  return null;
+}
 const prisma = new PrismaClient();
 
 const SECRET = process.env.SHOPIFY_API_SECRET || "super-admin-secret-key-123";
@@ -650,6 +667,11 @@ router.get("/pricing/plans", validateSuperAdmin, async (req, res) => {
 router.post("/pricing/plans", validateSuperAdmin, async (req, res) => {
   try {
     const { name, title, price, currency, interval, trialDays, description, features, isActive, sortOrder } = req.body;
+
+    if (!name || !title) return res.status(400).json({ error: "Name and Title are required." });
+    const validationError = validatePlanFields({ price, trialDays });
+    if (validationError) return res.status(400).json({ error: validationError });
+
     const newPlan = await prisma.subscriptionPlan.create({
       data: {
         name,
@@ -666,6 +688,9 @@ router.post("/pricing/plans", validateSuperAdmin, async (req, res) => {
     });
     res.json({ success: true, plan: newPlan });
   } catch (err) {
+    if (err.code === "P2002") {
+      return res.status(409).json({ error: `A plan with the slug "${req.body.name}" already exists.` });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -675,6 +700,10 @@ router.put("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const { name, title, price, currency, interval, trialDays, description, features, isActive, sortOrder } = req.body;
+
+    const validationError = validatePlanFields({ price, trialDays });
+    if (validationError) return res.status(400).json({ error: validationError });
+
     const updatedPlan = await prisma.subscriptionPlan.update({
       where: { id },
       data: {
@@ -692,6 +721,9 @@ router.put("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
     });
     res.json({ success: true, plan: updatedPlan });
   } catch (err) {
+    if (err.code === "P2002") {
+      return res.status(409).json({ error: `A plan with the slug "${req.body.name}" already exists.` });
+    }
     res.status(500).json({ error: err.message });
   }
 });

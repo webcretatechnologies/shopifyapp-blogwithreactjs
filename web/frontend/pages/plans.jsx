@@ -21,6 +21,10 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../utils/smartBack";
 
+function intervalSuffix(interval) {
+  return interval === "ANNUAL" ? "/year" : "/month";
+}
+
 function applyCouponDiscount(price, coupon) {
   if (coupon.discountType === "PERCENTAGE") {
     return Math.max(0, Math.round(price * (1 - Number(coupon.percentOff) / 100) * 100) / 100);
@@ -156,8 +160,14 @@ export default function Plans() {
     return new Date(isoOrDate).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
   };
 
-  const sortedPlans = [...dynamicPlans].sort((a, b) => Number(a.price) - Number(b.price));
-  const nextPlan = sortedPlans.find((p) => Number(p.price) > currentPrice);
+  // Card display order follows the admin's own Sort Order (dynamicPlans already arrives in that
+  // order from /api/billing/plans) — previously this page re-sorted by price itself, silently
+  // overriding whatever order was set in Super Admin. "Next plan to upgrade to" and "Recommended"
+  // still need a true price ordering regardless of display order, so that's computed separately.
+  const displayPlans = dynamicPlans;
+  const byPriceAsc = [...dynamicPlans].sort((a, b) => Number(a.price) - Number(b.price));
+  const nextPlan = byPriceAsc.find((p) => Number(p.price) > currentPrice);
+  const highestPrice = byPriceAsc.length ? Number(byPriceAsc[byPriceAsc.length - 1].price) : 0;
 
   return (
     <Page
@@ -350,10 +360,10 @@ export default function Plans() {
         </Layout.Section>
 
         <Layout.Section>
-          <InlineGrid columns={{ xs: 1, md: sortedPlans.length || 1 }} gap="400">
-            {sortedPlans.map((plan, index) => {
+          <InlineGrid columns={{ xs: 1, md: displayPlans.length || 1 }} gap="400">
+            {displayPlans.map((plan) => {
               const isCurrent = activePlan === plan.name;
-              const isRecommended = Number(plan.price) > 0 && index === sortedPlans.length - 1;
+              const isRecommended = Number(plan.price) > 0 && Number(plan.price) === highestPrice;
               const price = Number(plan.price);
 
               const couponAppliesHere = Boolean(
@@ -393,7 +403,7 @@ export default function Plans() {
                                 ${price.toFixed(2)}
                               </Text>
                               <Text as="span" variant="heading2xl">${discountedPrice.toFixed(2)}</Text>
-                              <Text as="span" variant="bodySm" tone="subdued">/month</Text>
+                              <Text as="span" variant="bodySm" tone="subdued">{intervalSuffix(plan.interval)}</Text>
                             </InlineStack>
                             <Text as="span" variant="bodySm" tone="success">
                               {appliedCoupon.discountType === "PERCENTAGE"
@@ -405,8 +415,13 @@ export default function Plans() {
                         ) : (
                           <InlineStack gap="150" blockAlign="baseline">
                             <Text as="span" variant="heading2xl">${price.toFixed(2)}</Text>
-                            <Text as="span" variant="bodySm" tone="subdued">/month</Text>
+                            <Text as="span" variant="bodySm" tone="subdued">{intervalSuffix(plan.interval)}</Text>
                           </InlineStack>
+                        )}
+                        {plan.trialDays > 0 && !isCurrent && (
+                          <Box paddingBlockStart="150">
+                            <Badge tone="success">{`${plan.trialDays}-day free trial`}</Badge>
+                          </Box>
                         )}
                       </Box>
 

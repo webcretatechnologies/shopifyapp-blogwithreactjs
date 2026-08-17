@@ -65,6 +65,21 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
       setError("Name and Title are required.");
       return;
     }
+    // A cleared price field (parseFloat("") => NaN) used to sail straight through to the backend
+    // as JSON `null` on a non-nullable column, surfacing a raw Prisma error. Same story for a
+    // negative price or trial length — nothing anywhere stopped either. Caught here, before the
+    // request, on top of the matching backend guard in superAdmin.js (defense in depth: this modal
+    // isn't the only possible caller of that route).
+    const priceNum = Number(editingPlan.price);
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      setError("Price must be a number of 0 or greater.");
+      return;
+    }
+    const trialDaysNum = parseInt(editingPlan.trialDays, 10);
+    if (editingPlan.trialDays !== "" && editingPlan.trialDays != null && (!Number.isFinite(trialDaysNum) || trialDaysNum < 0)) {
+      setError("Trial period must be 0 or more days.");
+      return;
+    }
     setSavingPlan(true);
     try {
       const isNew = !editingPlan.id;
@@ -75,8 +90,8 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
       // on PUT, so existing values survive a Core edit unchanged.
       const payload = {
         ...editingPlan,
-        price: parseFloat(editingPlan.price),
-        trialDays: parseInt(editingPlan.trialDays, 10) || 0,
+        price: priceNum,
+        trialDays: Number.isFinite(trialDaysNum) ? trialDaysNum : 0,
       };
       await adminFetch(url, { method, body: JSON.stringify(payload) });
       showToast(`Plan ${isNew ? "created" : "updated"} successfully`);
