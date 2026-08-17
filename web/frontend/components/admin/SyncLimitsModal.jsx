@@ -2,12 +2,19 @@ import { useState, useEffect } from "react";
 import { Modal, Text, BlockStack, FormLayout, TextField } from "@shopify/polaris";
 import { isLimitKey } from "./planLimitKeys";
 
+// Human-readable label per numeric-limit featureKey — falls back to the raw key for anything not
+// listed here, so a future limit key still renders (just unlabeled) instead of breaking.
+const LIMIT_KEY_LABELS = {
+  article_limit: "Article Limit",
+};
+
 /**
- * Numeric usage caps (article_limit, blog, blog_select, max_blogs) for one plan — the
- * "Sync Limits" action on a plan card. Plain labeled number fields with one batch "Sync Limits"
- * action, same posture as Sync Features. Same underlying PlanFeature rows/API, just the
- * numeric-limit partition instead of the boolean-toggle one — `enabled` isn't exposed here since
- * a limit row is always active; "unlimited" is already expressed by leaving the field blank.
+ * Numeric usage caps for one plan (currently just article_limit, the only real enforced cap left
+ * in the app) — the "Sync Limits" action on a plan card. Plain labeled number fields with one
+ * batch "Sync Limits" action, same posture as Sync Features. Same underlying PlanFeature rows/
+ * API, just the numeric-limit partition instead of the boolean-toggle one — `enabled` isn't
+ * exposed here since a limit row is always active; "unlimited" is already expressed by leaving
+ * the field blank.
  */
 export default function SyncLimitsModal({ open, planKey, planTitle, features, onSync, onClose }) {
   const rows = features.filter((f) => f.plan === planKey && isLimitKey(f.featureKey));
@@ -62,7 +69,7 @@ export default function SyncLimitsModal({ open, planKey, planTitle, features, on
             {rows.map((f) => (
               <TextField
                 key={f.id}
-                label={f.featureKey}
+                label={LIMIT_KEY_LABELS[f.featureKey] || f.featureKey}
                 placeholder="Unlimited"
                 value={draft[f.id] ?? ""}
                 onChange={(v) => setDraft((d) => ({ ...d, [f.id]: v }))}

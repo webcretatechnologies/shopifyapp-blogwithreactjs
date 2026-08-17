@@ -14,7 +14,7 @@ export const ADMIN_SECTIONS = ["dashboard", "stores", "pricing", "coupons", "act
 const SECTION_TITLES = {
   dashboard: "Console Dashboard",
   stores: "Stores Audit Auditor",
-  pricing: "Pricing & Plan Features",
+  pricing: "Plans & Billing",
   coupons: "Billing Coupons",
   activities: "Supervisor Activity Logs",
 };

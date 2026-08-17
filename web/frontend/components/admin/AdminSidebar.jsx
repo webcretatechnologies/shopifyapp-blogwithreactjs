@@ -5,7 +5,7 @@ import { APP_NAME } from "../../utils/appName";
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard Overview", icon: LayoutDashboard },
   { id: "stores", label: "Stores Auditor", icon: Store },
-  { id: "pricing", label: "Pricing & Features", icon: Settings },
+  { id: "pricing", label: "Plans & Billing", icon: Settings },
   { id: "coupons", label: "Coupons", icon: Ticket },
   { id: "activities", label: "Supervisor Activity", icon: FileText },
 ];

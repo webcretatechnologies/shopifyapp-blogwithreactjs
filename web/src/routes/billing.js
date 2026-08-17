@@ -1,6 +1,6 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
-import { getArticleLimit, getFeatureLimit, buildTieredPlanFeatures } from "../services/PlanFeatureService.js";
+import { getArticleLimit, buildTieredPlanFeatures } from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 
 const router = express.Router();
@@ -128,21 +128,6 @@ router.get("/check", async (req, res) => {
     // the merchant billing page could show a stale limit.
     const postLimit = getArticleLimit(activePlan);
 
-    // Live Shopify blog count vs this plan's max_blogs cap — same GraphQL query already used to
-    // enforce the cap at creation time (POST /shopify/blogs), reused here purely for display.
-    let blogCount = 0;
-    try {
-      const blogsResult = await client.request(`
-        query CountBlogs {
-          blogs(first: 250) { nodes { id } }
-        }
-      `);
-      blogCount = blogsResult.data?.blogs?.nodes?.length || 0;
-    } catch (err) {
-      console.error("Failed to count Shopify blogs for usage display:", err);
-    }
-    const blogLimit = getFeatureLimit(activePlan, "max_blogs");
-
     // Trial/renewal info — only meaningful when there's a real active subscription (Free has
     // neither a trial clock nor a renewal date).
     let billingCycle = null;
@@ -167,7 +152,7 @@ router.get("/check", async (req, res) => {
 
     res.status(200).json({
       activePlan, postCount, postLimit,
-      blogCount, blogLimit, billingCycle,
+      billingCycle,
     });
   } catch (error) {
     console.error("Failed to check billing:", error);

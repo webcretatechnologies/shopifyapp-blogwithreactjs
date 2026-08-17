@@ -13,7 +13,6 @@ import shopify from "../../shopify.js";
 import {
   getFeaturesForPlan,
   getArticleLimit,
-  getFeatureLimit,
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
@@ -1067,22 +1066,6 @@ router.post("/shopify/blogs", async (req, res) => {
     if (!session) return res.status(401).json({ error: "Unauthorized" });
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
-
-    const maxBlogs = getFeatureLimit(shop.planKey, "max_blogs");
-    if (maxBlogs !== null) {
-      const client = new shopify.api.clients.Graphql({ session });
-      const countResult = await client.request(`
-        query CountBlogs($first: Int!) {
-          blogs(first: $first) { nodes { id } }
-        }
-      `, { variables: { first: maxBlogs + 1 } });
-      const existingCount = countResult.data?.blogs?.nodes?.length || 0;
-      if (existingCount >= maxBlogs) {
-        return res.status(403).json({
-          error: `You've reached your plan limit of ${maxBlogs} blog${maxBlogs === 1 ? "" : "s"}. Please upgrade to create more.`,
-        });
-      }
-    }
 
     const { title, handle, commentPolicy, templateSuffix, seoTitle, seoDescription } = req.body;
 

@@ -38,8 +38,6 @@ export default function Plans() {
   const [activePlan, setActivePlan] = useState("");
   const [postCount, setPostCount] = useState(0);
   const [postLimit, setPostLimit] = useState(10);
-  const [blogCount, setBlogCount] = useState(0);
-  const [blogLimit, setBlogLimit] = useState(null);
   const [billingCycle, setBillingCycle] = useState(null);
   const [dynamicPlans, setDynamicPlans] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -69,8 +67,6 @@ export default function Plans() {
       setActivePlan(checkData.activePlan || "free");
       setPostCount(checkData.postCount || 0);
       setPostLimit(checkData.postLimit ?? 10);
-      setBlogCount(checkData.blogCount || 0);
-      setBlogLimit(checkData.blogLimit ?? null);
       setBillingCycle(checkData.billingCycle || null);
       setDynamicPlans(plansData.plans || []);
     } catch (err) {
@@ -148,12 +144,8 @@ export default function Plans() {
   const postsAtLimit = postLimit !== null && postCount >= postLimit;
   const postsNearLimit = postLimit !== null && !postsAtLimit && usagePct >= 80;
 
-  const blogUsagePct = blogLimit === null ? 0 : Math.min(100, Math.round((blogCount / blogLimit) * 100));
-  const blogsAtLimit = blogLimit !== null && blogCount >= blogLimit;
-  const blogsNearLimit = blogLimit !== null && !blogsAtLimit && blogUsagePct >= 80;
-
   const usageTone = (atLimit, nearLimit) => (atLimit ? "critical" : nearLimit ? "warning" : "success");
-  const anyUsageWarning = postsAtLimit || postsNearLimit || blogsAtLimit || blogsNearLimit;
+  const anyUsageWarning = postsAtLimit || postsNearLimit;
 
   const formatDate = (isoOrDate) => {
     if (!isoOrDate) return null;
@@ -216,13 +208,11 @@ export default function Plans() {
                 </Text>
 
                 {anyUsageWarning && (
-                  <Banner tone={postsAtLimit || blogsAtLimit ? "critical" : "warning"}>
+                  <Banner tone={postsAtLimit ? "critical" : "warning"}>
                     <InlineStack align="space-between" blockAlign="center" gap="300">
                       <Text as="p" variant="bodySm">
                         {postsAtLimit && "You've reached your article limit on this plan. "}
                         {!postsAtLimit && postsNearLimit && "You're close to your article limit. "}
-                        {blogsAtLimit && "You've reached your Shopify blog limit on this plan. "}
-                        {!blogsAtLimit && blogsNearLimit && "You're close to your Shopify blog limit. "}
                         {nextPlan ? `Upgrade to ${nextPlan.title} Plan for more room.` : "Contact us for higher limits."}
                       </Text>
                       {nextPlan && (
@@ -256,39 +246,21 @@ export default function Plans() {
                   </Banner>
                 )}
 
-                <InlineGrid columns={{ xs: 1, sm: 2 }} gap="800">
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between">
-                      <Text as="strong" variant="bodySm">Articles</Text>
-                      <Badge tone={postsAtLimit ? "critical" : postsNearLimit ? "warning" : "info"}>
-                        {postLimit === null ? "Unlimited" : `${postCount} of ${postLimit}`}
-                      </Badge>
-                    </InlineStack>
-                    <ProgressBar progress={usagePct} tone={usageTone(postsAtLimit, postsNearLimit)} size="small" />
-                    <InlineStack align="space-between" blockAlign="baseline">
-                      <Text as="strong" variant="bodySm">{postCount} article{postCount === 1 ? "" : "s"} created</Text>
-                      <Text as="p" variant="bodyXs" tone={postsAtLimit ? "critical" : postsNearLimit ? "caution" : "subdued"}>
-                        {postLimit === null ? "Unlimited" : postsAtLimit ? "Limit reached" : `${usagePct}% used`}
-                      </Text>
-                    </InlineStack>
-                  </BlockStack>
-
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between">
-                      <Text as="strong" variant="bodySm">Shopify Blogs</Text>
-                      <Badge tone={blogsAtLimit ? "critical" : blogsNearLimit ? "warning" : "info"}>
-                        {blogLimit === null ? "Unlimited" : `${blogCount} of ${blogLimit}`}
-                      </Badge>
-                    </InlineStack>
-                    <ProgressBar progress={blogUsagePct} tone={usageTone(blogsAtLimit, blogsNearLimit)} size="small" />
-                    <InlineStack align="space-between" blockAlign="baseline">
-                      <Text as="strong" variant="bodySm">{blogCount} blog{blogCount === 1 ? "" : "s"} in use</Text>
-                      <Text as="p" variant="bodyXs" tone={blogsAtLimit ? "critical" : blogsNearLimit ? "caution" : "subdued"}>
-                        {blogLimit === null ? "Unlimited" : blogsAtLimit ? "Limit reached" : `${blogUsagePct}% used`}
-                      </Text>
-                    </InlineStack>
-                  </BlockStack>
-                </InlineGrid>
+                <BlockStack gap="200">
+                  <InlineStack align="space-between">
+                    <Text as="strong" variant="bodySm">Articles</Text>
+                    <Badge tone={postsAtLimit ? "critical" : postsNearLimit ? "warning" : "info"}>
+                      {postLimit === null ? "Unlimited" : `${postCount} of ${postLimit}`}
+                    </Badge>
+                  </InlineStack>
+                  <ProgressBar progress={usagePct} tone={usageTone(postsAtLimit, postsNearLimit)} size="small" />
+                  <InlineStack align="space-between" blockAlign="baseline">
+                    <Text as="strong" variant="bodySm">{postCount} article{postCount === 1 ? "" : "s"} created</Text>
+                    <Text as="p" variant="bodyXs" tone={postsAtLimit ? "critical" : postsNearLimit ? "caution" : "subdued"}>
+                      {postLimit === null ? "Unlimited" : postsAtLimit ? "Limit reached" : `${usagePct}% used`}
+                    </Text>
+                  </InlineStack>
+                </BlockStack>
               </BlockStack>
             </Card>
           </Layout.Section>

@@ -1,9 +1,16 @@
 // The PlanFeature table stores both boolean block-feature toggles (heading, text, image, faq,
-// product, hero, custom_css, ...) and numeric usage limits (article_limit, blog, blog_select,
-// max_blogs) in one flat table. Super Admin's card UI splits editing into two focused
-// modals — "Sync Features" (toggles) and "Sync Limits" (numeric caps) — purely by partitioning
-// on featureKey; the underlying data/API is identical either way.
-export const PLAN_LIMIT_KEYS = ["article_limit", "blog", "blog_select", "max_blogs"];
+// product, hero, custom_css, ...) and numeric usage limits in one flat table. Super Admin's card
+// UI splits editing into two focused modals — "Sync Features" (toggles) and "Sync Limits"
+// (numeric caps) — purely by partitioning on featureKey; the underlying data/API is identical
+// either way.
+//
+// article_limit is the only real, enforced numeric cap left in the app (see posts.js/import.js/
+// wizard.js). `blog` and `blog_select` were legacy PlanFeature rows with a `limit` value that was
+// never read by any enforcement code — dead data, not real gates — and `max_blogs` (Shopify blog
+// count) was a real cap that's been intentionally removed app-wide, by request, so multi-blog
+// management is unrestricted at every plan now. None of the three show up here anymore, which
+// means Sync Limits only ever surfaces the one cap that actually does anything.
+export const PLAN_LIMIT_KEYS = ["article_limit"];
 
 export function isLimitKey(featureKey) {
   return PLAN_LIMIT_KEYS.includes(featureKey);

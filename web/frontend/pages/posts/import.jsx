@@ -39,6 +39,17 @@ export default function ArticleImporter() {
   const [selectedBlog, setSelectedBlog] = useState("");
   const [loadingBlogs, setLoadingBlogs] = useState(true);
 
+  // Shop domain — used to deep-link the empty state's "Create in Shopify Admin" action straight
+  // into that blog's new-article screen instead of just telling the merchant where to go with no
+  // way to get there.
+  const [shopDomain, setShopDomain] = useState("");
+  useEffect(() => {
+    fetch("/api/shop")
+      .then((r) => r.json())
+      .then((d) => setShopDomain(d.shop?.domain || ""))
+      .catch(() => {});
+  }, []);
+
   // ─── Articles (full list, fetched once per blog) ──────────────────────────
   const [allArticles, setAllArticles] = useState([]);
   const [loadingArticles, setLoadingArticles] = useState(false);
@@ -569,13 +580,22 @@ export default function ArticleImporter() {
                                   setImportStatusFilter([]);
                                 },
                               }
-                            : undefined
+                            : shopDomain
+                              ? {
+                                  content: "Create article in Shopify Admin",
+                                  onAction: () =>
+                                    window.open(
+                                      `https://${shopDomain}/admin/blogs/${selectedBlog}/articles/new`,
+                                      "_blank"
+                                    ),
+                                }
+                              : undefined
                         }
                       >
                         <p>
                           {queryValue || publishStatusFilter.length > 0 || importStatusFilter.length > 0
                             ? "Try adjusting your search or filter criteria."
-                            : "This blog has no articles yet. Create some in your Shopify Admin."}
+                            : "This blog has no articles yet. Create one in Shopify Admin, then come back here to import it."}
                         </p>
                       </EmptyState>
                     </Box>
