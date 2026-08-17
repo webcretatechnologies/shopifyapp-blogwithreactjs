@@ -176,7 +176,19 @@ export default function Plans() {
         } else if (data.isFree) {
           // Free never goes through Shopify's approval screen — no redirect round-trip, so
           // there's no ?subscribed=1 to react to. Confirm right here instead.
-          await fetchBillingData();
+          //
+          // Deliberately NOT re-fetching via fetchBillingData()/GET /check here: that route
+          // re-queries Shopify's own activeSubscriptions to decide the plan, and immediately
+          // after the appSubscriptionCancel call the backend just made, Shopify's API can still
+          // report the just-cancelled subscription as ACTIVE for a few seconds (ordinary
+          // eventual consistency) — /check would then "helpfully" resync planKey back to the old
+          // paid plan, undoing the downgrade the merchant just confirmed. The backend already
+          // did the real work and confirmed no userErrors, so this response body IS the source
+          // of truth; use it directly instead of asking a race-prone endpoint to confirm itself.
+          setActivePlan(data.activePlan || "free");
+          setPostCount(data.postCount ?? 0);
+          setPostLimit("postLimit" in data ? data.postLimit : null);
+          setBillingCycle(data.billingCycle ?? null);
           showPlanToast("You're now on the Free plan");
         }
         return true;

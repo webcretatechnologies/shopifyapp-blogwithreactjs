@@ -80,7 +80,22 @@ router.get("/check", async (req, res) => {
 
     let activePlan = "free";
 
-    if (activeSub) {
+    // Shopify's activeSubscriptions query can still report a just-cancelled subscription as
+    // ACTIVE for a few seconds after appSubscriptionCancel (ordinary eventual consistency on
+    // Shopify's side) — blindly trusting it here would resync shop.planKey back to the old paid
+    // plan right after a merchant's downgrade-to-free went through, undoing it. Give a brief
+    // grace window after any local planKey write before trusting Shopify's live subscription
+    // list over what we already know locally.
+    // Shop.updatedAt is Prisma's own @updatedAt column, already bumped by the free-downgrade
+    // route's prisma.shop.update({ planKey: "free" }) call — no schema change needed to use it
+    // as a "was this shop record just touched" signal for the grace window below.
+    const RECENT_LOCAL_CHANGE_MS = 30_000;
+    const planWasJustChangedLocally =
+      shop?.updatedAt && Date.now() - new Date(shop.updatedAt).getTime() < RECENT_LOCAL_CHANGE_MS;
+
+    const trustLocalFreeOverStaleShopify = planWasJustChangedLocally && shop?.planKey === "free";
+
+    if (activeSub && !trustLocalFreeOverStaleShopify) {
       activePlan = activeSub.name;
       // Sync shop planKey in database if it differs
       if (shop && shop.planKey !== activePlan) {
@@ -103,6 +118,9 @@ router.get("/check", async (req, res) => {
       } catch (err) {
         console.error("Failed to reconcile coupon claim status:", err);
       }
+    } else if (activeSub && trustLocalFreeOverStaleShopify) {
+      // Trust the recent local cancellation over Shopify's still-stale ACTIVE read.
+      activePlan = "free";
     } else {
       // Fallback to check DB
       const dbPlan = await prisma.appPlan.findFirst({
@@ -204,7 +222,25 @@ router.post("/request", async (req, res) => {
         await prisma.shop.update({ where: { id: shop.id }, data: { planKey: "free" } });
       }
 
-      return res.status(200).json({ confirmationUrl: null, isFree: true });
+      // Return the confirmed final state directly instead of making the frontend immediately
+      // re-fetch it from GET /check. Right after appSubscriptionCancel above, Shopify's own
+      // activeSubscriptions query can still report the just-cancelled subscription as ACTIVE for
+      // a few seconds (ordinary eventual consistency on Shopify's side) — /check's own "sync
+      // planKey from Shopify" logic would then see that stale ACTIVE subscription and overwrite
+      // the planKey:"free" we just correctly set back to the old paid plan, so the merchant saw
+      // a success toast but the page's own next data load showed the downgrade hadn't happened
+      // (only a hard refresh, some time later once Shopify caught up, showed it correctly). We
+      // just cancelled it ourselves and confirmed no userErrors, so this response IS the source
+      // of truth — no need to ask Shopify again immediately.
+      const postCount = shop ? await prisma.post.count({ where: { shopId: shop.id } }) : 0;
+      return res.status(200).json({
+        confirmationUrl: null,
+        isFree: true,
+        activePlan: "free",
+        postCount,
+        postLimit: getArticleLimit("free"),
+        billingCycle: null,
+      });
     }
 
     // Fetch the dynamic plan details from DB
