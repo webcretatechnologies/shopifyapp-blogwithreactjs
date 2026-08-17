@@ -32,6 +32,8 @@ import {
   ImportIcon,
   MenuHorizontalIcon,
   DuplicateIcon,
+  ChatIcon,
+  DeleteIcon,
 } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 import UpgradePrompt from "../../components/UpgradePrompt";
@@ -160,6 +162,7 @@ function PostActionPopover({ post, onDelete, onClone, cloneEnabled }) {
   if (post?.shopifyArticle?.shopifyArticleId) {
     actionItems.push({
       content: "Manage comments",
+      icon: ChatIcon,
       onAction: () => {
         togglePopoverActive();
         navigate(`/comments?article_id=${post.shopifyArticle.shopifyArticleId}`);
@@ -168,6 +171,7 @@ function PostActionPopover({ post, onDelete, onClone, cloneEnabled }) {
   }
   actionItems.push({
     content: "Delete",
+    icon: DeleteIcon,
     destructive: true,
     onAction: () => {
       togglePopoverActive();

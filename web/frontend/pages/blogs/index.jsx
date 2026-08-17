@@ -22,7 +22,8 @@ import {
 } from "@shopify/polaris";
 import {
   PlusIcon,
-  MenuHorizontalIcon
+  MenuHorizontalIcon,
+  DeleteIcon
 } from "@shopify/polaris-icons";
 import { Modal } from "@shopify/polaris";
 
@@ -56,6 +57,7 @@ function BlogActionPopover({ blog, onDelete }) {
         items={[
           {
             content: "Delete",
+            icon: DeleteIcon,
             destructive: true,
             onAction: () => {
               togglePopoverActive();
