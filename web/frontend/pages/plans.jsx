@@ -92,7 +92,12 @@ export default function Plans() {
 
       setActivePlan(checkData.activePlan || "free");
       setPostCount(checkData.postCount || 0);
-      setPostLimit(checkData.postLimit ?? 10);
+      // checkData.postLimit is `null` on purpose for unlimited plans (Pro) — that's a meaningful
+      // value, not missing data, so it must NOT be coalesced away. `?? 10` here previously treated
+      // null the same as undefined/missing and silently substituted a hardcoded 10, which is
+      // exactly why Pro (truly unlimited) was showing "8 of 10" / "80% used" / a fake near-limit
+      // warning instead of "Unlimited".
+      setPostLimit("postLimit" in checkData ? checkData.postLimit : 10);
       setBillingCycle(checkData.billingCycle || null);
       setDynamicPlans(plansData.plans || []);
       return { checkData, plansData };
