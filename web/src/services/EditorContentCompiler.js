@@ -579,11 +579,17 @@ export class EditorContentCompiler {
       const marginBottom = isRoot ? "0" : "2px";
       const listType = listStyle === "numbered" ? (isRoot ? "decimal" : "lower-alpha") : (isRoot ? "disc" : "circle");
 
+      // Matches the canvas's onMouseEnter/onMouseLeave underline toggle (TableOfContentsPreview.jsx)
+      // — driven inline instead of a sibling <style> block, because Shopify's own admin blog
+      // article editor doesn't render/strip raw <style> tags cleanly, leaving a large blank
+      // block-height gap in its place when merchants open the post there (the app's own
+      // storefront rendering was never affected by the old <style> block — this was purely a
+      // Shopify admin-editor display bug).
       const itemsHtml = items
         .map((h) => {
           const isMain = h.level === minLevel;
           const childrenHtml = h.children && h.children.length > 0 ? renderNodes(h.children, false) : "";
-          return `<li style="font-size: 14px; margin: 6px 0; display: list-item;"><a href="#${h.id}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};">${h.text}</a>${childrenHtml}</li>`;
+          return `<li style="font-size: 14px; margin: 6px 0; display: list-item;"><a href="#${h.id}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};" onmouseenter="this.style.textDecoration='underline'" onmouseleave="this.style.textDecoration='none'">${h.text}</a>${childrenHtml}</li>`;
         })
         .join("\n");
 
@@ -592,14 +598,7 @@ export class EditorContentCompiler {
 
     const listHtml = renderNodes(tree, true);
 
-    // Matches the canvas's onMouseEnter/onMouseLeave underline toggle (TableOfContentsPreview.jsx)
-    // and compileBlocksToHtml.js's own hover rule — inline `style` attributes can't express
-    // :hover, so this needs a real <style> block. Previously missing entirely here (this function
-    // only started actually running server-side once the heading-detection fix above let it), so
-    // TOC links showed the hover underline in the Builder canvas but nowhere else.
-    const hoverStyle = `<style>.sp-toc-block a:hover { text-decoration: underline !important; }</style>\n`;
-
-    return `${hoverStyle}<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
+    return `<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
   <div style="font-weight: 700; font-size: 16px; color: ${textColor}; margin-bottom: 12px;">${title}</div>
 ${listHtml}
 </div>`;
@@ -636,10 +635,21 @@ ${listHtml}
     // children) untouched. Only a genuine data-content attribute (the ShopifyArticleParser
     // echo/reconcile path) should cause this to render anything at all.
     if (!content || typeof content !== "string") return null;
-    const cleanText = content.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
-    const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(content);
+    // Defensive: strip any pre-existing builder-richtext-wrapper layer(s) already baked into
+    // `content` (e.g. legacy content from before ShopifyArticleParser's own unwrap fix) so this
+    // never compounds a fresh wrapper on top of stale ones — see unwrapRichTextContent's docblock
+    // in ShopifyArticleParser.js for the full compounding-bug story.
+    let cleaned = content.trim();
+    const wrapperRe = /^<div class="builder-richtext-wrapper">([\s\S]*)<\/div>$/;
+    let m = wrapperRe.exec(cleaned);
+    while (m) {
+      cleaned = m[1].trim();
+      m = wrapperRe.exec(cleaned);
+    }
+    const cleanText = cleaned.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
+    const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(cleaned);
     if (!cleanText && !containsMedia) return null;
-    return `<div class="builder-richtext-wrapper">${content}</div>`;
+    return `<div class="builder-richtext-wrapper">${cleaned}</div>`;
   }
 
   // Mirrors compileBlocksToHtml.js's "Callout" case.
@@ -1852,14 +1862,23 @@ ${this.generateGlobalCss(settings)}
 
       contentHtml = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 16px 0;">${gridItemsHtml}</div>`;
     } else {
+      // Open/close visual state used to live in a sibling <style> tag with [open] selectors —
+      // dropped because Shopify's own admin blog article editor doesn't render/strip raw <style>
+      // tags cleanly, leaving a large blank block-height gap in its place when merchants open the
+      // post there (the app's own storefront rendering was never affected — this was purely a
+      // Shopify admin-editor display bug). Mirrors compileBlocksToHtml.js's identical fix: driven
+      // inline via each <details>' ontoggle handler instead. summary's own display:flex already
+      // suppresses the native disclosure triangle in evergreen browsers (::marker only renders
+      // for display:list-item), so no CSS was needed for that part either.
       const accordionItemsHtml = items
         .map((item, idx) => {
           const isOpen = firstOpen && idx === 0;
+          const toggleHandler = `var q=this.querySelector('.faq-question-text'),i=this.querySelector('.faq-icon-wrapper');if(this.open){q.style.color='${accentColor}';i.style.transform='rotate(180deg)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)';}else{q.style.color='#202223';i.style.transform='rotate(0deg)';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.03)';}`;
           return `
-          <details ${isOpen ? "open" : ""} class="builder-faq-item" style="background-color: ${backgroundColor}; border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; overflow: hidden; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); transition: all 0.2s ease;">
+          <details ${isOpen ? "open" : ""} class="builder-faq-item" ontoggle="${toggleHandler}" style="background-color: ${backgroundColor}; border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; overflow: hidden; margin-bottom: 10px; box-shadow: ${isOpen ? "0 2px 8px rgba(0,0,0,0.06)" : "0 1px 3px rgba(0,0,0,0.03)"}; transition: all 0.2s ease;">
             <summary style="padding: 14px 18px; font-size: 15px; font-weight: 600; color: #202223; cursor: pointer; outline: none; list-style: none; display: flex; justify-content: space-between; align-items: center; user-select: none;">
-              <span class="faq-question-text" style="color: #202223; font-size: 15px; font-weight: 600; line-height: 1.4; transition: color 0.2s ease;">${escapeHtml(item.question || "")}</span>
-              <span class="faq-icon-wrapper" style="color: ${accentColor}; flex-shrink: 0; display: inline-flex; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);">
+              <span class="faq-question-text" style="color: ${isOpen ? accentColor : "#202223"}; font-size: 15px; font-weight: 600; line-height: 1.4; transition: color 0.2s ease;">${escapeHtml(item.question || "")}</span>
+              <span class="faq-icon-wrapper" style="color: ${accentColor}; flex-shrink: 0; display: inline-flex; transform: ${isOpen ? "rotate(180deg)" : "rotate(0deg)"}; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </span>
             </summary>
@@ -1871,15 +1890,7 @@ ${this.generateGlobalCss(settings)}
         })
         .join("");
 
-      const styleBlock = `<style>
-        .builder-faq-item summary::-webkit-details-marker,
-        .builder-faq-item summary::marker { display: none !important; }
-        .builder-faq-item[open] summary .faq-question-text { color: ${accentColor} !important; }
-        .builder-faq-item[open] summary .faq-icon-wrapper { transform: rotate(180deg) !important; }
-        .builder-faq-item[open] { box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important; }
-      </style>`;
-
-      contentHtml = `${styleBlock}<div style="margin: 16px 0;">${accordionItemsHtml}</div>`;
+      contentHtml = `<div style="margin: 16px 0;">${accordionItemsHtml}</div>`;
     }
 
     const titleHtml = title ? `<h2 style="text-align: ${titleAlign}; font-size: 22px; font-weight: 700; color: #202223; margin: 24px 0 16px 0;">${escapeHtml(title)}</h2>` : "";
@@ -1991,11 +2002,20 @@ ${this.generateGlobalCss(settings)}
     // individually resynced — surprising for something that reads as a site-wide setting, not
     // per-post content. Now fetched live from /custom-code.json on every page view, same as
     // related posts above, via the same shared script.
+    // class names (not just data-* attributes) are load-bearing here: Shopify's own admin blog
+    // article editor strips unrecognized data-* attributes when a merchant saves an article
+    // directly there (confirmed live — data-custom-header/data-custom-footer/data-related-posts/
+    // data-branding-badge all vanished from body_html after a plain Shopify-side save, while the
+    // class attribute survived untouched). Without a class fallback these placeholders become
+    // permanently unidentifiable after any Shopify-side edit — both to the storefront bootstrap
+    // script (relatedPosts.js's RELATED_POSTS_SCRIPT, which finds them by selector) and to our
+    // own reconcile parser (ShopifyArticleParser.js's _stripAppWrapper) — breaking custom header/
+    // footer injection silently and leaving stray empty markup behind.
     const headerPlaceholder = domain
-      ? `<div data-custom-header data-shop="${escapeHtml(domain)}"></div>`
+      ? `<div class="blogger-custom-header" data-custom-header data-shop="${escapeHtml(domain)}"></div>`
       : "";
     const footerPlaceholder = domain
-      ? `<div data-custom-footer data-shop="${escapeHtml(domain)}"></div>`
+      ? `<div class="blogger-custom-footer" data-custom-footer data-shop="${escapeHtml(domain)}"></div>`
       : "";
 
     // Byline (author / published date / reading time) — the data itself is baked (it's real

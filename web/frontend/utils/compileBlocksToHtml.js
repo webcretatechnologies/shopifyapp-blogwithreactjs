@@ -179,11 +179,17 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
         const marginBottom = isRoot ? "0" : "2px";
         const listType = listStyle === "numbered" ? (isRoot ? "decimal" : "lower-alpha") : (isRoot ? "disc" : "circle");
 
+        // Matches the canvas's onMouseEnter/onMouseLeave underline toggle
+        // (TableOfContentsPreview.jsx) — driven inline instead of a sibling <style> block, because
+        // Shopify's own admin blog article editor doesn't render/strip raw <style> tags cleanly,
+        // leaving a large blank block-height gap in its place when merchants open the post there
+        // (the app's own storefront rendering was never affected by the old <style> block — this
+        // was purely a Shopify admin-editor display bug).
         const lisHtml = items
           .map((item) => {
             const isMain = item.level === minLevel;
             const clickHandler = `var el=document.getElementById('${item.id}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});if(history.pushState){history.pushState(null,null,'#${item.id}');}return false;}`;
-            const link = `<a href="#${item.id}" onclick="${clickHandler}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? '600' : '400'}; transition: color 0.15s ease;">${item.text}</a>`;
+            const link = `<a href="#${item.id}" onclick="${clickHandler}" onmouseenter="this.style.textDecoration='underline'" onmouseleave="this.style.textDecoration='none'" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? '600' : '400'}; transition: color 0.15s ease;">${item.text}</a>`;
             const childrenHtml = item.children && item.children.length > 0
               ? renderTocNodesHtml(item.children, false)
               : "";
@@ -196,87 +202,21 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
 
       const tree = buildTocNodes(matchingHeadings);
       const listContentHtml = renderTocNodesHtml(tree, true);
-      const styleTag = `<style>
-        html { scroll-behavior: smooth; }
-        [id] { scroll-margin-top: 24px; }
-        .sp-toc-details ul, .sp-toc-block ul {
-          list-style-type: disc !important;
-          padding-left: 20px !important;
-          margin: 4px 0 !important;
-          display: block !important;
-        }
-        .sp-toc-details ul ul, .sp-toc-block ul ul {
-          list-style-type: circle !important;
-          padding-left: 20px !important;
-          margin: 4px 0 !important;
-          display: block !important;
-        }
-        .sp-toc-details ol, .sp-toc-block ol {
-          list-style-type: decimal !important;
-          padding-left: 20px !important;
-          margin: 4px 0 !important;
-          display: block !important;
-        }
-        .sp-toc-details ol ol, .sp-toc-block ol ol {
-          list-style-type: lower-alpha !important;
-          padding-left: 20px !important;
-          margin: 4px 0 !important;
-          display: block !important;
-        }
-        .sp-toc-details li, .sp-toc-block li {
-          list-style: inherit !important;
-          margin: 6px 0 !important;
-          padding: 0 !important;
-          display: list-item !important;
-        }
-        .sp-toc-details summary {
-          font-weight: 700;
-          font-size: 16px;
-          color: ${textColor};
-          outline: none;
-          cursor: pointer;
-          display: flex !important;
-          align-items: center;
-          justify-content: space-between;
-          list-style: none !important;
-          user-select: none;
-          gap: 8px;
-        }
-        .sp-toc-details summary::-webkit-details-marker {
-          display: none !important;
-        }
-        .sp-toc-details summary::marker {
-          display: none !important;
-        }
-        .sp-toc-details .toc-chevron {
-          flex-shrink: 0;
-          width: 20px;
-          height: 20px;
-          transition: transform 0.25s ease;
-          color: ${textColor};
-        }
-        .sp-toc-details[open] .toc-chevron {
-          transform: rotate(180deg);
-        }
-        /* Matches the canvas's onMouseEnter/onMouseLeave underline toggle
-           (TableOfContentsPreview.jsx) — inline style attributes on the links themselves can't
-           express hover state, so it needs a real rule here. */
-        .sp-toc-details a:hover, .sp-toc-block a:hover {
-          text-decoration: underline !important;
-        }
-      </style>`;
 
       if (collapsible) {
-        const chevronSvg = `<svg class="toc-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 8 10 13 15 8"/></svg>`;
-        return `${styleTag}\n<details class="sp-toc-details" open style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
-  <summary><span>${title}</span>${chevronSvg}</summary>
+        // Chevron rotation used to be a [open] CSS selector — now driven by the <details>'
+        // ontoggle handler directly, same reasoning as the hover fix above.
+        const chevronSvg = `<svg class="toc-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; width: 20px; height: 20px; transition: transform 0.25s ease; color: ${textColor};"><polyline points="5 8 10 13 15 8"/></svg>`;
+        const toggleHandler = `var c=this.querySelector('.toc-chevron');if(c){c.style.transform=this.open?'rotate(180deg)':'rotate(0deg)';}`;
+        return `<details class="sp-toc-details" open ontoggle="${toggleHandler}" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
+  <summary style="font-weight: 700; font-size: 16px; color: ${textColor}; outline: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; list-style: none; user-select: none; gap: 8px;"><span>${title}</span>${chevronSvg}</summary>
   <div style="margin-top: 12px;">
 ${listContentHtml}
   </div>
 </details>`;
       }
 
-      return `${styleTag}\n<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
+      return `<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
   <div style="font-weight: 700; font-size: 16px; color: ${textColor}; margin-bottom: 12px;">${title}</div>
 ${listContentHtml}
 </div>`;
@@ -305,6 +245,17 @@ ${listContentHtml}
           return "";
         }
       }
+      // Defensive: strip any pre-existing builder-richtext-wrapper layer(s) already baked into
+      // settings.content (legacy/reconciled content) so a fresh wrapper never compounds on top
+      // of stale ones — see unwrapRichTextContent in ShopifyArticleParser.js for the full story.
+      html = html.trim();
+      const wrapperRe = /^<div class="builder-richtext-wrapper">([\s\S]*)<\/div>$/;
+      let m = wrapperRe.exec(html);
+      while (m) {
+        html = m[1].trim();
+        m = wrapperRe.exec(html);
+      }
+
       const cleanText = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, "").trim();
       const containsMedia = /<(img|iframe|table|video|svg|input|button)/i.test(html);
       if (!cleanText && !containsMedia) return "";
@@ -721,14 +672,24 @@ ${listContentHtml}
 
         contentHtml = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 16px 0;">${gridItemsHtml}</div>`;
       } else {
+        // Open/close visual state (question color, icon rotation, box-shadow) used to live in a
+        // sibling <style> tag using [open] selectors — dropped because Shopify's own admin blog
+        // article editor doesn't render/strip raw <style> tags cleanly, leaving a large blank
+        // block-height gap in place of the tag when merchants open the post there (App-side
+        // compiled/live storefront rendering was never affected — this was purely a Shopify
+        // admin-editor display bug). Same open-state behavior is now driven inline via each
+        // <details>' ontoggle handler instead of CSS. list-style:none plus the summary's own
+        // display:flex already suppresses the native disclosure triangle in evergreen browsers
+        // (::marker only renders for display:list-item), so no CSS was needed for that part either.
         const accordionItemsHtml = items
           .map((item, idx) => {
             const isOpen = firstOpen && idx === 0;
+            const toggleHandler = `var q=this.querySelector('.faq-question-text'),i=this.querySelector('.faq-icon-wrapper');if(this.open){q.style.color='${accentColor}';i.style.transform='rotate(180deg)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)';}else{q.style.color='#202223';i.style.transform='rotate(0deg)';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.03)';}`;
             return `
-            <details ${isOpen ? "open" : ""} class="builder-faq-item" style="background-color: ${backgroundColor}; border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; overflow: hidden; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); transition: all 0.2s ease;">
+            <details ${isOpen ? "open" : ""} class="builder-faq-item" ontoggle="${toggleHandler}" style="background-color: ${backgroundColor}; border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; overflow: hidden; margin-bottom: 10px; box-shadow: ${isOpen ? "0 2px 8px rgba(0,0,0,0.06)" : "0 1px 3px rgba(0,0,0,0.03)"}; transition: all 0.2s ease;">
               <summary style="padding: 14px 18px; font-size: 15px; font-weight: 600; color: #202223; cursor: pointer; outline: none; list-style: none; display: flex; justify-content: space-between; align-items: center; user-select: none;">
-                <span class="faq-question-text" style="color: #202223; font-size: 15px; font-weight: 600; line-height: 1.4; transition: color 0.2s ease;">${item.question || ""}</span>
-                <span class="faq-icon-wrapper" style="color: ${accentColor}; flex-shrink: 0; display: inline-flex; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);">
+                <span class="faq-question-text" style="color: ${isOpen ? accentColor : "#202223"}; font-size: 15px; font-weight: 600; line-height: 1.4; transition: color 0.2s ease;">${item.question || ""}</span>
+                <span class="faq-icon-wrapper" style="color: ${accentColor}; flex-shrink: 0; display: inline-flex; transform: ${isOpen ? "rotate(180deg)" : "rotate(0deg)"}; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </span>
               </summary>
@@ -740,15 +701,7 @@ ${listContentHtml}
           })
           .join("");
 
-        const styleBlock = `<style>
-          .builder-faq-item summary::-webkit-details-marker,
-          .builder-faq-item summary::marker { display: none !important; }
-          .builder-faq-item[open] summary .faq-question-text { color: ${accentColor} !important; }
-          .builder-faq-item[open] summary .faq-icon-wrapper { transform: rotate(180deg) !important; }
-          .builder-faq-item[open] { box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important; }
-        </style>`;
-
-        contentHtml = `${styleBlock}<div style="margin: 16px 0;">${accordionItemsHtml}</div>`;
+        contentHtml = `<div style="margin: 16px 0;">${accordionItemsHtml}</div>`;
       }
 
       const blockHeadings = context.headingsByBlockId?.[blockId] || [];

@@ -254,6 +254,21 @@ const legacyHtmlToAst = (html) => {
     enableschema: 'enableSchema'
   };
 
+  // Strips any pre-existing builder-richtext-wrapper layer(s) so re-importing/pasting
+  // already-compiled HTML doesn't bake in nested wrappers that then compound on every future
+  // save — mirrors unwrapRichTextContent in src/services/ShopifyArticleParser.js.
+  const unwrapRichTextContent = (html) => {
+    if (!html || typeof html !== "string") return html;
+    let current = html.trim();
+    const wrapperRe = /^<div class="builder-richtext-wrapper">([\s\S]*)<\/div>$/;
+    let match = wrapperRe.exec(current);
+    while (match) {
+      current = match[1].trim();
+      match = wrapperRe.exec(current);
+    }
+    return current;
+  };
+
   const parseFallbackSettings = (node, blockType) => {
     const settings = {};
     const style = node.getAttribute("style") || "";
@@ -276,7 +291,7 @@ const legacyHtmlToAst = (html) => {
         break;
       }
       case "RichText": {
-        settings.content = node.innerHTML || "";
+        settings.content = unwrapRichTextContent(node.innerHTML || "");
         break;
       }
       case "Section": {
@@ -595,8 +610,11 @@ const legacyHtmlToAst = (html) => {
       if (blockType === "Heading" && !settings.text) {
         settings.text = node.textContent.trim();
       }
+      if (blockType === "RichText" && settings.content) {
+        settings.content = unwrapRichTextContent(settings.content);
+      }
       if (blockType === "RichText" && !settings.content) {
-        settings.content = node.innerHTML || node.outerHTML;
+        settings.content = unwrapRichTextContent(node.innerHTML || node.outerHTML);
       }
 
       const createdBlock = {
@@ -1859,6 +1877,32 @@ export default function PostEditor() {
             <Layout.Section>
               <Banner tone="critical" onDismiss={() => setError(null)}>
                 {error}
+              </Banner>
+            </Layout.Section>
+          )}
+
+          {/* lastSyncDirection: "shopify_to_app" means the most recent change came from a direct
+              edit in Shopify's own admin blog editor, not from this app. The backend already
+              tries to auto-restore live features (related posts / custom header-footer / the
+              branding badge, all of which Shopify's editor strips the data-* attributes off on
+              save) right after reconciling such an edit — this banner only stays visible when
+              that auto-restore hasn't happened yet or failed (no active session, rate limit,
+              etc.), since a successful auto-restore flips this back to "app_to_shopify". */}
+          {isEditing && post.shopifyArticle?.lastSyncDirection === "shopify_to_app" && (
+            <Layout.Section>
+              <Banner tone="warning" title="This article was last edited directly in Shopify">
+                <BlockStack gap="200">
+                  <p>
+                    Some live features (related posts, custom header/footer, the branding badge)
+                    read data that Shopify's own editor strips when you save there. Click Save
+                    &amp; Sync to restore them — no content will be lost.
+                  </p>
+                  <div>
+                    <Button onClick={() => handleSave(post.status === "published" ? "published" : "draft", "sync-restore-banner")}>
+                      Save &amp; Sync now
+                    </Button>
+                  </div>
+                </BlockStack>
               </Banner>
             </Layout.Section>
           )}

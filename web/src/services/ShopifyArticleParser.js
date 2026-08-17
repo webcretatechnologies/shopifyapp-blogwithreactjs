@@ -20,6 +20,26 @@ function unwrapNestedSettings(val) {
   return current;
 }
 
+/** RichText content picks up an extra `<div class="builder-richtext-wrapper">` layer on every
+ * Save & Sync -> Shopify echo -> reconcile round trip (EditorContentCompiler.renderRichText
+ * always adds one wrapper; parsing here only ever stripped the single outermost one, so a
+ * remaining inner layer from a prior cycle was never removed). Left unchecked this compounds
+ * indefinitely — each layer is a real nested <div>, and Shopify's own admin article editor
+ * renders each one with its own block spacing, so an article edited back and forth a few times
+ * shows large, ever-growing blank gaps. Strip every wrapper layer, not just one, mirroring the
+ * `unwrapNestedSettings` precedent above for the same class of compounding bug. */
+function unwrapRichTextContent(html) {
+  if (!html || typeof html !== "string") return html;
+  let current = html.trim();
+  const wrapperRe = /^<div class="builder-richtext-wrapper">([\s\S]*)<\/div>$/;
+  let match = wrapperRe.exec(current);
+  while (match) {
+    current = match[1].trim();
+    match = wrapperRe.exec(current);
+  }
+  return current;
+}
+
 export class ShopifyArticleParser {
   /**
    * Parse Shopify article HTML into editor blocks.
@@ -287,6 +307,22 @@ export class ShopifyArticleParser {
    * Mutates the cheerio $ object in place.
    */
   static _stripAppWrapper($) {
+    // Shopify's own admin blog article editor normalizes any empty block-level element (a <div>
+    // or <p> with no visible content) into e.g. <div><br></div> when a merchant saves an article
+    // there directly — a real DOM node with a real line-height, not just leftover whitespace.
+    // Confirmed live: this is exactly what turned three genuinely-empty app placeholder divs
+    // (related posts / custom footer / branding badge — all legitimately empty until their JS
+    // fetch runs) into a large visible blank gap on the storefront after nothing more than a
+    // plain Shopify-side save with no merchant content change at all. Collapse these back to
+    // truly empty (whatever is/isn't identified as app infrastructure below still gets removed
+    // the same way either way) before any other rule looks at them.
+    $("div, p").each((_, el) => {
+      const $el = $(el);
+      if ($el.children().length === 1 && $el.children().first().is("br") && !$el.text().trim()) {
+        $el.empty();
+      }
+    });
+
     // Remove blogger-custom-styles style blocks
     $("style#blogger-custom-styles").remove();
 
@@ -313,8 +349,13 @@ export class ShopifyArticleParser {
     // editable in the builder — confirmed live: this exact pollution is what showed up in the
     // canvas after a sync-back).
     $(".blogger-byline").remove();
-    $("[data-custom-header]").remove();
-    $("[data-custom-footer]").remove();
+    // Class selectors alongside data-* ones: Shopify's own admin blog article editor strips
+    // unrecognized data-* attributes when a merchant saves an article directly there (confirmed
+    // live), so the data-* selector alone stops matching after any Shopify-side save — the class
+    // is what survives and keeps these identifiable as app infrastructure instead of leaking into
+    // the builder as real, editable blocks.
+    $("[data-custom-header], .blogger-custom-header").remove();
+    $("[data-custom-footer], .blogger-custom-footer").remove();
 
     // "Powered by Blogger" badge (ArticleSyncService.buildStorefrontHtmlForPost) — same class of
     // app-generated, sync-time-only markup as the byline above, and the same live bug: originally
@@ -500,7 +541,7 @@ export class ShopifyArticleParser {
       block.settings.text = $el.text() || "";
     } else if (block.type === "RichText") {
       block.settings = block.settings || {};
-      block.settings.content = $el.html() || "";
+      block.settings.content = unwrapRichTextContent($el.html() || "");
     } else if (block.type === "Html") {
       block.settings = block.settings || {};
       block.settings.code = $el.html() || "";

@@ -715,32 +715,15 @@ export async function buildStorefrontHtmlForPost(post, rawHtml, validSession, gr
   // Replace existing analytics block or append new one
   const analyticsBlockStart = "<!-- BLOG_ANALYTICS_START -->";
   const analyticsBlockEnd = "<!-- BLOG_ANALYTICS_END -->";
+  // The bootstrap logic itself lives in an external file (GET /track/bootstrap.js) rather than
+  // an inline <script> tag — Shopify's own admin blog article editor doesn't render/strip raw
+  // <script> tags cleanly, leaving a large blank block-height gap in its place when merchants
+  // open the post there. A <script src="..."> reference keeps body_html free of inline script
+  // content while behaving identically (the external file reads its config from this tag's
+  // data-* attributes via document.currentScript).
   const analyticsBlock = `${analyticsBlockStart}
 <img src="${appUrl}/track/view.gif?k=${trackingKey}&shop=${encodeURIComponent(shopDomain)}" alt="" width="1" height="1" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;pointer-events:none;opacity:0;" aria-hidden="true" />
-<script>
-(function(){
-  // Blog analytics bootstrap — lightweight event tracking
-  window.__BLOG_ANALYTICS__ = {
-    postKey: ${JSON.stringify(trackingKey)},
-    shop: ${JSON.stringify(shopDomain)},
-    endpoint: ${JSON.stringify(appUrl)},
-    sessionId: localStorage.getItem('blog_analytics_sid'),
-  };
-  if (!window.__BLOG_ANALYTICS__.sessionId) {
-    window.__BLOG_ANALYTICS__.sessionId = 's_' + Math.random().toString(36).substring(2, 15);
-    try { localStorage.setItem('blog_analytics_sid', window.__BLOG_ANALYTICS__.sessionId); } catch(e) {}
-  }
-  window.__blogTrackEvent = function(type, payload) {
-    var data = { k: ${JSON.stringify(trackingKey)}, event: type, shop: ${JSON.stringify(shopDomain)}, sid: window.__BLOG_ANALYTICS__.sessionId };
-    if (payload) Object.assign(data, payload);
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(${JSON.stringify(appUrl)} + '/track/event', JSON.stringify(data));
-    } else {
-      fetch(${JSON.stringify(appUrl)} + '/track/event', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' }, mode: 'no-cors' }).catch(function(){});
-    }
-  };
-})();
-</script>
+<script src="${appUrl}/track/bootstrap.js" data-key="${trackingKey}" data-shop="${shopDomain}" data-endpoint="${appUrl}" async></script>
 ${analyticsBlockEnd}`;
 
   if (storefrontHtml.includes(analyticsBlockStart)) {
@@ -1484,6 +1467,23 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
           });
         } catch (err) {
           console.warn(`[ArticleSyncService] Post-merge push back failed for ${link.postId}:`, err.message);
+        }
+      } else if (!hasConflicts) {
+        // A pure Shopify-side edit (no pending local edits to merge, so threeWayMerge saw no
+        // need to push back) still needs to go back through our own compiler — Shopify's admin
+        // blog article editor strips our data-* attributes and inline event handler attributes
+        // on save (confirmed live), silently breaking related posts / custom header-footer /
+        // the branding badge and leaving stray empty markup behind. Re-compiling and pushing the
+        // now-reconciled content restores all of that automatically, with no merchant action
+        // needed. Safe against ping-pong: the resulting Shopify webhook's hash will match this
+        // push's lastOutboundHash and get skipped by echo suppression above, same guarantee the
+        // needsPushBack branch above already relies on.
+        try {
+          await pushPostToShopify(link.postId, {
+            publishMode: postUpdate.status === "published",
+          });
+        } catch (err) {
+          console.warn(`[ArticleSyncService] Auto-restore push back failed for ${link.postId}:`, err.message);
         }
       }
 

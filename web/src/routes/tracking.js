@@ -125,6 +125,44 @@ router.get("/view.gif", async (req, res) => {
   }
 });
 
+// ─── GET /track/bootstrap.js — Analytics bootstrap script (external file) ────
+// Previously this logic was inlined as a raw <script>...</script> block directly in every
+// article's body_html (ArticleSyncService.js). Shopify's own admin blog article editor doesn't
+// render/strip raw <script> tags cleanly, leaving a large blank block-height gap in its place
+// when merchants open the post there — same class of bug as the FAQ/TOC <style> tags fixed
+// alongside this. Serving it as an external file referenced via <script src="..." data-key=...
+// data-shop=... data-endpoint=...> keeps body_html itself free of inline <script> content while
+// behaving identically (reads its config from its own tag's data-* via document.currentScript).
+router.get("/bootstrap.js", (req, res) => {
+  res.set("Content-Type", "application/javascript");
+  res.set("Cache-Control", "public, max-age=3600");
+  res.send(`(function(){
+  var s = document.currentScript;
+  var postKey = s ? s.getAttribute('data-key') : '';
+  var shop = s ? s.getAttribute('data-shop') : '';
+  var endpoint = s ? s.getAttribute('data-endpoint') : '';
+  window.__BLOG_ANALYTICS__ = {
+    postKey: postKey,
+    shop: shop,
+    endpoint: endpoint,
+    sessionId: localStorage.getItem('blog_analytics_sid'),
+  };
+  if (!window.__BLOG_ANALYTICS__.sessionId) {
+    window.__BLOG_ANALYTICS__.sessionId = 's_' + Math.random().toString(36).substring(2, 15);
+    try { localStorage.setItem('blog_analytics_sid', window.__BLOG_ANALYTICS__.sessionId); } catch(e) {}
+  }
+  window.__blogTrackEvent = function(type, payload) {
+    var data = { k: postKey, event: type, shop: shop, sid: window.__BLOG_ANALYTICS__.sessionId };
+    if (payload) Object.assign(data, payload);
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(endpoint + '/track/event', JSON.stringify(data));
+    } else {
+      fetch(endpoint + '/track/event', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' }, mode: 'no-cors' }).catch(function(){});
+    }
+  };
+})();`);
+});
+
 // ─── GET /track/pixel.gif — Legacy alias ─────────────────────────────────
 router.get("/pixel.gif", async (req, res) => {
   try {

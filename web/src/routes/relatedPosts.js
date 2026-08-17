@@ -44,7 +44,25 @@ router.get("/related-posts.json", async (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=15");
 
   const shopDomain = String(req.query.shop || "").trim();
-  const postId = parseInt(req.query.postId, 10);
+  let postId = parseInt(req.query.postId, 10);
+
+  // Fallback path: the placeholder's own data-post-id can be missing if the article was last
+  // saved directly in Shopify's admin editor — Shopify's sanitizer strips unrecognized data-*
+  // attributes on save, and there's no other reliable source of our internal post id on the page.
+  // The client script falls back to Shopify's own window.ShopifyAnalytics.meta.page.resourceId
+  // (a real Shopify article GID, always present on article pages) and sends it here instead so it
+  // can be resolved to our internal id via the ShopifyArticle join table.
+  if (!Number.isInteger(postId)) {
+    const shopifyArticleId = String(req.query.shopifyArticleId || "").trim();
+    if (shopifyArticleId && shopDomain) {
+      const shop = await prisma.shop.findUnique({ where: { domain: shopDomain } });
+      const sa = shop
+        ? await prisma.shopifyArticle.findFirst({ where: { shopifyArticleId, shopId: shop.id } })
+        : null;
+      if (sa) postId = sa.postId;
+    }
+  }
+
   if (!shopDomain || !Number.isInteger(postId)) {
     res.status(400).json({ show: false, items: [] });
     return;
@@ -277,13 +295,48 @@ const RELATED_POSTS_SCRIPT = `(function () {
     container.innerHTML = html;
   }
 
+  // Shopify's own storefront always exposes window.Shopify.shop — used as a fallback source of
+  // the shop domain when a placeholder's own data-shop attribute is missing. That happens after
+  // a merchant edits and saves an article directly in Shopify's admin blog editor: Shopify's own
+  // sanitizer strips unrecognized data-* attributes on save (confirmed live), so data-shop (and
+  // data-post-id, where nothing else on the page can recover it) can vanish even though the
+  // placeholder's class name survives.
+  function resolveShop() {
+    try {
+      if (window.Shopify && window.Shopify.shop) return window.Shopify.shop;
+    } catch (e) {}
+    return null;
+  }
+
+  // Shopify's own theme JS exposes the current article's GID at
+  // window.ShopifyAnalytics.meta.page.resourceId (e.g. "gid://shopify/Article/123456") on every
+  // article page — used as a fallback source of identity when data-post-id has been stripped by
+  // Shopify's admin editor sanitizer.
+  function resolveShopifyArticleId() {
+    try {
+      var gid = window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.resourceId;
+      if (!gid) return null;
+      var match = String(gid).match(/(\\d+)$/);
+      return match ? match[1] : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function initRelatedPosts() {
-    var containers = document.querySelectorAll('[data-related-posts]');
+    var containers = document.querySelectorAll('[data-related-posts], .blogger-related-posts');
     containers.forEach(function (container) {
       var postId = container.getAttribute('data-post-id');
-      var shop = container.getAttribute('data-shop');
-      if (!postId || !shop) return;
-      var url = '${APP_URL}/related-posts.json?postId=' + encodeURIComponent(postId) + '&shop=' + encodeURIComponent(shop);
+      var shop = container.getAttribute('data-shop') || resolveShop();
+      if (!shop) return;
+      var url = '${APP_URL}/related-posts.json?shop=' + encodeURIComponent(shop);
+      if (postId) {
+        url += '&postId=' + encodeURIComponent(postId);
+      } else {
+        var articleId = resolveShopifyArticleId();
+        if (!articleId) return;
+        url += '&shopifyArticleId=' + encodeURIComponent(articleId);
+      }
       fetch(url)
         .then(function (res) { return res.json(); })
         .then(function (data) {
@@ -318,10 +371,10 @@ const RELATED_POSTS_SCRIPT = `(function () {
   // whichever placeholder(s) are present, so a setting change applies to every already-published
   // post the moment a visitor loads the page, with no resync.
   function initCustomCode() {
-    var headerEls = document.querySelectorAll('[data-custom-header]');
-    var footerEls = document.querySelectorAll('[data-custom-footer]');
+    var headerEls = document.querySelectorAll('[data-custom-header], .blogger-custom-header');
+    var footerEls = document.querySelectorAll('[data-custom-footer], .blogger-custom-footer');
     if (headerEls.length === 0 && footerEls.length === 0) return;
-    var shop = (headerEls[0] || footerEls[0]).getAttribute('data-shop');
+    var shop = (headerEls[0] || footerEls[0]).getAttribute('data-shop') || resolveShop();
     if (!shop) return;
     var url = '${APP_URL}/custom-code.json?shop=' + encodeURIComponent(shop);
     fetch(url)
@@ -342,9 +395,9 @@ const RELATED_POSTS_SCRIPT = `(function () {
   // code above, so a plan change or a Settings → Branding toggle applies to every already-
   // published post on its next storefront view, with no resync.
   function initBrandingBadge() {
-    var els = document.querySelectorAll('[data-branding-badge]');
+    var els = document.querySelectorAll('[data-branding-badge], .blogger-powered-by-badge');
     if (els.length === 0) return;
-    var shop = els[0].getAttribute('data-shop');
+    var shop = els[0].getAttribute('data-shop') || resolveShop();
     if (!shop) return;
     var url = '${APP_URL}/branding.json?shop=' + encodeURIComponent(shop);
     fetch(url)
