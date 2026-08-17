@@ -140,11 +140,16 @@ export default function Plans() {
   const currentPlanTitle = currentPlanDetails?.title || (isFreePlanActive ? "Free" : activePlan);
   const currentPrice = Number(currentPlanDetails?.price ?? 0);
 
-  const postLimitLabel = postLimit === null ? "Unlimited" : `${postLimit} Limit`;
   const usagePct = postLimit === null ? 0 : Math.min(100, Math.round((postCount / postLimit) * 100));
+  const postsAtLimit = postLimit !== null && postCount >= postLimit;
+  const postsNearLimit = postLimit !== null && !postsAtLimit && usagePct >= 80;
 
-  const blogLimitLabel = blogLimit === null ? "Unlimited" : `${blogLimit} Limit`;
   const blogUsagePct = blogLimit === null ? 0 : Math.min(100, Math.round((blogCount / blogLimit) * 100));
+  const blogsAtLimit = blogLimit !== null && blogCount >= blogLimit;
+  const blogsNearLimit = blogLimit !== null && !blogsAtLimit && blogUsagePct >= 80;
+
+  const usageTone = (atLimit, nearLimit) => (atLimit ? "critical" : nearLimit ? "warning" : "success");
+  const anyUsageWarning = postsAtLimit || postsNearLimit || blogsAtLimit || blogsNearLimit;
 
   const formatDate = (isoOrDate) => {
     if (!isoOrDate) return null;
@@ -152,6 +157,7 @@ export default function Plans() {
   };
 
   const sortedPlans = [...dynamicPlans].sort((a, b) => Number(a.price) - Number(b.price));
+  const nextPlan = sortedPlans.find((p) => Number(p.price) > currentPrice);
 
   return (
     <Page
@@ -196,8 +202,31 @@ export default function Plans() {
                   <Badge tone="info">{`${currentPlanTitle} Plan`}</Badge>
                 </InlineStack>
                 <Text as="p" variant="bodySm" tone="subdued">
-                  Usage limits reset at the start of your next 30-day billing cycle.
+                  These limits apply to your total usage on the {currentPlanTitle} plan and don't reset each billing cycle — upgrade for higher or unlimited limits.
                 </Text>
+
+                {anyUsageWarning && (
+                  <Banner tone={postsAtLimit || blogsAtLimit ? "critical" : "warning"}>
+                    <InlineStack align="space-between" blockAlign="center" gap="300">
+                      <Text as="p" variant="bodySm">
+                        {postsAtLimit && "You've reached your article limit on this plan. "}
+                        {!postsAtLimit && postsNearLimit && "You're close to your article limit. "}
+                        {blogsAtLimit && "You've reached your Shopify blog limit on this plan. "}
+                        {!blogsAtLimit && blogsNearLimit && "You're close to your Shopify blog limit. "}
+                        {nextPlan ? `Upgrade to ${nextPlan.title} Plan for more room.` : "Contact us for higher limits."}
+                      </Text>
+                      {nextPlan && (
+                        <Button
+                          size="slim"
+                          onClick={() => handleSubscribe(nextPlan.name)}
+                          loading={isSubmitting && submittingTier === nextPlan.name}
+                        >
+                          Upgrade to {nextPlan.title} Plan
+                        </Button>
+                      )}
+                    </InlineStack>
+                  </Banner>
+                )}
 
                 {billingCycle && (
                   <Banner tone={billingCycle.isTrial ? "info" : "success"}>
@@ -221,13 +250,15 @@ export default function Plans() {
                   <BlockStack gap="200">
                     <InlineStack align="space-between">
                       <Text as="strong" variant="bodySm">Articles</Text>
-                      <Badge tone="info">{postLimitLabel}</Badge>
+                      <Badge tone={postsAtLimit ? "critical" : postsNearLimit ? "warning" : "info"}>
+                        {postLimit === null ? "Unlimited" : `${postCount} of ${postLimit}`}
+                      </Badge>
                     </InlineStack>
-                    <ProgressBar progress={usagePct} tone="success" size="small" />
+                    <ProgressBar progress={usagePct} tone={usageTone(postsAtLimit, postsNearLimit)} size="small" />
                     <InlineStack align="space-between" blockAlign="baseline">
-                      <Text as="strong" variant="bodySm">{postCount}</Text>
-                      <Text as="p" variant="bodyXs" tone="subdued">
-                        {postLimit === null ? "Unlimited" : `${usagePct}% used`}
+                      <Text as="strong" variant="bodySm">{postCount} article{postCount === 1 ? "" : "s"} created</Text>
+                      <Text as="p" variant="bodyXs" tone={postsAtLimit ? "critical" : postsNearLimit ? "caution" : "subdued"}>
+                        {postLimit === null ? "Unlimited" : postsAtLimit ? "Limit reached" : `${usagePct}% used`}
                       </Text>
                     </InlineStack>
                   </BlockStack>
@@ -235,13 +266,15 @@ export default function Plans() {
                   <BlockStack gap="200">
                     <InlineStack align="space-between">
                       <Text as="strong" variant="bodySm">Shopify Blogs</Text>
-                      <Badge tone="info">{blogLimitLabel}</Badge>
+                      <Badge tone={blogsAtLimit ? "critical" : blogsNearLimit ? "warning" : "info"}>
+                        {blogLimit === null ? "Unlimited" : `${blogCount} of ${blogLimit}`}
+                      </Badge>
                     </InlineStack>
-                    <ProgressBar progress={blogUsagePct} tone="success" size="small" />
+                    <ProgressBar progress={blogUsagePct} tone={usageTone(blogsAtLimit, blogsNearLimit)} size="small" />
                     <InlineStack align="space-between" blockAlign="baseline">
-                      <Text as="strong" variant="bodySm">{blogCount}</Text>
-                      <Text as="p" variant="bodyXs" tone="subdued">
-                        {blogLimit === null ? "Unlimited" : `${blogUsagePct}% used`}
+                      <Text as="strong" variant="bodySm">{blogCount} blog{blogCount === 1 ? "" : "s"} in use</Text>
+                      <Text as="p" variant="bodyXs" tone={blogsAtLimit ? "critical" : blogsNearLimit ? "caution" : "subdued"}>
+                        {blogLimit === null ? "Unlimited" : blogsAtLimit ? "Limit reached" : `${blogUsagePct}% used`}
                       </Text>
                     </InlineStack>
                   </BlockStack>

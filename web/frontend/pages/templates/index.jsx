@@ -18,6 +18,7 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { SearchIcon, PlusIcon } from "@shopify/polaris-icons";
 import TemplateThumbnail from "../../components/builder/TemplateThumbnail";
+import UpgradePrompt from "../../components/UpgradePrompt";
 
 function TemplateCard({ accent, badge, name, description, preview, onUse, locked }) {
   return (
@@ -125,6 +126,14 @@ export default function BlogTemplatesLibrary() {
   const [query, setQuery] = useState("");
   const [features, setFeatures] = useState({});
 
+  // Same article_limit awareness as the Articles list page — a template/blank start doesn't
+  // create a Post row by itself (that only happens on Save inside the builder), but letting a
+  // merchant build out a whole article only to hit the cap at Save is a bad experience, so this
+  // page warns upfront and routes "at limit" clicks to /plans instead of into the builder.
+  const [postCount, setPostCount] = useState(0);
+  const [postLimit, setPostLimit] = useState(null);
+  const [activePlan, setActivePlan] = useState("");
+
   useEffect(() => {
     fetch("/api/blog-templates")
       .then((r) => r.json())
@@ -135,7 +144,18 @@ export default function BlogTemplatesLibrary() {
       .then((r) => r.json())
       .then((d) => setFeatures(d.features || {}))
       .catch(() => {});
+    fetch("/api/billing/check")
+      .then((r) => r.json())
+      .then((d) => {
+        setPostCount(d.postCount || 0);
+        setPostLimit(d.postLimit ?? null);
+        setActivePlan(d.activePlan || "");
+      })
+      .catch(() => {});
   }, []);
+
+  const postsAtLimit = postLimit !== null && postCount >= postLimit;
+  const postsNearLimit = postLimit !== null && !postsAtLimit && postCount / postLimit >= 0.8;
 
   const filteredTemplates = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -145,9 +165,13 @@ export default function BlogTemplatesLibrary() {
 
   const useTemplate = (key, locked) => {
     if (locked) return; // upgrade banner explains why; card itself no-ops rather than erroring
+    if (postsAtLimit) { navigate("/plans"); return; }
     navigate("/posts/new", { state: { templateKey: key } });
   };
-  const useBlank = () => navigate("/posts/new");
+  const useBlank = () => {
+    if (postsAtLimit) { navigate("/plans"); return; }
+    navigate("/posts/new");
+  };
 
   return (
     <Page
@@ -160,6 +184,21 @@ export default function BlogTemplatesLibrary() {
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
+            {(postsAtLimit || postsNearLimit) && (
+              <UpgradePrompt
+                requiredPlan={activePlan?.toLowerCase() === "free" ? "Starter" : "Pro"}
+                title={
+                  postsAtLimit
+                    ? `You've reached your ${postLimit}-article limit on the ${activePlan || "current"} plan`
+                    : `You're close to your ${postLimit}-article limit on the ${activePlan || "current"} plan`
+                }
+                description={
+                  postsAtLimit
+                    ? "Upgrade to start a new article from a template."
+                    : `${postCount} of ${postLimit} articles used.`
+                }
+              />
+            )}
             <Card padding="0">
               <Box padding="400">
                 <TextField

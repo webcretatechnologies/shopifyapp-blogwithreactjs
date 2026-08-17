@@ -26,6 +26,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../utils/smartBack";
 import { ImportIcon, ArrowLeftIcon } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
+import UpgradePrompt from "../../components/UpgradePrompt";
 
 const PER_PAGE = 20;
 
@@ -48,6 +49,26 @@ export default function ArticleImporter() {
   const [error, setError] = useState(null);
   const [confirmArticle, setConfirmArticle] = useState(null); // article pending import confirmation
   const [confirmError, setConfirmError] = useState(null);
+
+  // Same article_limit awareness as the Articles list/Templates pages — the backend
+  // (/api/import/execute) already rejects an import once the plan cap is hit, but previously
+  // this page gave zero warning before that point: every row stayed clickable and the merchant
+  // only found out via the confirm modal's error after picking an article.
+  const [postCount, setPostCount] = useState(0);
+  const [postLimit, setPostLimit] = useState(null);
+  const [activePlan, setActivePlan] = useState("");
+  useEffect(() => {
+    fetch("/api/billing/check")
+      .then((r) => r.json())
+      .then((d) => {
+        setPostCount(d.postCount || 0);
+        setPostLimit(d.postLimit ?? null);
+        setActivePlan(d.activePlan || "");
+      })
+      .catch(() => {});
+  }, []);
+  const postsAtLimit = postLimit !== null && postCount >= postLimit;
+  const postsNearLimit = postLimit !== null && !postsAtLimit && postCount / postLimit >= 0.8;
 
   // ─── IndexFilters state ───────────────────────────────────────────────────
   const [mode, setMode] = useState(IndexFiltersMode.Default);
@@ -376,7 +397,7 @@ export default function ArticleImporter() {
               size="slim"
               icon={ImportIcon}
               loading={importingId === id}
-              disabled={is_imported || (importingId !== null && importingId !== id)}
+              disabled={is_imported || postsAtLimit || (importingId !== null && importingId !== id)}
               onClick={() => requestImport(article)}
             >
               {is_imported ? "Imported" : "Import"}
@@ -434,6 +455,22 @@ export default function ArticleImporter() {
                 >
                   {error}
                 </Banner>
+              )}
+
+              {(postsAtLimit || postsNearLimit) && (
+                <UpgradePrompt
+                  requiredPlan={activePlan?.toLowerCase() === "free" ? "Starter" : "Pro"}
+                  title={
+                    postsAtLimit
+                      ? `You've reached your ${postLimit}-article limit on the ${activePlan || "current"} plan`
+                      : `You're close to your ${postLimit}-article limit on the ${activePlan || "current"} plan`
+                  }
+                  description={
+                    postsAtLimit
+                      ? "Upgrade to import more articles from Shopify."
+                      : `${postCount} of ${postLimit} articles used.`
+                  }
+                />
               )}
 
               {/* ─── Blog Selector Card ─── */}

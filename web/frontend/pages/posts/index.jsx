@@ -34,6 +34,7 @@ import {
   DuplicateIcon,
 } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
+import UpgradePrompt from "../../components/UpgradePrompt";
 
 const STATUS_BADGE_MAP = {
   published: "success",
@@ -201,6 +202,13 @@ export default function Articles() {
   const [shopInfo, setShopInfo] = useState(null);
   const [shopifyBlogsMap, setShopifyBlogsMap] = useState({});
 
+  // Real (unfiltered) article usage vs the plan's cap — `total` above reflects whatever
+  // search/status/tag filters are active, so it can't be used to detect "at the limit".
+  // Sourced from the same /api/billing/check the Plans page reads, so the two stay consistent.
+  const [postCount, setPostCount] = useState(0);
+  const [postLimit, setPostLimit] = useState(null);
+  const [activePlan, setActivePlan] = useState("");
+
   // Delete confirmation modal state
   const [deleteTargetPost, setDeleteTargetPost] = useState(null);
   const [deleteFromShopifyChoice, setDeleteFromShopifyChoice] = useState(false);
@@ -272,6 +280,20 @@ export default function Articles() {
       .then((d) => setFeatures(d.features || {}))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    fetch("/api/billing/check")
+      .then((r) => r.json())
+      .then((d) => {
+        setPostCount(d.postCount || 0);
+        setPostLimit(d.postLimit ?? null);
+        setActivePlan(d.activePlan || "");
+      })
+      .catch(() => {});
+  }, []);
+
+  const postsAtLimit = postLimit !== null && postCount >= postLimit;
+  const postsNearLimit = postLimit !== null && !postsAtLimit && postCount / postLimit >= 0.8;
 
   useEffect(() => {
     fetchPosts();
@@ -556,6 +578,7 @@ export default function Articles() {
         primaryAction={{
           content: "New Article",
           icon: PlusIcon,
+          disabled: postsAtLimit,
           onAction: () => navigate("/posts/new"),
         }}
         secondaryActions={[
@@ -575,6 +598,23 @@ export default function Articles() {
         ]}
       >
         <Layout>
+          {(postsAtLimit || postsNearLimit) && (
+            <Layout.Section>
+              <UpgradePrompt
+                requiredPlan={activePlan?.toLowerCase() === "free" ? "Starter" : "Pro"}
+                title={
+                  postsAtLimit
+                    ? `You've reached your ${postLimit}-article limit on the ${activePlan || "current"} plan`
+                    : `You're close to your ${postLimit}-article limit on the ${activePlan || "current"} plan`
+                }
+                description={
+                  postsAtLimit
+                    ? "Upgrade to create more articles."
+                    : `${postCount} of ${postLimit} articles used.`
+                }
+              />
+            </Layout.Section>
+          )}
           <Layout.Section>
             <Card padding="0">
               <IndexFilters
@@ -620,11 +660,16 @@ export default function Articles() {
                     heading="No articles found"
                     action={{
                       content: "Create Article",
+                      disabled: postsAtLimit,
                       onAction: () => navigate("/posts/new"),
                     }}
                     image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                   >
-                    <p>Start by creating your first blog article, or try changing your filters.</p>
+                    <p>
+                      {postsAtLimit
+                        ? "You've reached your article limit on this plan — upgrade to create more."
+                        : "Start by creating your first blog article, or try changing your filters."}
+                    </p>
                   </EmptyState>
                 </Box>
               ) : (
