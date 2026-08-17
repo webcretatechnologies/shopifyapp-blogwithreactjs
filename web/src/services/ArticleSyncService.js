@@ -21,8 +21,6 @@ import { ShopifyArticleParser } from "./ShopifyArticleParser.js";
 import BlockRenderer from "./BlockRenderer.js";
 import { ensureTrackingKey } from "./AnalyticsTrackingService.js";
 import JsonLdService from "./JsonLdService.js";
-import { isFeatureEnabled } from "./PlanFeatureService.js";
-import { APP_NAME } from "../utils/appName.js";
 
 const prisma = new PrismaClient();
 
@@ -772,35 +770,26 @@ ${analyticsBlockEnd}`;
     storefrontHtml = `<!-- BLOG_JSONLD_START -->\n${jsonLdScript}\n<!-- BLOG_JSONLD_END -->\n` + storefrontHtml;
   }
 
-  // ── "Powered by" branding badge ──────────────────────────────────────────────
-  // Free always shows it (no remove_branding entitlement, no choice in the matter). Starter+ can
-  // remove it, but removal isn't forced — a shop's own "showPoweredByBadge" setting (Settings ->
-  // Advanced) lets an entitled merchant choose to keep showing it anyway (e.g. to support the
-  // app). Defaults to hidden when unset so existing Starter+ shops that never touch this new
-  // setting keep today's behavior (badge already gone) rather than having it reappear.
-  const brandingEntitled = isFeatureEnabled(post.shop?.planKey, "remove_branding");
-  let showBadge = true;
-  if (brandingEntitled) {
-    try {
-      const pref = await prisma.shopSetting.findUnique({
-        where: { shopId_key: { shopId: post.shopId, key: "showPoweredByBadge" } },
-      });
-      showBadge = pref?.value === "true";
-    } catch (err) {
-      console.error("buildStorefrontHtmlForPost: Error reading showPoweredByBadge setting:", err);
-      showBadge = false; // fail toward honoring the entitlement (hidden), not toward showing it
-    }
-  }
-  if (showBadge) {
-    // blogger-powered-by-badge is load-bearing, not cosmetic — ShopifyArticleParser's
-    // _stripAppWrapper matches on this class to exclude the badge when reconciling Shopify's
-    // echoed body_html back into contentJson. Without it (as it shipped originally, with no
-    // class/id/attribute at all), the badge round-trips into a real, editable, deletable block
-    // in the Builder canvas indistinguishable from merchant content — a merchant could select
-    // and delete what they'd see as a stray text block, Save & Sync, and permanently strip their
-    // own "Powered by Blogger" attribution without ever intending to. Same class of bug the
-    // byline (author/date/reading-time) already had a fix for; this closes the same gap here.
-    storefrontHtml += `\n<div class="blogger-powered-by-badge" style="text-align:center;padding:12px 0;font-size:12px;color:#8c9196;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">Powered by ${APP_NAME}</div>`;
+  // ── "Powered by" branding badge — live placeholder, not baked HTML ─────────────
+  // Same live-update pattern as EditorContentCompiler.js's header/footer/related-posts
+  // placeholders: previously the entitlement + "showPoweredByBadge" setting were resolved here,
+  // at sync time, and baked directly into body_html — so a plan change or a merchant flipping the
+  // Settings checkbox had zero effect on any already-published post until it was individually
+  // resynced (the exact complaint that led to the header/footer live-fetch rework). Now this only
+  // emits an always-present placeholder; /branding.json (relatedPosts.js) resolves show/hide live
+  // on every storefront page view via the shared bootstrap script, so a Settings change or plan
+  // upgrade/downgrade applies everywhere instantly, with no resync.
+  //
+  // blogger-powered-by-badge is load-bearing, not cosmetic — ShopifyArticleParser's
+  // _stripAppWrapper matches on this class to exclude the badge when reconciling Shopify's echoed
+  // body_html back into contentJson. Without it (as it shipped originally, with no class/id/
+  // attribute at all), the badge round-trips into a real, editable, deletable block in the
+  // Builder canvas indistinguishable from merchant content — a merchant could select and delete
+  // what they'd see as a stray text block, Save & Sync, and permanently strip their own "Powered
+  // by" attribution without ever intending to. Same class of bug the byline (author/date/reading-
+  // time) already had a fix for; this closes the same gap here.
+  if (post.shop?.domain) {
+    storefrontHtml += `\n<div class="blogger-powered-by-badge" data-branding-badge data-shop="${post.shop.domain}" style="text-align:center;padding:12px 0;font-size:12px;color:#8c9196;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"></div>`;
   }
 
   return storefrontHtml;

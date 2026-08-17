@@ -2,25 +2,30 @@
  * Live storefront routes (PUBLIC — no session auth required)
  *
  * Covers everything that must reflect a *global setting* the moment it's saved, not just on a
- * post's next Save & Sync — related posts (showRelatedPosts/relatedPostsCount) and custom
- * header/footer code (Settings → Advanced). EditorContentCompiler.compileForStorefront bakes only
+ * post's next Save & Sync — related posts (showRelatedPosts/relatedPostsCount), custom
+ * header/footer code (Settings → Advanced), and the "Powered by" branding badge. Editor
+ * ContentCompiler.compileForStorefront / ArticleSyncService.buildStorefrontHtmlForPost bake only
  * lightweight placeholder divs plus one shared <script src=".../related-posts.js"> into every
  * synced article; this file supplies the other half of each: the JSON endpoints the script
- * fetches (reading settings fresh on every request, same pattern as publicStyles.js), and the
- * script itself. Kept under the original related-posts.js/.json URLs even though its scope grew,
- * since those URLs are already baked into every previously-synced article's body_html.
+ * fetches (reading settings/plan entitlement fresh on every request, same pattern as
+ * publicStyles.js), and the script itself. Kept under the original related-posts.js/.json URLs
+ * even though its scope grew, since those URLs are already baked into every previously-synced
+ * article's body_html.
  *
  * Accessed cross-domain from Shopify storefronts, so all routes here must be mounted BEFORE any
  * Shopify session validation middleware — same placement as tracking.js/publicStyles.js.
  *
  *   GET /related-posts.json?postId=<id>&shop=<shop-domain>
  *   GET /custom-code.json?shop=<shop-domain>
+ *   GET /branding.json?shop=<shop-domain>
  *   GET /related-posts.js
  */
 import express from "express";
 import { prisma } from "../../shopify.js";
 import shopify from "../../shopify.js";
 import { getRelatedPosts } from "../services/RelatedPostsService.js";
+import { isFeatureEnabled } from "../services/PlanFeatureService.js";
+import { APP_NAME, APP_BRANDING_URL } from "../utils/appName.js";
 
 const router = express.Router();
 
@@ -57,6 +62,18 @@ router.get("/related-posts.json", async (req, res) => {
   try {
     const shop = await prisma.shop.findUnique({ where: { domain: shopDomain }, include: { settings: true } });
     if (!shop) {
+      res.send(empty);
+      return;
+    }
+
+    // Related Posts is marketed as a Starter+ feature on the pricing page ("Related Posts" bullet
+    // is keyed to related_posts_manual, only appears in Starter's/Pro's list) — but this route
+    // never actually checked entitlement, so Free shops got the "automatic" version regardless of
+    // plan, contradicting what the pricing page promises. Gated here, at the one place that
+    // actually decides what a storefront visitor sees, same as every other live-fetched setting
+    // in this file.
+    if (!isFeatureEnabled(shop.planKey, "related_posts_manual")) {
+      dataCache.set(cacheKey, { body: empty, expiresAt: Date.now() + CACHE_TTL_MS });
       res.send(empty);
       return;
     }
@@ -166,6 +183,56 @@ router.get("/custom-code.json", async (req, res) => {
   }
 });
 
+// "Powered by" branding badge — same live-update reasoning as everything else in this file: Free
+// always shows it (no remove_branding entitlement, no choice in the matter); Starter+ can remove
+// it, but a shop's own "showPoweredByBadge" setting (Settings → Branding) lets an entitled
+// merchant choose to keep showing it anyway. Resolved fresh on every request, so a plan
+// upgrade/downgrade or a Settings change applies to every already-published post on its very next
+// storefront view — no resync, matching custom header/footer above.
+router.get("/branding.json", async (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "public, max-age=15");
+
+  const shopDomain = String(req.query.shop || "").trim();
+  const empty = JSON.stringify({ show: false, text: "" });
+  if (!shopDomain) {
+    res.send(empty);
+    return;
+  }
+
+  const cacheKey = `branding:${shopDomain}`;
+  const cached = dataCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    res.send(cached.body);
+    return;
+  }
+
+  try {
+    const shop = await prisma.shop.findUnique({ where: { domain: shopDomain } });
+    if (!shop) {
+      res.send(empty);
+      return;
+    }
+    const brandingEntitled = isFeatureEnabled(shop.planKey, "remove_branding");
+    let show = true;
+    if (brandingEntitled) {
+      // Defaults to hidden when unset so Starter+ shops that never touch this setting keep
+      // today's behavior (badge gone) rather than having it reappear.
+      const pref = await prisma.shopSetting.findUnique({
+        where: { shopId_key: { shopId: shop.id, key: "showPoweredByBadge" } },
+      });
+      show = pref?.value === "true";
+    }
+    const body = JSON.stringify({ show, text: `Powered by ${APP_NAME}`, link: APP_BRANDING_URL });
+    dataCache.set(cacheKey, { body, expiresAt: Date.now() + CACHE_TTL_MS });
+    res.send(body);
+  } catch (err) {
+    console.error("GET /branding.json error:", err);
+    res.send(empty);
+  }
+});
+
 // Static bootstrap script — content only changes on app deploys, so some caching is still
 // reasonable, but a full hour (the original choice here) meant a browser that fetched this
 // script before a deploy kept running the stale version for up to an hour afterward — exactly
@@ -271,9 +338,34 @@ const RELATED_POSTS_SCRIPT = `(function () {
       .catch(function () {});
   }
 
+  // "Powered by" branding badge — fetched once per page, same live pattern as the header/footer
+  // code above, so a plan change or a Settings → Branding toggle applies to every already-
+  // published post on its next storefront view, with no resync.
+  function initBrandingBadge() {
+    var els = document.querySelectorAll('[data-branding-badge]');
+    if (els.length === 0) return;
+    var shop = els[0].getAttribute('data-shop');
+    if (!shop) return;
+    var url = '${APP_URL}/branding.json?shop=' + encodeURIComponent(shop);
+    fetch(url)
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data || !data.show || !data.text) return;
+        els.forEach(function (el) {
+          if (data.link) {
+            el.innerHTML = '<a href="' + escapeHtml(data.link) + '" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">' + escapeHtml(data.text) + '</a>';
+          } else {
+            el.textContent = data.text;
+          }
+        });
+      })
+      .catch(function () {});
+  }
+
   function init() {
     initRelatedPosts();
     initCustomCode();
+    initBrandingBadge();
   }
 
   if (document.readyState === 'loading') {

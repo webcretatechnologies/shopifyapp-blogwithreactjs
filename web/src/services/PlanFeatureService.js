@@ -445,7 +445,7 @@ const FEATURE_COMPARISON_ROWS = [
   },
   { feature: "Clone Article", cell: (f) => (f.clone_article?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },
   { feature: "FAQ Blocks", cell: (f) => (f.faq?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },
-  { feature: "Related Blogs (manual)", cell: (f) => (f.related_posts_manual?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "Automatic only" }) },
+  { feature: "Related Blogs", cell: (f) => (f.related_posts_manual?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },
   { feature: "Author Attribution", cell: () => ({ icon: "yes", text: "" }) }, // free-text field, unrestricted at every tier
   { feature: "Table of Contents", cell: (f) => (f.toc?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },
   { feature: "Hide Sections by Device", cell: (f) => (f.device_visibility?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },

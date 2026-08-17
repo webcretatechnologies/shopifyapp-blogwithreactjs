@@ -114,7 +114,6 @@ export default function Settings() {
   const [features, setFeatures] = useState({});
   const [showUpgradeSaveConfirm, setShowUpgradeSaveConfirm] = useState(false);
   const [isSavingForUpgrade, setIsSavingForUpgrade] = useState(false);
-  const [isSyncingBranding, setIsSyncingBranding] = useState(false);
 
   const set = (key) => (value) => setSettings((s) => ({ ...s, [key]: value }));
 
@@ -245,35 +244,6 @@ export default function Settings() {
       return false;
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  // Save & Sync in the article editor is the only thing that actually applies the "Powered by"
-  // badge to a published article's live HTML — it's baked in at push time, not shown live off a
-  // setting. This pushes it to every already-synced article in one go, so a merchant doesn't have
-  // to open and re-save each one by hand just to catch up (see the matching backend comment on
-  // POST /api/posts/sync-branding for why this needed its own route instead of reusing the
-  // Starter+-gated bulk-resync).
-  const handleSyncBranding = async () => {
-    setIsSyncingBranding(true);
-    try {
-      const res = await fetch("/api/posts/sync-branding", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to sync branding");
-      const data = await res.json();
-      const results = data.results || [];
-      const failed = results.filter((r) => r.status === "error").length;
-      const synced = results.length - failed;
-      if (results.length === 0) {
-        setToast({ content: "No published articles to update yet." });
-      } else if (failed > 0) {
-        setToast({ content: `Updated ${synced} article${synced === 1 ? "" : "s"}, ${failed} failed.`, error: true });
-      } else {
-        setToast({ content: `Updated ${synced} article${synced === 1 ? "" : "s"}.` });
-      }
-    } catch (err) {
-      setToast({ content: err.message, error: true });
-    } finally {
-      setIsSyncingBranding(false);
     }
   };
 
@@ -861,18 +831,8 @@ export default function Settings() {
                     checked={features.remove_branding?.enabled ? settings.showPoweredByBadge : true}
                     disabled={!features.remove_branding?.enabled}
                     onChange={set("showPoweredByBadge")}
-                    helpText="Your plan lets you remove this badge — it's hidden by default. Check this if you'd like to keep showing it anyway."
+                    helpText="Applies live within seconds of saving — no need to resync individual posts."
                   />
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text as="p" variant="bodySm" tone="subdued">
-                      The badge only takes effect on an article once it's re-synced to Shopify —
-                      articles published before you changed this setting (or before you were on
-                      this plan) won't update on their own.
-                    </Text>
-                    <Button onClick={handleSyncBranding} loading={isSyncingBranding}>
-                      Apply to all published articles
-                    </Button>
-                  </InlineStack>
                 </SectionCard>
               </Layout.Section>
 

@@ -18,7 +18,7 @@ import {
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { smartBackAction } from "../utils/smartBack";
 
 function intervalSuffix(interval) {
@@ -35,6 +35,7 @@ function applyCouponDiscount(price, coupon) {
 export default function Plans() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activePlan, setActivePlan] = useState("");
   const [postCount, setPostCount] = useState(0);
   const [postLimit, setPostLimit] = useState(10);
@@ -50,8 +51,32 @@ export default function Plans() {
   const [couponError, setCouponError] = useState("");
   const [couponLoading, setCouponLoading] = useState(false);
 
+  // Shows a real Shopify admin toast (not a page-level Banner) for "you just changed plans" —
+  // reserved for confirmations that happen off a merchant's direct click on this page (landing
+  // back from Shopify's own approval screen after subscribing/upgrading), where a banner buried
+  // in the page content is easy to miss entirely.
+  const showPlanToast = (content) => {
+    if (window.shopify?.toast) {
+      window.shopify.toast.show(content);
+    }
+  };
+
   useEffect(() => {
-    fetchBillingData();
+    (async () => {
+      const { checkData, plansData } = await fetchBillingData();
+      // billing.js's returnUrl appends ?subscribed=1 once Shopify's own approval screen sends the
+      // merchant back here — without this, a successful upgrade/downgrade landed the merchant back
+      // on this page with zero confirmation that anything actually happened.
+      if (searchParams.get("subscribed") === "1" && checkData) {
+        const planTitle = plansData?.plans?.find((p) => p.name === checkData.activePlan)?.title
+          || (checkData.activePlan?.toLowerCase() === "free" ? "Free" : checkData.activePlan);
+        showPlanToast(`You're now on the ${planTitle} plan`);
+        const next = new URLSearchParams(searchParams);
+        next.delete("subscribed");
+        setSearchParams(next, { replace: true });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchBillingData = async () => {
@@ -69,8 +94,10 @@ export default function Plans() {
       setPostLimit(checkData.postLimit ?? 10);
       setBillingCycle(checkData.billingCycle || null);
       setDynamicPlans(plansData.plans || []);
+      return { checkData, plansData };
     } catch (err) {
       console.error("Failed to load plans data:", err);
+      return {};
     } finally {
       setIsLoading(false);
     }
@@ -121,8 +148,14 @@ export default function Plans() {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.confirmationUrl) window.open(data.confirmationUrl, "_top");
-        else if (data.isFree) await fetchBillingData();
+        if (data.confirmationUrl) {
+          window.open(data.confirmationUrl, "_top");
+        } else if (data.isFree) {
+          // Free never goes through Shopify's approval screen — no redirect round-trip, so
+          // there's no ?subscribed=1 to react to. Confirm right here instead.
+          await fetchBillingData();
+          showPlanToast("You're now on the Free plan");
+        }
       } else {
         const err = await res.json();
         setError(err.error || "Failed to process subscription.");

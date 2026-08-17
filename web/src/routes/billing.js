@@ -196,7 +196,11 @@ router.post("/request", async (req, res) => {
     // Admin UI control that no longer exists — env var is the new single source of truth.
     const isTestMode = process.env.BILLING_TEST_MODE !== "false";
 
-    let returnUrl = `https://${shopify.api.config.hostName}/?shop=${session.shop}`;
+    // Lands back on the Plans & Billing page itself (not the app root) with a `subscribed=1`
+    // flag — plans.jsx uses that to show a real Shopify success toast once the merchant returns
+    // from Shopify's own approval screen, instead of silently dropping them on the dashboard with
+    // no confirmation that the upgrade actually went through.
+    let returnUrl = `https://${shopify.api.config.hostName}/plans?shop=${session.shop}&subscribed=1`;
     if (host) {
       returnUrl += `&host=${encodeURIComponent(host)}`;
     }

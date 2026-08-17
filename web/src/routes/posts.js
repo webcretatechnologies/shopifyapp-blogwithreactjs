@@ -1875,46 +1875,6 @@ router.post("/bulk-resync", async (req, res) => {
   }
 });
 
-// ─── POST /api/posts/sync-branding — Push the current "Powered by" badge state to every
-// already-synced post ───────────────────────────────────────────────────────────────────────
-// The badge (buildStorefrontHtmlForPost in ArticleSyncService.js) only gets baked into an
-// article's body_html at push time, same as everything bulk-resync above exists to catch up —
-// but that route is gated behind sync_actions (Starter+). For Free-tier shops, showing the badge
-// isn't optional (isFeatureEnabled(..., "remove_branding") is always false there), so gating its
-// own catch-up mechanism behind a paid feature left Free merchants with no way to actually apply
-// it to already-published articles short of opening and re-saving each one by hand. This mirrors
-// bulk-resync's push loop but stays available at every plan, since it's a compliance/branding
-// action, not a power-user sync feature.
-router.post("/sync-branding", async (req, res) => {
-  try {
-    const shop = await getShopFromSession(res);
-    if (!shop) return res.status(401).json({ error: "Unauthorized" });
-
-    const linkedPosts = await prisma.post.findMany({
-      where: {
-        shopId: shop.id,
-        shopifyArticle: { is: { shopifyBlogId: { not: null } } },
-      },
-      select: { id: true, title: true, status: true },
-    });
-
-    const results = [];
-    for (const post of linkedPosts) {
-      try {
-        await ArticleSyncService.pushPostToShopify(post.id, { publishMode: post.status === "published" });
-        results.push({ postId: post.id, title: post.title, status: "synced" });
-      } catch (err) {
-        results.push({ postId: post.id, title: post.title, status: "error", error: err.message });
-      }
-    }
-
-    res.json({ results });
-  } catch (err) {
-    console.error("POST /api/posts/sync-branding error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ─── GET /api/posts/conflicts — List all posts with unresolved conflicts ─────
 router.get("/conflicts", async (req, res) => {
   try {
