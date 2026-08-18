@@ -1967,6 +1967,7 @@ export default function PostEditor() {
                       onSave={() => handleSave(post.status === "published" ? "published" : "draft", "header")}
                       onPreview={handlePreviewClick}
                       isSaving={isSaving}
+                      postStatus={post.status}
                       isPreviewLoading={isPreviewLoading}
                     />
                   </Box>

@@ -59,6 +59,7 @@ export default function DragDropBuilderContainer({
   onPreview,
   isSaving,
   isPreviewLoading,
+  postStatus,
 }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -638,7 +639,7 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
                 disabled={isSaving}
                 onClick={onSave}
               >
-                {isSaving ? "Saving..." : "Save Draft"}
+                {isSaving ? "Saving..." : (postStatus === "published" ? "Save & Sync" : "Save Draft")}
               </Button>
             )}
 
