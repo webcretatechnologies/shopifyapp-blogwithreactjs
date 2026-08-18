@@ -16,6 +16,7 @@ import {
   ProgressBar,
   Banner,
   Icon,
+  Tooltip,
   SkeletonBodyText,
   SkeletonDisplayText,
 } from "@shopify/polaris";
@@ -49,15 +50,20 @@ const PULSE_RANGE = (() => {
   return { start, end };
 })();
 
-// ─── Content Pipeline — horizontal bar chart ───────────────────────────────────────────────────
+// ─── Publish Cadence — vertical bar chart ──────────────────────────────────────────────────────
 // A chart type not used anywhere else in the app (Analytics uses line/area for trends and a
-// donut for device split) — this is content-status volume (how many articles are in each stage
-// of the pipeline), a different data dimension entirely from performance metrics, best shown as
-// a simple horizontal bar rather than borrowed from an existing Analytics chart.
-function ContentPipelineChart({ published, drafts, scheduled, notSynced, loading, fullWidth = false }) {
-  const categories = ["Published", "Drafts", "Scheduled", "Not synced"];
-  const values = [published ?? 0, drafts ?? 0, scheduled ?? 0, notSynced ?? 0];
-  const colors = ["#008060", "#8a8a8a", "#005bd3", "#e67e22"];
+// donut for device split). This used to show current-moment counts (Published/Drafts/Scheduled/
+// Not synced) — but that was just the Action-needed KPI row's exact same four numbers redrawn as
+// bars, no new information. Replaced with a real time-series instead: articles published per
+// week over the last 8 weeks, from the new `publishCadence` field on GET
+// /api/posts/meta/dashboard-extras — genuinely new information not shown anywhere else.
+function PublishCadenceChart({ cadence, loading, fullWidth = false }) {
+  const weeks = cadence || [];
+  const categories = weeks.map((w) =>
+    new Date(w.weekStart).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+  );
+  const values = weeks.map((w) => w.count);
+  const totalInWindow = values.reduce((sum, v) => sum + v, 0);
 
   const options = {
     chart: {
@@ -67,24 +73,21 @@ function ContentPipelineChart({ published, drafts, scheduled, notSynced, loading
     },
     plotOptions: {
       bar: {
-        horizontal: true,
         borderRadius: 4,
-        distributed: true,
-        barHeight: "55%",
+        columnWidth: "45%",
       },
     },
-    colors,
-    dataLabels: {
-      enabled: true,
-      style: { fontWeight: 600 },
-    },
+    colors: ["#008060"],
+    dataLabels: { enabled: false },
     legend: { show: false },
     xaxis: {
       categories,
+      title: { text: "Week starting", style: { color: "#6d7175", fontSize: "12px" } },
       labels: { style: { colors: "#6d7175" } },
     },
     yaxis: {
-      labels: { style: { colors: "#202223", fontWeight: 500 } },
+      title: { text: "Articles published", style: { color: "#6d7175", fontSize: "12px" } },
+      labels: { formatter: (val) => Math.round(val) },
     },
     grid: { borderColor: "#e1e3e5" },
     tooltip: {
@@ -97,13 +100,21 @@ function ContentPipelineChart({ published, drafts, scheduled, notSynced, loading
     <Card>
       <Box padding="400" minHeight={fullWidth ? "300px" : "360px"}>
         <BlockStack gap="300">
-          <Text variant="headingMd" as="h3">Content Pipeline</Text>
+          <InlineStack align="space-between" blockAlign="center">
+            <Text variant="headingMd" as="h3">Publish Cadence</Text>
+            <Text variant="bodySm" tone="subdued">{totalInWindow} in last 8 weeks</Text>
+          </InlineStack>
           <Divider />
           {loading ? (
             <SkeletonBodyText lines={4} />
+          ) : totalInWindow === 0 ? (
+            <Text tone="subdued" variant="bodySm">
+              No articles published in the last 8 weeks. Write and publish a post to start
+              building a cadence.
+            </Text>
           ) : (
-            <div role="img" aria-label={`Content pipeline: ${categories.map((c, i) => `${c} ${values[i]}`).join(", ")}`}>
-              <ReactApexChart options={options} series={[{ name: "Articles", data: values }]} type="bar" height={fullWidth ? 200 : 260} />
+            <div role="img" aria-label={`Publish cadence over the last 8 weeks: ${categories.map((c, i) => `week of ${c}, ${values[i]} articles`).join("; ")}`}>
+              <ReactApexChart options={options} series={[{ name: "Published", data: values }]} type="bar" height={fullWidth ? 200 : 260} />
             </div>
           )}
         </BlockStack>
@@ -113,9 +124,19 @@ function ContentPipelineChart({ published, drafts, scheduled, notSynced, loading
 }
 
 // ─── Quick action tile — plain Polaris Card + Icon + Text, no bespoke styling ───────────────────
-function QuickAction({ icon, label, onClick }) {
-  return (
-    <div role="button" tabIndex={0} onClick={onClick} onKeyDown={(e) => e.key === "Enter" && onClick()} style={{ cursor: "pointer", height: "100%" }}>
+// `disabled` matches the same at-article-limit treatment posts/index.jsx already uses for its own
+// "New Article" action — this tile was still navigating straight to the create-article page while
+// the shop was at its plan's article limit, since it had its own onClick with no limit awareness.
+function QuickAction({ icon, label, onClick, disabled = false, disabledTooltip }) {
+  const content = (
+    <div
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled}
+      onClick={disabled ? undefined : onClick}
+      onKeyDown={(e) => !disabled && e.key === "Enter" && onClick()}
+      style={{ cursor: disabled ? "not-allowed" : "pointer", height: "100%", opacity: disabled ? 0.5 : 1 }}
+    >
       <Card>
         <Box padding="400">
           <BlockStack gap="200" inlineAlign="center">
@@ -128,6 +149,7 @@ function QuickAction({ icon, label, onClick }) {
       </Card>
     </div>
   );
+  return disabled && disabledTooltip ? <Tooltip content={disabledTooltip}>{content}</Tooltip> : content;
 }
 
 // ─── Main Dashboard ──────────────────────────────────────────────────────
@@ -257,7 +279,9 @@ export default function Dashboard() {
   const usagePct = planUsage?.limit ? Math.min(100, Math.round((planUsage.used / planUsage.limit) * 100)) : 0;
   const atLimit = planUsage?.limit != null && planUsage.used >= planUsage.limit;
   const nearLimit = planUsage?.limit != null && !atLimit && usagePct >= 80;
-  const isNewShop = !setupLoading && !analyticsLoading && (stats?.totalPosts ?? 0) === 0;
+  // Same decoupling as SetupGuide below: post count is available from dashboard-extras
+  // (extrasLoading) without waiting on the separately-fetched, slower analytics summary.
+  const isNewShop = !setupLoading && !extrasLoading && (extras?.planUsage?.used ?? 0) === 0;
 
   return (
     <>
@@ -272,6 +296,7 @@ export default function Dashboard() {
         primaryAction={{
           content: "Write new article",
           onAction: () => navigate("/posts/new"),
+          disabled: atLimit,
         }}
         secondaryActions={[
           { content: "Manage articles", onAction: () => navigate("/posts") },
@@ -300,15 +325,19 @@ export default function Dashboard() {
           )}
 
           {/* ── Get Started — prominent for new/unconfigured shops, still available (collapsed
-               by SetupGuide's own internal state) once everything's done ────────────────── */}
-          {!analyticsLoading && !setupLoading && (
+               by SetupGuide's own internal state) once everything's done ──────────────────
+               Gated on setup + extras loading only, NOT analyticsLoading — this card's own data
+               (setupStatus, post count via dashboard-extras) has no dependency on the 30-day
+               analytics fetch, which can be meaningfully slower. Previously waiting on both
+               delayed the single most important card for a brand-new merchant for no reason. */}
+          {!extrasLoading && !setupLoading && (
             <Layout.Section>
               <SetupGuide
                 shop={shopInfo?.domain}
                 isExtensionActive={setupStatus?.analyticsTracker?.active}
                 isMetaRobotsActive={setupStatus?.metaRobots?.active}
                 themeSupportsAppEmbeds={setupStatus?.themeSupportsAppEmbeds}
-                hasPosts={stats?.totalPosts > 0}
+                hasPosts={(extras?.planUsage?.used ?? 0) > 0}
               />
             </Layout.Section>
           )}
@@ -351,7 +380,15 @@ export default function Dashboard() {
                 </InlineStack>
               </InlineStack>
               <Grid columns={{ xs: 2, sm: 3, md: 6, lg: 6, xl: 6 }} gap={{ xs: "8px", sm: "12px", md: "16px" }}>
-                <Grid.Cell><QuickAction icon={PlusIcon} label="New article" onClick={() => navigate("/posts/new")} /></Grid.Cell>
+                <Grid.Cell>
+                  <QuickAction
+                    icon={PlusIcon}
+                    label="New article"
+                    onClick={() => navigate("/posts/new")}
+                    disabled={atLimit}
+                    disabledTooltip={`You've reached your ${planUsage?.limit ?? ""}-article limit. Upgrade your plan to add more.`}
+                  />
+                </Grid.Cell>
                 <Grid.Cell><QuickAction icon={ImportIcon} label="Import posts" onClick={() => navigate("/posts/import")} /></Grid.Cell>
                 <Grid.Cell><QuickAction icon={BlogIcon} label="Templates" onClick={() => navigate("/templates")} /></Grid.Cell>
                 <Grid.Cell><QuickAction icon={ChartVerticalIcon} label="Analytics" onClick={() => navigate("/analytics")} /></Grid.Cell>
@@ -481,18 +518,16 @@ export default function Dashboard() {
             )}
           </Layout.Section>
 
-          {/* ── Content pipeline ─────────────────────────────────────────
-               Same full-width treatment as the performance chart above — a horizontal bar
-               chart, a genuinely new chart type not borrowed from the Analytics pages (which
-               only cover performance metrics via line/area/donut charts). Visualizes content
-               status volume instead of a performance trend. */}
+          {/* ── Publish cadence ───────────────────────────────────────────
+               Same full-width treatment as the performance chart above — a bar chart, a
+               genuinely new chart type not borrowed from the Analytics pages (which only cover
+               performance metrics via line/area/donut charts). Shows a real weekly trend, not a
+               restatement of the Action-needed KPI row's current-moment counts (which is what
+               this card used to duplicate). */}
           <Layout.Section>
-            <ContentPipelineChart
-              loading={analyticsLoading || extrasLoading}
-              published={stats?.published}
-              drafts={extras?.drafts}
-              scheduled={extras?.scheduled}
-              notSynced={extras?.notSynced}
+            <PublishCadenceChart
+              loading={extrasLoading}
+              cadence={extras?.publishCadence}
               fullWidth
             />
           </Layout.Section>

@@ -859,7 +859,9 @@ router.get("/meta/dashboard-extras", async (req, res) => {
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
 
     const now = new Date();
-    const [totalPosts, draftCount, scheduledCount, notSyncedCount, upcoming, syncIssues] =
+    const WEEKS = 8;
+    const cadenceStart = new Date(now.getTime() - WEEKS * 7 * 24 * 60 * 60 * 1000);
+    const [totalPosts, draftCount, scheduledCount, notSyncedCount, upcoming, syncIssues, recentlyPublished] =
       await Promise.all([
         prisma.post.count({ where: { shopId: shop.id } }),
         prisma.post.count({ where: { shopId: shop.id, status: "draft" } }),
@@ -880,7 +882,26 @@ router.get("/meta/dashboard-extras", async (req, res) => {
           take: 30,
           select: { id: true, postId: true, direction: true, eventType: true, status: true, message: true, createdAt: true },
         }),
+        // Publish cadence for the Dashboard's Content Pipeline chart — posts per week over the
+        // last 8 weeks. Deliberately status:"published" + publishedAt only (not createdAt): a
+        // draft edited today shouldn't count as "published this week."
+        prisma.post.findMany({
+          where: { shopId: shop.id, status: "published", publishedAt: { gte: cadenceStart } },
+          select: { publishedAt: true },
+        }),
       ]);
+
+    // Bucket into 8 week-long windows ending "now", oldest first — a fixed-width trailing window
+    // rather than calendar weeks, so it reads the same regardless of what day of the week it is.
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const publishCadence = Array.from({ length: WEEKS }, (_, i) => {
+      const windowStart = new Date(cadenceStart.getTime() + i * weekMs);
+      const windowEnd = new Date(windowStart.getTime() + weekMs);
+      const count = recentlyPublished.filter(
+        (p) => p.publishedAt >= windowStart && p.publishedAt < windowEnd
+      ).length;
+      return { weekStart: windowStart.toISOString(), count };
+    });
 
     const seenPostIds = new Set();
     const dedupedSyncIssues = [];
@@ -905,6 +926,7 @@ router.get("/meta/dashboard-extras", async (req, res) => {
       upcoming: upcoming.map((p) => ({ id: p.id, title: p.title, publishedAt: p.publishedAt })),
       planUsage: { plan: shop.planKey, used: totalPosts, limit: getArticleLimit(shop.planKey) },
       syncIssues: dedupedSyncIssues.map((s) => ({ ...s, postTitle: s.postId ? postTitleById[s.postId] || null : null })),
+      publishCadence,
     });
   } catch (err) {
     console.error("GET /api/posts/meta/dashboard-extras error:", err);
