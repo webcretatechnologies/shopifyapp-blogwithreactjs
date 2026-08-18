@@ -833,6 +833,7 @@ export default function PostEditor() {
   const [isSavingHeader, setIsSavingHeader] = useState(false);
   const [isSavingSidebar, setIsSavingSidebar] = useState(false);
   const [isSavingSaveBar, setIsSavingSaveBar] = useState(false);
+  const [isSavingBanner, setIsSavingBanner] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isUnpublishing, setIsUnpublishing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1403,6 +1404,7 @@ export default function PostEditor() {
     if (source === "header") setIsSavingHeader(true);
     else if (source === "sidebar") setIsSavingSidebar(true);
     else if (source === "savebar") setIsSavingSaveBar(true);
+    else if (source === "sync-restore-banner") setIsSavingBanner(true);
 
     setIsSaving(true);
     setError(null);
@@ -1458,6 +1460,14 @@ export default function PostEditor() {
           tags: [...tags],
           relatedPosts: [...relatedPostsSelection],
           contentJson: currentSavedBlocks,
+          // A save that reaches here just pushed OUR content to Shopify, so the sync direction
+          // is unambiguously "app_to_shopify" now — without this, post.shopifyArticle (a nested
+          // relation `...payload` never touches) stays frozen at whatever it was on page load,
+          // so the "last edited directly in Shopify" banner above never clears after a real,
+          // successful Save & Sync — only a full page refresh would ever pick up the change.
+          shopifyArticle: post.shopifyArticle
+            ? { ...post.shopifyArticle, lastSyncDirection: "app_to_shopify" }
+            : post.shopifyArticle,
         };
         setPost(updatedOriginalPost);
         setOriginalPost(updatedOriginalPost);
@@ -1475,6 +1485,7 @@ export default function PostEditor() {
       setIsSavingHeader(false);
       setIsSavingSidebar(false);
       setIsSavingSaveBar(false);
+      setIsSavingBanner(false);
     }
   };
 
@@ -1921,7 +1932,10 @@ export default function PostEditor() {
                     &amp; Sync to restore them — no content will be lost.
                   </p>
                   <div>
-                    <Button onClick={() => handleSave(post.status === "published" ? "published" : "draft", "sync-restore-banner")}>
+                    <Button
+                      loading={isSavingBanner}
+                      onClick={() => handleSave(post.status === "published" ? "published" : "draft", "sync-restore-banner")}
+                    >
                       Save &amp; Sync now
                     </Button>
                   </div>
