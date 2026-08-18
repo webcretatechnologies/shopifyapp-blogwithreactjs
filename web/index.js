@@ -331,10 +331,24 @@ app.post(
         callbackUrl: "/api/webhooks",
         callback: async (topic, shop) => {
           try {
+            const shopRecord = await prisma.shop.findUnique({ where: { domain: shop } });
             await prisma.shop.updateMany({
               where: { domain: shop },
-              data: { uninstalledAt: new Date() },
+              // Reset planKey to 'free' here too, not just via APP_SUBSCRIPTIONS_UPDATE — Shopify
+              // does cancel the real AppSubscription automatically on uninstall, but there's no
+              // guarantee that webhook is what actually reaches us first (or at all, if delivery
+              // is delayed/dropped right as the shop goes uninstalled). Leaving planKey stale at
+              // 'pro' meant a merchant who reinstalled got full paid-plan access for free until
+              // the next reconcile happened to catch it — confirmed happening live, not just a
+              // theoretical race.
+              data: { uninstalledAt: new Date(), planKey: "free" },
             });
+            if (shopRecord) {
+              await prisma.appPlan.updateMany({
+                where: { shopId: shopRecord.id, isActive: true },
+                data: { isActive: false },
+              });
+            }
           } catch (err) {
             console.error("APP_UNINSTALLED webhook error:", err);
           }
