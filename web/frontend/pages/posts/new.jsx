@@ -2043,10 +2043,9 @@ export default function PostEditor() {
                                 label="Page title"
                                 value={seoData.metaTitle !== undefined && seoData.metaTitle !== "" ? seoData.metaTitle : (post.title || "")}
                                 onChange={(val) => setSeoData((s) => ({ ...s, metaTitle: val }))}
-                                maxLength={70}
                                 autoComplete="off"
                               />
-                              <Text variant="bodySm" tone="subdued">
+                              <Text variant="bodySm" tone={(seoData.metaTitle !== undefined && seoData.metaTitle !== "" ? seoData.metaTitle : (post.title || "")).length > 70 ? "critical" : "subdued"}>
                                 {`${(seoData.metaTitle !== undefined && seoData.metaTitle !== "" ? seoData.metaTitle : (post.title || "")).length} of 70 characters used`}
                               </Text>
                             </BlockStack>
@@ -2058,10 +2057,9 @@ export default function PostEditor() {
                                 value={seoData.metaDescription || ""}
                                 onChange={(val) => setSeoData((s) => ({ ...s, metaDescription: val }))}
                                 multiline={4}
-                                maxLength={160}
                                 autoComplete="off"
                               />
-                              <Text variant="bodySm" tone="subdued">
+                              <Text variant="bodySm" tone={(seoData.metaDescription || "").length > 160 ? "critical" : "subdued"}>
                                 {`${(seoData.metaDescription || "").length} of 160 characters used`}
                               </Text>
                             </BlockStack>

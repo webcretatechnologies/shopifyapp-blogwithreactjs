@@ -40,6 +40,9 @@ function formatFieldName(field) {
     status: "Status",
     tags: "Tags",
     featuredImage: "Featured Image",
+    featuredImageAlt: "Image Alt Text",
+    metaTitle: "SEO Meta Title",
+    metaDescription: "SEO Meta Description",
     content: "Content",
   };
   return map[field] || field.charAt(0).toUpperCase() + field.slice(1);

@@ -21,6 +21,7 @@ import { ShopifyArticleParser } from "./ShopifyArticleParser.js";
 import BlockRenderer from "./BlockRenderer.js";
 import { ensureTrackingKey } from "./AnalyticsTrackingService.js";
 import JsonLdService from "./JsonLdService.js";
+import { isFeatureEnabled } from "./PlanFeatureService.js";
 
 const prisma = new PrismaClient();
 
@@ -85,7 +86,7 @@ function articleFromGraphQL(article) {
     body_html: article.body || "",
     author: article.author?.name || "",
     tags: Array.isArray(article.tags) ? article.tags.join(", ") : "",
-    image: article.image?.url ? { src: article.image.url } : null,
+    image: article.image?.url ? { src: article.image.url, alt: article.image.altText ?? null } : null,
     handle: article.handle || "",
     // Not gated on isPublished: a scheduled-but-not-yet-live article has isPublished:false
     // but a future publishedAt (the scheduled instant) — losing that here would make
@@ -94,10 +95,11 @@ function articleFromGraphQL(article) {
     isScheduled: !article.isPublished && !!article.publishedAt && new Date(article.publishedAt) > new Date(),
     updated_at: article.updatedAt || null,
     blog_id: article.blog?.id ? numericIdFromGid(article.blog.id) : null,
-    // Additive only — not wired into SCALAR_FIELDS/reconciliation merge, so this doesn't
-    // change any existing sync behavior. Exists so callers can compare/detect drift between
-    // Shopify's live Search-engine-listing metafields and our local metaTitle/metaDescription
-    // (these were previously never re-fetched, so drift there was invisible to the app).
+    // Now wired into the real two-way merge (OPTIONAL_REMOTE_FIELDS below) — only available via
+    // this GraphQL adapter, never on a raw Shopify webhook payload (REST-shaped, no metafields),
+    // which is exactly why these go through OPTIONAL_REMOTE_FIELDS instead of SCALAR_FIELDS: a
+    // routine webhook-triggered merge must not see "undefined" here and mistake it for "remote
+    // cleared this field."
     meta_title: article.titleTag?.value ?? null,
     meta_description: article.descriptionTag?.value ?? null,
   };
@@ -187,7 +189,14 @@ async function fetchArticleByGid(graphqlClient, articleId) {
 }
 
 // ─── Scalar fields we merge independently ─────────────────────────────────────
-const SCALAR_FIELDS = ["title", "author", "status", "tags", "featuredImage", "slug"];
+const SCALAR_FIELDS = ["title", "author", "status", "tags", "featuredImage", "featuredImageAlt", "slug"];
+
+// Real two-way merged, same conflict-detection treatment as SCALAR_FIELDS — but only ever
+// compared when the remote side actually supplied a value. Real Shopify webhooks are REST-shaped
+// and never carry metafield data (title_tag/description_tag), only the GraphQL-based reconcile
+// path (articleFromGraphQL) does — so on an ordinary webhook these come through as `undefined`,
+// which must be treated as "this payload variant doesn't know," never as "remote cleared it."
+const OPTIONAL_REMOTE_FIELDS = ["metaTitle", "metaDescription"];
 
 /** True when a field hash differs from the last-synced baseline. */
 function changedFromBase(currentHash, baseHash) {
@@ -281,6 +290,8 @@ function normalizeLocalState(post, tagNames) {
     featuredImage: post.featuredImage || null,
     featuredImageAlt: post.featuredImageAlt || null,
     slug: post.slug || "",
+    metaTitle: post.metaTitle || "",
+    metaDescription: post.metaDescription || "",
     content: {
       editorHtml: post.contentHtml || "",
       contentJson: post.contentJson || [],
@@ -306,7 +317,16 @@ function normalizeRemoteState(payload) {
           : "draft",
     tags: remoteTags,
     featuredImage: payload.image?.src || null,
+    // Real Shopify article webhook payloads (REST-shaped) do include image.alt directly — no
+    // metafield lookup required, unlike meta_title/meta_description below — so this is safe to
+    // treat the same as any other always-present SCALAR_FIELDS entry.
+    featuredImageAlt: payload.image?.alt ?? null,
     slug: payload.handle || "",
+    // Deliberately left as `undefined` (not coerced to "") when the payload doesn't carry it at
+    // all — OPTIONAL_REMOTE_FIELDS' merge logic treats undefined as "this payload variant has no
+    // opinion," distinct from an explicit empty string meaning "merchant cleared it in Shopify."
+    metaTitle: payload.meta_title === undefined ? undefined : (payload.meta_title || ""),
+    metaDescription: payload.meta_description === undefined ? undefined : (payload.meta_description || ""),
     content: {
       storefrontHtml: payload.body_html || "",
     },
@@ -332,10 +352,14 @@ function buildBaselineSnapshot(localState, storefrontHtml, revision) {
       author:      { value: localState.author,      hash: f(localState.author) },
       status:      { value: localState.status,      hash: f(localState.status) },
       tags:        { value: localState.tags,        hash: f(localState.tags) },
-      // Hashes featuredImage + featuredImageAlt together — a merchant editing only the alt text
-      // should still count as "the image changed" for pushPostToShopify's dirty-check below, so
-      // the new alt text actually reaches Shopify on the next sync.
-      featuredImage: { value: localState.featuredImage, hash: f(JSON.stringify([localState.featuredImage, localState.featuredImageAlt || null])) },
+      featuredImage:    { value: localState.featuredImage,    hash: f(localState.featuredImage) },
+      // Independent field now that it's part of the real two-way merge (SCALAR_FIELDS) — an
+      // alt-text-only edit and an image-URL-only edit need to be distinguishable from each other,
+      // not collapsed into one combined hash. pushPostToShopify's dirty-check (below) now checks
+      // both hashes independently instead of relying on a single composite one.
+      featuredImageAlt: { value: localState.featuredImageAlt, hash: f(localState.featuredImageAlt) },
+      metaTitle:        { value: localState.metaTitle,        hash: f(localState.metaTitle) },
+      metaDescription:  { value: localState.metaDescription,  hash: f(localState.metaDescription) },
       content: {
         editorHtml:      { value: localState.content.editorHtml, hash: f(localState.content.editorHtml), htmlHash: htmlHash(localState.content.editorHtml) },
         contentJson:     { hash: f(JSON.stringify(localState.content.contentJson)) },
@@ -379,6 +403,26 @@ function threeWayMerge(base, local, remote, { localEditedSinceSync = false } = {
       }
     }
 
+    // This payload variant has no opinion on this field at all (real webhook, not a GraphQL
+    // reconcile) — keep whatever local already has rather than comparing against `undefined`,
+    // which would look identical to "remote wants to clear it." Marked "both" (not "local") so
+    // this alone never spuriously triggers needsPushBack below on every routine webhook.
+    for (const field of OPTIONAL_REMOTE_FIELDS) {
+      if (remote[field] === undefined) {
+        merged[field] = { value: local[field], source: "both" };
+        continue;
+      }
+      const localHash = fieldHash(local[field]);
+      const remoteHash = fieldHash(remote[field]);
+      if (localHash === remoteHash) {
+        merged[field] = { value: local[field], source: "both" };
+      } else if (localEditedSinceSync) {
+        merged[field] = { value: local[field], source: "local" };
+      } else {
+        merged[field] = { value: remote[field], source: "remote" };
+      }
+    }
+
     const localContentHash = fieldHash(local.content.editorHtml);
     const remoteContentHash = fieldHash(remote.content.storefrontHtml);
     if (localContentHash === remoteContentHash) {
@@ -411,6 +455,49 @@ function threeWayMerge(base, local, remote, { localEditedSinceSync = false } = {
       merged[field] = { value: remote[field], source: "remote" };
     } else {
       // Both changed
+      if (localHash === remoteHash) {
+        merged[field] = { value: local[field], source: "both" };
+      } else {
+        conflicts[field] = {
+          base:   base?.fields?.[field]?.value ?? null,
+          local:  local[field],
+          remote: remote[field],
+        };
+        merged[field] = { value: local[field], source: "conflict" };
+      }
+    }
+  }
+
+  // Same "undefined means this payload variant has no opinion" rule as the legacy branch above.
+  // Resolved purely from local-vs-base, exactly as if remote hadn't changed at all this round —
+  // NOT simply "use the stale baseline value," which would silently discard a genuine unpushed
+  // local edit sitting between syncs, and NOT unconditionally "local," which would spuriously
+  // mark this field as needing a push-back (triggering an unnecessary pushPostToShopify call) on
+  // every single ordinary webhook even when nothing about it actually changed.
+  for (const field of OPTIONAL_REMOTE_FIELDS) {
+    if (remote[field] === undefined) {
+      const localHash = fieldHash(local[field]);
+      const baseHash = base?.fields?.[field]?.hash;
+      const localChanged = changedFromBase(localHash, baseHash);
+      merged[field] = localChanged
+        ? { value: local[field], source: "local" }
+        : { value: local[field], source: "base" };
+      continue;
+    }
+    const localHash  = fieldHash(local[field]);
+    const remoteHash = fieldHash(remote[field]);
+    const baseHash   = base?.fields?.[field]?.hash;
+
+    const localChanged  = changedFromBase(localHash, baseHash);
+    const remoteChanged = changedFromBase(remoteHash, baseHash);
+
+    if (!localChanged && !remoteChanged) {
+      merged[field] = { value: local[field], source: "base" };
+    } else if (localChanged && !remoteChanged) {
+      merged[field] = { value: local[field], source: "local" };
+    } else if (!localChanged && remoteChanged) {
+      merged[field] = { value: remote[field], source: "remote" };
+    } else {
       if (localHash === remoteHash) {
         merged[field] = { value: local[field], source: "both" };
       } else {
@@ -479,6 +566,9 @@ function applyMergedResult(merged, conflicts, post, remotePayload) {
     status: merged.status.value,
     author: merged.author.value || null,
     featuredImage: merged.featuredImage.value,
+    featuredImageAlt: merged.featuredImageAlt.value || null,
+    metaTitle: merged.metaTitle.value || null,
+    metaDescription: merged.metaDescription.value || null,
     publishedAt: merged.status.source === "remote"
       ? (remotePayload?.published_at ? new Date(remotePayload.published_at) : (merged.status.value === "published" ? new Date() : null))
       : (post.publishedAt || (merged.status.value === "published" ? new Date() : null)),
@@ -852,9 +942,17 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   // back) eventually pointed at a file Shopify had already garbage-collected — a real 404 on the
   // Articles list thumbnail, not a one-off glitch. Re-sending an unchanged image was pure waste
   // and the actual root cause; only send it when there's a real change to make.
+  // Checked independently (not one combined hash) now that featuredImage/featuredImageAlt are
+  // both real, separately-tracked SCALAR_FIELDS in the two-way merge — either one differing from
+  // its own baseline is enough reason to include `image` in this push.
   const previousFeaturedImageHash = shopifyLink.lastSyncedSnapshot?.fields?.featuredImage?.hash;
-  const currentFeaturedImageHash = fieldHash(JSON.stringify([post.featuredImage || null, post.featuredImageAlt || null]));
-  const featuredImageChanged = !shopifyLink.shopifyArticleId || previousFeaturedImageHash !== currentFeaturedImageHash;
+  const currentFeaturedImageHash = fieldHash(post.featuredImage || null);
+  const previousFeaturedImageAltHash = shopifyLink.lastSyncedSnapshot?.fields?.featuredImageAlt?.hash;
+  const currentFeaturedImageAltHash = fieldHash(post.featuredImageAlt || null);
+  const featuredImageChanged =
+    !shopifyLink.shopifyArticleId ||
+    previousFeaturedImageHash !== currentFeaturedImageHash ||
+    previousFeaturedImageAltHash !== currentFeaturedImageAltHash;
 
   const articleInput = toArticleGraphQLInput({
     title: post.title,
@@ -1238,6 +1336,27 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
 
   const shopifyArticleId = String(payload.id);
 
+  // 2-Way Sync ("sync_actions") is a Starter+ feature, already marketed as such on the pricing
+  // page — but until now only the merchant-facing Force Sync button was actually gated by it; the
+  // automatic Shopify -> App direction (this webhook handler) ran unconditionally regardless of
+  // plan. A Free-plan shop is now fully cut off from automatic inbound sync: edits made directly
+  // in Shopify's own admin no longer create/update/delete anything in our app on their own. This
+  // is a deliberate reversal of this session's earlier "never gate ingestion, for data-integrity
+  // reasons" decision — the resulting staleness (a Shopify-side edit not reflected here until the
+  // shop upgrades) is accepted as intentional, not a bug. Once a shop upgrades, no catch-up
+  // action is needed: the reconciliation scheduler (reconcileAllShops, every
+  // RECONCILE_INTERVAL_MINUTES) naturally detects the accumulated drift on its next pass and
+  // applies it normally, the same as any other missed webhook.
+  if (!isFeatureEnabled(shop.planKey, "sync_actions")) {
+    await logSyncEvent({
+      shopId: shop.id, shopifyArticleId,
+      direction: "shopify_to_app", eventType: "webhook",
+      status: "skipped_free_plan",
+      message: `${topic} skipped: 2-Way Sync is a Starter+ feature, shop is on ${shop.planKey}`,
+    });
+    return;
+  }
+
   switch (topic) {
     // ─── ARTICLES_CREATE ───────────────────────────────────────────
     case "ARTICLES_CREATE": {
@@ -1266,6 +1385,7 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
           contentHtml: parsed.rawEditorHtml || payload.body_html || "",
           contentJson: parsed.blocks,
           featuredImage: payload.image?.src || null,
+          featuredImageAlt: payload.image?.alt || null,
           publishedAt: payload.published_at ? new Date(payload.published_at) : null,
         },
       });
