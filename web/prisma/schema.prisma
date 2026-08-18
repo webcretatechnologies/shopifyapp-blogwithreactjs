@@ -516,8 +516,20 @@ model CouponShop {
 
 model CouponClaim {
   id                  Int      @id @default(autoincrement())
-  couponId            Int
-  coupon              Coupon   @relation(fields: [couponId], references: [id])
+  couponId            Int?
+  coupon              Coupon?  @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  // Snapshot of the coupon's code at claim time — CouponsModule.jsx's own delete-confirmation
+  // copy already promises "those merchants keep their existing discount; this only stops new
+  // claims", i.e. deleting a Coupon definition was always meant to leave claim history intact,
+  // not destroy it. couponId alone can't do that (once the Coupon row is gone, `coupon.code`
+  // becomes unreachable through the relation) — this field is what actually lets the admin
+  // panel's usage table keep showing which code was used after the coupon itself is deleted.
+  couponCode          String   @db.VarChar(40)
+  // Same reasoning as couponCode — durationMonths is read from the live coupon relation
+  // (superAdmin.js's usage listing) to compute total discounted revenue and when a claim's
+  // discount period ends. Snapshotting it here means that calculation still works correctly for
+  // claims whose coupon has since been deleted, instead of throwing on a null relation.
+  couponDurationMonths Int
   shopDomain          String
   planTier            String   // SubscriptionPlan.name, matching how Shop.planKey is stored
   priceBeforeDiscount Decimal  @db.Decimal(10, 2)

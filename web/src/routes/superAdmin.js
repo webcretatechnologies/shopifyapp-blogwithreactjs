@@ -1099,13 +1099,12 @@ async function buildCouponUsageRows(query) {
   if (search) {
     where.OR = [
       { shopDomain: { contains: search } },
-      { coupon: { code: { contains: search } } },
+      { couponCode: { contains: search } },
     ];
   }
 
   const claims = await prisma.couponClaim.findMany({
     where,
-    include: { coupon: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -1118,10 +1117,10 @@ async function buildCouponUsageRows(query) {
     const priceBeforeDiscount = Number(claim.priceBeforeDiscount);
     const discountedPrice = Number(claim.discountedPrice);
     const saving = Math.round((priceBeforeDiscount - discountedPrice) * 100) / 100;
-    const cycles = isAnnual ? Math.max(1, Math.round(claim.coupon.durationMonths / 12)) : claim.coupon.durationMonths;
+    const cycles = isAnnual ? Math.max(1, Math.round(claim.couponDurationMonths / 12)) : claim.couponDurationMonths;
     const total = Math.round(discountedPrice * cycles * 100) / 100;
     const fullPriceFrom = new Date(claim.createdAt);
-    fullPriceFrom.setMonth(fullPriceFrom.getMonth() + claim.coupon.durationMonths);
+    fullPriceFrom.setMonth(fullPriceFrom.getMonth() + claim.couponDurationMonths);
     const counted = claim.status === "APPROVED";
     const stillActive = counted && fullPriceFrom > now;
 
@@ -1129,7 +1128,7 @@ async function buildCouponUsageRows(query) {
       id: claim.id,
       claimedAt: claim.createdAt,
       couponId: claim.couponId,
-      couponCode: claim.coupon.code,
+      couponCode: claim.couponCode,
       shopDomain: claim.shopDomain,
       planTier: claim.planTier,
       cycle: isAnnual ? "Yearly" : "Monthly",

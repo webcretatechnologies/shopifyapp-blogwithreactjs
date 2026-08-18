@@ -349,6 +349,8 @@ router.post("/request", async (req, res) => {
       await prisma.couponClaim.create({
         data: {
           couponId: appliedCoupon.id,
+          couponCode: appliedCoupon.code,
+          couponDurationMonths: appliedCoupon.durationMonths,
           shopDomain: session.shop,
           planTier: dbPlan.name,
           priceBeforeDiscount: dbPlan.price,
