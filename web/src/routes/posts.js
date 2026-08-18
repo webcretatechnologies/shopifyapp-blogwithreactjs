@@ -871,15 +871,28 @@ router.get("/meta/dashboard-extras", async (req, res) => {
           take: 5,
           select: { id: true, title: true, publishedAt: true },
         }),
+        // Fetch more than the 5 we'll show and dedupe by post below — a post that's conflicted
+        // repeatedly (e.g. a merchant retrying the same edit) would otherwise fill the entire
+        // "Recent sync issues" list with 5 copies of itself, crowding out every other issue.
         prisma.articleSyncLog.findMany({
           where: { shopId: shop.id, status: { in: ["error", "conflict"] } },
           orderBy: { createdAt: "desc" },
-          take: 5,
+          take: 30,
           select: { id: true, postId: true, direction: true, eventType: true, status: true, message: true, createdAt: true },
         }),
       ]);
 
-    const postIds = [...new Set(syncIssues.map((s) => s.postId).filter(Boolean))];
+    const seenPostIds = new Set();
+    const dedupedSyncIssues = [];
+    for (const issue of syncIssues) {
+      const dedupeKey = issue.postId ?? `no-post-${issue.id}`;
+      if (seenPostIds.has(dedupeKey)) continue;
+      seenPostIds.add(dedupeKey);
+      dedupedSyncIssues.push(issue);
+      if (dedupedSyncIssues.length >= 5) break;
+    }
+
+    const postIds = [...new Set(dedupedSyncIssues.map((s) => s.postId).filter(Boolean))];
     const relatedPosts = postIds.length
       ? await prisma.post.findMany({ where: { id: { in: postIds } }, select: { id: true, title: true } })
       : [];
@@ -891,7 +904,7 @@ router.get("/meta/dashboard-extras", async (req, res) => {
       notSynced: notSyncedCount,
       upcoming: upcoming.map((p) => ({ id: p.id, title: p.title, publishedAt: p.publishedAt })),
       planUsage: { plan: shop.planKey, used: totalPosts, limit: getArticleLimit(shop.planKey) },
-      syncIssues: syncIssues.map((s) => ({ ...s, postTitle: s.postId ? postTitleById[s.postId] || null : null })),
+      syncIssues: dedupedSyncIssues.map((s) => ({ ...s, postTitle: s.postId ? postTitleById[s.postId] || null : null })),
     });
   } catch (err) {
     console.error("GET /api/posts/meta/dashboard-extras error:", err);
@@ -1675,27 +1688,57 @@ function resolveRequestedRange(req) {
   return ALLOWED_DAYS.includes(requestedDays) ? requestedDays : 30;
 }
 
-// Zeroes out (never deletes) the conversion/revenue/funnel/source/country fields for a plan
-// without analytics_advanced — keeps the response shape identical either way so nothing consuming
-// this payload has to special-case a missing key, it just sees "no data" for the Pro-only metrics.
+// Previously this zeroed out the conversion/revenue/funnel/source/country fields for a plan
+// without analytics_advanced — every dependent chart/table/card either showed "0.00%" everywhere
+// (looking broken, not "upgrade to unlock") or, for FunnelChart/CountryBreakdown specifically,
+// self-hid entirely on an empty array, silently changing the page layout between plans (fewer
+// cards, different row heights) rather than showing a locked preview of the same UI. Replaced
+// with representative sample data derived proportionally from the shop's own real view count, so
+// every section keeps its normal shape and the frontend can render it blurred behind an
+// "Upgrade" overlay (LockedOverlay component) instead of hiding or zeroing it. `advancedLocked:
+// true` tells the frontend which sections to blur; the numbers themselves are never real for a
+// non-entitled shop, so nothing sensitive is exposed through the blur.
 function stripAdvancedAnalytics(analytics) {
   if (!analytics) return analytics;
+  const views = analytics.stats?.totalViews || 0;
+  const sampleCart = Math.max(4, Math.round(views * 0.12));
+  const sampleCheckouts = Math.max(1, Math.round(sampleCart * 0.18));
+  const sampleConversions = Math.max(1, Math.round(sampleCheckouts * 0.85));
+  const sampleRevenue = sampleConversions * 68.5;
+  const pct = (n, d) => (d > 0 ? ((n / d) * 100).toFixed(2) : "0.00");
+
   return {
     ...analytics,
+    advancedLocked: true,
     stats: {
       ...analytics.stats,
-      totalAddToCart: 0,
-      totalCheckouts: 0,
-      totalConversions: 0,
-      totalRevenue: 0,
-      addToCartRate: "0.00",
-      checkoutRate: "0.00",
-      conversionRate: "0.00",
+      totalAddToCart: sampleCart,
+      totalCheckouts: sampleCheckouts,
+      totalConversions: sampleConversions,
+      totalRevenue: sampleRevenue,
+      addToCartRate: pct(sampleCart, views),
+      checkoutRate: pct(sampleCheckouts, views),
+      conversionRate: pct(sampleConversions, views),
     },
-    topSources: [],
-    topCountries: [],
-    funnel: [],
-    trends: analytics.trends ? { ...analytics.trends, revenue: null, conversionRate: null } : analytics.trends,
+    topSources: [
+      { name: "Google", count: Math.max(1, Math.round(views * 0.35)) },
+      { name: "Instagram", count: Math.max(1, Math.round(views * 0.22)) },
+      { name: "Direct", count: Math.max(1, Math.round(views * 0.18)) },
+      { name: "Facebook", count: Math.max(1, Math.round(views * 0.1)) },
+    ],
+    topCountries: [
+      { code: "US", count: Math.max(1, Math.round(views * 0.42)) },
+      { code: "GB", count: Math.max(1, Math.round(views * 0.18)) },
+      { code: "IN", count: Math.max(1, Math.round(views * 0.14)) },
+      { code: "CA", count: Math.max(1, Math.round(views * 0.09)) },
+    ],
+    funnel: [
+      { stage: "Views", count: views },
+      { stage: "Add to Cart", count: sampleCart },
+      { stage: "Checkout", count: sampleCheckouts },
+      { stage: "Conversions", count: sampleConversions },
+    ],
+    trends: analytics.trends ? { ...analytics.trends, revenue: 4.2, conversionRate: 1.8 } : analytics.trends,
   };
 }
 

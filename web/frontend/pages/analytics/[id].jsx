@@ -25,8 +25,9 @@ import DeviceChart from "../../components/analytics/DeviceChart";
 import TopSources from "../../components/analytics/TopSources";
 import FunnelChart from "../../components/analytics/FunnelChart";
 import CountryBreakdown from "../../components/analytics/CountryBreakdown";
+import LockedOverlay from "../../components/analytics/LockedOverlay";
 import DateRangePicker, { toISODateString } from "../../components/analytics/DateRangePicker";
-import { downloadAnalyticsCsv, roundMoney } from "../../utils/analyticsCsv";
+import { downloadAnalyticsCsv, roundMoney, formatMoney } from "../../utils/analyticsCsv";
 import EmbedRequirementBanner from "../../components/EmbedRequirementBanner";
 import { analyticsTrackerActivateUrl } from "../../utils/themeEmbedUtils";
 
@@ -50,6 +51,7 @@ export default function PostAnalytics() {
   const [lastLoadedAt, setLastLoadedAt] = useState(null);
   const [nowTick, setNowTick] = useState(Date.now());
   const [shopDomain, setShopDomain] = useState(null);
+  const [currencyCode, setCurrencyCode] = useState("USD");
   const [setupStatus, setSetupStatus] = useState(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
@@ -60,6 +62,7 @@ export default function PostAnalytics() {
 
   useEffect(() => {
     fetch("/api/shop").then((r) => r.json()).then((d) => setShopDomain(d.shop?.domain)).catch(() => {});
+    fetch("/api/posts/shopify/store").then((r) => r.json()).then((d) => d.currencyCode && setCurrencyCode(d.currencyCode)).catch(() => {});
     fetchSetupStatus();
   }, []);
 
@@ -131,6 +134,7 @@ export default function PostAnalytics() {
   })();
 
   const stats = analytics?.stats;
+  const advancedLocked = !!analytics?.advancedLocked;
   const post = analytics?.post;
 
   const hasExportData = !!analytics?.daily?.length;
@@ -206,7 +210,9 @@ export default function PostAnalytics() {
       subtitle="Views, funnel, devices, and traffic sources for this post"
       backAction={smartBackAction(navigate, location, "/analytics", "Analytics")}
       secondaryActions={[
-        { content: "Export CSV", icon: ExportIcon, onAction: exportCSV, disabled: !hasExportData },
+        advancedLocked
+          ? { content: "Export CSV", icon: ExportIcon, disabled: true, helpText: "Upgrade to Pro to export your analytics" }
+          : { content: "Export CSV", icon: ExportIcon, onAction: exportCSV, disabled: !hasExportData },
       ]}
     >
       <Box paddingBlockEnd="400">
@@ -265,13 +271,14 @@ export default function PostAnalytics() {
                 items={[
                   { label: "Views", value: (stats?.totalViews ?? 0).toLocaleString(), trend: analytics?.trends?.views },
                   { label: "Unique Visitors", value: (stats?.totalUniqueVisitors ?? 0).toLocaleString() },
-                  { label: "Add to Cart", value: (stats?.totalAddToCart ?? 0).toLocaleString() },
+                  { label: "Add to Cart", value: (stats?.totalAddToCart ?? 0).toLocaleString(), locked: advancedLocked },
                   {
                     label: "Revenue",
-                    value: `$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                    value: formatMoney(stats?.totalRevenue ?? 0, currencyCode),
                     trend: analytics?.trends?.revenue,
+                    locked: advancedLocked,
                   },
-                  { label: "Conv. Rate", value: `${stats?.conversionRate ?? "0.00"}%`, trend: analytics?.trends?.conversionRate },
+                  { label: "Conv. Rate", value: `${stats?.conversionRate ?? "0.00"}%`, trend: analytics?.trends?.conversionRate, locked: advancedLocked },
                 ]}
               />
             </Layout.Section>
@@ -281,15 +288,20 @@ export default function PostAnalytics() {
             <Layout.Section>
               <AnalyticsChart
                 data={analytics?.daily || []}
-                title="Daily Performance — Views, Add to Cart & Conversions"
-                series={[
-                  { key: "views", label: "Views", color: "#008060" },
-                  { key: "addToCart", label: "Add to Cart", color: "#e67e22" },
-                  { key: "conversions", label: "Conversions", color: "#005bd3" },
-                ]}
+                title={advancedLocked ? "Daily Performance — Views" : "Daily Performance — Views, Add to Cart & Conversions"}
+                series={
+                  advancedLocked
+                    ? [{ key: "views", label: "Views", color: "#008060" }]
+                    : [
+                        { key: "views", label: "Views", color: "#008060" },
+                        { key: "addToCart", label: "Add to Cart", color: "#e67e22" },
+                        { key: "conversions", label: "Conversions", color: "#005bd3" },
+                      ]
+                }
                 showPeriodSelector={false}
                 controlledPeriod={analytics?.daily?.length || 1}
                 showComparison={showComparison}
+                comparisonDisabled={advancedLocked}
                 onToggleComparison={setShowComparison}
                 compareData={analytics?.previousDaily || []}
               />
@@ -301,13 +313,25 @@ export default function PostAnalytics() {
               regardless of minHeight. Flexbox's default align-items: stretch does this for free
               without CSS Grid auto-fit's phantom-empty-track gap quirk. */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "stretch" }}>
-            <div style={{ flex: "1 1 280px" }}><FunnelChart funnel={analytics?.funnel || []} /></div>
+            <div style={{ flex: "1 1 280px" }}>
+              <LockedOverlay locked={advancedLocked} message="Upgrade to Pro to unlock the conversion funnel">
+                <FunnelChart funnel={analytics?.funnel || []} />
+              </LockedOverlay>
+            </div>
             <div style={{ flex: "1 1 280px" }}><DeviceChart breakdown={analytics?.deviceBreakdown} /></div>
-            <div style={{ flex: "1 1 280px" }}><TopSources sources={analytics?.topSources || []} /></div>
+            <div style={{ flex: "1 1 280px" }}>
+              <LockedOverlay locked={advancedLocked} message="Upgrade to Pro to unlock traffic sources">
+                <TopSources sources={analytics?.topSources || []} />
+              </LockedOverlay>
+            </div>
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "stretch" }}>
-            <div style={{ flex: "1 1 320px" }}><CountryBreakdown countries={analytics?.topCountries || []} /></div>
+            <div style={{ flex: "1 1 320px" }}>
+              <LockedOverlay locked={advancedLocked} message="Upgrade to Pro to unlock country breakdown">
+                <CountryBreakdown countries={analytics?.topCountries || []} />
+              </LockedOverlay>
+            </div>
           </div>
         </BlockStack>
       )}

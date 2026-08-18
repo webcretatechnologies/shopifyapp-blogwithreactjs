@@ -8,6 +8,7 @@ import {
   BlockStack,
   Select,
   Checkbox,
+  Tooltip,
 } from "@shopify/polaris";
 
 // Lightens a "#rrggbb" color for the muted comparison-overlay line, without adding a color lib.
@@ -29,6 +30,7 @@ export default function AnalyticsChart({
   compareData = null,
   showComparison = false,
   onToggleComparison = null,
+  comparisonDisabled = false,
 }) {
   // Use series if provided; otherwise build from color prop for backward compat
   const series = seriesProp || [{ key: "views", label: "Views", color }];
@@ -144,12 +146,18 @@ export default function AnalyticsChart({
             </Text>
           </BlockStack>
           <InlineStack gap="400" blockAlign="center">
-            {onToggleComparison && Array.isArray(compareData) && compareData.length > 0 && (
-              <Checkbox
-                label="Show comparison"
-                checked={showComparison}
-                onChange={onToggleComparison}
-              />
+            {onToggleComparison && (comparisonDisabled || (Array.isArray(compareData) && compareData.length > 0)) && (
+              comparisonDisabled ? (
+                <Tooltip content="Upgrade to Pro to compare periods">
+                  <Checkbox label="Show comparison" checked={false} disabled onChange={() => {}} />
+                </Tooltip>
+              ) : (
+                <Checkbox
+                  label="Show comparison"
+                  checked={showComparison}
+                  onChange={onToggleComparison}
+                />
+              )
             )}
             {showPeriodSelector && (
               <Select

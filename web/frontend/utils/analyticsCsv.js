@@ -46,3 +46,17 @@ export function downloadAnalyticsCsv(filename, sections) {
 export function roundMoney(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
+
+/** Formats a numeric amount using the store's currency (falls back to USD). */
+export function formatMoney(value, currencyCode = "USD") {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(value) || 0);
+  } catch {
+    return `${(Number(value) || 0).toFixed(2)} ${currencyCode}`;
+  }
+}

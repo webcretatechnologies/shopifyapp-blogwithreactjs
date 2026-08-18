@@ -34,8 +34,9 @@ import DeviceChart from "../components/analytics/DeviceChart";
 import TopSources from "../components/analytics/TopSources";
 import FunnelChart from "../components/analytics/FunnelChart";
 import CountryBreakdown from "../components/analytics/CountryBreakdown";
+import LockedOverlay from "../components/analytics/LockedOverlay";
 import DateRangePicker, { toISODateString } from "../components/analytics/DateRangePicker";
-import { downloadAnalyticsCsv, roundMoney } from "../utils/analyticsCsv";
+import { downloadAnalyticsCsv, roundMoney, formatMoney } from "../utils/analyticsCsv";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
 import { analyticsTrackerActivateUrl } from "../utils/themeEmbedUtils";
 
@@ -60,6 +61,7 @@ export default function Analytics() {
   const [lastLoadedAt, setLastLoadedAt] = useState(null);
   const [nowTick, setNowTick] = useState(Date.now());
   const [shopDomain, setShopDomain] = useState(null);
+  const [currencyCode, setCurrencyCode] = useState("USD");
   const [setupStatus, setSetupStatus] = useState(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
@@ -70,6 +72,7 @@ export default function Analytics() {
 
   useEffect(() => {
     fetch("/api/shop").then((r) => r.json()).then((d) => setShopDomain(d.shop?.domain)).catch(() => {});
+    fetch("/api/posts/shopify/store").then((r) => r.json()).then((d) => d.currencyCode && setCurrencyCode(d.currencyCode)).catch(() => {});
     fetchSetupStatus();
   }, []);
 
@@ -166,6 +169,7 @@ export default function Analytics() {
   })();
 
   const stats = analytics?.stats;
+  const advancedLocked = !!analytics?.advancedLocked;
 
   const hasExportData = !!analytics?.daily?.length;
 
@@ -243,7 +247,9 @@ export default function Analytics() {
       subtitle="Comprehensive insights into your blog's performance — views, conversions, and more"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
       secondaryActions={[
-        { content: "Export CSV", icon: ExportIcon, onAction: exportCSV, disabled: !hasExportData },
+        advancedLocked
+          ? { content: "Export CSV", icon: ExportIcon, disabled: true, helpText: "Upgrade to Pro to export your analytics" }
+          : { content: "Export CSV", icon: ExportIcon, onAction: exportCSV, disabled: !hasExportData },
       ]}
     >
       <Box paddingBlockEnd="400">
@@ -316,10 +322,11 @@ export default function Analytics() {
                   { label: "Unique Visitors", value: (stats?.totalUniqueVisitors ?? 0).toLocaleString() },
                   {
                     label: "Revenue",
-                    value: `$${(stats?.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                    value: formatMoney(stats?.totalRevenue ?? 0, currencyCode),
                     trend: analytics?.trends?.revenue,
+                    locked: advancedLocked,
                   },
-                  { label: "Overall Conv. Rate", value: `${stats?.conversionRate ?? "0.00"}%`, trend: analytics?.trends?.conversionRate },
+                  { label: "Overall Conv. Rate", value: `${stats?.conversionRate ?? "0.00"}%`, trend: analytics?.trends?.conversionRate, locked: advancedLocked },
                 ]}
               />
             </Layout.Section>
@@ -328,57 +335,70 @@ export default function Analytics() {
           <Layout>
             {/* ── Conversion Comparison Table ────────────────────────── */}
             <Layout.Section>
-              <Card>
-                <Box padding="400">
-                  <BlockStack gap="300">
-                    <Text variant="headingMd">Conversion Metrics Comparison</Text>
-                    <Divider />
-                    <IndexTable
-                      resourceName={{ singular: "metric", plural: "metrics" }}
-                      itemCount={3}
-                      selectable={false}
-                      headings={[
-                        { title: "Funnel Stage" },
-                        { title: "Total Count" },
-                        { title: "Conversion Rate" },
-                      ]}
-                    >
-                      <IndexTable.Row id="add-to-cart" position={0}>
-                        <IndexTable.Cell><Text fontWeight="bold" as="span">Add to Cart</Text></IndexTable.Cell>
-                        <IndexTable.Cell>{(stats?.totalAddToCart ?? 0).toLocaleString()}</IndexTable.Cell>
-                        <IndexTable.Cell>{stats?.addToCartRate ?? "0.00"}%</IndexTable.Cell>
-                      </IndexTable.Row>
-                      <IndexTable.Row id="checkouts" position={1}>
-                        <IndexTable.Cell><Text fontWeight="bold" as="span">Checkouts</Text></IndexTable.Cell>
-                        <IndexTable.Cell>{(stats?.totalCheckouts ?? 0).toLocaleString()}</IndexTable.Cell>
-                        <IndexTable.Cell>{stats?.checkoutRate ?? "0.00"}%</IndexTable.Cell>
-                      </IndexTable.Row>
-                      <IndexTable.Row id="conversions" position={2}>
-                        <IndexTable.Cell><Text fontWeight="bold" as="span">Successful Conversions</Text></IndexTable.Cell>
-                        <IndexTable.Cell>{(stats?.totalConversions ?? 0).toLocaleString()}</IndexTable.Cell>
-                        <IndexTable.Cell>{stats?.conversionRate ?? "0.00"}%</IndexTable.Cell>
-                      </IndexTable.Row>
-                    </IndexTable>
-                  </BlockStack>
-                </Box>
-              </Card>
+              <LockedOverlay locked={advancedLocked} message="Upgrade to Pro to unlock conversion metrics">
+                <Card>
+                  <Box padding="400">
+                    <BlockStack gap="300">
+                      <Text variant="headingMd">Conversion Metrics Comparison</Text>
+                      <Divider />
+                      <IndexTable
+                        resourceName={{ singular: "metric", plural: "metrics" }}
+                        itemCount={3}
+                        selectable={false}
+                        headings={[
+                          { title: "Funnel Stage" },
+                          { title: "Total Count" },
+                          { title: "Conversion Rate" },
+                        ]}
+                      >
+                        <IndexTable.Row id="add-to-cart" position={0}>
+                          <IndexTable.Cell><Text fontWeight="bold" as="span">Add to Cart</Text></IndexTable.Cell>
+                          <IndexTable.Cell>{(stats?.totalAddToCart ?? 0).toLocaleString()}</IndexTable.Cell>
+                          <IndexTable.Cell>{stats?.addToCartRate ?? "0.00"}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                        <IndexTable.Row id="checkouts" position={1}>
+                          <IndexTable.Cell><Text fontWeight="bold" as="span">Checkouts</Text></IndexTable.Cell>
+                          <IndexTable.Cell>{(stats?.totalCheckouts ?? 0).toLocaleString()}</IndexTable.Cell>
+                          <IndexTable.Cell>{stats?.checkoutRate ?? "0.00"}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                        <IndexTable.Row id="conversions" position={2}>
+                          <IndexTable.Cell><Text fontWeight="bold" as="span">Successful Conversions</Text></IndexTable.Cell>
+                          <IndexTable.Cell>{(stats?.totalConversions ?? 0).toLocaleString()}</IndexTable.Cell>
+                          <IndexTable.Cell>{stats?.conversionRate ?? "0.00"}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                      </IndexTable>
+                    </BlockStack>
+                  </Box>
+                </Card>
+              </LockedOverlay>
             </Layout.Section>
           </Layout>
 
           <Layout>
-            {/* ── Multi-Series Chart (Views + Add to Cart + Conversions) ─── */}
+            {/* ── Multi-Series Chart (Views + Add to Cart + Conversions) ───
+                 Add to Cart / Conversions series are Pro-only data (sample values behind the
+                 advancedLocked flag, same as the rest of this page) — showing them plotted on a
+                 chart the merchant can't verify against real numbers is more misleading than
+                 useful, so the locked view drops to Views only rather than blurring two chart
+                 lines in place. Comparison and CSV export are similarly Pro-only actions on this
+                 same underlying data, disabled (not hidden) below. */}
             <Layout.Section>
               <AnalyticsChart
                 data={analytics?.daily || []}
-                title="Daily Performance — Views, Add to Cart & Conversions"
-                series={[
-                  { key: "views", label: "Views", color: "#008060" },
-                  { key: "addToCart", label: "Add to Cart", color: "#e67e22" },
-                  { key: "conversions", label: "Conversions", color: "#005bd3" },
-                ]}
+                title={advancedLocked ? "Daily Performance — Views" : "Daily Performance — Views, Add to Cart & Conversions"}
+                series={
+                  advancedLocked
+                    ? [{ key: "views", label: "Views", color: "#008060" }]
+                    : [
+                        { key: "views", label: "Views", color: "#008060" },
+                        { key: "addToCart", label: "Add to Cart", color: "#e67e22" },
+                        { key: "conversions", label: "Conversions", color: "#005bd3" },
+                      ]
+                }
                 showPeriodSelector={false}
                 controlledPeriod={analytics?.daily?.length || 1}
                 showComparison={showComparison}
+                comparisonDisabled={advancedLocked}
                 onToggleComparison={setShowComparison}
                 compareData={analytics?.previousDaily || []}
               />
@@ -394,9 +414,17 @@ export default function Analytics() {
               silently collapse a phantom empty track and eat one of the gaps — flex-wrap avoids
               that edge case entirely while still wrapping responsively.) */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "stretch" }}>
-            <div style={{ flex: "1 1 280px" }}><FunnelChart funnel={analytics?.funnel || []} /></div>
+            <div style={{ flex: "1 1 280px" }}>
+              <LockedOverlay locked={advancedLocked} message="Upgrade to Pro to unlock the conversion funnel">
+                <FunnelChart funnel={analytics?.funnel || []} />
+              </LockedOverlay>
+            </div>
             <div style={{ flex: "1 1 280px" }}><DeviceChart breakdown={analytics?.deviceBreakdown} /></div>
-            <div style={{ flex: "1 1 280px" }}><TopSources sources={analytics?.topSources || []} /></div>
+            <div style={{ flex: "1 1 280px" }}>
+              <LockedOverlay locked={advancedLocked} message="Upgrade to Pro to unlock traffic sources">
+                <TopSources sources={analytics?.topSources || []} />
+              </LockedOverlay>
+            </div>
           </div>
 
           {/* ── Top Posts & Countries ─────────────────────────────────────────────── */}
@@ -481,7 +509,7 @@ export default function Analytics() {
                               )}
                               {p.revenue > 0 && (
                                 <Text variant="bodyXs" tone="subdued">
-                                  ${Number(p.revenue).toFixed(2)}
+                                  {formatMoney(p.revenue, currencyCode)}
                                 </Text>
                               )}
                             </InlineStack>
@@ -500,7 +528,11 @@ export default function Analytics() {
               </Card>
             </div>
 
-            <div style={{ flex: "1 1 320px" }}><CountryBreakdown countries={analytics?.topCountries || []} /></div>
+            <div style={{ flex: "1 1 320px" }}>
+              <LockedOverlay locked={advancedLocked} message="Upgrade to Pro to unlock country breakdown">
+                <CountryBreakdown countries={analytics?.topCountries || []} />
+              </LockedOverlay>
+            </div>
           </div>
         </BlockStack>
       )}
