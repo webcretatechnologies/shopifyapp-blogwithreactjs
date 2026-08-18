@@ -34,6 +34,7 @@ import {
   DatePicker,
   Popover,
   ActionList,
+  Link,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon, CalendarIcon, DeleteIcon } from "@shopify/polaris-icons";
@@ -869,6 +870,7 @@ export default function PostEditor() {
   });
   const [seoExpanded, setSeoExpanded] = useState(false);
   const [relatedPostsSelection, setRelatedPostsSelection] = useState([]);
+  const [showRelatedPostsSetting, setShowRelatedPostsSetting] = useState(true);
   const [themeTemplate, setThemeTemplate] = useState("default");
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
 
@@ -918,6 +920,9 @@ export default function PostEditor() {
         }
         if (settings?.buttonRadius !== undefined) {
           applyThemeShapeDefaults({ buttonRadius: settings.buttonRadius });
+        }
+        if (settings?.showRelatedPosts !== undefined) {
+          setShowRelatedPostsSetting(settings.showRelatedPosts !== false && settings.showRelatedPosts !== "false");
         }
       })
       .catch(() => {});
@@ -991,6 +996,7 @@ export default function PostEditor() {
       const hydratedBlocks = useBuilderStore.getState().getBlocksAst();
 
       const p = {
+        id: data.post.id,
         title: data.post.title || "",
         slug: data.post.slug || "",
         excerpt: data.post.excerpt || "",
@@ -1444,6 +1450,7 @@ export default function PostEditor() {
           ...post,
           ...payload,
           tags: [...tags],
+          relatedPosts: [...relatedPostsSelection],
           contentJson: currentSavedBlocks,
         };
         setPost(updatedOriginalPost);
@@ -2597,6 +2604,18 @@ export default function PostEditor() {
                   <Box padding="400">
                     <BlockStack gap="300">
                       <Text variant="headingSm" as="h2">Related posts</Text>
+                      {!showRelatedPostsSetting && (
+                        <Banner tone="warning" title="Related posts are turned off">
+                          <Text variant="bodySm" as="p">
+                            "Show related posts" is disabled in Settings → Content & display, so
+                            this section won't appear on the storefront for any article — including
+                            selections made here.{" "}
+                            <Link onClick={() => leaveEditor("/settings?tab=content")}>
+                              Enable it in Settings
+                            </Link>
+                          </Text>
+                        </Banner>
+                      )}
                       {features.related_posts_manual?.enabled ? (
                         <RelatedPostsPicker
                           value={relatedPostsSelection}

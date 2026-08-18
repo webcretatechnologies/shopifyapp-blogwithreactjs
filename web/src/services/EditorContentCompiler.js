@@ -1625,8 +1625,12 @@ ${this.generateGlobalCss(settings)}
     /* auto-fit, not auto-fill — auto-fill reserves track space for as many columns as could fit
        even when there are fewer actual items, leaving a phantom empty column and making real
        items narrower than they should be. auto-fit collapses those empty tracks so items stretch
-       to fill the row. */
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+       to fill the row. The max is capped at 280px (not 1fr) so a single item doesn't stretch to
+       the full container width — it caps out at a normal card size. Left-aligned (not centered)
+       so a single card lines up under the left-aligned "Related Posts" heading above it instead
+       of floating disconnected in the middle of the row. */
+    grid-template-columns: repeat(auto-fit, minmax(200px, 280px));
+    justify-content: start;
     gap: 16px;
   }
 

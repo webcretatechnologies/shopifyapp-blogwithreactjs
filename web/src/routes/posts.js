@@ -231,8 +231,12 @@ router.post("/", async (req, res) => {
 
     if (!title) return res.status(422).json({ error: "Title is required" });
 
+    if (Array.isArray(relatedPostIds) && relatedPostIds.length > 0 && !isFeatureEnabled(shop.planKey, "related_posts_manual")) {
+      return res.status(403).json({ error: "Manually selecting related posts requires the Starter plan or higher." });
+    }
+
     const blocks = Array.isArray(contentJson) ? contentJson : [];
-    
+
     // Compile content html
     const session = res.locals.shopify?.session;
     let client = null;
@@ -286,10 +290,9 @@ router.post("/", async (req, res) => {
       await syncProducts(shop.id, post.id, productSliderProducts);
     }
 
-    // Sync manual related-posts override — silently ignored (not 403'd) when not entitled, so a
-    // locked field never destroys the rest of an otherwise-valid post save; the automatic fallback
-    // in RelatedPostsService still applies since no PostRelatedPost rows get created.
-    if (Array.isArray(relatedPostIds) && (relatedPostIds.length === 0 || isFeatureEnabled(shop.planKey, "related_posts_manual"))) {
+    // Sync manual related-posts override — entitlement already 403'd above when non-empty, so this
+    // just handles the empty-array "clear override" case that needs no entitlement check.
+    if (Array.isArray(relatedPostIds)) {
       await syncRelatedPosts(shop.id, post.id, relatedPostIds);
     }
 
@@ -362,6 +365,10 @@ router.put("/:id", async (req, res) => {
       relatedPostIds,
     } = req.body;
 
+    if (Array.isArray(relatedPostIds) && relatedPostIds.length > 0 && !isFeatureEnabled(shop.planKey, "related_posts_manual")) {
+      return res.status(403).json({ error: "Manually selecting related posts requires the Starter plan or higher." });
+    }
+
     const blocks = contentJson !== undefined ? (Array.isArray(contentJson) ? contentJson : []) : post.contentJson || [];
 
     const finalEditorMode = editorMode || post.editorMode || "builder";
@@ -416,7 +423,7 @@ router.put("/:id", async (req, res) => {
       await syncProducts(shop.id, post.id, productSliderProducts);
     }
 
-    if (Array.isArray(relatedPostIds) && (relatedPostIds.length === 0 || isFeatureEnabled(shop.planKey, "related_posts_manual"))) {
+    if (Array.isArray(relatedPostIds)) {
       await syncRelatedPosts(shop.id, post.id, relatedPostIds);
     }
 
