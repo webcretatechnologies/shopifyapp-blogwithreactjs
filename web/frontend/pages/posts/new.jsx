@@ -33,9 +33,10 @@ import {
   Listbox,
   DatePicker,
   Popover,
+  ActionList,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon, CalendarIcon } from "@shopify/polaris-icons";
+import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon, CalendarIcon, DeleteIcon } from "@shopify/polaris-icons";
 import { DateTime } from "luxon";
 import confetti from "canvas-confetti";
 import DragDropBuilderContainer from "../../components/builder/DragDropBuilderContainer";
@@ -800,6 +801,7 @@ export default function PostEditor() {
     status: "draft",
     author: "",
     featuredImage: "",
+    featuredImageAlt: "",
     contentJson: [],
     customCss: "",
     productSliderPosition: "none",
@@ -839,6 +841,12 @@ export default function PostEditor() {
   const [error, setError] = useState(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
+  // Matches Shopify's own native article editor's Image card ("Edit ▾" -> Change image / Edit
+  // alt text / Remove) instead of a plain "Edit" button that only opened the file picker with no
+  // way to set alt text at all.
+  const [showImageActions, setShowImageActions] = useState(false);
+  const [showAltTextModal, setShowAltTextModal] = useState(false);
+  const [altTextDraft, setAltTextDraft] = useState("");
   const [showCongratsModal, setShowCongratsModal] = useState(false);
   const [showUpgradeSaveConfirm, setShowUpgradeSaveConfirm] = useState(false);
   const [isSavingForUpgrade, setIsSavingForUpgrade] = useState(false);
@@ -990,6 +998,7 @@ export default function PostEditor() {
         publishedAt: data.post.publishedAt || null,
         author: data.post.author || "",
         featuredImage: data.post.featuredImage || "",
+        featuredImageAlt: data.post.featuredImageAlt || "",
         contentJson: hydratedBlocks,
         customCss: data.post.customCss || "",
         productSliderPosition: data.post.productSliderPosition || "none",
@@ -1131,6 +1140,7 @@ export default function PostEditor() {
         isFieldDirty(post.author, "") ||
         isFieldDirty(post.status, "draft") ||
         isFieldDirty(post.featuredImage, "") ||
+        isFieldDirty(post.featuredImageAlt, "") ||
         isFieldDirty(post.customCss, "") ||
         tags.length > 0 ||
         isFieldDirty(shopifyBlogId, "") ||
@@ -1157,6 +1167,7 @@ export default function PostEditor() {
       isFieldDirty(post.author, o.author) ||
       isFieldDirty(post.status, o.status) ||
       isFieldDirty(post.featuredImage, o.featuredImage) ||
+      isFieldDirty(post.featuredImageAlt, o.featuredImageAlt) ||
       isFieldDirty(post.customCss, o.customCss) ||
       isFieldDirty(shopifyBlogId, origBlogId) ||
       isFieldDirty(seoData.metaTitle, o.metaTitle) ||
@@ -2321,13 +2332,51 @@ export default function PostEditor() {
                       <InlineStack align="space-between" blockAlign="center">
                         <Text variant="headingSm" as="h2">Image</Text>
                         {post.featuredImage && (
-                          <Button
-                            variant="plain"
-                            disclosure
-                            onClick={() => setShowFilePicker(true)}
+                          <Popover
+                            active={showImageActions}
+                            onClose={() => setShowImageActions(false)}
+                            activator={
+                              <Button
+                                variant="plain"
+                                disclosure
+                                onClick={() => setShowImageActions((v) => !v)}
+                              >
+                                Edit
+                              </Button>
+                            }
                           >
-                            Edit
-                          </Button>
+                            <ActionList
+                              items={[
+                                {
+                                  content: "Change image",
+                                  icon: ImageIcon,
+                                  onAction: () => {
+                                    setShowImageActions(false);
+                                    setShowFilePicker(true);
+                                  },
+                                },
+                                {
+                                  content: "Edit alt text",
+                                  icon: EditIcon,
+                                  onAction: () => {
+                                    setShowImageActions(false);
+                                    setAltTextDraft(post.featuredImageAlt || "");
+                                    setShowAltTextModal(true);
+                                  },
+                                },
+                                {
+                                  content: "Remove",
+                                  icon: DeleteIcon,
+                                  destructive: true,
+                                  onAction: () => {
+                                    setShowImageActions(false);
+                                    handleField("featuredImage")("");
+                                    handleField("featuredImageAlt")("");
+                                  },
+                                },
+                              ]}
+                            />
+                          </Popover>
                         )}
                       </InlineStack>
                       {post.featuredImage ? (
@@ -2341,7 +2390,7 @@ export default function PostEditor() {
                           >
                             <img
                               src={post.featuredImage}
-                              alt="Featured image"
+                              alt={post.featuredImageAlt || "Featured image"}
                               style={{
                                 width: "100%",
                                 display: "block",
@@ -2350,11 +2399,19 @@ export default function PostEditor() {
                               }}
                             />
                           </div>
+                          {post.featuredImageAlt && (
+                            <Text variant="bodySm" tone="subdued">
+                              Alt text: {post.featuredImageAlt}
+                            </Text>
+                          )}
                           <div>
                             <Button
                               tone="critical"
                               variant="plain"
-                              onClick={() => handleField("featuredImage")("")}
+                              onClick={() => {
+                                handleField("featuredImage")("");
+                                handleField("featuredImageAlt")("");
+                              }}
                               size="slim"
                             >
                               Remove image
@@ -2610,8 +2667,58 @@ export default function PostEditor() {
       <ShopifyFilePicker
         open={showFilePicker}
         onClose={() => setShowFilePicker(false)}
-        onSelect={(url) => setPost((p) => ({ ...p, featuredImage: url }))}
-      />      {/* ─── Delete Confirmation Modal ─── */}
+        onSelect={(url) => setPost((p) => ({ ...p, featuredImage: url, featuredImageAlt: "" }))}
+      />
+
+      {/* ─── Edit Alt Text Modal — matches Shopify's native Image card's "Edit alt text" ─── */}
+      <Modal
+        open={showAltTextModal}
+        onClose={() => setShowAltTextModal(false)}
+        title="Edit alt text"
+        primaryAction={{
+          content: "Save",
+          onAction: () => {
+            handleField("featuredImageAlt")(altTextDraft.trim());
+            setShowAltTextModal(false);
+          },
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setShowAltTextModal(false) }]}
+      >
+        <Modal.Section>
+          <InlineStack gap="400" wrap={false} blockAlign="start">
+            {post.featuredImage && (
+              <div style={{ flexShrink: 0 }}>
+                <Box
+                  borderColor="border"
+                  borderWidth="025"
+                  borderRadius="200"
+                  overflowX="hidden"
+                  overflowY="hidden"
+                  width="220px"
+                  minHeight="220px"
+                >
+                  <img
+                    src={post.featuredImage}
+                    alt={altTextDraft || "Featured image"}
+                    style={{ width: "220px", height: "220px", display: "block", objectFit: "contain" }}
+                  />
+                </Box>
+              </div>
+            )}
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <TextField
+                label="Alt text"
+                value={altTextDraft}
+                onChange={setAltTextDraft}
+                autoComplete="off"
+                helpText="Write a brief description of the file for people with visual impairment or low-bandwidth connections."
+              />
+            </div>
+          </InlineStack>
+        </Modal.Section>
+      </Modal>
+
+      {/* ─── Delete Confirmation Modal ─── */}
       <ConfirmActionModal
         open={showDeleteConfirm}
         title="Delete this article?"

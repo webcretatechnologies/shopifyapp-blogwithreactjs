@@ -127,6 +127,7 @@ model Post {
   vendor                String?
   excerpt               String?           @db.Text
   featuredImage         String?           @db.Text
+  featuredImageAlt      String?           @db.Text
   contentJson           Json?
   contentHtml           String?           @db.LongText
   customCss             String?           @db.Text

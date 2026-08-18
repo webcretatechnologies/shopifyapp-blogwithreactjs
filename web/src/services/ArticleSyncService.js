@@ -127,7 +127,7 @@ function toArticleGraphQLInput({ title, body_html, author, published, tags, hand
     .map((t) => t.trim())
     .filter(Boolean);
   if (tagList.length > 0) input.tags = tagList;
-  if (image?.src) input.image = { url: image.src };
+  if (image?.src) input.image = { url: image.src, ...(image.altText ? { altText: image.altText } : {}) };
 
   const metafields = [];
   if (meta_title !== undefined) {
@@ -279,6 +279,7 @@ function normalizeLocalState(post, tagNames) {
           : "draft",
     tags: tagNames || "",
     featuredImage: post.featuredImage || null,
+    featuredImageAlt: post.featuredImageAlt || null,
     slug: post.slug || "",
     content: {
       editorHtml: post.contentHtml || "",
@@ -331,7 +332,10 @@ function buildBaselineSnapshot(localState, storefrontHtml, revision) {
       author:      { value: localState.author,      hash: f(localState.author) },
       status:      { value: localState.status,      hash: f(localState.status) },
       tags:        { value: localState.tags,        hash: f(localState.tags) },
-      featuredImage: { value: localState.featuredImage, hash: f(localState.featuredImage) },
+      // Hashes featuredImage + featuredImageAlt together — a merchant editing only the alt text
+      // should still count as "the image changed" for pushPostToShopify's dirty-check below, so
+      // the new alt text actually reaches Shopify on the next sync.
+      featuredImage: { value: localState.featuredImage, hash: f(JSON.stringify([localState.featuredImage, localState.featuredImageAlt || null])) },
       content: {
         editorHtml:      { value: localState.content.editorHtml, hash: f(localState.content.editorHtml), htmlHash: htmlHash(localState.content.editorHtml) },
         contentJson:     { hash: f(JSON.stringify(localState.content.contentJson)) },
@@ -849,7 +853,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   // Articles list thumbnail, not a one-off glitch. Re-sending an unchanged image was pure waste
   // and the actual root cause; only send it when there's a real change to make.
   const previousFeaturedImageHash = shopifyLink.lastSyncedSnapshot?.fields?.featuredImage?.hash;
-  const currentFeaturedImageHash = fieldHash(post.featuredImage || null);
+  const currentFeaturedImageHash = fieldHash(JSON.stringify([post.featuredImage || null, post.featuredImageAlt || null]));
   const featuredImageChanged = !shopifyLink.shopifyArticleId || previousFeaturedImageHash !== currentFeaturedImageHash;
 
   const articleInput = toArticleGraphQLInput({
@@ -860,7 +864,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     publishAt,
     tags: tagNames,
     handle: post.slug,
-    image: featuredImageChanged && post.featuredImage ? { src: post.featuredImage } : null,
+    image: featuredImageChanged && post.featuredImage ? { src: post.featuredImage, altText: post.featuredImageAlt || null } : null,
     summary: post.excerpt,
     meta_title: post.metaTitle,
     meta_description: post.metaDescription,
