@@ -146,8 +146,8 @@ router.get("/dashboard", validateSuperAdmin, async (req, res) => {
     // 4. MRR / ARR Calculations
     const pricingRates = {
       free: 0.0,
-      starter: 4.99,
-      pro: 9.99,
+      starter: 19.99,
+      pro: 39.99,
       business: 19.99,
     };
 

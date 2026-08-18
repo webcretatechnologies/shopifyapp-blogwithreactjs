@@ -29,13 +29,23 @@ function unwrapNestedSettings(val) {
 // In-memory cache for store currency (per compile run)
 let _storeCurrency = null;
 
+// Mirrors frontend/utils/headingSlugUtils.js's own decodeHtmlEntities — RichText-sourced heading
+// text carries real ampersands/quotes as HTML entities (e.g. "Products &amp; Services", how
+// Tiptap serializes them), and stripping tags alone leaves them un-decoded, showing the literal
+// "&amp;" in both the TOC's link text and its generated slug. cheerio (already a dependency here)
+// decodes entities correctly as part of parsing, unlike a hand-rolled &nbsp;-only regex.
+function decodeHtmlEntitiesServer(str) {
+  if (!str) return str;
+  return cheerio.load(`<div>${str}</div>`, null, false)("div").first().text();
+}
+
 // Mirrors frontend/utils/headingSlugUtils.js's slugifyHeading exactly — kept as a local copy
 // (rather than importing across the frontend/src boundary) since this is the only piece needed
 // server-side: computing the same deterministic anchor id a Heading block would get so
 // TableOfContents links resolve, and RichText id injection isn't needed here.
 function slugifyHeadingServer(text) {
   if (!text || typeof text !== "string") return "heading";
-  const clean = text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  const clean = decodeHtmlEntitiesServer(text.replace(/<[^>]*>/g, "")).trim();
   if (!clean) return "heading";
   const slug = clean
     .toLowerCase()
@@ -333,7 +343,7 @@ export class EditorContentCompiler {
         let m;
         while ((m = richTextHeadingRe.exec(content)) !== null) {
           const level = Number(m[1]);
-          const text = m[2].replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+          const text = decodeHtmlEntitiesServer(m[2].replace(/<[^>]*>/g, "")).trim();
           if (!text) continue;
           const baseSlug = slugifyHeadingServer(text);
           slugCounts[baseSlug] = (slugCounts[baseSlug] || 0) + 1;
@@ -348,12 +358,12 @@ export class EditorContentCompiler {
       if (isHeadingBlock) {
         const hAttrs = extractAttrs(el);
         level = Number(hAttrs.level || 2);
-        text = String(hAttrs.text || "").replace(/<[^>]*>/g, "").trim();
+        text = decodeHtmlEntitiesServer(String(hAttrs.text || "").replace(/<[^>]*>/g, "")).trim();
       } else {
         const tagMatch = /^h([1-6])$/i.exec(el.tagName || el.name || "");
         if (!tagMatch) continue;
         level = Number(tagMatch[1]);
-        text = $el.text().trim();
+        text = decodeHtmlEntitiesServer($el.text()).trim();
       }
       if (!text) continue;
       const baseSlug = slugifyHeadingServer(text);

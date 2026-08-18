@@ -19,7 +19,7 @@ async function main() {
     {
       name: "Starter Plan",
       title: "Starter",
-      price: 4.99,
+      price: 19.99,
       description: "Built for growing stores",
       features: [],
       sortOrder: 2,
@@ -27,7 +27,7 @@ async function main() {
     {
       name: "Pro Plan",
       title: "Pro",
-      price: 9.99,
+      price: 39.99,
       description: "For professional content creators",
       features: [],
       sortOrder: 3,

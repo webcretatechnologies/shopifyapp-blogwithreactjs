@@ -5,16 +5,29 @@
  * deterministic slug generation, de-duplication, and anchor ID injection.
  */
 
+// Headings sourced from raw HTML (RichText's own stored content, not a standalone Heading
+// block's plain-text settings.text) carry real ampersands/quotes/etc. as HTML entities — e.g.
+// "Products &amp; Services" — since that's how Tiptap serializes them. Stripping tags alone
+// leaves those entities un-decoded, so the TOC's displayed text and generated slug both showed
+// the literal "&amp;" instead of "&". A real <textarea> round-trip is the standard, complete way
+// to decode entities in a browser context (handles named entities like &amp;/&nbsp;/&copy; and
+// numeric entities like &#38;/&#x26; alike, not just the one or two cases a hand-rolled regex
+// would cover).
+function decodeHtmlEntities(str) {
+  if (!str) return str;
+  if (typeof document === "undefined") return str.replace(/&nbsp;/g, " ");
+  const el = document.createElement("textarea");
+  el.innerHTML = str;
+  return el.value;
+}
+
 /**
  * Deterministically slugifies heading text.
  * E.g., "Why Fragrance Affects How We Feel!" -> "why-fragrance-affects-how-we-feel"
  */
 export function slugifyHeading(text) {
   if (!text || typeof text !== "string") return "heading";
-  const clean = text
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .trim();
+  const clean = decodeHtmlEntities(text.replace(/<[^>]*>/g, "")).trim();
   if (!clean) return "heading";
 
   const slug = clean
@@ -162,7 +175,7 @@ export function extractHeadingsFromAst(blocks, levelsToInclude = [1, 2, 3, 4, 5,
           while ((match = headingRegex.exec(content)) !== null) {
             const level = Number(match[1]);
             const innerHtml = match[3] || "";
-            const text = innerHtml.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+            const text = decodeHtmlEntities(innerHtml.replace(/<[^>]*>/g, "")).trim();
             if (allowedLevels.has(level) && text) {
               const baseSlug = slugifyHeading(text);
               slugCounts[baseSlug] = (slugCounts[baseSlug] || 0) + 1;
