@@ -954,7 +954,13 @@ export default function PostEditor() {
   };
 
   // Pre-fill the picker with the post's current schedule (e.g. when reopening to reschedule).
+  // Skipped while a schedule is actively being submitted (isScheduling) — doSchedule() saves the
+  // post with status "scheduled" *before* the new publishedAt lands (publishedAt is only ever
+  // written by the dedicated /publish call), so without this guard this effect would briefly
+  // re-sync the picker to the OLD publishedAt in between, flashing a stale date/time and a false
+  // "already passed" validation error until the real /publish response arrives.
   useEffect(() => {
+    if (isScheduling) return;
     if (post.status === "scheduled" && post.publishedAt) {
       const dt = DateTime.fromJSDate(new Date(post.publishedAt)).setZone(shopTimezone);
       if (dt.isValid) {
@@ -964,7 +970,7 @@ export default function PostEditor() {
         setScheduleYear(dt.year);
       }
     }
-  }, [post.status, post.publishedAt, shopTimezone]);
+  }, [post.status, post.publishedAt, shopTimezone, isScheduling]);
 
   // Load existing post
   const loadPost = useCallback(async () => {
