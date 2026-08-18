@@ -838,6 +838,20 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
 
   const metaRobotsDirective = computeMetaRobotsDirective(post.metaRobotsNoindex, post.metaRobotsNofollow);
 
+  // Only send `image` when it's genuinely changed since the last successful sync (or this is a
+  // brand-new article). Shopify's articleUpdate mutation treats a provided image.url as "fetch
+  // and attach this as a new image" every time — even when the src is Shopify's own CDN URL
+  // pointing at the article's own existing, unchanged image — which re-hosts it as a fresh file
+  // with a new hash on every single sync. Confirmed live: after several routine resyncs of the
+  // same unmodified post, the article's image URL had silently changed multiple times and the
+  // post's stored `featuredImage` (whichever URL happened to be current when we last read it
+  // back) eventually pointed at a file Shopify had already garbage-collected — a real 404 on the
+  // Articles list thumbnail, not a one-off glitch. Re-sending an unchanged image was pure waste
+  // and the actual root cause; only send it when there's a real change to make.
+  const previousFeaturedImageHash = shopifyLink.lastSyncedSnapshot?.fields?.featuredImage?.hash;
+  const currentFeaturedImageHash = fieldHash(post.featuredImage || null);
+  const featuredImageChanged = !shopifyLink.shopifyArticleId || previousFeaturedImageHash !== currentFeaturedImageHash;
+
   const articleInput = toArticleGraphQLInput({
     title: post.title,
     body_html: storefrontHtml,
@@ -846,18 +860,24 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     publishAt,
     tags: tagNames,
     handle: post.slug,
-    image: post.featuredImage ? { src: post.featuredImage } : null,
+    image: featuredImageChanged && post.featuredImage ? { src: post.featuredImage } : null,
     summary: post.excerpt,
     meta_title: post.metaTitle,
     meta_description: post.metaDescription,
     meta_robots: metaRobotsDirective,
   });
 
+  // resultingImageUrl: when we DID upload an image this push, Shopify re-hosts it under its own
+  // CDN path (a new URL, not necessarily the src we sent) — capture that back so our own
+  // post.featuredImage stays pointed at what Shopify actually serves, instead of silently
+  // drifting from it (the actual root cause of the broken thumbnail this fix addresses).
+  let resultingImageUrl;
+
   if (articleId) {
     const result = await graphqlClient.request(`
       mutation UpdateArticle($id: ID!, $article: ArticleUpdateInput!) {
         articleUpdate(id: $id, article: $article) {
-          article { id updatedAt }
+          article { id updatedAt image { url } }
           userErrors { field message }
         }
       }
@@ -868,11 +888,12 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
       throw new Error(`articleUpdate failed: ${errors.map(e => e.message).join("; ")}`);
     }
     remoteUpdatedAt = result.data?.articleUpdate?.article?.updatedAt || null;
+    resultingImageUrl = result.data?.articleUpdate?.article?.image?.url;
   } else {
     const result = await graphqlClient.request(`
       mutation CreateArticle($article: ArticleCreateInput!) {
         articleCreate(article: $article) {
-          article { id updatedAt }
+          article { id updatedAt image { url } }
           userErrors { field message }
         }
       }
@@ -888,7 +909,17 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     }
     articleId = numericIdFromGid(result.data?.articleCreate?.article?.id);
     remoteUpdatedAt = result.data?.articleCreate?.article?.updatedAt || null;
+    resultingImageUrl = result.data?.articleCreate?.article?.image?.url;
     if (!articleId) throw new Error("Shopify did not return an article ID");
+  }
+
+  // Keep our own record pointed at whatever Shopify actually ended up serving, whether or not we
+  // just uploaded a new one this push (featuredImageChanged false just means we didn't ask
+  // Shopify to change anything — its current URL, returned on every query regardless, is still
+  // the source of truth to store).
+  if (resultingImageUrl && resultingImageUrl !== post.featuredImage) {
+    await prisma.post.update({ where: { id: post.id }, data: { featuredImage: resultingImageUrl } });
+    post.featuredImage = resultingImageUrl;
   }
 
   // Compute next revision
