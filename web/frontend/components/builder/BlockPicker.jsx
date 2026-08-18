@@ -40,6 +40,13 @@ const BLOCK_TYPE_GATE = {
   ProductCard: "product_card",
   ProductGrid: "product_switcher",
   ProductSlider: "product_slider",
+  // Same key as ProductGrid ("product_switcher") — Collection is the same "multiple products in
+  // a grid/list" family as the pricing page's "Shopify Product Blocks" bullet already covers
+  // (PlanFeatureService.js's FEATURE_GROUPS), and every key in that group unlocks together as
+  // one unit at Starter, not progressively — no need for Collection to get its own separate key.
+  // It was previously missing from this map entirely, so it was insertable on every plan
+  // including Free, unlike every other block in the same commerce category.
+  Collection: "product_switcher",
 };
 
 function DraggableBlockItem({ type, entry, onClick, isRailMode, locked }) {
