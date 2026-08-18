@@ -26,7 +26,7 @@ const POLL_INTERVAL_MS = 10_000;
 
 const SYNC_STATE_CONFIG = {
   in_sync:              { label: "In Sync",           tone: "success", description: "All changes are synced to Shopify." },
-  linked:               { label: "Linked",            tone: "info",    description: "Connected to Shopify article." },
+  linked:               { label: "Linked",            tone: "info",    description: "Linked to a Shopify blog — will sync on next save." },
   pending_app_push:     { label: "Pending Push",      tone: "warning", description: "Local edits waiting to sync." },
   pending_shopify_pull: { label: "Pending Pull",      tone: "warning", description: "Shopify updates waiting to sync." },
   conflict:             { label: "Conflict",          tone: "critical",description: "Conflicting edits detected." },
@@ -192,7 +192,9 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
                       ? "#2e7d32"
                       : stateConfig.tone === "warning"
                       ? "#ed6c02"
-                      : "#d32f2f"
+                      : stateConfig.tone === "critical"
+                      ? "#d32f2f"
+                      : "#5c6ac4"
                   }}
                 />
                 <Text variant="bodyMd" fontWeight="semibold">

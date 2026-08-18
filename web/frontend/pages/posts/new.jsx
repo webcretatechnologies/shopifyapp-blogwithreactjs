@@ -1444,7 +1444,6 @@ export default function PostEditor() {
           ...post,
           ...payload,
           tags: [...tags],
-          shopifyArticle: { shopifyBlogId },
           contentJson: currentSavedBlocks,
         };
         setPost(updatedOriginalPost);
