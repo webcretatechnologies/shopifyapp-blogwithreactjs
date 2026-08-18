@@ -8,6 +8,26 @@
  */
 import * as cheerio from "cheerio";
 
+// Mirrors EditorContentCompiler.js's own VISIBILITY_CSS constant exactly — kept as a separate
+// copy (not imported) since this module has no dependency on EditorContentCompiler.js and
+// shouldn't gain one just for this. Emitted once by _blocksToRawHtml() whenever any block in the
+// tree carries a hide-on-device flag.
+const VISIBILITY_CSS = `<style>
+  @media (max-width: 767px)  { .builder-hide-mobile  { display: none !important; } }
+  @media (min-width: 768px) and (max-width: 1023px) { .builder-hide-tablet  { display: none !important; } }
+  @media (min-width: 1024px) { .builder-hide-desktop { display: none !important; } }
+</style>`;
+
+function hasVisibilityFlags(blocks) {
+  if (!Array.isArray(blocks)) return false;
+  for (const b of blocks) {
+    const s = b.settings || {};
+    if (s.hideOnMobile || s.hideOnTablet || s.hideOnDesktop) return true;
+    if (b.children?.length && hasVisibilityFlags(b.children)) return true;
+  }
+  return false;
+}
+
 /** A `data-settings` attribute value can itself contain further nested "settings" keys from
  * historical corruption (see _convertDataBlock's docblock). Recursively unwrap before merging
  * so legacy multi-layer content parses correctly, not just single-wrapped content going
@@ -88,6 +108,32 @@ export class ShopifyArticleParser {
       const tagName = node.tagName.toLowerCase();
 
       if (["style", "script", "meta", "link"].includes(tagName)) return;
+
+      // Hide-on-device wrapper divs (builder-hide-mobile/tablet/desktop) MUST be recognized and
+      // unwrapped here, before ANY class-based type-detection heuristic below runs — several of
+      // those heuristics (TableOfContents, FaqBlock) match via $el.find(...) — a DESCENDANT
+      // search — not just $el.hasClass(...). A hide-wrapper div necessarily CONTAINS the block
+      // it's hiding, so it satisfies that find() check too, misclassifying the wrapper itself as
+      // the inner block and completely bypassing the hide-flag recovery a few lines below
+      // (dataType would already be truthy, so that logic's own `if (!dataType)` branch never
+      // runs). This is why hiding a Heading (detected purely via hasClass, self-match only —
+      // never mistakenly matches a wrapper) survived reconciliation fine, while hiding a TOC or
+      // FAQ block did not.
+      if (tagName === "div") {
+        const hideFlags = {};
+        if ($el.hasClass("builder-hide-mobile")) hideFlags.hideOnMobile = true;
+        if ($el.hasClass("builder-hide-tablet")) hideFlags.hideOnTablet = true;
+        if ($el.hasClass("builder-hide-desktop")) hideFlags.hideOnDesktop = true;
+        if (Object.keys(hideFlags).length > 0 && $el.children().length > 0) {
+          const wrappedBlocks = [];
+          $el.contents().each((_, child) => processNode(child, wrappedBlocks));
+          wrappedBlocks.forEach((b) => {
+            b.settings = { ...(b.settings || {}), ...hideFlags };
+          });
+          currentBlocksArray.push(...wrappedBlocks);
+          return;
+        }
+      }
 
       // 1. Check for app block wrappers (div[data-type] or h2[data-type] etc)
       let dataType = $el.attr("data-type");
@@ -250,6 +296,31 @@ export class ShopifyArticleParser {
       const hasChildElements = $el.children().length > 0;
       if (hasBuilderBlocks || tagName === "div" || tagName === "section" || tagName === "article") {
         if (hasChildElements) {
+          // Device-visibility wrapper (compileBlocksToHtml.js's applyVisibilityWrapper /
+          // ShopifyArticleParser's own _blockToDataHtml): <div class="builder-hide-desktop">
+          // <div data-type="...">...</div></div>. This class is the ONLY thing that survives a
+          // real Shopify round trip — Shopify strips data-* attributes from body_html on save
+          // (confirmed empirically: a synced article's data-hide-on-desktop is gone even though
+          // the CSS class is not), so hideOnDesktop can no longer be read back from the inner
+          // block's own attributes the way every other setting is. Capture it here, on the
+          // wrapper, before it's discarded by this recursion, and stamp it onto whatever block(s)
+          // the recursion below produces — normally exactly one, since that's all this wrapper
+          // ever contains.
+          const hideFlags = {};
+          if ($el.hasClass("builder-hide-mobile")) hideFlags.hideOnMobile = true;
+          if ($el.hasClass("builder-hide-tablet")) hideFlags.hideOnTablet = true;
+          if ($el.hasClass("builder-hide-desktop")) hideFlags.hideOnDesktop = true;
+
+          if (Object.keys(hideFlags).length > 0) {
+            const wrappedBlocks = [];
+            $el.contents().each((_, child) => processNode(child, wrappedBlocks));
+            wrappedBlocks.forEach((b) => {
+              b.settings = { ...(b.settings || {}), ...hideFlags };
+            });
+            currentBlocksArray.push(...wrappedBlocks);
+            return;
+          }
+
           $el.contents().each((_, child) => processNode(child, currentBlocksArray));
           return;
         }
@@ -569,7 +640,7 @@ export class ShopifyArticleParser {
    * Convert parsed blocks back into raw editor HTML.
    * This is the inverse of the parsing logic.
    */
-  static _blocksToRawHtml(blocks) {
+  static _blocksToRawHtml(blocks, isTopLevel = true) {
     if (!blocks || blocks.length === 0) return "";
 
     let html = "";
@@ -577,6 +648,17 @@ export class ShopifyArticleParser {
       // Every block this parser produces uses the current builder schema (capitalized types,
       // e.g. "RichText"/"Heading"/"Image") — reconstruct as div[data-type] wrappers.
       html += this._blockToDataHtml(block);
+    }
+    // Prepended once at the top level only (never on recursive nested calls for a block's own
+    // children, which would emit a redundant copy per nesting level) — mirrors
+    // compileBlocksToHtml.js's own compileBlocksToHtml() doing the same at its single entry
+    // point. Without this, every webhook echo / reconcile cycle that runs this function (the
+    // ONLY code path that regenerates contentHtml on that round trip) silently drops the CSS
+    // rule that makes hide-on-device flags do anything — the wrapper div and its class survive
+    // (added below in _blockToDataHtml), but with no matching rule they have no effect, so a
+    // block hidden on desktop/mobile/tablet quietly becomes visible again on the very next sync.
+    if (isTopLevel && hasVisibilityFlags(blocks)) {
+      html = VISIBILITY_CSS + html;
     }
     return html;
   }
@@ -663,10 +745,19 @@ export class ShopifyArticleParser {
     }
 
     const innerHtml = Array.isArray(block.children) && block.children.length > 0
-      ? this._blocksToRawHtml(block.children)
+      ? this._blocksToRawHtml(block.children, false)
       : "";
 
-    return `<div ${attrs}>${innerHtml}</div>`;
+    const blockHtml = `<div ${attrs}>${innerHtml}</div>`;
+
+    // Mirrors compileBlocksToHtml.js's applyVisibilityWrapper() — wraps the block in a hide-on-
+    // device class div matching the VISIBILITY_CSS rule prepended once at the top of the tree.
+    const visClasses = [];
+    if (settings.hideOnMobile) visClasses.push("builder-hide-mobile");
+    if (settings.hideOnTablet) visClasses.push("builder-hide-tablet");
+    if (settings.hideOnDesktop) visClasses.push("builder-hide-desktop");
+    if (visClasses.length === 0) return blockHtml;
+    return `<div class="${visClasses.join(" ")}">${blockHtml}</div>`;
   }
 
   static _parseFallbackSettings($el, blockType, $) {

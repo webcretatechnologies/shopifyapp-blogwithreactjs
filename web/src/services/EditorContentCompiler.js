@@ -59,7 +59,12 @@ const VISIBILITY_CSS = `<style>
 </style>`;
 
 function applyVisibilityWrapperServer(html, attrs) {
-  if (!html) return html;
+  // Not `if (!html) return html;` — html === "" is a legitimate case (TableOfContents with no
+  // currently-matching headings) that still needs the wrapper div applied around its empty
+  // content, purely so the class marker survives for ShopifyArticleParser's echo-reconciliation
+  // to recover the flag from later. See the caller's own comment for the full chain this
+  // was silently breaking.
+  if (html === null || html === undefined) return html;
   const classes = [];
   if (attrs.hideOnMobile) classes.push("builder-hide-mobile");
   if (attrs.hideOnTablet) classes.push("builder-hide-tablet");
@@ -295,14 +300,61 @@ export class EditorContentCompiler {
     // believing there were no headings to link to, even though the headings were right there and
     // rendering fine on their own. Scanning h1–h6[data-type="Heading"] here as well (in addition to
     // the div form) fixes TOC without touching how either format's headings are themselves compiled.
-    const headingEls = $("div[data-type=\"Heading\"], h1[data-type=\"Heading\"], h2[data-type=\"Heading\"], h3[data-type=\"Heading\"], h4[data-type=\"Heading\"], h5[data-type=\"Heading\"], h6[data-type=\"Heading\"]");
+    // Scans ALL h1-h6 tags in the document, not just ones carrying data-type="Heading" — a
+    // heading typed directly inside a RichText block (via the rich-text editor's own H2/H3
+    // formatting, common for merchant-authored FAQ/section titles) compiles to a plain <h#> tag
+    // with no data-type at all, since it's not a standalone Heading block. The previous
+    // data-type-only selector made TableOfContents invisible to every such heading — it rendered
+    // a full, correct list in the builder/Preview (compileBlocksToHtml.js's own
+    // extractHeadingsFromAst() already handles RichText-embedded headings via its own regex
+    // scan) but only ever linked the one or two standalone Heading blocks once actually pushed
+    // to Shopify through this server-side compiler. For a genuine data-type="Heading" element,
+    // still prefer its data-text/data-level attributes (authoritative, and correct even before
+    // this element has been re-rendered into its final <h#> form elsewhere in this same pass);
+    // for any other <h#>, read directly off the tag name and its own text content instead.
+    // Also scans div[data-type="RichText"] — a heading typed directly inside a RichText block
+    // (via the rich-text editor's own H2/H3 formatting) never becomes a real DOM <h#> element in
+    // this parsed document at all: its whole HTML lives HTML-entity-escaped inside that div's own
+    // data-content="..." attribute string (e.g. &lt;h2 id=&quot;...&quot;&gt;), not as actual
+    // child nodes cheerio's h1..h6 selectors above can reach. Regex-scanning that attribute
+    // string mirrors extractHeadingsFromAst()'s own RichText branch client-side.
+    const richTextHeadingRe = /<h([1-6])(?:[^>]*)>(.*?)<\/h\1>/gi;
+    const headingEls = $("div[data-type=\"Heading\"], div[data-type=\"RichText\"], h1, h2, h3, h4, h5, h6");
     const allHeadings = [];
     const slugCounts = {};
     for (let i = 0; i < headingEls.length; i++) {
       const el = headingEls[i];
-      const hAttrs = extractAttrs(el);
-      const level = Number(hAttrs.level || 2);
-      const text = String(hAttrs.text || "").replace(/<[^>]*>/g, "").trim();
+      const $el = $(el);
+      const dataType = $el.attr("data-type");
+
+      if (dataType === "RichText") {
+        const content = $el.attr("data-content") || "";
+        richTextHeadingRe.lastIndex = 0;
+        let m;
+        while ((m = richTextHeadingRe.exec(content)) !== null) {
+          const level = Number(m[1]);
+          const text = m[2].replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+          if (!text) continue;
+          const baseSlug = slugifyHeadingServer(text);
+          slugCounts[baseSlug] = (slugCounts[baseSlug] || 0) + 1;
+          const id = slugCounts[baseSlug] === 1 ? baseSlug : `${baseSlug}-${slugCounts[baseSlug] - 1}`;
+          allHeadings.push({ id, text, level });
+        }
+        continue;
+      }
+
+      const isHeadingBlock = dataType === "Heading";
+      let level, text;
+      if (isHeadingBlock) {
+        const hAttrs = extractAttrs(el);
+        level = Number(hAttrs.level || 2);
+        text = String(hAttrs.text || "").replace(/<[^>]*>/g, "").trim();
+      } else {
+        const tagMatch = /^h([1-6])$/i.exec(el.tagName || el.name || "");
+        if (!tagMatch) continue;
+        level = Number(tagMatch[1]);
+        text = $el.text().trim();
+      }
       if (!text) continue;
       const baseSlug = slugifyHeadingServer(text);
       slugCounts[baseSlug] = (slugCounts[baseSlug] || 0) + 1;
@@ -474,7 +526,17 @@ export class EditorContentCompiler {
       // panel UI itself doesn't block it either), but those flags are silently ignored here on
       // the real published page, same posture as other feature gates that reject/ignore rather
       // than error on save.
-      if (compiledHtml && deviceVisibilityEntitled && (attrs.hideOnMobile || attrs.hideOnTablet || attrs.hideOnDesktop)) {
+      //
+      // `compiledHtml !== null`, not the old truthy `compiledHtml &&` — TableOfContents is the
+      // one block type whose renderer can legitimately return "" (no headings currently match
+      // its configured levels), which is falsy and was silently skipping the wrap entirely. That
+      // dropped the wrapper on the very next compile — even though hideOnDesktop was still set —
+      // and once the wrapper's gone, ShopifyArticleParser's echo-reconciliation (which recovers
+      // hide-on-device flags from that wrapper's class, since Shopify strips data-* attributes on
+      // storage) has nothing left to recover it from: the setting is then gone for good on the
+      // next sync. Every other block type always renders non-empty HTML from its own settings, so
+      // this never surfaced for them.
+      if (compiledHtml !== null && deviceVisibilityEntitled && (attrs.hideOnMobile || attrs.hideOnTablet || attrs.hideOnDesktop)) {
         compiledHtml = applyVisibilityWrapperServer(compiledHtml, attrs);
         usedVisibilityCss = true;
       }
@@ -585,11 +647,17 @@ export class EditorContentCompiler {
       // block-height gap in its place when merchants open the post there (the app's own
       // storefront rendering was never affected by the old <style> block — this was purely a
       // Shopify admin-editor display bug).
+      // Smooth-scroll onclick mirrors compileBlocksToHtml.js's renderTocNodesHtml() exactly —
+      // this server compiler had never had it at all (plain href="#id" only, native instant
+      // jump), unrelated to the heading-detection gap fixed alongside this. Both compilers now
+      // match: click-to-scroll-smoothly plus a pushState so the URL hash still updates for
+      // deep-linking/back-button behavior, without the page reflowing on a native hash jump.
       const itemsHtml = items
         .map((h) => {
           const isMain = h.level === minLevel;
           const childrenHtml = h.children && h.children.length > 0 ? renderNodes(h.children, false) : "";
-          return `<li style="font-size: 14px; margin: 6px 0; display: list-item;"><a href="#${h.id}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};" onmouseenter="this.style.textDecoration='underline'" onmouseleave="this.style.textDecoration='none'">${h.text}</a>${childrenHtml}</li>`;
+          const clickHandler = `var el=document.getElementById('${h.id}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});if(history.pushState){history.pushState(null,null,'#${h.id}');}return false;}`;
+          return `<li style="font-size: 14px; margin: 6px 0; display: list-item;"><a href="#${h.id}" onclick="${clickHandler}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};" onmouseenter="this.style.textDecoration='underline'" onmouseleave="this.style.textDecoration='none'">${h.text}</a>${childrenHtml}</li>`;
         })
         .join("\n");
 

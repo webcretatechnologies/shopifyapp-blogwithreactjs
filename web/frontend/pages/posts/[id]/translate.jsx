@@ -556,7 +556,19 @@ function applyBlockTranslationsToHtml(originalHtml, originalBlocks, blockTransla
     }
   });
 
-  return doc.body.innerHTML;
+  // A <style> tag that appears as the very first token in originalHtml (e.g. the device-
+  // visibility CSS compileBlocksToHtml.js prepends whenever any block has a hide-on-device flag)
+  // gets auto-hoisted by DOMParser's HTML5 parsing into the implied <head>, not <body> — per spec,
+  // a <style> encountered before any other body content is inserted into the document's <head>.
+  // Returning only doc.body.innerHTML silently drops it: the hide-on-device wrapper <div> and its
+  // class survive (divs stay in body), but the CSS rule that makes that class actually hide
+  // anything is gone, so the block renders visible on every device in the translation even though
+  // it's correctly hidden in the original language. Pull any such head-hoisted styles back out.
+  const headStyles = Array.from(doc.head.querySelectorAll("style"))
+    .map((el) => el.outerHTML)
+    .join("");
+
+  return headStyles + doc.body.innerHTML;
 }
 
 /**
