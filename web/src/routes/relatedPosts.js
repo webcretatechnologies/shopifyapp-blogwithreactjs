@@ -185,6 +185,17 @@ router.get("/custom-code.json", async (req, res) => {
       res.send(empty);
       return;
     }
+    // Resolved fresh on every request (see below), which is exactly why this needs its own
+    // live entitlement check: without it, a shop that added custom header/footer code while on
+    // Pro and later downgraded keeps serving that same stored code forever afterward, since
+    // nothing else ever re-validates it — the settings save route only blocks *new* edits
+    // (settings.js), it doesn't retroactively clear what a Pro shop already saved.
+    const customCodeAllowed = isFeatureEnabled(shop.planKey, "custom_code_injection");
+    if (!customCodeAllowed) {
+      dataCache.set(cacheKey, { body: empty, expiresAt: Date.now() + CACHE_TTL_MS });
+      res.send(empty);
+      return;
+    }
     const settings = (shop.settings || []).reduce((acc, s) => {
       acc[s.key] = s.value;
       return acc;
