@@ -50,8 +50,7 @@ const RELATED_POSTS_OPTIONS = ["2", "3", "4", "6"].map((n) => ({
 const TABS = [
   { id: "appearance", content: "Appearance" },
   { id: "content", content: "Content & display" },
-  { id: "seo", content: "SEO" },
-  { id: "sitemap", content: "Sitemap & Indexing" },
+  { id: "seo", content: "SEO & Sitemap" },
   { id: "advanced", content: "Advanced" },
 ];
 
@@ -674,40 +673,37 @@ export default function Settings() {
               </>
             )}
 
-            {/* ─── SEO ─────────────────────────────────────────────── */}
+            {/* ─── SEO & Sitemap ───────────────────────────────────── */}
             {selectedTab === 2 && (
-              <Layout.Section>
-                <SectionCard
-                  title="Meta robots"
-                  trailing={
-                    <>
-                      {metaRobotsActive === null && <Badge>Checking…</Badge>}
-                      {metaRobotsActive === true && <Badge tone="success">Active</Badge>}
-                      {metaRobotsActive === false && <Badge tone="attention">Not activated</Badge>}
-                    </>
-                  }
-                >
-                  <Text as="p" variant="bodyMd" tone="subdued">
-                    Lets each article's editor control search engine indexing (Index/Noindex,
-                    Follow/Nofollow). Activate this once for your store — every article's
-                    setting then applies automatically, no further setup.
-                  </Text>
-                  {metaRobotsActive === false && (
-                    <EmbedRequirementBanner
-                      active={false}
-                      themeSupportsAppEmbeds={themeSupportsAppEmbeds}
-                      activateUrl={metaRobotsActivateUrl(window.shopify?.config?.shop || "")}
-                      featureName="Search engine indexing controls"
-                      whatBreaks="Per-article Index/Noindex and Follow/Nofollow settings won't take effect on the live storefront."
-                    />
-                  )}
-                </SectionCard>
-              </Layout.Section>
-            )}
-
-            {/* ─── Sitemap & Indexing ──────────────────────────────── */}
-            {selectedTab === 3 && (
               <>
+                <Layout.Section>
+                  <SectionCard
+                    title="Meta robots"
+                    trailing={
+                      <>
+                        {metaRobotsActive === null && <Badge>Checking…</Badge>}
+                        {metaRobotsActive === true && <Badge tone="success">Active</Badge>}
+                        {metaRobotsActive === false && <Badge tone="attention">Not activated</Badge>}
+                      </>
+                    }
+                  >
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      Lets each article's editor control search engine indexing (Index/Noindex,
+                      Follow/Nofollow). Activate this once for your store — every article's
+                      setting then applies automatically, no further setup.
+                    </Text>
+                    {metaRobotsActive === false && (
+                      <EmbedRequirementBanner
+                        active={false}
+                        themeSupportsAppEmbeds={themeSupportsAppEmbeds}
+                        activateUrl={metaRobotsActivateUrl(window.shopify?.config?.shop || "")}
+                        featureName="Search engine indexing controls"
+                        whatBreaks="Per-article Index/Noindex and Follow/Nofollow settings won't take effect on the live storefront."
+                      />
+                    )}
+                  </SectionCard>
+                </Layout.Section>
+
                 <Layout.Section>
                   <SectionCard title="Sitemap">
                     <Text as="p" variant="bodyMd" tone="subdued">
@@ -776,7 +772,7 @@ export default function Settings() {
             )}
 
             {/* ─── Advanced ────────────────────────────────────────── */}
-            {selectedTab === 4 && (
+            {selectedTab === 3 && (
               <>
               <Layout.Section>
                 <SectionCard
