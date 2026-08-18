@@ -1,0 +1,49 @@
+# Production config — used when deploying/running this app against its real hosted server
+# instead of a local dev tunnel. See "Deploying" below for the exact commands.
+#
+# client_id: if you're submitting this exact app record for review, keep the same client_id as
+# shopify.app.toml (the one already registered in the Partner Dashboard). Only use a DIFFERENT
+# client_id here if you deliberately created a separate app entry in the Partner Dashboard for
+# production (e.g. to keep a "-Local" dev app and a real public app distinct) — in that case,
+# replace it with that app's own client_id.
+client_id = "946c7f95fc6780b88559e90d45ad7f96"
+name = "Blogger"
+application_url = "https://REPLACE_WITH_YOUR_PRODUCTION_DOMAIN"
+embedded = true
+
+[auth]
+redirect_urls = [
+  "https://REPLACE_WITH_YOUR_PRODUCTION_DOMAIN/api/auth/callback",
+]
+
+[access_scopes]
+scopes = "read_content,write_content,read_products,write_products,read_customers,read_orders,read_themes,write_themes,read_script_tags,write_script_tags,write_files,read_locales,read_translations,write_translations"
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  topics = [
+    "app/uninstalled",
+    "app_subscriptions/update",
+    "orders/create",
+    "checkouts/create"
+  ]
+  uri = "/api/webhooks"
+
+  # Mandatory compliance (GDPR) webhooks — required for App Store distribution.
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "/api/webhooks"
+
+[pos]
+embedded = false
+
+[build]
+# Deliberately omitted here (dev-only): automatically_update_urls_on_dev, dev_store_url.
+# Production URLs are set explicitly above and should not be silently rewritten by `dev`.
+
+[app_proxy]
+url = "https://REPLACE_WITH_YOUR_PRODUCTION_DOMAIN/api/proxy"
+subpath = "blog-analytics"
+prefix = "apps"

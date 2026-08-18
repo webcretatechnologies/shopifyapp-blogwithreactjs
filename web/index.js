@@ -94,6 +94,7 @@ import serveStatic from "serve-static";
 
 import shopify, { prisma } from "./shopify.js";
 import PrivacyWebhookHandlers from "./privacy.js";
+import { PRIVACY_POLICY_HTML } from "./privacyPolicyContent.js";
 import { ArticleSyncService } from "./src/services/ArticleSyncService.js";
 import { getEmbedStatus, getMissingScopes } from "./src/services/ThemeEmbedStatusService.js";
 import { trackEvent } from "./src/services/AnalyticsTrackingService.js";
@@ -597,6 +598,14 @@ app.post("/api/articles/re-register-webhooks", async (req, res) => {
 
 // Static uploads
 app.use("/uploads", express.static(uploadsDir));
+
+// ─── Privacy Policy ─────────────────────────────────────────────────────────
+// Public, unauthenticated page (outside /api, so the session-validation middleware above never
+// touches it) — required as a publicly accessible URL for Shopify App Store submission and for
+// merchants/customers to review independent of being logged into the app.
+app.get("/privacy-policy", (_req, res) => {
+  res.status(200).set("Content-Type", "text/html; charset=utf-8").send(PRIVACY_POLICY_HTML);
+});
 
 // ─── Frontend Serving ─────────────────────────────────────────────────────────
 app.use(shopify.cspHeaders());

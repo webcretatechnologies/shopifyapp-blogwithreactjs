@@ -25,6 +25,13 @@ api_version = "2025-10"
   ]
   uri = "/api/webhooks"
 
+  # Mandatory compliance (GDPR) webhooks — required for App Store distribution. Handlers already
+  # exist and are wired up in privacy.js (imported into index.js's webhookHandlers) — this block
+  # is what tells Shopify's CLI to actually create the subscriptions on `shopify app deploy`.
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "/api/webhooks"
+
 [pos]
 embedded = false
 

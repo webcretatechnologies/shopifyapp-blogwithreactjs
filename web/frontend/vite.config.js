@@ -82,6 +82,7 @@ export default defineConfig({
       "^/related-posts\\.js(/|(\\?.*)?$)": proxyOptions,
       "^/custom-code\\.json(/|(\\?.*)?$)": proxyOptions,
       "^/branding\\.json(/|(\\?.*)?$)": proxyOptions,
+      "^/privacy-policy(/|(\\?.*)?$)": proxyOptions,
     },
   },
 });
