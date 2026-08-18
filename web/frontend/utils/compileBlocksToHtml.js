@@ -34,7 +34,13 @@ const VISIBILITY_CSS = `<style>
  * if no visibility flags are set (zero overhead for the common case).
  */
 function applyVisibilityWrapper(html, settings = {}) {
-  if (!html) return html;
+  // Not `if (!html) return html;` — an empty string is a legitimate case here (e.g. a freshly
+  // added Image/Video/BuyButton block with no src/product picked yet, or empty RichText content)
+  // and still needs the wrapper applied around it so the hide-on-device class marker survives
+  // for ShopifyArticleParser's echo-reconciliation to recover it from later — same fix as
+  // applyVisibilityWrapperServer in EditorContentCompiler.js, mirrored here since this compiler
+  // (not just the preview path) is what actually feeds Save & Sync.
+  if (html === null || html === undefined) return html;
   const classes = [];
   if (settings.hideOnMobile)  classes.push("builder-hide-mobile");
   if (settings.hideOnTablet)  classes.push("builder-hide-tablet");
@@ -58,8 +64,8 @@ function hasVisibilityFlags(blocks) {
 }
 
 function injectBlockIdentity(html, block) {
-  if (!html) return html;
-  
+  if (html === null || html === undefined) return html;
+
   const trimmedHtml = html.trim();
   const tagRegex = /<([a-zA-Z0-9\-]+)([^>]*)>/g;
   let match;
@@ -77,10 +83,8 @@ function injectBlockIdentity(html, block) {
     }
   }
 
-  if (targetIndex === -1) return html;
-
   let dataAttrs = ` data-type="${block.type}"`;
-  
+
   if (block.settings) {
     // "settings" is never a legitimate field name on a block's own settings object — its
     // presence means upstream data got corrupted (see ShopifyArticleParser._convertDataBlock's
@@ -104,6 +108,16 @@ function injectBlockIdentity(html, block) {
         } catch (e) {}
       }
     }
+  }
+
+  // No real tag to inject into (html was "" — e.g. a freshly added Image/Video/BuyButton block
+  // with no src/product picked yet — or was plain text with no tags at all): synthesize a
+  // wrapping div carrying the identity attrs instead of returning the content untagged. Without
+  // this, the block has no data-type/data-block-id anywhere in the compiled output, so
+  // ShopifyArticleParser's echo-reconciliation has nothing to recognize it by at all — the WHOLE
+  // block, not just any hide-on-device setting, would be silently lost on the next sync.
+  if (targetIndex === -1) {
+    return `<div${dataAttrs}>${trimmedHtml}</div>`;
   }
 
   const prefix = trimmedHtml.slice(0, targetIndex);
@@ -659,12 +673,21 @@ ${listContentHtml}
       let contentHtml = "";
 
       if (layout === "grid") {
+        // Mirrors FaqBuilderBlock.jsx's canvas preview exactly — that renders a lucide
+        // HelpCircle/CircleQuestionMark icon before each question (flex row, icon + h4, answer
+        // indented to align under the question text), but this compiled-HTML path (which is what
+        // Preview and the live storefront actually render) previously had no icon at all, plain
+        // <h4>/<p> only. Inline SVG path data copied from lucide-react's circle-question-mark
+        // icon node, since compiled HTML can't import a React icon component.
         const gridItemsHtml = items
           .map(
             (item) => `
             <div style="background-color: ${backgroundColor}; border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-              <h4 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #202223; line-height: 1.4;">${item.question || ""}</h4>
-              <p style="margin: 0; font-size: 14px; color: #6d7175; line-height: 1.6;">${item.answer || ""}</p>
+              <div style="display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${accentColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg>
+                <h4 style="margin: 0; font-size: 15px; font-weight: 600; color: #202223; line-height: 1.4;">${item.question || ""}</h4>
+              </div>
+              <p style="margin: 0; padding-left: 28px; font-size: 14px; color: #6d7175; line-height: 1.6;">${item.answer || ""}</p>
             </div>
           `
           )

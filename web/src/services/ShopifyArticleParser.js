@@ -138,9 +138,19 @@ export class ShopifyArticleParser {
       // 1. Check for app block wrappers (div[data-type] or h2[data-type] etc)
       let dataType = $el.attr("data-type");
       if (!dataType) {
-        if ($el.hasClass("builder-faq-block") || $el.find("details.builder-faq-item").length > 0) {
+        // Self-match (hasClass) checks ONLY here — every one of these can only ever match the
+        // element itself, never a container that merely contains one of these somewhere inside
+        // it, so ordering among them doesn't matter and none can misfire on an ancestor.
+        // FaqBlock/TableOfContents's OWN descendant-based (.find()) fallback is handled in a
+        // SEPARATE, LATER pass below — deliberately demoted to last resort, after every
+        // self-match (including Section/ColumnLayout/Column) has already had a chance to match.
+        // Checking it here, ahead of the container checks, misclassified any Section/Column/
+        // ColumnLayout that simply contains an FAQ or TOC block ANYWHERE inside it — an ordinary
+        // authoring pattern — as an FAQ/TOC block itself, collapsing the container's own settings
+        // and any other sibling children the moment Shopify's echo strips data-type attributes.
+        if ($el.hasClass("builder-faq-block")) {
           dataType = "FaqBlock";
-        } else if ($el.hasClass("sp-toc-block") || $el.hasClass("sp-toc-details") || $el.find(".sp-toc-block, .sp-toc-details").length > 0) {
+        } else if ($el.hasClass("sp-toc-block") || $el.hasClass("sp-toc-details")) {
           dataType = "TableOfContents";
         } else if ($el.hasClass("builder-richtext-wrapper")) {
           dataType = "RichText";
@@ -182,6 +192,10 @@ export class ShopifyArticleParser {
           dataType = "Heading";
         } else if ($el.hasClass("builder-html-block") || $el.hasClass("custom-html-block")) {
           dataType = "Html";
+        } else if ($el.find("details.builder-faq-item").length > 0) {
+          dataType = "FaqBlock";
+        } else if ($el.find(".sp-toc-block, .sp-toc-details").length > 0) {
+          dataType = "TableOfContents";
         }
       }
 

@@ -1921,12 +1921,18 @@ ${this.generateGlobalCss(settings)}
     let contentHtml = "";
 
     if (layout === "grid") {
+      // Mirrors compileBlocksToHtml.js's own fix — see its comment for the full story: the
+      // canvas preview (FaqBuilderBlock.jsx) always rendered a lucide HelpCircle/
+      // circle-question-mark icon before each question, but neither compiled-HTML path had it.
       const gridItemsHtml = items
         .map(
           (item) => `
           <div style="background-color: ${backgroundColor}; border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-            <h4 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #202223; line-height: 1.4;">${escapeHtml(item.question || "")}</h4>
-            <p style="margin: 0; font-size: 14px; color: #6d7175; line-height: 1.6;">${escapeHtml(item.answer || "")}</p>
+            <div style="display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${accentColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg>
+              <h4 style="margin: 0; font-size: 15px; font-weight: 600; color: #202223; line-height: 1.4;">${escapeHtml(item.question || "")}</h4>
+            </div>
+            <p style="margin: 0; padding-left: 28px; font-size: 14px; color: #6d7175; line-height: 1.6;">${escapeHtml(item.answer || "")}</p>
           </div>
         `
         )
