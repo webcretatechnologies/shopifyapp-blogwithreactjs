@@ -1,6 +1,7 @@
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import { validateSuperAdmin, SHOP_SAFE_SELECT } from "./superAdmin.js";
+import { fetchUninstallEvents } from "../services/PartnerApiClient.js";
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -180,26 +181,42 @@ router.get("/growth/subscription-events", validateSuperAdmin, async (req, res) =
   }
 });
 
-// ─── GET /admin-api/growth/uninstall-feedback — Reason breakdown ──────────────
+// ─── GET /admin-api/growth/uninstall-feedback — Reason breakdown, from Shopify ────────────────
+// Real data from Shopify's own post-uninstall survey (Partner API's RelationshipUninstalled
+// event) — not anything this app collects itself. Returns `configured: false` when Partner API
+// credentials aren't set, so the frontend can show an honest "not connected" state rather than
+// an empty chart that looks like zero uninstalls happened.
 router.get("/growth/uninstall-feedback", validateSuperAdmin, async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
 
-    const [grouped, recent] = await Promise.all([
-      prisma.uninstallFeedback.groupBy({ by: ["reason"], _count: true }),
-      prisma.uninstallFeedback.findMany({ orderBy: { createdAt: "desc" }, take: limit }),
-    ]);
+    const { configured, events } = await fetchUninstallEvents(limit);
+    if (!configured) {
+      return res.json({ configured: false, breakdown: [], recent: [] });
+    }
 
-    const total = grouped.reduce((sum, g) => sum + g._count, 0);
-    const breakdown = grouped
-      .map((g) => ({
-        reason: g.reason,
-        count: g._count,
-        pct: total > 0 ? Math.round((g._count / total) * 1000) / 10 : 0,
-      }))
+    // Shopify's `reason` field is a comma-separated list — a single uninstall can cite more than
+    // one reason, so each listed reason is counted individually rather than treating the whole
+    // string as one bucket.
+    const counts = new Map();
+    events.forEach((e) => {
+      String(e.reason || "Not specified")
+        .split(",")
+        .map((r) => r.trim())
+        .filter(Boolean)
+        .forEach((r) => counts.set(r, (counts.get(r) || 0) + 1));
+    });
+
+    const total = [...counts.values()].reduce((sum, c) => sum + c, 0);
+    const breakdown = [...counts.entries()]
+      .map(([reason, count]) => ({ reason, count, pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0 }))
       .sort((a, b) => b.count - a.count);
 
-    res.json({ breakdown, recent });
+    const recent = events
+      .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
+      .slice(0, limit);
+
+    res.json({ configured: true, breakdown, recent });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

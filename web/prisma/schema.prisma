@@ -410,19 +410,6 @@ model Feedback {
   @@index([shopId])
 }
 
-// Deliberately not a foreign-key relation to Shop — a reason must survive even if the shop row
-// is later force-deleted via the Super Admin "Force delete store" action.
-model UninstallFeedback {
-  id         Int      @id @default(autoincrement())
-  shopDomain String
-  reason     String
-  message    String?  @db.Text
-  createdAt  DateTime @default(now())
-
-  @@index([shopDomain])
-  @@index([createdAt])
-}
-
 model StoreLog {
   id        Int      @id @default(autoincrement())
   shopId    Int

@@ -108,8 +108,6 @@ import supportRoutes from "./src/routes/support.js";
 import superAdminRoutes from "./src/routes/superAdmin.js";
 import superAdminAnalyticsRoutes from "./src/routes/superAdminAnalytics.js";
 import superAdminGrowthRoutes from "./src/routes/superAdminGrowth.js";
-import uninstallSurveyRoutes, { signUninstallSurveyToken } from "./src/routes/uninstallSurvey.js";
-import EmailService from "./src/services/EmailService.js";
 import trackingRoutes from "./src/routes/tracking.js";
 import publicStylesRoutes from "./src/routes/publicStyles.js";
 import sitemapIndexRoutes from "./src/routes/sitemapIndex.js";
@@ -352,25 +350,6 @@ app.post(
                 where: { shopId: shopRecord.id, isActive: true },
                 data: { isActive: false },
               });
-            }
-
-            // Best-effort uninstall-reason survey email — must never block the bookkeeping above.
-            try {
-              const session = await prisma.session.findFirst({ where: { shop }, select: { email: true } });
-              if (session?.email) {
-                const APP_URL = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
-                const token = signUninstallSurveyToken(shop);
-                const surveyUrl = `${APP_URL}/uninstall-survey?shop=${encodeURIComponent(shop)}&token=${token}`;
-                await EmailService.sendEmail({
-                  to: session.email,
-                  subject: "Sorry to see you go — one quick question",
-                  body: `We noticed you uninstalled the app. Mind telling us why? It takes 10 seconds and helps us improve:\n\n${surveyUrl}`,
-                  template: "uninstall_survey",
-                  shopDomain: shop,
-                });
-              }
-            } catch (surveyErr) {
-              console.error("Uninstall survey email error:", surveyErr);
             }
           } catch (err) {
             console.error("APP_UNINSTALLED webhook error:", err);
@@ -621,7 +600,6 @@ app.use("/api/blog-templates", blogTemplateRoutes);
 app.use("/admin-api", superAdminRoutes);
 app.use("/admin-api", superAdminAnalyticsRoutes);
 app.use("/admin-api", superAdminGrowthRoutes);
-app.use("/", uninstallSurveyRoutes);
 
 // ─── Manual webhook re-registration endpoint ──────────────────────
 app.post("/api/articles/re-register-webhooks", async (req, res) => {

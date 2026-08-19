@@ -48,7 +48,7 @@ export default function DashboardModule({ active, token, adminFetch, setError })
   const [recentInstalls, setRecentInstalls] = useState([]);
   const [recentUninstalls, setRecentUninstalls] = useState([]);
   const [subscriptionEvents, setSubscriptionEvents] = useState([]);
-  const [uninstallFeedback, setUninstallFeedback] = useState({ breakdown: [], recent: [] });
+  const [uninstallFeedback, setUninstallFeedback] = useState({ configured: true, breakdown: [], recent: [] });
 
   const load = useCallback(async () => {
     try {
@@ -72,7 +72,11 @@ export default function DashboardModule({ active, token, adminFetch, setError })
       setRecentInstalls(installsData.shops || []);
       setRecentUninstalls(uninstallsData.shops || []);
       setSubscriptionEvents(eventsData.events || []);
-      setUninstallFeedback({ breakdown: feedbackData.breakdown || [], recent: feedbackData.recent || [] });
+      setUninstallFeedback({
+        configured: feedbackData.configured !== false,
+        breakdown: feedbackData.breakdown || [],
+        recent: feedbackData.recent || [],
+      });
     } catch (err) {
       setError(err.message);
     }
@@ -320,10 +324,19 @@ export default function DashboardModule({ active, token, adminFetch, setError })
               <Box padding="500">
                 <BlockStack gap="300">
                   <Text variant="headingMd" as="h3">Why They Uninstall</Text>
+                  <Text variant="bodySm" tone="subdued">From Shopify's own post-uninstall survey (Partner API)</Text>
                   <div style={{ minHeight: "280px", maxHeight: "280px", overflowY: "auto" }}>
                     <BlockStack gap="400">
-                      {uninstallFeedback.breakdown.length === 0 ? (
-                        <Text tone="subdued">No uninstall feedback collected yet.</Text>
+                      {!uninstallFeedback.configured ? (
+                        <BlockStack gap="100">
+                          <Text tone="critical" fontWeight="bold">Not connected to Shopify Partner API</Text>
+                          <Text tone="subdued" variant="bodySm">
+                            Set PARTNER_API_TOKEN, PARTNER_ORGANIZATION_ID, and PARTNER_APP_ID to pull real
+                            uninstall reasons from Shopify's Partner Dashboard.
+                          </Text>
+                        </BlockStack>
+                      ) : uninstallFeedback.breakdown.length === 0 ? (
+                        <Text tone="subdued">No uninstall feedback reported by Shopify yet.</Text>
                       ) : (
                         uninstallFeedback.breakdown.map((b) => (
                           <BlockStack gap="100" key={b.reason}>
