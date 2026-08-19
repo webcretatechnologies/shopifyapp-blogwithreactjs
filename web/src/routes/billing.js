@@ -5,6 +5,65 @@ import { validateCouponForShop, applyCouponDiscount } from "../services/CouponSe
 
 const router = express.Router();
 
+// Best-effort reconciliation for every PENDING coupon claim belonging to this shop — not just
+// whatever matches the CURRENT activeSub (there may be none, e.g. the merchant is back on Free
+// after declining). PENDING no longer counts toward usage limits at all (see CouponService.js),
+// so this is purely to make an EXPLICIT decline/cancel resolve to a real terminal status on the
+// next billing/plans page load, instead of waiting on a webhook (or sitting at PENDING forever,
+// which is otherwise harmless now but clutters the admin's usage table with claims that already
+// have a real, knowable outcome). Can't do anything for a SILENT walk-away — Shopify itself keeps
+// reporting those as PENDING indefinitely, with no webhook, no matter how this app queries it.
+async function reconcilePendingCouponClaims(shopDomain, session) {
+  try {
+    const pending = await prisma.couponClaim.findMany({
+      where: { shopDomain, status: "PENDING" },
+      select: { id: true, shopifyChargeId: true },
+    });
+    if (pending.length === 0) return;
+
+    const client = new shopify.api.clients.Graphql({ session });
+    const response = await client.request(`
+      query ReconcilePendingClaims($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on AppSubscription {
+            id
+            status
+          }
+        }
+      }
+    `, { variables: { ids: pending.map((c) => c.shopifyChargeId) } });
+
+    const statusById = new Map(
+      (response.data?.nodes || [])
+        .filter(Boolean)
+        .map((n) => [n.id, n.status])
+    );
+
+    const STATUS_MAP = {
+      ACTIVE: "APPROVED",
+      CANCELLED: "CANCELLED",
+      DECLINED: "DECLINED",
+      EXPIRED: "EXPIRED",
+      // FROZEN/PENDING (Shopify's own "still deciding" state) intentionally left unmapped — the
+      // claim just stays PENDING, which is correct.
+    };
+
+    await Promise.all(
+      pending.map(async (claim) => {
+        const shopifyStatus = statusById.get(claim.shopifyChargeId);
+        const newStatus = shopifyStatus && STATUS_MAP[shopifyStatus];
+        if (!newStatus) return;
+        await prisma.couponClaim.update({
+          where: { id: claim.id },
+          data: { status: newStatus },
+        }).catch(() => {});
+      })
+    );
+  } catch (err) {
+    console.error("Failed to reconcile pending coupon claims:", err);
+  }
+}
+
 // Get all dynamic active plans
 router.get("/plans", async (req, res) => {
   try {
@@ -105,19 +164,6 @@ router.get("/check", async (req, res) => {
         });
       }
 
-      // Reconcile any pending coupon claim now that Shopify confirms this subscription is
-      // actually active — a discount can only ever be attached at appSubscriptionCreate time, so
-      // this is just bookkeeping (the discount itself is already live on the real subscription
-      // regardless of this flag), but it lets the admin panel show real APPROVED counts instead
-      // of everything sitting at PENDING forever. Best-effort: never blocks the billing check.
-      try {
-        await prisma.couponClaim.updateMany({
-          where: { shopifyChargeId: activeSub.id, status: "PENDING" },
-          data: { status: "APPROVED" },
-        });
-      } catch (err) {
-        console.error("Failed to reconcile coupon claim status:", err);
-      }
     } else if (activeSub && trustLocalFreeOverStaleShopify) {
       // Trust the recent local cancellation over Shopify's still-stale ACTIVE read.
       activePlan = "free";
@@ -139,6 +185,10 @@ router.get("/check", async (req, res) => {
         }
       }
     }
+
+    // Best-effort — resolves every PENDING coupon claim for this shop (not just one matching
+    // activeSub) against Shopify's real subscription status. See the function's own docblock.
+    await reconcilePendingCouponClaims(session.shop, session);
 
     // Article limit is sourced from PlanFeatureService's DB-backed "article_limit" PlanFeature
     // row (the same source Super Admin's Sync Limits modal edits) — previously this route kept

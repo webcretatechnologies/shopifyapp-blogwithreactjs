@@ -961,6 +961,28 @@ function validateCouponPayload(body) {
   };
 }
 
+// Fixed-amount coupons can otherwise be saved against a plan cheaper than the discount itself,
+// making the coupon permanently broken from creation — Shopify's own appSubscriptionCreate
+// rejects discount.value.amount >= the plan price outright at the moment a merchant actually
+// tries to claim it. Checked against every plan the coupon could ever apply to: exactly the
+// selected plans for SPECIFIC_PLANS, or every active paid plan for ALL_PAID_PLANS/
+// SPECIFIC_STORES (a store-scoped coupon can still match any paid plan the merchant picks).
+// Percentage coupons are never checked here — they're already capped at 99% above.
+async function validateCouponAmountAgainstPlans(data, planIds) {
+  if (data.discountType !== "FIXED_AMOUNT") return null;
+
+  const applicablePlans = data.appliesTo === "SPECIFIC_PLANS" && planIds.length > 0
+    ? await prisma.subscriptionPlan.findMany({ where: { id: { in: planIds } } })
+    : await prisma.subscriptionPlan.findMany({ where: { isActive: true, price: { gt: 0 } } });
+
+  const amountCents = Math.round(Number(data.amountOff) * 100);
+  const tooLarge = applicablePlans.filter((p) => amountCents >= Math.round(Number(p.price) * 100));
+  if (tooLarge.length === 0) return null;
+
+  const named = tooLarge.map((p) => `${p.title} ($${Number(p.price).toFixed(2)})`).join(", ");
+  return `Discount amount ($${Number(data.amountOff).toFixed(2)}) must be less than the plan price — too large for: ${named}`;
+}
+
 // Re-syncs a coupon's CouponPlan/CouponShop join rows to exactly match what was submitted —
 // simplest robust approach for a small join-table set (delete then recreate inside a
 // transaction), same posture as the rest of this admin CRUD surface.
@@ -1000,6 +1022,9 @@ router.post("/coupons", validateSuperAdmin, async (req, res) => {
     const { data, error, planIds, shopDomains } = validateCouponPayload(req.body);
     if (error) return res.status(400).json({ error });
 
+    const priceError = await validateCouponAmountAgainstPlans(data, planIds);
+    if (priceError) return res.status(400).json({ error: priceError });
+
     const existing = await prisma.coupon.findUnique({ where: { code: data.code } });
     if (existing) return res.status(400).json({ error: "A coupon with this code already exists." });
 
@@ -1029,6 +1054,9 @@ router.put("/coupons/:id", validateSuperAdmin, async (req, res) => {
     const id = parseInt(req.params.id, 10);
     const { data, error, planIds, shopDomains } = validateCouponPayload(req.body);
     if (error) return res.status(400).json({ error });
+
+    const priceError = await validateCouponAmountAgainstPlans(data, planIds);
+    if (priceError) return res.status(400).json({ error: priceError });
 
     const codeOwner = await prisma.coupon.findUnique({ where: { code: data.code } });
     if (codeOwner && codeOwner.id !== id) {

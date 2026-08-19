@@ -26,10 +26,16 @@ function intervalSuffix(interval) {
   return interval === "ANNUAL" ? "/year" : "/month";
 }
 
+// Returns null (not a clamped near-zero number) when a fixed-amount coupon is too large for this
+// specific plan's price — Shopify's own appSubscriptionCreate rejects discount.value.amount >=
+// price outright, so clamping the displayed price to $0.01 would show a discount that could never
+// actually be applied here. Callers fall back to the plan's real full price when this returns
+// null. Percentage coupons can never hit this (already capped at 99% server-side).
 function applyCouponDiscount(price, coupon) {
   if (coupon.discountType === "PERCENTAGE") {
     return Math.max(0, Math.round(price * (1 - Number(coupon.percentOff) / 100) * 100) / 100);
   }
+  if (Number(coupon.amountOff) >= price) return null;
   return Math.max(0, Math.round((price - Number(coupon.amountOff)) * 100) / 100);
 }
 
@@ -415,6 +421,11 @@ export default function Plans() {
                   appliedCoupon.planTiers?.includes(plan.name))
               );
               const discountedPrice = couponAppliesHere ? applyCouponDiscount(price, appliedCoupon) : null;
+              // discountedPrice can still be null here even when couponAppliesHere is true — a
+              // fixed-amount coupon too large for this specific plan's price (see
+              // applyCouponDiscount's own comment). Treat that as "doesn't apply to this plan"
+              // for rendering purposes, same as the scoping/price checks above.
+              const showDiscountHere = couponAppliesHere && discountedPrice !== null;
 
               return (
                 <Box
@@ -438,7 +449,7 @@ export default function Plans() {
                       <Box paddingBlockStart="200" paddingBlockEnd="200">
                         {price === 0 ? (
                           <Text as="h2" variant="heading2xl">Free</Text>
-                        ) : couponAppliesHere ? (
+                        ) : showDiscountHere ? (
                           <BlockStack gap="100">
                             <InlineStack gap="150" blockAlign="baseline">
                               <Text as="span" variant="bodyLg" tone="subdued" textDecorationLine="line-through">

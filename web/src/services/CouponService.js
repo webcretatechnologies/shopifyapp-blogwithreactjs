@@ -6,35 +6,29 @@
  * (POST /api/billing/request, which re-runs this exact same validation server-side — the preview
  * is never trusted for the actual discount that gets sent to Shopify).
  *
- * "Used" for totalUses/usesPerStore purposes = claims with status APPROVED, or status PENDING
- * and still recent (see PENDING_CLAIM_GRACE_MS) — DECLINED/CANCELLED/EXPIRED never count.
+ * "Used" for totalUses/usesPerStore purposes = claims with status APPROVED, full stop. PENDING
+ * never counts, no matter how recently created.
  *
- * Nothing in this codebase ever actually transitions a claim to DECLINED/CANCELLED/EXPIRED (the
- * only status write anywhere is PENDING -> APPROVED, in GET /api/billing/check, and only once
- * Shopify reports the matching subscription active) — so a merchant who closes the Shopify
- * approval tab, or explicitly declines, leaves a claim stuck at PENDING forever. Without the
- * recency check below, that claim would count against usesPerStore/totalUses permanently, even
- * though no discount was ever actually granted — directly contradicting this service's own
- * documented behavior above and the Super Admin coupon UI's help text ("an abandoned checkout
- * does not burn a use"). A real Shopify approval redirect completes in well under a minute;
- * anything still PENDING after the grace window is treated as abandoned, not in-flight.
+ * This used to also count a PENDING claim within a 1-hour grace window of creation, on the theory
+ * that it deterred rapid-fire retries of the same code. That doesn't hold up: querying Shopify
+ * directly for a subscription the merchant simply navigated away from (closed the tab, hit back —
+ * as opposed to an explicit Decline) shows it staying PENDING indefinitely, with no webhook fired
+ * for it — there is no way to distinguish "still deciding" from "already walked away" for this
+ * case. Any window built on PENDING status is therefore guessing, and blocked real, legitimate
+ * cancellations for however long the window lasted. Accepted trade-off: an abandoned checkout can
+ * now be retried immediately and as many times as the merchant wants — it costs nothing on
+ * Shopify's side either way, and that was judged strictly better than blocking real
+ * cancellations. If abuse resistance is wanted later, it needs a different signal entirely (e.g.
+ * IP/session rate-limiting at the API layer) — not a revived status-based grace window.
  */
 import { prisma } from "../../shopify.js";
 
-const PENDING_CLAIM_GRACE_MS = 60 * 60 * 1000; // 1 hour
-
 // Exported so Super Admin's coupon usage-count badge (superAdmin.js) can apply the exact same
 // "counted" definition as real enforcement — a duplicate, drifted copy of this predicate is
-// exactly how the bug this comment is attached to went unnoticed: the admin's usage number and
-// the actual limit check disagreed with each other.
+// exactly how a past bug went unnoticed: the admin's usage number and the actual limit check
+// disagreed with each other.
 export function countedClaimsWhere(extra) {
-  return {
-    ...extra,
-    OR: [
-      { status: "APPROVED" },
-      { status: "PENDING", createdAt: { gte: new Date(Date.now() - PENDING_CLAIM_GRACE_MS) } },
-    ],
-  };
+  return { ...extra, status: "APPROVED" };
 }
 
 export function couponDiscountLabel(coupon) {
@@ -103,6 +97,22 @@ export async function validateCouponForShop(code, shopDomain, planTier = null) {
       where: { couponId_shopDomain: { couponId: coupon.id, shopDomain } },
     }).catch(() => null);
     if (!eligible) return { ok: false, error: "This coupon isn't available for your store." };
+  }
+
+  // Fixed-amount coupons can be created against one plan's price and later reused against a
+  // cheaper one (or a coupon can simply be misconfigured) — Shopify's own appSubscriptionCreate
+  // rejects a discount.value.amount >= the plan's price outright ("Discount amount must be less
+  // than or equal to X"), surfacing a raw API error to the merchant instead of a clean message.
+  // Percentage coupons are excluded here — they're already capped at 99% in
+  // validateCouponPayload/the admin form, so they can never reach or exceed 100% of any price.
+  // Placed as the last check (after scoping) since it needs a resolved plan to price-check
+  // against — a coupon that's already ineligible for this plan should fail with the scoping
+  // error above, not this one.
+  if (coupon.discountType === "FIXED_AMOUNT" && planTier) {
+    const plan = await prisma.subscriptionPlan.findUnique({ where: { name: planTier } });
+    if (plan && Math.round(Number(coupon.amountOff) * 100) >= Math.round(Number(plan.price) * 100)) {
+      return { ok: false, error: "This coupon's discount amount is too large for the selected plan." };
+    }
   }
 
   return {
