@@ -342,6 +342,13 @@ model PostAnalytic {
   checkouts       Int      @default(0)
   conversions     Int      @default(0)
   revenue         Float    @default(0)
+  // revenueUsd is the sum of each individual conversion's amount already converted to USD at
+  // write-time (via ExchangeRateService) — safe to sum across shops/currencies. `revenue` stays
+  // the raw (mixed-currency) total, kept for per-shop display where the shop's own currency is
+  // known from context. lastCurrency is the most recently seen order currency for this
+  // post/day, informational only — never used in aggregation math.
+  revenueUsd      Float    @default(0)
+  lastCurrency    String?
   deviceDesktop   Int      @default(0)
   deviceMobile    Int      @default(0)
   deviceTablet    Int      @default(0)

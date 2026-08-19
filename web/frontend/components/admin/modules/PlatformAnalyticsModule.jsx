@@ -57,7 +57,7 @@ export default function PlatformAnalyticsModule({ active, adminFetch, setError }
           <KpiCard label="Conversions" value={(stats?.totalConversions ?? 0).toLocaleString()} />
         </Grid.Cell>
         <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
-          <KpiCard label="Revenue" value={`$${(stats?.totalRevenue ?? 0).toFixed(2)}`} />
+          <KpiCard label="Revenue (USD)" value={`$${(stats?.totalRevenueUsd ?? 0).toFixed(2)}`} />
         </Grid.Cell>
         <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
           <KpiCard label="Conversion Rate" value={`${stats?.conversionRate ?? "0.00"}%`} />
@@ -68,10 +68,10 @@ export default function PlatformAnalyticsModule({ active, adminFetch, setError }
         <Grid.Cell columnSpan={{ xs: 6, sm: 8, md: 8, lg: 8 }}>
           <AnalyticsChart
             data={overview?.daily || []}
-            title="Platform Views & Revenue"
+            title="Platform Views & Revenue (USD)"
             series={[
               { key: "views", label: "Views", color: "#008060" },
-              { key: "revenue", label: "Revenue", color: "#5C6AC4" },
+              { key: "revenueUsd", label: "Revenue (USD)", color: "#5C6AC4" },
             ]}
             compareData={overview?.previousDaily}
             showComparison
@@ -105,7 +105,7 @@ export default function PlatformAnalyticsModule({ active, adminFetch, setError }
                   <IndexTable
                     resourceName={{ singular: "store", plural: "stores" }}
                     itemCount={topShops.length}
-                    headings={[{ title: "Store" }, { title: "Views" }, { title: "Conversions" }, { title: "Revenue" }]}
+                    headings={[{ title: "Store" }, { title: "Views" }, { title: "Conversions" }, { title: "Revenue (USD)" }]}
                     selectable={false}
                   >
                     {topShops.map((s, index) => (
@@ -131,7 +131,7 @@ export default function PlatformAnalyticsModule({ active, adminFetch, setError }
                   <IndexTable
                     resourceName={{ singular: "post", plural: "posts" }}
                     itemCount={topPosts.length}
-                    headings={[{ title: "Post" }, { title: "Store" }, { title: "Views" }, { title: "Conv. Rate" }, { title: "Revenue" }]}
+                    headings={[{ title: "Post" }, { title: "Store" }, { title: "Views" }, { title: "Conv. Rate" }, { title: "Revenue (USD)" }]}
                     selectable={false}
                   >
                     {topPosts.map((p, index) => (

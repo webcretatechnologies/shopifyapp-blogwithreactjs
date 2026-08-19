@@ -31,10 +31,12 @@ router.get("/analytics/top-shops", validateSuperAdmin, async (req, res) => {
     const { since, until } = parseRangeQuery(req);
     const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
 
+    // Sums revenueUsd, not revenue — shops can bill in different currencies, so raw `revenue`
+    // can't be safely added across shops (see ExchangeRateService.js).
     const grouped = await prisma.postAnalytic.groupBy({
       by: ["postId"],
       where: { date: { gte: since, lt: until } },
-      _sum: { views: true, conversions: true, revenue: true },
+      _sum: { views: true, conversions: true, revenueUsd: true },
     });
 
     if (grouped.length === 0) return res.json({ shops: [], from: since.toISOString().split("T")[0], to: until.toISOString().split("T")[0] });
@@ -53,7 +55,7 @@ router.get("/analytics/top-shops", validateSuperAdmin, async (req, res) => {
       const acc = byShop.get(shopId) || { shopId, views: 0, conversions: 0, revenue: 0 };
       acc.views += g._sum.views || 0;
       acc.conversions += g._sum.conversions || 0;
-      acc.revenue += g._sum.revenue || 0;
+      acc.revenue += g._sum.revenueUsd || 0;
       byShop.set(shopId, acc);
     });
 
@@ -81,10 +83,11 @@ router.get("/analytics/top-posts", validateSuperAdmin, async (req, res) => {
     const { since, until } = parseRangeQuery(req);
     const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
 
+    // Sums revenueUsd, not revenue — see top-shops above.
     const grouped = await prisma.postAnalytic.groupBy({
       by: ["postId"],
       where: { date: { gte: since, lt: until } },
-      _sum: { views: true, addToCart: true, checkouts: true, conversions: true, revenue: true },
+      _sum: { views: true, addToCart: true, checkouts: true, conversions: true, revenueUsd: true },
       orderBy: { _sum: { views: "desc" } },
       take: limit,
     });
@@ -106,7 +109,7 @@ router.get("/analytics/top-posts", validateSuperAdmin, async (req, res) => {
         shopDomain: d.shop?.domain || "Unknown",
         views,
         conversions: g._sum.conversions || 0,
-        revenue: g._sum.revenue || 0,
+        revenue: g._sum.revenueUsd || 0,
         conversionRate: views > 0 ? ((g._sum.conversions || 0) / views * 100).toFixed(2) : "0.00",
       };
     });

@@ -5,6 +5,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
+import { convertToUsd } from "./ExchangeRateService.js";
 
 const prisma = new PrismaClient();
 
@@ -332,6 +333,10 @@ export async function trackEvent({
   };
 
   const incrementField = fieldMap[eventType];
+  const rawValue = eventType === "conversion" && value != null ? parseFloat(value) || 0 : 0;
+  // Converted once per event, before either the create or update branch below, so a concurrent
+  // P2002 retry doesn't re-fetch a rate or double-convert the same order.
+  const usdValue = eventType === "conversion" && value != null ? await convertToUsd(rawValue, currency) : 0;
 
   // Atomic write: find → create → catch(P2002 race) → update
   let analytic = await prisma.postAnalytic.findUnique({
@@ -343,7 +348,9 @@ export async function trackEvent({
       where: { id: analytic.id },
       data: {
         ...(incrementField ? { [incrementField]: { increment: 1 } } : {}),
-        ...(eventType === "conversion" && value != null ? { revenue: { increment: parseFloat(value) || 0 } } : {}),
+        ...(eventType === "conversion" && value != null
+          ? { revenue: { increment: rawValue }, revenueUsd: { increment: usdValue }, lastCurrency: (currency || "USD").toUpperCase() }
+          : {}),
       },
     });
   } else {
@@ -353,7 +360,9 @@ export async function trackEvent({
           postId,
           date: today,
           ...(incrementField ? { [incrementField]: 1 } : {}),
-          ...(eventType === "conversion" && value != null ? { revenue: parseFloat(value) || 0 } : {}),
+          ...(eventType === "conversion" && value != null
+            ? { revenue: rawValue, revenueUsd: usdValue, lastCurrency: (currency || "USD").toUpperCase() }
+            : {}),
         },
       });
     } catch (createError) {
@@ -364,7 +373,9 @@ export async function trackEvent({
           where: { postId_date: { postId, date: today } },
           data: {
             ...(incrementField ? { [incrementField]: { increment: 1 } } : {}),
-            ...(eventType === "conversion" && value != null ? { revenue: { increment: parseFloat(value) || 0 } } : {}),
+            ...(eventType === "conversion" && value != null
+              ? { revenue: { increment: rawValue }, revenueUsd: { increment: usdValue }, lastCurrency: (currency || "USD").toUpperCase() }
+              : {}),
           },
         });
       } else {
@@ -460,6 +471,7 @@ export async function buildAnalyticsPayload(postWhere, range) {
         checkouts: true,
         conversions: true,
         revenue: true,
+        revenueUsd: true,
         sources: true,
         countries: true,
       },
@@ -467,7 +479,7 @@ export async function buildAnalyticsPayload(postWhere, range) {
     // Same-length prior window, for trend comparison + the comparison-overlay series
     prisma.postAnalytic.findMany({
       where: { ...postWhere, date: { gte: previousSince, lt: since } },
-      select: { date: true, views: true, addToCart: true, conversions: true, revenue: true },
+      select: { date: true, views: true, addToCart: true, conversions: true, revenue: true, revenueUsd: true },
     }),
   ]);
 
@@ -475,7 +487,11 @@ export async function buildAnalyticsPayload(postWhere, range) {
   // Zero-fill every calendar day in the window, not just days that have a PostAnalytic row —
   // a sparse series (e.g. only 3 real data points across a 30-day window) renders a smoothed
   // line chart that visually implies a trend between distant points that doesn't exist.
-  const zeroDay = () => ({ views: 0, uniqueVisitors: 0, addToCart: 0, checkouts: 0, conversions: 0, revenue: 0 });
+  // `revenue` stays each row's raw (possibly mixed-currency) amount, unchanged behavior for
+  // existing per-shop callers. `revenueUsd` is the currency-safe figure — cross-shop callers
+  // (Platform Analytics) must sum this one, never `revenue`, since shops can bill in different
+  // currencies.
+  const zeroDay = () => ({ views: 0, uniqueVisitors: 0, addToCart: 0, checkouts: 0, conversions: 0, revenue: 0, revenueUsd: 0 });
 
   const dailyMap = {};
   // Fixed iteration count (spanDays) rather than comparing against a live `new Date()` on each
@@ -496,6 +512,7 @@ export async function buildAnalyticsPayload(postWhere, range) {
     dailyMap[dateKey].checkouts += a.checkouts || 0;
     dailyMap[dateKey].conversions += a.conversions || 0;
     dailyMap[dateKey].revenue += a.revenue || 0;
+    dailyMap[dateKey].revenueUsd += a.revenueUsd || 0;
   });
   const daily = Object.entries(dailyMap)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -517,6 +534,7 @@ export async function buildAnalyticsPayload(postWhere, range) {
     prevDailyMap[dateKey].addToCart += a.addToCart || 0;
     prevDailyMap[dateKey].conversions += a.conversions || 0;
     prevDailyMap[dateKey].revenue += a.revenue || 0;
+    prevDailyMap[dateKey].revenueUsd += a.revenueUsd || 0;
   });
   const previousDaily = Object.entries(prevDailyMap)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -530,6 +548,7 @@ export async function buildAnalyticsPayload(postWhere, range) {
     totalCheckouts: 0,
     totalConversions: 0,
     totalRevenue: 0,
+    totalRevenueUsd: 0,
     deviceDesktop: 0,
     deviceMobile: 0,
     deviceTablet: 0,
@@ -544,6 +563,7 @@ export async function buildAnalyticsPayload(postWhere, range) {
     totals.totalCheckouts += a.checkouts || 0;
     totals.totalConversions += a.conversions || 0;
     totals.totalRevenue += a.revenue || 0;
+    totals.totalRevenueUsd += a.revenueUsd || 0;
     totals.deviceDesktop += a.deviceDesktop || 0;
     totals.deviceMobile += a.deviceMobile || 0;
     totals.deviceTablet += a.deviceTablet || 0;
@@ -626,6 +646,7 @@ export async function buildAnalyticsPayload(postWhere, range) {
       totalCheckouts,
       totalConversions,
       totalRevenue: totals.totalRevenue,
+      totalRevenueUsd: totals.totalRevenueUsd,
       addToCartRate,
       checkoutRate,
       conversionRate,
