@@ -5,10 +5,18 @@ import {
 } from "@shopify/polaris";
 import { Download, Trash2 } from "lucide-react";
 import ConfirmActionModal from "../../ConfirmActionModal";
+import AnalyticsChart from "../../analytics/AnalyticsChart";
 import { downloadAdminFile } from "../../../utils/adminApi";
 
 const DownloadIcon = (props) => <Download size={16} {...props} />;
 const TrashIcon = (props) => <Trash2 size={16} {...props} />;
+
+function SyncHealthBadge({ syncHealth }) {
+  if (!syncHealth || syncHealth.total === 0) return <Text tone="subdued">No articles</Text>;
+  if (syncHealth.error > 0) return <Badge tone="critical">{syncHealth.error} error{syncHealth.error > 1 ? "s" : ""}</Badge>;
+  if (syncHealth.conflict > 0) return <Badge tone="attention">{syncHealth.conflict} conflict{syncHealth.conflict > 1 ? "s" : ""}</Badge>;
+  return <Badge tone="success">Healthy</Badge>;
+}
 
 /** Stores Auditor — searchable/filterable store list, per-store actions, and 2 modals
  * (plan override, store detail). */
@@ -219,7 +227,7 @@ export default function StoresModule({ active, token, adminFetch, showToast, set
                 resourceName={{ singular: "store", plural: "stores" }}
                 itemCount={stores.length}
                 headings={[
-                  { title: "Domain" }, { title: "Email" }, { title: "Plan" },
+                  { title: "Domain" }, { title: "Email" }, { title: "Plan" }, { title: "Sync Health" },
                   { title: "Override" }, { title: "Installed" }, { title: "Status" }, { title: "Actions" },
                 ]}
                 selectable={false}
@@ -232,6 +240,9 @@ export default function StoresModule({ active, token, adminFetch, showToast, set
                     <IndexTable.Cell>{s.email}</IndexTable.Cell>
                     <IndexTable.Cell>
                       <Badge tone={s.planKey === "free" ? "default" : "info"}>{s.planKey}</Badge>
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                      <SyncHealthBadge syncHealth={s.syncHealth} />
                     </IndexTable.Cell>
                     <IndexTable.Cell>
                       {s.hasOverride ? (
@@ -424,6 +435,16 @@ export default function StoresModule({ active, token, adminFetch, showToast, set
                   </Card>
                 </Grid.Cell>
               </Grid>
+
+              {storeDetail.dailyViews?.length > 0 && (
+                <AnalyticsChart
+                  data={storeDetail.dailyViews}
+                  title="Post Activity (30d)"
+                  series={[{ key: "views", label: "Views", color: "#008060" }]}
+                  showPeriodSelector={false}
+                  height={180}
+                />
+              )}
             </BlockStack>
           )}
         </Modal.Section>

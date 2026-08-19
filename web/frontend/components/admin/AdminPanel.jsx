@@ -3,16 +3,18 @@ import { Box, BlockStack, InlineStack, Text, Badge, Banner, Toast, Frame } from 
 import AdminLoginScreen from "./AdminLoginScreen";
 import AdminSidebar from "./AdminSidebar";
 import DashboardModule from "./modules/DashboardModule";
+import PlatformAnalyticsModule from "./modules/PlatformAnalyticsModule";
 import StoresModule from "./modules/StoresModule";
 import PricingModule from "./modules/PricingModule";
 import CouponsModule from "./modules/CouponsModule";
 import ActivityModule from "./modules/ActivityModule";
 import { createAdminFetch } from "../../utils/adminApi";
 
-export const ADMIN_SECTIONS = ["dashboard", "stores", "pricing", "coupons", "activities"];
+export const ADMIN_SECTIONS = ["dashboard", "analytics", "stores", "pricing", "coupons", "activities"];
 
 const SECTION_TITLES = {
   dashboard: "Console Dashboard",
+  analytics: "Platform Analytics",
   stores: "Stores Audit Auditor",
   pricing: "Plans & Billing",
   coupons: "Billing Coupons",
@@ -146,6 +148,11 @@ export default function AdminPanel({ activeSection, onNavigate }) {
                   <DashboardModule
                   active={activeSection === "dashboard"}
                   token={token}
+                  adminFetch={adminFetch}
+                  setError={setError}
+                />
+                <PlatformAnalyticsModule
+                  active={activeSection === "analytics"}
                   adminFetch={adminFetch}
                   setError={setError}
                 />

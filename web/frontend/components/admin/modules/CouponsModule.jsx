@@ -1,36 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Card, Box, Text, BlockStack, InlineStack, Banner, Button, IndexTable, Badge,
   FormLayout, TextField, Select, Checkbox,
 } from "@shopify/polaris";
-import { Download, ArrowLeft } from "lucide-react";
+import { Download } from "lucide-react";
 import ConfirmActionModal from "../../ConfirmActionModal";
+import BackHeader from "../BackHeader";
+import AnalyticsChart from "../../analytics/AnalyticsChart";
 import { downloadAdminFile } from "../../../utils/adminApi";
 
 const DownloadIcon = (props) => <Download size={16} {...props} />;
-
-// A real "back" affordance for the Form/Usage sub-views — a round icon button + contextual
-// title, the same shape Shopify's own nested admin pages use, so leaving a sub-view never
-// depends on remembering the button-group exists.
-function BackHeader({ title, onBack }) {
-  return (
-    <InlineStack gap="300" blockAlign="center">
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label="Back to Coupons"
-        style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: "32px", height: "32px", borderRadius: "50%", border: "1px solid #c9cccf",
-          background: "#fff", cursor: "pointer", padding: 0, flexShrink: 0,
-        }}
-      >
-        <ArrowLeft size={16} />
-      </button>
-      <Text variant="headingLg" as="h3">{title}</Text>
-    </InlineStack>
-  );
-}
 
 const BLANK_COUPON = {
   code: "", discountType: "PERCENTAGE", percentOff: "10", amountOff: "",
@@ -112,6 +91,23 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
 
   const [usageRows, setUsageRows] = useState([]);
   const [usageKpis, setUsageKpis] = useState(null);
+
+  // Client-side day-bucketing of already-fetched usage rows — claim volume is inherently small,
+  // so no server-side trend route is warranted (unlike the platform-analytics/sync routes, which
+  // aggregate over far larger tables). Computed unconditionally (not inside the "usage" view
+  // branch) to satisfy the rules of hooks across this component's several early-return views.
+  const usageTrendData = useMemo(() => {
+    if (usageRows.length === 0) return [];
+    const byDay = {};
+    usageRows.forEach((row) => {
+      if (row.status !== "APPROVED") return;
+      const key = new Date(row.claimedAt).toISOString().split("T")[0];
+      if (!byDay[key]) byDay[key] = { date: key, claims: 0, savings: 0 };
+      byDay[key].claims += 1;
+      byDay[key].savings += row.saving || 0;
+    });
+    return Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date));
+  }, [usageRows]);
   const [usageFilters, setUsageFilters] = useState({ from: "", to: "", couponId: "", status: "", search: "" });
   const [usageLoading, setUsageLoading] = useState(false);
 
@@ -689,6 +685,19 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
             </div>
           ))}
         </InlineStack>
+
+        {usageTrendData.length > 0 && (
+          <AnalyticsChart
+            data={usageTrendData}
+            title="Redemption & Savings Trend"
+            series={[
+              { key: "claims", label: "Claims", color: "#008060" },
+              { key: "savings", label: "Savings", color: "#5C6AC4" },
+            ]}
+            chartType="area"
+            showPeriodSelector={false}
+          />
+        )}
 
         <Card>
           <Box padding="500">

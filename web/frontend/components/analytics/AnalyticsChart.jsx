@@ -31,6 +31,7 @@ export default function AnalyticsChart({
   showComparison = false,
   onToggleComparison = null,
   comparisonDisabled = false,
+  height = 260,
 }) {
   // Use series if provided; otherwise build from color prop for backward compat
   const series = seriesProp || [{ key: "views", label: "Views", color }];
@@ -183,7 +184,7 @@ export default function AnalyticsChart({
             options={options}
             series={chartSeries}
             type={effectiveType === "bar" ? "bar" : effectiveType === "line" ? "line" : "area"}
-            height={260}
+            height={height}
           />
         </div>
       </Box>

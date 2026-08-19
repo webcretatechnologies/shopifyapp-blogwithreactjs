@@ -405,7 +405,7 @@ const MAX_RANGE_DAYS = 366;
  * Falls back to the 30-day default on any invalid input rather than throwing — a bad query param
  * should degrade gracefully, not 500.
  */
-function resolveRange(rangeOrDays) {
+export function resolveRange(rangeOrDays) {
   if (rangeOrDays && typeof rangeOrDays === "object" && rangeOrDays.from && rangeOrDays.to) {
     const fromDate = new Date(`${rangeOrDays.from}T00:00:00.000Z`);
     const toDate = new Date(`${rangeOrDays.to}T00:00:00.000Z`);
@@ -432,7 +432,10 @@ function resolveRange(rangeOrDays) {
  * funnel, rates, and trend logic; only the `postWhere` filter (and whether top-posts ranking
  * runs, which only makes sense shop-wide) differs between the two call sites.
  */
-async function buildAnalyticsPayload(postWhere, range) {
+// Exported for Super Admin's platform-wide analytics (superAdminAnalytics.js), which calls this
+// with postWhere = {} (no shopId filter) to get the exact same aggregation shape across every
+// shop at once — no shop-specific assumption is baked into this function beyond postWhere itself.
+export async function buildAnalyticsPayload(postWhere, range) {
   const { since, until, spanDays } = range;
   // Immediately-preceding window of equal length, used to compute period-over-period trends
   // and the comparison-overlay series.

@@ -4,6 +4,19 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import { refreshPlanFeaturesCache, buildFeatureComparisonTable } from "../services/PlanFeatureService.js";
 import { countedClaimsWhere } from "../services/CouponService.js";
+import { getLivePlans, priceForPlanKey } from "../services/PricingRatesService.js";
+import { getShopAnalytics } from "../services/AnalyticsTrackingService.js";
+
+export const SHOP_SAFE_SELECT = {
+  id: true,
+  domain: true,
+  planKey: true,
+  timezone: true,
+  installedAt: true,
+  uninstalledAt: true,
+  createdAt: true,
+  updatedAt: true,
+};
 
 const router = express.Router();
 
@@ -122,40 +135,26 @@ router.get("/dashboard", validateSuperAdmin, async (req, res) => {
       },
     });
 
-    // 3. Plan breakdown
+    // 3. Plan breakdown — grouped by Shop.planKey's actual value, not a hardcoded tier list, so
+    // a renamed/added/removed SubscriptionPlan is reflected automatically.
     const shops = await prisma.shop.findMany({
       where: { uninstalledAt: null },
       select: { planKey: true },
     });
 
-    const planBreakdown = {
-      free: 0,
-      starter: 0,
-      pro: 0,
-      business: 0,
-    };
+    const livePlans = await getLivePlans(prisma);
 
+    const distributionMap = new Map();
     shops.forEach((s) => {
-      const plan = (s.planKey || "free").toLowerCase();
-      if (plan.includes("starter")) planBreakdown.starter++;
-      else if (plan.includes("pro")) planBreakdown.pro++;
-      else if (plan.includes("business")) planBreakdown.business++;
-      else planBreakdown.free++;
+      const { label, price } = priceForPlanKey(s.planKey, livePlans);
+      const entry = distributionMap.get(label) || { planKey: s.planKey || "free", label, price, count: 0 };
+      entry.count += 1;
+      distributionMap.set(label, entry);
     });
+    const planDistribution = [...distributionMap.values()].sort((a, b) => b.count - a.count);
 
-    // 4. MRR / ARR Calculations
-    const pricingRates = {
-      free: 0.0,
-      starter: 19.99,
-      pro: 39.99,
-      business: 19.99,
-    };
-
-    const mrr =
-      planBreakdown.starter * pricingRates.starter +
-      planBreakdown.pro * pricingRates.pro +
-      planBreakdown.business * pricingRates.business;
-
+    // 4. MRR / ARR — sum of (count × live price) across every non-free tier actually in use.
+    const mrr = planDistribution.reduce((sum, p) => sum + (p.price > 0 ? p.count * p.price : 0), 0);
     const arr = mrr * 12;
 
     // 5. Monthly installation/churn chart data for current year
@@ -187,14 +186,12 @@ router.get("/dashboard", validateSuperAdmin, async (req, res) => {
 
       let periodRevenue = 0;
       activePeriodShops.forEach((s) => {
-        const plan = (s.planKey || "free").toLowerCase();
-        if (plan.includes("starter")) periodRevenue += pricingRates.starter;
-        else if (plan.includes("pro")) periodRevenue += pricingRates.pro;
-        else if (plan.includes("business")) periodRevenue += pricingRates.business;
+        periodRevenue += priceForPlanKey(s.planKey, livePlans).price;
       });
 
       monthlyChartData.push({
         month: new Date(currentYear, m - 1, 1).toLocaleString("default", { month: "short" }),
+        date: start.toISOString().split("T")[0],
         installs,
         churned,
         revenue: parseFloat(periodRevenue.toFixed(2)),
@@ -205,6 +202,7 @@ router.get("/dashboard", validateSuperAdmin, async (req, res) => {
     const recentShopsRaw = await prisma.shop.findMany({
       orderBy: { installedAt: "desc" },
       take: 5,
+      select: SHOP_SAFE_SELECT,
     });
 
     const recentShops = await Promise.all(
@@ -235,7 +233,7 @@ router.get("/dashboard", validateSuperAdmin, async (req, res) => {
         churnedThisMonth,
         mrr,
         arr,
-        planBreakdown,
+        planDistribution,
       },
       monthlyChartData,
       recentShops,
@@ -296,6 +294,7 @@ router.get("/stores", validateSuperAdmin, async (req, res) => {
         orderBy: orderObj,
         take,
         skip,
+        select: SHOP_SAFE_SELECT,
       }),
       prisma.shop.count({ where }),
     ]);
@@ -323,8 +322,33 @@ router.get("/stores", validateSuperAdmin, async (req, res) => {
       })
     );
 
+    // Per-shop sync-health rollup, merged in by shopId — avoids an N+1 frontend fetch per row.
+    const shopIds = shops.map((s) => s.id);
+    const syncRows = shopIds.length
+      ? await prisma.shopifyArticle.findMany({
+          where: { post: { shopId: { in: shopIds } } },
+          select: { syncState: true, post: { select: { shopId: true } } },
+        })
+      : [];
+    const syncByShop = new Map();
+    syncRows.forEach((r) => {
+      const shopId = r.post?.shopId;
+      if (!shopId) return;
+      const acc = syncByShop.get(shopId) || { healthy: 0, conflict: 0, error: 0, total: 0 };
+      acc.total += 1;
+      if (r.syncState === "conflict") acc.conflict += 1;
+      else if (r.syncState === "error") acc.error += 1;
+      else acc.healthy += 1;
+      syncByShop.set(shopId, acc);
+    });
+
+    const storesWithSyncHealth = formattedShops.map((s) => ({
+      ...s,
+      syncHealth: syncByShop.get(s.id) || { healthy: 0, conflict: 0, error: 0, total: 0 },
+    }));
+
     res.json({
-      stores: formattedShops,
+      stores: storesWithSyncHealth,
       total,
       page: parseInt(page, 10),
       limit: take,
@@ -341,6 +365,7 @@ router.get("/stores/:domain", validateSuperAdmin, async (req, res) => {
 
     const shop = await prisma.shop.findUnique({
       where: { domain },
+      select: SHOP_SAFE_SELECT,
     });
 
     if (!shop) {
@@ -352,7 +377,7 @@ router.get("/stores/:domain", validateSuperAdmin, async (req, res) => {
       select: { email: true },
     });
 
-    const [postsCount, categoriesCount, tagsCount, logs] = await Promise.all([
+    const [postsCount, categoriesCount, tagsCount, logs, analytics] = await Promise.all([
       prisma.post.count({ where: { shopId: shop.id } }),
       prisma.category.count({ where: { shopId: shop.id } }),
       prisma.tag.count({ where: { shopId: shop.id } }),
@@ -361,6 +386,7 @@ router.get("/stores/:domain", validateSuperAdmin, async (req, res) => {
         orderBy: { createdAt: "desc" },
         take: 5,
       }),
+      getShopAnalytics(shop.id, 30).catch(() => null),
     ]);
 
     res.json({
@@ -370,6 +396,7 @@ router.get("/stores/:domain", validateSuperAdmin, async (req, res) => {
         postsCount,
         categoriesCount,
         tagsCount,
+        dailyViews: analytics ? analytics.daily.map((d) => ({ date: d.date, views: d.views })) : [],
       },
       logs,
     });
@@ -392,6 +419,7 @@ router.post("/stores/:domain/deactivate", validateSuperAdmin, async (req, res) =
     const updated = await prisma.shop.update({
       where: { domain },
       data: { uninstalledAt: new Date() },
+      select: SHOP_SAFE_SELECT,
     });
 
     // Log Activity
@@ -424,6 +452,7 @@ router.post("/stores/:domain/reactivate", validateSuperAdmin, async (req, res) =
     const updated = await prisma.shop.update({
       where: { domain },
       data: { uninstalledAt: null },
+      select: SHOP_SAFE_SELECT,
     });
 
     // Log Activity
@@ -447,6 +476,7 @@ router.get("/stores/export", validateSuperAdmin, async (req, res) => {
   try {
     const shops = await prisma.shop.findMany({
       orderBy: { installedAt: "desc" },
+      select: SHOP_SAFE_SELECT,
     });
 
     res.setHeader("Content-Type", "text/csv");
@@ -561,20 +591,45 @@ router.post("/stores/:domain/delete", validateSuperAdmin, async (req, res) => {
 // ─── GET /admin-api/activities — Audit admin logs ────────────────────────────
 router.get("/activities", validateSuperAdmin, async (req, res) => {
   try {
-    const { page = "1", limit = "20" } = req.query;
+    const { page = "1", limit = "20", search = "", targetType = "", dateFrom = "", dateTo = "" } = req.query;
     const take = parseInt(limit, 10);
     const skip = (parseInt(page, 10) - 1) * take;
 
-    const [activities, total] = await Promise.all([
+    const where = {};
+    if (search) where.action = { contains: search };
+    if (targetType) where.targetType = targetType;
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) where.createdAt.gte = new Date(dateFrom);
+      if (dateTo) where.createdAt.lte = new Date(dateTo);
+    }
+
+    const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+    const [activities, total, volumeRows] = await Promise.all([
       prisma.adminActivityLog.findMany({
+        where,
         orderBy: { createdAt: "desc" },
         take,
         skip,
       }),
-      prisma.adminActivityLog.count(),
+      prisma.adminActivityLog.count({ where }),
+      prisma.adminActivityLog.findMany({
+        where: { ...where, createdAt: { ...(where.createdAt || {}), gte: where.createdAt?.gte || since90 } },
+        select: { createdAt: true },
+      }),
     ]);
 
-    res.json({ activities, total, page: parseInt(page, 10), limit: take });
+    const volumeMap = {};
+    volumeRows.forEach((r) => {
+      const key = r.createdAt.toISOString().split("T")[0];
+      volumeMap[key] = (volumeMap[key] || 0) + 1;
+    });
+    const dailyVolume = Object.entries(volumeMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, count]) => ({ date, count }));
+
+    res.json({ activities, total, page: parseInt(page, 10), limit: take, dailyVolume });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -744,18 +799,7 @@ router.delete("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
 router.get("/revenue/analytics", validateSuperAdmin, async (req, res) => {
   try {
     const currentYear = new Date().getFullYear();
-    const dbPlans = await prisma.subscriptionPlan.findMany();
-    const pricingRates = {};
-    dbPlans.forEach(p => {
-      // Map names to lowercase key, e.g. "Starter Plan" -> "starter"
-      const lowerName = p.name.toLowerCase();
-      if (lowerName.includes("starter")) pricingRates.starter = parseFloat(p.price);
-      else if (lowerName.includes("pro")) pricingRates.pro = parseFloat(p.price);
-      else if (lowerName.includes("business")) pricingRates.business = parseFloat(p.price);
-      else pricingRates[p.name] = parseFloat(p.price);
-    });
-    // Fallbacks
-    pricingRates.free = 0.0;
+    const livePlans = await getLivePlans(prisma);
 
     // Calculate dynamic MRR/ARR based on active installations
     const activeShops = await prisma.shop.findMany({
@@ -765,18 +809,7 @@ router.get("/revenue/analytics", validateSuperAdmin, async (req, res) => {
 
     let mrr = 0;
     activeShops.forEach((s) => {
-      const plan = s.planKey || "free";
-      const planLower = plan.toLowerCase();
-      let added = false;
-      
-      // Exact match or partial match
-      if (pricingRates[plan]) { mrr += pricingRates[plan]; added = true; }
-      else if (planLower.includes("starter") && pricingRates.starter) { mrr += pricingRates.starter; added = true; }
-      else if (planLower.includes("pro") && pricingRates.pro) { mrr += pricingRates.pro; added = true; }
-      else if (planLower.includes("business") && pricingRates.business) { mrr += pricingRates.business; added = true; }
-      
-      // Custom generic fallback
-      if (!added && pricingRates[plan]) { mrr += pricingRates[plan]; }
+      mrr += priceForPlanKey(s.planKey, livePlans).price;
     });
 
     const arr = mrr * 12;
@@ -809,10 +842,7 @@ router.get("/revenue/analytics", validateSuperAdmin, async (req, res) => {
 
       let revenue = 0;
       activeShopsInMonth.forEach((s) => {
-        const plan = (s.planKey || "free").toLowerCase();
-        if (plan.includes("starter")) revenue += pricingRates.starter;
-        else if (plan.includes("pro")) revenue += pricingRates.pro;
-        else if (plan.includes("business")) revenue += pricingRates.business;
+        revenue += priceForPlanKey(s.planKey, livePlans).price;
       });
 
       monthlyBreakdown.push({
@@ -838,18 +868,7 @@ router.get("/revenue/analytics", validateSuperAdmin, async (req, res) => {
 router.get("/revenue/export", validateSuperAdmin, async (req, res) => {
   try {
     const currentYear = new Date().getFullYear();
-    const dbPlans = await prisma.subscriptionPlan.findMany();
-    const pricingRates = {};
-    dbPlans.forEach(p => {
-      // Map names to lowercase key, e.g. "Starter Plan" -> "starter"
-      const lowerName = p.name.toLowerCase();
-      if (lowerName.includes("starter")) pricingRates.starter = parseFloat(p.price);
-      else if (lowerName.includes("pro")) pricingRates.pro = parseFloat(p.price);
-      else if (lowerName.includes("business")) pricingRates.business = parseFloat(p.price);
-      else pricingRates[p.name] = parseFloat(p.price);
-    });
-    // Fallbacks
-    pricingRates.free = 0.0;
+    const livePlans = await getLivePlans(prisma);
 
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="revenue-${currentYear}.csv"`);
@@ -881,18 +900,7 @@ router.get("/revenue/export", validateSuperAdmin, async (req, res) => {
 
       let revenue = 0;
       activeShopsInMonth.forEach((s) => {
-        const plan = s.planKey || "free";
-        const planLower = plan.toLowerCase();
-        let added = false;
-        
-        // Exact match or partial match
-        if (pricingRates[plan]) { revenue += pricingRates[plan]; added = true; }
-        else if (planLower.includes("starter") && pricingRates.starter) { revenue += pricingRates.starter; added = true; }
-        else if (planLower.includes("pro") && pricingRates.pro) { revenue += pricingRates.pro; added = true; }
-        else if (planLower.includes("business") && pricingRates.business) { revenue += pricingRates.business; added = true; }
-        
-        // Custom generic fallback
-        if (!added && pricingRates[plan]) { revenue += pricingRates[plan]; }
+        revenue += priceForPlanKey(s.planKey, livePlans).price;
       });
 
       const monthName = new Date(currentYear, m - 1, 1).toLocaleString("default", { month: "long" });

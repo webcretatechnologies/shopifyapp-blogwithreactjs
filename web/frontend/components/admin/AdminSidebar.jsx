@@ -1,9 +1,10 @@
 import { Text, BlockStack } from "@shopify/polaris";
-import { LayoutDashboard, Store, Settings, Ticket, FileText, LogOut, Shield } from "lucide-react";
+import { LayoutDashboard, Store, Settings, Ticket, FileText, LogOut, Shield, BarChart3 } from "lucide-react";
 import { APP_NAME } from "../../utils/appName";
 
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard Overview", icon: LayoutDashboard },
+  { id: "analytics", label: "Platform Analytics", icon: BarChart3 },
   { id: "stores", label: "Stores Auditor", icon: Store },
   { id: "pricing", label: "Plans & Billing", icon: Settings },
   { id: "coupons", label: "Coupons", icon: Ticket },
