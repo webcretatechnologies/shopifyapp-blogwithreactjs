@@ -160,6 +160,7 @@ export default function Dashboard() {
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [extras, setExtras] = useState(null);
   const [extrasLoading, setExtrasLoading] = useState(true);
+  const [billingCycle, setBillingCycle] = useState(null);
   const [shopInfo, setShopInfo] = useState(null);
   const [setupStatus, setSetupStatus] = useState(null);
   const [setupLoading, setSetupLoading] = useState(true);
@@ -228,6 +229,18 @@ export default function Dashboard() {
     } catch {}
   };
 
+  // Real renewal date for the Plan Usage card's subtitle — Free has no billing cycle at all
+  // (billingCycle stays null), matched by the card itself falling back to a generic subtitle.
+  const fetchBillingCycle = async () => {
+    try {
+      const res = await fetch("/api/billing/check");
+      if (res.ok) {
+        const data = await res.json();
+        setBillingCycle(data.billingCycle || null);
+      }
+    } catch {}
+  };
+
   const fetchSetupStatus = async ({ silent = false } = {}) => {
     if (!silent) setSetupLoading(true);
     try {
@@ -244,6 +257,7 @@ export default function Dashboard() {
     fetchSetupStatus();
     fetchAnalytics();
     fetchExtras();
+    fetchBillingCycle();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -417,55 +431,72 @@ export default function Dashboard() {
           )}
 
           {/* ── Plan usage ────────────────────────────────────────────────────────
-               A single full-width horizontal bar (plan badge + usage text + progress bar +
-               action, all in one row) instead of a narrow card squeezed beside the KPI row —
-               the old side-by-side layout gave Plan usage roughly a third of the row's width
-               regardless of how little it needed, which is what made it look mismatched next to
-               the 3-column KPI row. This is the same "usage bar" pattern billing-aware SaaS
-               dashboards (Stripe, Notion, etc.) use for exactly this kind of at-a-glance status. */}
+               Header row (title + billing-period subtitle, plan badge + upgrade/manage action)
+               above a metrics row — currently a single "Articles" metric block since that's the
+               only plan-gated resource this app tracks today, but the layout is built to hold
+               more than one block side-by-side if a second metered resource is added later. */}
           <Layout.Section>
             <Card>
               <Box padding="400">
                 {extrasLoading ? (
-                  <SkeletonBodyText lines={1} />
+                  <SkeletonBodyText lines={3} />
                 ) : (
-                  <InlineStack align="space-between" blockAlign="center" gap="400" wrap={false}>
-                    <div style={{ flexShrink: 0 }}>
+                  <BlockStack gap="400">
+                    <InlineStack align="space-between" blockAlign="start" gap="400" wrap={false}>
+                      <BlockStack gap="050">
+                        <Text variant="headingSm" as="h3">Plan Usage</Text>
+                        <Text variant="bodySm" tone="subdued">
+                          {billingCycle?.renewsOn
+                            ? `Current billing period · resets ${new Date(billingCycle.renewsOn).toLocaleDateString("en-GB")}`
+                            : "Free plan · no active billing period"}
+                        </Text>
+                      </BlockStack>
                       <InlineStack gap="200" blockAlign="center">
-                        <Text variant="bodyMd" fontWeight="semibold">Plan usage</Text>
                         <Badge tone={atLimit ? "critical" : nearLimit ? "warning" : "success"}>
-                          {(planUsage?.plan || "free").toUpperCase()}
+                          {`${(planUsage?.plan || "free").replace(/^\w/, (c) => c.toUpperCase())} Plan`}
                         </Badge>
+                        <Button
+                          size="slim"
+                          tone={atLimit ? "critical" : undefined}
+                          variant={atLimit || nearLimit ? "primary" : "secondary"}
+                          onClick={() => navigate("/plans")}
+                        >
+                          {atLimit || nearLimit ? "Upgrade" : "Manage plan"}
+                        </Button>
                       </InlineStack>
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <BlockStack gap="100">
-                        <InlineStack align="space-between">
-                          <Text variant="bodySm" tone="subdued">Articles</Text>
-                          <Text variant="bodySm" fontWeight="semibold">
-                            {planUsage?.used ?? 0}{planUsage?.limit != null ? ` / ${planUsage.limit}` : " / Unlimited"}
+                    </InlineStack>
+
+                    <Box
+                      padding="300"
+                      background="bg-surface-secondary"
+                      borderRadius="200"
+                    >
+                      <BlockStack gap="200">
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text variant="bodyMd" fontWeight="semibold">Articles</Text>
+                          {planUsage?.limit == null ? (
+                            <Badge>Unlimited</Badge>
+                          ) : (
+                            <Text variant="bodySm" tone="subdued">{planUsage.used ?? 0} / {planUsage.limit}</Text>
+                          )}
+                        </InlineStack>
+                        <ProgressBar
+                          progress={planUsage?.limit == null ? 0 : usagePct}
+                          size="small"
+                          tone={atLimit ? "critical" : nearLimit ? "warning" : "primary"}
+                        />
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text variant="bodySm">
+                            <Text as="span" fontWeight="semibold">{planUsage?.used ?? 0}</Text>
+                            <Text as="span" tone="subdued"> {planUsage?.limit == null ? "used" : `${usagePct}% used`}</Text>
+                          </Text>
+                          <Text variant="bodySm" tone="subdued">
+                            {planUsage?.limit == null ? "∞" : Math.max(0, planUsage.limit - (planUsage.used ?? 0))}
                           </Text>
                         </InlineStack>
-                        {planUsage?.limit != null && (
-                          <ProgressBar
-                            progress={usagePct}
-                            size="small"
-                            tone={atLimit ? "critical" : nearLimit ? "warning" : "primary"}
-                          />
-                        )}
                       </BlockStack>
-                    </div>
-                    <div style={{ flexShrink: 0 }}>
-                      <Button
-                        size="slim"
-                        tone={atLimit ? "critical" : undefined}
-                        variant={atLimit || nearLimit ? "primary" : "plain"}
-                        onClick={() => navigate("/plans")}
-                      >
-                        {atLimit || nearLimit ? "Upgrade plan" : "Manage plan"}
-                      </Button>
-                    </div>
-                  </InlineStack>
+                    </Box>
+                  </BlockStack>
                 )}
               </Box>
             </Card>

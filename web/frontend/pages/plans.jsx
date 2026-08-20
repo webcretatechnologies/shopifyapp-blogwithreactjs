@@ -278,13 +278,42 @@ export default function Plans() {
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
-                <InlineStack align="space-between">
-                  <Text as="h3" variant="headingMd">Plan Usage</Text>
-                  <Badge tone="info">{`${currentPlanTitle} Plan`}</Badge>
+                <InlineStack align="space-between" blockAlign="start" gap="400" wrap={false}>
+                  <BlockStack gap="050">
+                    <Text as="h3" variant="headingMd">Plan Usage</Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      {billingCycle?.renewsOn
+                        ? `Current billing period · resets ${formatDate(billingCycle.renewsOn)}`
+                        : `${currentPlanTitle} plan · limits don't reset each billing cycle`}
+                    </Text>
+                  </BlockStack>
+                  <InlineStack gap="200" blockAlign="center">
+                    <Badge tone={postsAtLimit ? "critical" : postsNearLimit ? "warning" : "success"}>
+                      {`${currentPlanTitle} Plan`}
+                    </Badge>
+                    {isFreePlanActive ? (
+                      nextPlan && (
+                        <Button
+                          size="slim"
+                          variant="primary"
+                          onClick={() => handleSubscribe(nextPlan.name)}
+                          loading={isSubmitting && submittingTier === nextPlan.name}
+                        >
+                          Upgrade
+                        </Button>
+                      )
+                    ) : (
+                      <Button
+                        size="slim"
+                        tone="critical"
+                        onClick={() => requestDowngrade(byPriceAsc[0])}
+                        disabled={!byPriceAsc[0]}
+                      >
+                        Downgrade
+                      </Button>
+                    )}
+                  </InlineStack>
                 </InlineStack>
-                <Text as="p" variant="bodySm" tone="subdued">
-                  These limits apply to your total usage on the {currentPlanTitle} plan and don't reset each billing cycle — upgrade for higher or unlimited limits.
-                </Text>
 
                 {anyUsageWarning && (
                   <Banner tone={postsAtLimit ? "critical" : "warning"}>
@@ -307,39 +336,37 @@ export default function Plans() {
                   </Banner>
                 )}
 
-                {billingCycle && (
-                  <Banner tone={billingCycle.isTrial ? "info" : "success"}>
+                {billingCycle?.isTrial && (
+                  <Banner tone="info">
                     <Text as="p" variant="bodySm">
-                      {billingCycle.isTrial ? (
-                        <>
-                          Free trial — <strong>{billingCycle.trialDaysRemaining} day{billingCycle.trialDaysRemaining === 1 ? "" : "s"} left</strong>
-                          {billingCycle.trialEndsAt ? `, then billing starts ${formatDate(billingCycle.trialEndsAt)}` : ""}.
-                        </>
-                      ) : billingCycle.renewsOn ? (
-                        <>Renews on <strong>{formatDate(billingCycle.renewsOn)}</strong>.</>
-                      ) : (
-                        "Active subscription."
-                      )}
-                      {billingCycle.isTestCharge && " (Test charge — no real payment will be collected.)"}
+                      Free trial — <strong>{billingCycle.trialDaysRemaining} day{billingCycle.trialDaysRemaining === 1 ? "" : "s"} left</strong>
+                      {billingCycle.trialEndsAt ? `, then billing starts ${formatDate(billingCycle.trialEndsAt)}` : ""}.
                     </Text>
                   </Banner>
                 )}
 
-                <BlockStack gap="200">
-                  <InlineStack align="space-between">
-                    <Text as="strong" variant="bodySm">Articles</Text>
-                    <Badge tone={postsAtLimit ? "critical" : postsNearLimit ? "warning" : "info"}>
-                      {postLimit === null ? "Unlimited" : `${postCount} of ${postLimit}`}
-                    </Badge>
-                  </InlineStack>
-                  <ProgressBar progress={usagePct} tone={usageTone(postsAtLimit, postsNearLimit)} size="small" />
-                  <InlineStack align="space-between" blockAlign="baseline">
-                    <Text as="strong" variant="bodySm">{postCount} article{postCount === 1 ? "" : "s"} created</Text>
-                    <Text as="p" variant="bodyXs" tone={postsAtLimit ? "critical" : postsNearLimit ? "caution" : "subdued"}>
-                      {postLimit === null ? "Unlimited" : postsAtLimit ? "Limit reached" : `${usagePct}% used`}
-                    </Text>
-                  </InlineStack>
-                </BlockStack>
+                <Box padding="300" background="bg-surface-secondary" borderRadius="200">
+                  <BlockStack gap="200">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text as="strong" variant="bodyMd">Articles</Text>
+                      {postLimit === null ? (
+                        <Badge>Unlimited</Badge>
+                      ) : (
+                        <Text as="span" variant="bodySm" tone="subdued">{postCount} / {postLimit}</Text>
+                      )}
+                    </InlineStack>
+                    <ProgressBar progress={postLimit === null ? 0 : usagePct} tone={usageTone(postsAtLimit, postsNearLimit)} size="small" />
+                    <InlineStack align="space-between" blockAlign="baseline">
+                      <Text as="span" variant="bodySm">
+                        <Text as="span" fontWeight="semibold">{postCount}</Text>
+                        <Text as="span" tone="subdued"> {postLimit === null ? "created" : postsAtLimit ? "— limit reached" : `${usagePct}% used`}</Text>
+                      </Text>
+                      <Text as="span" variant="bodySm" tone="subdued">
+                        {postLimit === null ? "∞" : Math.max(0, postLimit - postCount)}
+                      </Text>
+                    </InlineStack>
+                  </BlockStack>
+                </Box>
               </BlockStack>
             </Card>
           </Layout.Section>
