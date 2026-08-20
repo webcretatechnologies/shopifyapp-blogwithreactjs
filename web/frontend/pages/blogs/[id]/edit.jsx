@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../../../utils/smartBack";
 import {
   Page,
@@ -273,6 +274,11 @@ export default function EditBlog() {
 
   return (
     <Frame>
+      <TitleBar title={blogData?.title || originalData?.title || "Edit blog"}>
+        <button variant="breadcrumb" onClick={() => navigate("/blogs")}>
+          Blogs
+        </button>
+      </TitleBar>
       {/* SaveBar is rendered ONLY while there are unsaved changes. Because the
           element does not exist in the DOM otherwise, it can never appear on a
           fresh page load or refresh. window.shopify.saveBar.show/hide stays in

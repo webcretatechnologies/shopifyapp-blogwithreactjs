@@ -4,6 +4,7 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../utils/smartBack";
 import UpgradePrompt from "../components/UpgradePrompt";
 import {
@@ -242,6 +243,8 @@ export default function Analytics() {
   };
 
   return (
+    <>
+    <TitleBar title="Analytics" />
     <Page
       title="Analytics"
       subtitle="Comprehensive insights into your blog's performance — views, conversions, and more"
@@ -537,5 +540,6 @@ export default function Analytics() {
         </BlockStack>
       )}
     </Page>
+    </>
   );
 }

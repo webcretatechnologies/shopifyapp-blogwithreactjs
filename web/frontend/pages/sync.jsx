@@ -3,6 +3,7 @@
  */
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../utils/smartBack";
 import UpgradePrompt from "../components/UpgradePrompt";
 import {
@@ -316,6 +317,7 @@ export default function SyncDashboard() {
     );
   });    return (
     <Frame>
+      <TitleBar title="Sync Status" />
       {toast && (
         <Toast
           content={toast.content}

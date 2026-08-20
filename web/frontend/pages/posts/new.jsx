@@ -1810,7 +1810,7 @@ export default function PostEditor() {
         </div>
       )}
       <TitleBar title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}>
-        <button variant="breadcrumb" onClick={() => leaveEditor("/")}>
+        <button variant="breadcrumb" onClick={() => leaveEditor("/posts")}>
           Articles
         </button>
         <button

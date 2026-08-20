@@ -1074,7 +1074,7 @@ router.get("/shopify/blogs/:id", async (req, res) => {
     if (!session) return res.status(401).json({ error: "Unauthorized" });
 
     const client = new shopify.api.clients.Graphql({ session });
-    const gid = ArticleSyncService.gidFromNumericId(req.params.id, "Blog");
+    const gid = ArticleSyncService.toBlogGid(req.params.id);
 
     const result = await client.request(`
       query GetBlog($id: ID!) {
@@ -1155,7 +1155,7 @@ router.put("/shopify/blogs/:id", async (req, res) => {
     if (!session) return res.status(401).json({ error: "Unauthorized" });
     const { title, handle, commentPolicy, templateSuffix, seoTitle, seoDescription } = req.body;
     
-    const gid = ArticleSyncService.gidFromNumericId(req.params.id, "Blog");
+    const gid = ArticleSyncService.toBlogGid(req.params.id);
     const client = new shopify.api.clients.Graphql({ session });
     
     const input = {

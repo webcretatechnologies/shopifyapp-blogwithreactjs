@@ -4,6 +4,7 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../../utils/smartBack";
 import {
   Page,
@@ -204,6 +205,12 @@ export default function PostAnalytics() {
   };
 
   return (
+    <>
+    <TitleBar title={post?.title || "Post analytics"}>
+      <button variant="breadcrumb" onClick={() => navigate("/analytics")}>
+        Analytics
+      </button>
+    </TitleBar>
     <Page
       title={post?.title || "Post analytics"}
       titleMetadata={post?.status && <Badge tone={post.status === "published" ? "success" : "info"}>{post.status}</Badge>}
@@ -336,5 +343,6 @@ export default function PostAnalytics() {
         </BlockStack>
       )}
     </Page>
+    </>
   );
 }

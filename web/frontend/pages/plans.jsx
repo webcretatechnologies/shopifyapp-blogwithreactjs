@@ -19,6 +19,7 @@ import {
 import { CheckIcon } from "@shopify/polaris-icons";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../utils/smartBack";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 
@@ -238,6 +239,8 @@ export default function Plans() {
   const highestPrice = byPriceAsc.length ? Number(byPriceAsc[byPriceAsc.length - 1].price) : 0;
 
   return (
+    <>
+    <TitleBar title="Plans & Billing" />
     <Page
       title="Plans & Billing"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
@@ -562,5 +565,6 @@ export default function Plans() {
         error={error || undefined}
       />
     </Page>
+    </>
   );
 }

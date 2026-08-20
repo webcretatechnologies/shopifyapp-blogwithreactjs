@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../../utils/smartBack";
 import {
   Page,
@@ -238,6 +239,11 @@ export default function Blogs() {
 
   return (
     <Frame>
+      <TitleBar title="Blogs">
+        <button variant="breadcrumb" onClick={() => navigate("/posts")}>
+          Articles
+        </button>
+      </TitleBar>
       <Page
       title="Blogs"
       backAction={smartBackAction(navigate, location, "/posts", "Articles")}

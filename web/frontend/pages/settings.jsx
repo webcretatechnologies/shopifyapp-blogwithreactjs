@@ -29,6 +29,7 @@ import {
 } from "@shopify/polaris";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../utils/smartBack";
 import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
@@ -295,6 +296,7 @@ export default function Settings() {
 
   return (
     <Frame>
+      <TitleBar title="Settings" />
       {/* Rendered unconditionally, per Shopify's documented Save Bar pattern — visibility is
           controlled solely by shopify.saveBar.show()/hide() in the effect above, not by
           mounting/unmounting this element. */}

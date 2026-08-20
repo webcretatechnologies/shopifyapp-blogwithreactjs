@@ -35,6 +35,7 @@ import {
 } from "@shopify/polaris-icons";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../../../utils/smartBack";
 import UpgradePrompt from "../../../components/UpgradePrompt";
 
@@ -1089,6 +1090,11 @@ export default function PostTranslationPage() {
   if (featuresLoaded && !features.translations?.enabled) {
     return (
       <Frame>
+        <TitleBar title="Translate">
+          <button variant="breadcrumb" onClick={() => navigate(`/posts/${id}/edit`)}>
+            Back to Edit
+          </button>
+        </TitleBar>
         <Page title="Translate" backAction={{ onAction: () => navigate(-1) }}>
           <Layout>
             <Layout.Section>
@@ -1116,6 +1122,11 @@ export default function PostTranslationPage() {
 
   return (
     <Frame>
+      <TitleBar title="Translate Post">
+        <button variant="breadcrumb" onClick={() => navigate(`/posts/${id}/edit`)}>
+          Back to Edit
+        </button>
+      </TitleBar>
       {toast && (
         <Toast content={toast.content} error={toast.error} onDismiss={() => setToast(null)} />
       )}

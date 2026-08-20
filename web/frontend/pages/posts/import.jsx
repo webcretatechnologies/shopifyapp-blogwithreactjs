@@ -422,7 +422,11 @@ export default function ArticleImporter() {
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <Frame>
-      <TitleBar title="Import from Shopify" />
+      <TitleBar title="Import from Shopify">
+        <button variant="breadcrumb" onClick={() => navigate("/posts")}>
+          Articles
+        </button>
+      </TitleBar>
 
       {toastMessage && (
         <Toast
