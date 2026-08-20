@@ -2859,7 +2859,7 @@ export default function PostEditor() {
       >
         <Modal.Section>
           <BlockStack gap="400" align="center">
-            <div style={{ fontSize: "50px", textAlign: "center" }}>🏆</div>
+            <div style={{ fontSize: "50px", textAlign: "center", marginTop: "12px" }}>🏆</div>
             <Text variant="headingLg" as="h2" alignment="center">
               You've created your first blog post!
             </Text>
