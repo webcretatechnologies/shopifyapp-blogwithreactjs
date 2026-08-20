@@ -68,6 +68,53 @@ const VISIBILITY_CSS = `<style>
   @media (min-width: 1024px) { .builder-hide-desktop { display: none !important; } }
 </style>`;
 
+// Shopify strips every data-* attribute from body_html on save, so the data-type marker this
+// compiler stamps on each block's wrapper div (see compile()'s identity-wrapper block) does NOT
+// survive a round trip. ShopifyArticleParser's only remaining way to recognize a block on the way
+// back in is its CSS class — classes DO survive. Any block type whose rendered markup carries no
+// `builder-*` class is therefore unrecognizable after an echo, and the parser walks INTO it and
+// shreds it into whatever primitives it finds inside (a ProductSlider became 24 separate
+// Image/RichText blocks: one per product image, title link, price, and add-to-cart form).
+//
+// Only types whose own render function does not already emit its class are listed here — adding a
+// duplicate class to the outer wrapper for types that already self-tag (Heading, RichText,
+// Callout, Table, ButtonBlock, FaqBlock, TableOfContents) would nest two same-class elements and
+// change which one the parser matches, risking a regression in blocks that currently round-trip
+// correctly. Keys are the raw data-type values compile()'s switch dispatches on.
+const FALLBACK_CLASS_BY_TYPE = {
+  product_slider: "builder-product-slider",
+  ProductSlider: "builder-product-slider",
+  productGrid: "builder-product-grid",
+  ProductGrid: "builder-product-grid",
+  product_switcher: "builder-product-grid",
+  ProductSwitcher: "builder-product-grid",
+  collection: "builder-collection-block",
+  Collection: "builder-collection-block",
+  buyButton: "builder-buy-button",
+  BuyButton: "builder-buy-button",
+  product: "builder-buy-button",
+  Product: "builder-buy-button",
+  product_sidebar: "builder-buy-button",
+  ProductSidebar: "builder-buy-button",
+  featured_product: "builder-buy-button",
+  FeaturedProduct: "builder-buy-button",
+  ctaButton: "builder-cta-button",
+  CTAButton: "builder-cta-button",
+  heroBlock: "builder-hero-section",
+  HeroSection: "builder-hero-section",
+  imageBlock: "builder-image-block",
+  ImageBlock: "builder-image-block",
+  Image: "builder-image-block",
+  ProductCard: "builder-product-card",
+  Html: "builder-html-block",
+  videoBlock: "builder-video-embed",
+  VideoBlock: "builder-video-embed",
+  VideoEmbed: "builder-video-embed",
+  dividerBlock: "builder-divider",
+  Divider: "builder-divider",
+  Spacer: "builder-spacer",
+};
+
 function applyVisibilityWrapperServer(html, attrs) {
   // Not `if (!html) return html;` — html === "" is a legitimate case (TableOfContents with no
   // currently-matching headings) that still needs the wrapper div applied around its empty
@@ -565,6 +612,21 @@ export class EditorContentCompiler {
       // never from the wrapped markup itself, so the extra wrapper never affects re-editing.
       if (compiledHtml !== null) {
         const identityAttrs = [`data-type="${escapeHtml(type)}"`];
+        // Class marker alongside data-type — Shopify strips data-* on save, so this class is
+        // what actually survives the round trip and lets ShopifyArticleParser recognize the
+        // block instead of walking into it and shredding it. See FALLBACK_CLASS_BY_TYPE.
+        const fallbackClass = FALLBACK_CLASS_BY_TYPE[type];
+        const classes = fallbackClass ? [fallbackClass] : [];
+        // Collection blocks fetch their product list LIVE by collectionHandle on every render —
+        // unlike ProductSlider/ProductGrid, there's no fixed manualProducts list to reconstruct
+        // from rendered markup that would actually restore the original behavior. Encoding the
+        // handle into a second class (classes survive the data-* strip, same as the type class
+        // above) lets the parser restore the real live-collection block instead of freezing it
+        // into a static manualProducts snapshot of whatever happened to be in stock at sync time.
+        if ((type === "Collection" || type === "collection") && attrs.collectionHandle) {
+          classes.push(`builder-collection-handle--${encodeURIComponent(attrs.collectionHandle)}`);
+        }
+        if (classes.length > 0) identityAttrs.push(`class="${classes.join(" ")}"`);
         for (const [attrName, attrVal] of Object.entries(el.attribs)) {
           if (attrName.startsWith("data-") && attrName !== "data-type") {
             identityAttrs.push(`${attrName}="${escapeHtml(attrVal)}"`);
@@ -870,7 +932,11 @@ ${listHtml}
     return `<div style="${containerStyle}">` +
       backgroundHtml +
       `<div style="${contentStyle}">` +
-      (heading ? `<h2 style="${headingStyle}">${heading}</h2>` : "") +
+      // <h1>, not <h2> — matches both compileBlocksToHtml.js's client-side HeroSection markup and
+      // ShopifyArticleParser's own `$el.find("h1")` recovery lookup. This was previously <h2>,
+      // silently losing the heading text on every server-compiled round trip since the parser
+      // never found it (mismatched tag names, not a missing-class issue like ProductSlider).
+      (heading ? `<h1 style="${headingStyle}">${heading}</h1>` : "") +
       (subheading ? `<p style="${subheadingStyle}">${subheading}</p>` : "") +
       ctaHtml +
       `</div></div>`;

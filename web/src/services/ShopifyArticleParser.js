@@ -774,6 +774,57 @@ export class ShopifyArticleParser {
     return `<div class="${visClasses.join(" ")}">${blockHtml}</div>`;
   }
 
+  // Recovers the presentation settings (button color/text/radius, card style, price/button
+  // visibility, title alignment) for Collection/ProductSlider/ProductGrid from the exact markup
+  // shapes EditorContentCompiler.renderProductSlider/renderProductGrid/renderCollection produce —
+  // every card in those three uses the identical card/button/price structure, so one shared
+  // extraction covers all three. Falls back to each field's own compiler default when a value
+  // can't be found (e.g. the block currently has zero products, so there's no card to read from),
+  // matching the same default the block would fall back to on re-edit anyway.
+  static _extractProductBlockStyle($el, $) {
+    const settings = {};
+
+    const $titleEl = $el.find("h3").first();
+    if ($titleEl.length) {
+      const titleAlign = ($titleEl.attr("style") || "").match(/text-align:\s*([^;]+)/)?.[1]?.trim();
+      settings.titleAlign = titleAlign || "left";
+    }
+
+    const $button = $el.find('form[action="/cart/add"] button').first();
+    settings.showButton = $button.length > 0;
+    if ($button.length) {
+      const btnStyle = $button.attr("style") || "";
+      const bg = btnStyle.match(/background:\s*([^;]+)/)?.[1]?.trim();
+      const radius = btnStyle.match(/border-radius:\s*(\d+)px/)?.[1];
+      if (bg) settings.buttonColor = bg;
+      if (radius) settings.buttonRadius = parseInt(radius, 10);
+      const text = $button.text()?.trim();
+      if (text) settings.buttonText = text;
+    }
+
+    const $price = $el.find("div[style*='--blogger-primary-color']").first();
+    settings.showPrice = $price.length > 0;
+
+    // Card style is a preset (shadow/border/minimal) baked into the card wrapper's own inline
+    // style — matched by the distinguishing declaration each preset is the only one to use.
+    const $cardWrapper = $el.find("div[style*='border-radius'], div[style*='padding: 4px']").filter((_, cEl) => {
+      const s = $(cEl).attr("style") || "";
+      return s.includes("box-shadow") || (s.includes("border:") && s.includes("#e1e3e5")) || s.trim() === "padding: 4px;";
+    }).first();
+    const cardStyleAttr = $cardWrapper.attr("style") || "";
+    if (cardStyleAttr.includes("box-shadow")) settings.cardStyle = "shadow";
+    else if (cardStyleAttr.includes("border:")) settings.cardStyle = "border";
+    else if (cardStyleAttr.trim() === "padding: 4px;") settings.cardStyle = "minimal";
+
+    // Gap is only present on ProductSlider's horizontal scroll track, not ProductGrid/Collection
+    // (which use a CSS grid with no equivalent single-value gap in this markup) — harmless to
+    // look for unconditionally since it just won't match on those two.
+    const gapMatch = $el.find(".shopify-blog-product-slider").first().attr("style")?.match(/gap:\s*([^;]+)/);
+    if (gapMatch) settings.gap = gapMatch[1].trim();
+
+    return settings;
+  }
+
   static _parseFallbackSettings($el, blockType, $) {
     const settings = {};
     const style = $el.attr("style") || "";
@@ -845,7 +896,13 @@ export class ShopifyArticleParser {
         break;
       }
       case "Spacer": {
-        settings.height = parseStyle("height") || "40px";
+        // The height may sit on this element itself, or on an inner div when the block came back
+        // wrapped in EditorContentCompiler's identity/class wrapper (which carries no style of
+        // its own) — without the inner lookup every round-tripped spacer silently reset to 40px.
+        settings.height =
+          parseStyle("height") ||
+          $el.find("div[style*='height']").first().attr("style")?.match(/height:\s*([^;]+)/)?.[1]?.trim() ||
+          "40px";
         break;
       }
       case "Callout": {
@@ -969,25 +1026,104 @@ export class ShopifyArticleParser {
         }
         break;
       }
-      case "Collection":
+      case "Collection": {
+        // A Collection block fetches its products LIVE by handle on every render — the handle is
+        // encoded as a second class on the wrapper (see EditorContentCompiler's identity-wrap
+        // step) specifically so a round trip can restore the real live-collection block instead
+        // of freezing it into a static product snapshot from whatever was in stock at sync time.
+        const handleClass = ($el.attr("class") || "")
+          .split(/\s+/)
+          .find((c) => c.startsWith("builder-collection-handle--"));
+        if (handleClass) {
+          settings.collectionHandle = decodeURIComponent(handleClass.replace("builder-collection-handle--", ""));
+          settings.heading = $el.find("h3").first().text()?.trim() || "";
+          settings.title = settings.heading;
+          Object.assign(settings, ShopifyArticleParser._extractProductBlockStyle($el, $));
+          break;
+        }
+        // No handle recoverable (e.g. the block had never been given a collection, or predates
+        // this class) — fall through to the same rendered-markup recovery ProductSlider/
+        // ProductGrid use, so at least the products visible at sync time aren't lost entirely.
+      }
+      // eslint-disable-next-line no-fallthrough
       case "ProductSlider":
       case "ProductGrid": {
-        settings.title = $el.find("h3").first().text()?.trim() || "";
-        settings.heading = settings.title;
+        settings.title = settings.title || $el.find("h3").first().text()?.trim() || "";
+        settings.heading = settings.heading || settings.title;
         settings.manualProducts = [];
-        $el.find("div[style*='border']").each((_, pEl) => {
-          const $p = $(pEl);
-          const title = $p.find("h4").first().text()?.trim() || "";
-          const imageUrl = $p.find("img").first().attr("src") || "";
-          const price = $p.find("p").first().text()?.trim() || "";
-          if (title || imageUrl) {
+
+        // Presentation settings (button color/text/radius, card style, price/button visibility,
+        // title alignment, gap) — previously never recovered here, so every one of these silently
+        // reset to its default the moment a slider/grid round-tripped through Shopify: a custom
+        // black "Add to Cart" button came back Shopify-green (#008060), a bordered/minimal card
+        // style came back as the default drop-shadow style, etc. The structure survived (after
+        // the earlier fix) but every visual customization was being discarded on top of it.
+        Object.assign(settings, ShopifyArticleParser._extractProductBlockStyle($el, $));
+
+        // Anchored on the product links every rendered card contains, NOT on h4/p tags.
+        // EditorContentCompiler renders each card's title as an <a> inside a styled <div> and its
+        // price as a styled <div> — never h4/p — so the old lookup matched nothing and the block
+        // came back with zero products even when it was correctly recognized as a slider. The
+        // legacy h4/p shape is still handled as a fallback further below.
+        const seenHandles = new Set();
+        $el.find('a[href*="/products/"]').each((_, aEl) => {
+          const $a = $(aEl);
+          const href = $a.attr("href") || "";
+          const handle = href.split("/products/")[1]?.split(/[?#]/)[0];
+          if (!handle || seenHandles.has(handle)) return;
+          seenHandles.add(handle);
+
+          // Climb to the card container — the nearest ancestor holding both the image and a
+          // product link — so title/price/variant lookups stay scoped to this one product
+          // instead of picking up the next card's values.
+          let $card = $a.parent();
+          for (let i = 0; i < 6 && $card.length; i++) {
+            if ($card.find("img").length > 0 && $card.find('a[href*="/products/"]').length > 0) break;
+            $card = $card.parent();
+          }
+          if (!$card.length) $card = $a.parent();
+
+          let title = "";
+          $card.find(`a[href*="/products/${handle}"]`).each((_, t) => {
+            const txt = $(t).text()?.trim();
+            if (txt && !title) title = txt;
+          });
+          const $img = $card.find("img").first();
+          if (!title) title = $img.attr("alt") || "";
+
+          const price =
+            $card.find("div[style*='--blogger-primary-color']").first().text()?.trim() ||
+            $card.find("p").first().text()?.trim() ||
+            "";
+          const variantId = $card.find('input[name="id"]').first().attr("value") || "";
+
+          if (title || $img.attr("src")) {
             settings.manualProducts.push({
               title,
-              image: imageUrl,
-              price: price.replace(/[₹$]/g, "")
+              handle,
+              image: $img.attr("src") || "",
+              price: price.replace(/[₹$]/g, "").trim(),
+              ...(variantId ? { variantId } : {}),
             });
           }
         });
+
+        // Legacy shape: older compiled markup used an h4 title + p price with no product links.
+        if (settings.manualProducts.length === 0) {
+          $el.find("div[style*='border']").each((_, pEl) => {
+            const $p = $(pEl);
+            const title = $p.find("h4").first().text()?.trim() || "";
+            const imageUrl = $p.find("img").first().attr("src") || "";
+            const price = $p.find("p").first().text()?.trim() || "";
+            if (title || imageUrl) {
+              settings.manualProducts.push({
+                title,
+                image: imageUrl,
+                price: price.replace(/[₹$]/g, "")
+              });
+            }
+          });
+        }
         break;
       }
       case "ProductCard": {

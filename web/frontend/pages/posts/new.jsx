@@ -1401,6 +1401,10 @@ export default function PostEditor() {
       setError("Article title is required.");
       return;
     }
+    if (!shopifyBlogId) {
+      setError("Select a blog before saving — Publish to Shopify needs to know which blog this article belongs to.");
+      return;
+    }
     if (source === "header") setIsSavingHeader(true);
     else if (source === "sidebar") setIsSavingSidebar(true);
     else if (source === "savebar") setIsSavingSaveBar(true);
@@ -2496,7 +2500,7 @@ export default function PostEditor() {
                       {/* Blog — Shopify-style searchable Combobox */}
                       <BlockStack gap="100">
                         <Text variant="bodyMd" fontWeight="medium" as="label">
-                          Blog
+                          Blog <Text as="span" tone="critical">*</Text>
                         </Text>
                         <Combobox
                           activator={
