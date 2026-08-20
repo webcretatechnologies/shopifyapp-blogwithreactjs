@@ -15,6 +15,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
+import * as cheerio from "cheerio";
 import shopify from "../../shopify.js";
 import { EditorContentCompiler } from "./EditorContentCompiler.js";
 import { ShopifyArticleParser } from "./ShopifyArticleParser.js";
@@ -249,6 +250,32 @@ function htmlHash(value) {
 }
 
 /**
+ * Strips every data-* attribute from HTML before hashing — Shopify strips data-* attributes
+ * from body_html on save (confirmed live, see ShopifyArticleParser.js), so the HTML we push
+ * (which carries data-* markers for hide-on-device, block identity, etc.) never byte-matches
+ * what Shopify echoes back on the next fetch. Without this normalization, computeContentHash's
+ * outbound and inbound hashes for the same unchanged content would differ on essentially every
+ * article with real builder blocks, permanently breaking echo suppression and misclassifying
+ * every push as if Shopify had just edited the article. Falls back to the raw string if parsing
+ * fails, rather than throwing — hashing is a best-effort dedupe signal, not correctness-critical.
+ */
+function stripDataAttributesForHash(html) {
+  if (!html) return "";
+  try {
+    const $ = cheerio.load(html, null, false);
+    $("*").each((_, el) => {
+      if (!el.attribs) return;
+      Object.keys(el.attribs).forEach((attr) => {
+        if (attr.startsWith("data-")) delete el.attribs[attr];
+      });
+    });
+    return $.html();
+  } catch {
+    return html;
+  }
+}
+
+/**
  * Compute a composite content hash from article fields (legacy, for echo suppression).
  */
 function computeContentHash(fields) {
@@ -261,7 +288,7 @@ function computeContentHash(fields) {
 
   const normalized = {
     title: (fields.title || "").trim(),
-    body_html: (fields.body_html || "").trim(),
+    body_html: stripDataAttributesForHash((fields.body_html || "").trim()),
     author: (fields.author || "").trim(),
     published: !!fields.published,
     published_at: fields.published_at || null,
@@ -1466,7 +1493,14 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
       const remoteUpdatedAt = parseRemoteUpdatedAt(payload);
       const remoteIsNewer = isRemoteNewerThanLastSync(remoteUpdatedAt, link);
 
-      if (inboundHash === link.lastOutboundHash && !remoteIsNewer) {
+      // Hash equality is checked unconditionally, not gated on `!remoteIsNewer` — writeSyncMarker
+      // writes a metafield to the article right after every push, and Shopify bumps the article's
+      // updatedAt when its metafields change. That made `remoteIsNewer` come back true on the very
+      // next reconcile poll even though content was byte-identical to what we just pushed,
+      // bypassing this echo check and misclassifying the sync as "edited directly in Shopify"
+      // when nothing had actually changed. The content hash is the authoritative signal for
+      // "did anything really change" — a timestamp bump from our own metafield write isn't that.
+      if (inboundHash === link.lastOutboundHash) {
         await logSyncEvent({
           shopId: shop.id, postId: link.postId, shopifyArticleId,
           direction: "shopify_to_app", eventType: "webhook",
@@ -1728,10 +1762,12 @@ async function reconcilePost(postId) {
     const remoteUpdatedAt = parseRemoteUpdatedAt(remote);
     const remoteIsNewer = isRemoteNewerThanLastSync(remoteUpdatedAt, link);
 
-    if (!remoteIsNewer) {
-      if (inboundHash === link.lastOutboundHash || inboundHash === link.lastInboundHash) {
-        return { status: "in_sync" };
-      }
+    // Hash equality checked unconditionally (not gated on `!remoteIsNewer`) — see the matching
+    // comment in _handleArticleWebhookInner's echo suppression above. writeSyncMarker's metafield
+    // write after every push bumps Shopify's article.updatedAt, so remoteIsNewer alone is not
+    // reliable proof of a real edit; the content hash is.
+    if (inboundHash === link.lastOutboundHash || inboundHash === link.lastInboundHash) {
+      return { status: "in_sync" };
     }
 
     if (remoteIsNewer || (inboundHash !== link.lastInboundHash && inboundHash !== link.lastOutboundHash)) {
