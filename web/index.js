@@ -271,6 +271,42 @@ app.post(
 
 
 
+// Must match extensions/analytics-tracker/assets/tracker.js's ATTRIBUTION_TTL_MS exactly — both
+// sides bound the same "how long does a blog visit stay eligible to get credit" window. Without
+// this, blogger_source_post_id had no expiry at all: the cart attribute lives for the whole cart
+// (Shopify's own ~10 day default), so a single blog visit silently credited every later order
+// placed from that cart — even a completely unrelated purchase days later with no further blog
+// interaction. Confirmed in production: a plain "open site → product page → checkout" purchase
+// was counted as blog revenue purely because of a stale attribute from an earlier article visit.
+const ATTRIBUTION_TTL_MS = 30 * 60 * 1000;
+
+// Parses the blogger_source_post_id cart/order attribute — written by tracker.js as
+// JSON.stringify({postId, ts}) — and returns the postId only if it's within the attribution
+// window, null otherwise (including for the pre-fix plain-numeric format, which carries no
+// timestamp to validate against and must not be trusted as if it were always fresh).
+// The cart attribute is only ever written by tracker.js once a matched add-to-cart has already
+// confirmed attribution client-side (see extensions/analytics-tracker/assets/tracker.js's
+// maybeConfirmFromAddToCart) — never on a bare article view. So by the time an order/checkout
+// carries this attribute at all, product-relevance has already been verified; this only needs to
+// re-check that the confirmation is still fresh. Deliberately does NOT read order/checkout line
+// items to re-verify product-relevance server-side — see ORDERS_CREATE's own docblock on why this
+// app avoids reading line items (Shopify's Protected Customer Data approval tier).
+function parseAttributedPostId(rawValue) {
+  if (!rawValue) return null;
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (parsed && parsed.postId != null && typeof parsed.ts === "number") {
+      if (Date.now() - parsed.ts > ATTRIBUTION_TTL_MS) return null;
+      const postId = Number(parsed.postId);
+      return Number.isInteger(postId) ? postId : null;
+    }
+  } catch {
+    // Not JSON — either a malformed value or the pre-fix plain-numeric format. Either way there's
+    // no timestamp to check freshness against, so it can't be trusted.
+  }
+  return null;
+}
+
 app.post(
   shopify.config.webhooks.path,
   shopify.processWebhooks({ webhookHandlers: {
@@ -370,10 +406,8 @@ app.post(
             const order = JSON.parse(body);
             const attrs = Array.isArray(order.note_attributes) ? order.note_attributes : [];
             const postIdAttr = attrs.find((a) => a.name === "blogger_source_post_id")?.value;
-            if (!postIdAttr) return; // Order not attributed to any blog post — not an error.
-
-            const postId = Number(postIdAttr);
-            if (!Number.isInteger(postId)) return;
+            const postId = parseAttributedPostId(postIdAttr);
+            if (!postId) return; // Not attributed to any blog post, or the attribution expired.
 
             // Idempotency — Shopify webhook delivery is at-least-once; redelivery on a timeout
             // or transient non-2xx must not double-count the same order's conversion.
@@ -427,10 +461,8 @@ app.post(
             const checkout = JSON.parse(body);
             const attrs = Array.isArray(checkout.note_attributes) ? checkout.note_attributes : [];
             const postIdAttr = attrs.find((a) => a.name === "blogger_source_post_id")?.value;
-            if (!postIdAttr) return; // Checkout not attributed to any blog post — not an error.
-
-            const postId = Number(postIdAttr);
-            if (!Number.isInteger(postId)) return;
+            const postId = parseAttributedPostId(postIdAttr);
+            if (!postId) return; // Not attributed to any blog post, or the attribution expired.
 
             const shopRecord = await prisma.shop.findUnique({ where: { domain: shop } });
             if (!shopRecord) return;

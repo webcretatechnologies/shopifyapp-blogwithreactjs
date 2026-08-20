@@ -12,7 +12,7 @@
 import { useState } from 'react';
 import { BlockStack, TextField, Select, Text, Checkbox, Spinner, InlineStack } from '@shopify/polaris';
 import { useShopifyProducts } from '../../../../hooks/useShopifyProducts.js';
-import { useShopifyStoreCurrency } from '../../../../hooks/useShopifyProducts.js';
+import { useShopifyStoreCurrency, fetchRealProductData } from '../../../../hooks/useShopifyProducts.js';
 import { formatPrice } from '../../../../utils/priceUtils.js';
 
 // ── Preview ───────────────────────────────────────────────────────────────────
@@ -138,15 +138,24 @@ export function ProductGridBlockSettings({ block, onUpdate }) {
       selectionIds: initialSelection,
     });
     if (selection) {
-      const picked = selection.map(p => ({
-        shopifyProductId: p.id,
-        title: p.title,
-        handle: p.handle,
-        image: p.images?.[0]?.originalSrc || p.featuredImage?.url || null,
-        price: p.variants?.[0]?.price || null,
-        variantId: p.variants?.[0]?.id || null,
-        currency: storeCurrency || 'USD',
-      }));
+      // resourcePicker doesn't reliably populate variants for every product — some come back with
+      // an empty/missing variants array even though the product has a real, purchasable variant.
+      // Trusting p.variants?.[0] directly stored variantId: null for those, which later fails
+      // "Add to Cart" on the storefront with "Cannot find variant". Re-fetching the real
+      // first-variant data right after picking guarantees every stored product is complete.
+      const realData = await fetchRealProductData(selection.map(p => p.id));
+      const picked = selection.map(p => {
+        const real = realData.get(p.id);
+        return {
+          shopifyProductId: p.id,
+          title: real?.title || p.title,
+          handle: real?.handle || p.handle,
+          image: real?.image || p.images?.[0]?.originalSrc || p.featuredImage?.url || null,
+          price: real?.price ?? p.variants?.[0]?.price ?? null,
+          variantId: real?.variantId ?? p.variants?.[0]?.id ?? null,
+          currency: storeCurrency || 'USD',
+        };
+      });
       onUpdate({ manualProducts: picked });
     }
   };

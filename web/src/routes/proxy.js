@@ -7,6 +7,7 @@ import {
   trackEvent,
   hashVisitor,
   validateEventValue,
+  extractFeaturedProductRefs,
 } from "../services/AnalyticsTrackingService.js";
 
 const router = express.Router();
@@ -83,7 +84,15 @@ router.post("/resolve", express.json(), verifyProxySignature, async (req, res) =
     const postId = await resolvePostIdByShopifyId(shopifyArticleId);
     if (!postId) return res.status(404).json({ error: "Post not synced" });
 
-    res.json({ success: true, postId });
+    // Product/variant IDs actually featured in this post — lets tracker.js (and the
+    // ORDERS_CREATE/CHECKOUTS_CREATE webhooks server-side) restrict attribution to purchases that
+    // genuinely involve something shown in the post, not just "happened while the time-window
+    // attribution was still active". See extractFeaturedProductRefs's own docblock for the one
+    // known gap (live Collection blocks aren't included).
+    const post = await prisma.post.findUnique({ where: { id: postId }, select: { contentJson: true } });
+    const { productIds, variantIds } = extractFeaturedProductRefs(post?.contentJson);
+
+    res.json({ success: true, postId, productIds, variantIds });
   } catch (err) {
     console.error("[Proxy] Resolve error:", err);
     res.status(500).json({ error: "Server error" });

@@ -736,6 +736,64 @@ export async function getPostAnalytics(postId, shopId, rangeOrDays = 30) {
   return buildAnalyticsPayload({ postId, post: { shopId } }, resolveRange(rangeOrDays));
 }
 
+// ─── Featured-product extraction (blog-driven purchase attribution) ────────
+
+const PRODUCT_ID_KEYS = ["shopifyProductId", "productId"];
+
+function numericIdFromAny(raw) {
+  if (raw == null) return null;
+  const match = String(raw).match(/\d+$/);
+  return match ? match[0] : null;
+}
+
+/**
+ * Walks a post's contentJson looking for ProductSlider/ProductGrid/ProductCard/BuyButton blocks
+ * and returns the numeric Shopify product IDs and variant IDs of every product actually featured
+ * in the post — i.e. what "this purchase specifically came from the blog post" should mean, not
+ * just "happened within some time window of viewing it".
+ *
+ * Collection blocks are deliberately NOT included — they fetch their product list LIVE from
+ * Shopify on every render (see EditorContentCompiler.renderCollection), so there's no fixed set
+ * of products to check without an extra live API call per event. A purchase driven purely by a
+ * live Collection block therefore won't be product-matched; this is a known, accepted gap rather
+ * than an oversight.
+ */
+export function extractFeaturedProductRefs(contentJson) {
+  const productIds = new Set();
+  const variantIds = new Set();
+
+  const visitProductList = (list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((p) => {
+      for (const key of PRODUCT_ID_KEYS) {
+        const pid = numericIdFromAny(p?.[key]);
+        if (pid) productIds.add(pid);
+      }
+      const vid = numericIdFromAny(p?.variantId);
+      if (vid) variantIds.add(vid);
+    });
+  };
+
+  const walk = (blocks) => {
+    if (!Array.isArray(blocks)) return;
+    blocks.forEach((b) => {
+      if (!b || typeof b !== "object") return;
+      const s = b.settings || {};
+      if (["ProductSlider", "ProductGrid", "ProductCard"].includes(b.type)) {
+        visitProductList(s.manualProducts);
+        // ProductCard stores a single product directly on settings, not in a manualProducts array.
+        if (b.type === "ProductCard") visitProductList([s]);
+      } else if (b.type === "BuyButton") {
+        visitProductList([s.product || s]);
+      }
+      if (Array.isArray(b.children)) walk(b.children);
+    });
+  };
+
+  walk(contentJson);
+  return { productIds: [...productIds], variantIds: [...variantIds] };
+}
+
 // ─── Helper ──────────────────────────────────────────────────────────────
 
 function parseJsonField(field) {

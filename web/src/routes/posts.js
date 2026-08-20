@@ -1035,7 +1035,60 @@ router.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-// ─── GET /api/posts/shopify/blogs — Fetch Shopify blogs list ─────────────────
+// ─── POST /api/posts/shopify/products/by-ids — Real variant data for picked products ──────────
+// App Bridge's resourcePicker doesn't reliably return each product's variants array populated
+// (some products come back with variants missing or empty, even though the product itself has a
+// real, purchasable variant) — trusting p.variants?.[0] directly from the picker's response was
+// silently storing variantId: null for those products, which is why "Add to Cart" later fails
+// with "Cannot find variant" for exactly the products the picker under-reported. This re-fetches
+// the real first-variant id/price straight from the Admin API right after the merchant picks, so
+// every stored product always has real data regardless of what the picker returned inline.
+router.post("/shopify/products/by-ids", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+
+    const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
+    if (ids.length === 0) return res.json({ products: [] });
+
+    const gids = ids.map((id) => (String(id).startsWith("gid://") ? id : `gid://shopify/Product/${id}`));
+
+    const client = new shopify.api.clients.Graphql({ session });
+    const result = await client.request(`
+      query GetProductsByIds($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          id
+          ... on Product {
+            title
+            handle
+            descriptionHtml
+            featuredImage { url }
+            variants(first: 1) {
+              edges { node { id price } }
+            }
+          }
+        }
+      }
+    `, { variables: { ids: gids } });
+
+    const products = (result.data?.nodes || [])
+      .filter(Boolean)
+      .map((n) => ({
+        shopifyProductId: n.id,
+        title: n.title,
+        handle: n.handle,
+        image: n.featuredImage?.url || null,
+        price: n.variants?.edges?.[0]?.node?.price || null,
+        variantId: n.variants?.edges?.[0]?.node?.id || null,
+        description: n.descriptionHtml?.replace(/<[^>]+>/g, "").slice(0, 200) || "",
+      }));
+
+    res.json({ products });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── GET /api/posts/shopify/blogs — Fetch Shopify blogs list ─────────────────
 router.get("/shopify/blogs", async (req, res) => {
   try {

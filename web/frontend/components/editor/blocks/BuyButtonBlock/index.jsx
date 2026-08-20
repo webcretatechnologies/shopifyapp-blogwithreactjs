@@ -11,7 +11,7 @@
  */
 import { BlockStack, TextField, Select, Text, Checkbox } from '@shopify/polaris';
 import { formatPrice } from '../../../../utils/priceUtils.js';
-import { useShopifyStoreCurrency } from '../../../../hooks/useShopifyProducts.js';
+import { useShopifyStoreCurrency, fetchRealProductData } from '../../../../hooks/useShopifyProducts.js';
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 
@@ -173,16 +173,20 @@ export function BuyButtonBlockSettings({ block, onUpdate }) {
     });
     if (selection?.[0]) {
       const p = selection[0];
+      // resourcePicker doesn't reliably populate variants for every product — see
+      // fetchRealProductData's docblock. Re-fetching guarantees the stored product is complete.
+      const realData = await fetchRealProductData([p.id]);
+      const real = realData.get(p.id);
       onUpdate({
         product: {
           shopifyProductId: p.id,
-          title: p.title,
-          handle: p.handle,
-          image: p.images?.[0]?.originalSrc || null,
-          price: p.variants?.[0]?.price || null,
-          variantId: p.variants?.[0]?.id || null,
+          title: real?.title || p.title,
+          handle: real?.handle || p.handle,
+          image: real?.image || p.images?.[0]?.originalSrc || null,
+          price: real?.price ?? p.variants?.[0]?.price ?? null,
+          variantId: real?.variantId ?? p.variants?.[0]?.id ?? null,
           currency: storeCurrency || 'USD', // Resource picker doesn't return currency, use store default
-          description: p.descriptionHtml?.replace(/<[^>]+>/g, '').slice(0, 200) || '',
+          description: real?.description || p.descriptionHtml?.replace(/<[^>]+>/g, '').slice(0, 200) || '',
         },
       });
     }

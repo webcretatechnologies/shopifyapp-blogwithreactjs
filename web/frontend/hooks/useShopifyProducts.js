@@ -54,6 +54,36 @@ export function useShopifyStoreCurrency() {
 }
 
 /**
+ * Re-fetches real product/variant data straight from the Admin API for a set of product GIDs —
+ * used right after window.shopify.resourcePicker resolves, since the picker doesn't reliably
+ * populate each product's variants array (some products come back with it empty/missing even
+ * though they have a real, purchasable variant). Trusting the picker's own variants field
+ * directly was silently storing variantId: null for those products, which later fails "Add to
+ * Cart" on the storefront with "Cannot find variant". Used by ProductGridBlock, ProductSliderBlock,
+ * and BuyButtonBlock's product pickers.
+ *
+ * @param {string[]} productIds - Shopify product GIDs from the resourcePicker selection
+ * @returns {Promise<Map<string, {title, handle, image, price, variantId}>>} keyed by product GID
+ */
+export async function fetchRealProductData(productIds) {
+  const map = new Map();
+  if (!productIds || productIds.length === 0) return map;
+  try {
+    const res = await fetch('/api/posts/shopify/products/by-ids', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: productIds }),
+    });
+    if (!res.ok) return map;
+    const data = await res.json();
+    (data.products || []).forEach((p) => map.set(p.shopifyProductId, p));
+  } catch {
+    // Swallow — callers already fall back to whatever the resourcePicker itself returned.
+  }
+  return map;
+}
+
+/**
  * Fetch products with optional text search.
  * @param {string} query   - Shopify search query string
  * @param {number} limit   - Max results (default 20)

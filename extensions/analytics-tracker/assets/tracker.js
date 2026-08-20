@@ -1,6 +1,12 @@
 (function() {
   const PROXY_URL = '/apps/blog-analytics';
 
+  // How long a "candidate" blog-post visit stays eligible to be CONFIRMED as the source of a
+  // later add-to-cart, and separately, how long a CONFIRMED attribution stays eligible to credit
+  // a later checkout/conversion. Both here (sessionStorage) and server-side (the cart attribute
+  // read by ORDERS_CREATE/CHECKOUTS_CREATE in index.js) MUST use this exact same window.
+  const ATTRIBUTION_TTL_MS = 30 * 60 * 1000;
+
   function generateHash() {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   }
@@ -14,28 +20,63 @@
     return sid;
   }
 
+  // ── CONFIRMED attribution — set ONLY by a genuine matched add-to-cart (see below), never by
+  // merely viewing an article. This is what checkout/conversion tracking reads. ──────────────
   function getSourcePostId() {
-    return sessionStorage.getItem('blogger_source_post_id');
-  }
-
-  function setSourcePostId(id) {
-    if (id) {
-      sessionStorage.setItem('blogger_source_post_id', id);
+    const id = sessionStorage.getItem('blogger_source_post_id');
+    if (!id) return null;
+    const ts = Number(sessionStorage.getItem('blogger_source_post_ts') || 0);
+    if (!ts || Date.now() - ts > ATTRIBUTION_TTL_MS) {
+      sessionStorage.removeItem('blogger_source_post_id');
+      sessionStorage.removeItem('blogger_source_post_ts');
+      return null;
     }
+    return id;
   }
 
-  // Carries attribution through Shopify's checkout for stores where checkout/thank-you pages
-  // are Shopify-hosted and never load this script at all (standard, non-Plus stores). Cart
+  function confirmSourcePostId(id) {
+    if (!id) return;
+    sessionStorage.setItem('blogger_source_post_id', id);
+    sessionStorage.setItem('blogger_source_post_ts', String(Date.now()));
+  }
+
+  // ── CANDIDATE attribution — refreshed on every article-page view. Represents "which post
+  // might a purchase be credited to, IF the visitor goes on to add one of its featured products".
+  // Never read directly by checkout/conversion tracking — only used to decide whether an
+  // add-to-cart action should be promoted to a CONFIRMED attribution. ──────────────────────────
+  function setCandidate(postId, productIds, variantIds) {
+    sessionStorage.setItem('blogger_candidate_post_id', String(postId));
+    sessionStorage.setItem('blogger_candidate_ts', String(Date.now()));
+    sessionStorage.setItem('blogger_candidate_product_ids', JSON.stringify(productIds || []));
+    sessionStorage.setItem('blogger_candidate_variant_ids', JSON.stringify(variantIds || []));
+  }
+
+  function getCandidate() {
+    const postId = sessionStorage.getItem('blogger_candidate_post_id');
+    if (!postId) return null;
+    const ts = Number(sessionStorage.getItem('blogger_candidate_ts') || 0);
+    if (!ts || Date.now() - ts > ATTRIBUTION_TTL_MS) return null;
+    let productIds = [];
+    let variantIds = [];
+    try { productIds = JSON.parse(sessionStorage.getItem('blogger_candidate_product_ids') || '[]'); } catch (e) {}
+    try { variantIds = JSON.parse(sessionStorage.getItem('blogger_candidate_variant_ids') || '[]'); } catch (e) {}
+    return { postId: postId, productIds: productIds, variantIds: variantIds };
+  }
+
+  // Carries CONFIRMED attribution through Shopify's checkout for stores where checkout/thank-you
+  // pages are Shopify-hosted and never load this script at all (standard, non-Plus stores). Cart
   // attributes are Shopify's own mechanism for exactly this: they survive through checkout
   // untouched and land in the resulting order's note_attributes, where a server-side webhook
   // (orders/create) reads them back out — no client script needs to run anywhere near checkout.
-  // Fire-and-forget; /cart/update.js auto-creates a cart if none exists yet, so this is safe to
-  // call before any item has been added.
+  // Only ever called once a matched add-to-cart has confirmed attribution (see below) — never on
+  // a bare article view — so its mere presence on an order already implies product-relevance; the
+  // server-side webhook doesn't need (and, per its own docblock, deliberately avoids requesting
+  // access to) each order's line items to re-verify that.
   function writeCartAttribute(postId) {
     fetch('/cart/update.js', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ attributes: { blogger_source_post_id: String(postId) } })
+      body: JSON.stringify({ attributes: { blogger_source_post_id: JSON.stringify({ postId: postId, ts: Date.now() }) } })
     }).catch(function () {});
   }
 
@@ -78,7 +119,8 @@
     // view unconditionally on every load with zero merchant setup required. This tracker is
     // opt-in per merchant (theme app embed), so it previously ALSO counted a view here,
     // double-counting every article view whenever a merchant had the embed enabled. This only
-    // resolves the post ID so funnel events below can still be attributed correctly.
+    // resolves the post ID (and its featured products) so funnel events below can be attributed
+    // to the right post AND restricted to purchases that actually involve what's in it.
     if (window.BloggerAnalytics.template === 'article' && window.BloggerAnalytics.articleId) {
       const articleId = window.BloggerAnalytics.articleId;
 
@@ -95,9 +137,13 @@
         return res.json();
       })
       .then(data => {
+        // Viewing the post only ever makes it a CANDIDATE — attribution isn't confirmed (and
+        // nothing is written to the cart) until a matching add-to-cart actually happens. This is
+        // what stops an unrelated purchase made later in the same session/cart from silently
+        // being counted as blog-driven, which is exactly what "any checkout on the site
+        // increments revenue" turned out to be caused by.
         if (data && data.postId) {
-          setSourcePostId(data.postId); // Store internal ID for funnel events
-          writeCartAttribute(data.postId); // Carries attribution through checkout server-side
+          setCandidate(data.postId, data.productIds, data.variantIds);
         }
       })
       .catch(e => console.error("Analytics resolve failed:", e));
@@ -119,6 +165,51 @@
   // skip its own report — so a single stale sync silently killed add_to_cart tracking entirely,
   // with no fallback. One reliable mechanism beats two mechanisms that can disable each other.
 
+  // Extracts the variant id(s) a /cart/add request is actually adding, from whatever shape the
+  // request body happens to be in (Shopify's AJAX Cart API accepts all of these). Returns an
+  // array of strings; empty if the shape can't be parsed — callers treat "couldn't verify" as "no
+  // match" rather than assuming a match, since the whole point of this is to stop over-crediting.
+  function extractVariantIdsFromCartAddBody(body) {
+    if (!body) return [];
+    try {
+      if (typeof body === 'string') {
+        try {
+          const json = JSON.parse(body);
+          if (Array.isArray(json.items)) return json.items.map(function (i) { return String(i.id); });
+          if (json.id != null) return [String(json.id)];
+        } catch (e) {
+          const params = new URLSearchParams(body);
+          const id = params.get('id');
+          if (id) return [id];
+        }
+      } else if (typeof FormData !== 'undefined' && body instanceof FormData) {
+        const id = body.get('id');
+        if (id) return [String(id)];
+      } else if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) {
+        const id = body.get('id');
+        if (id) return [id];
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  // The one place a candidate gets promoted to a confirmed attribution — called by every
+  // add-to-cart interception point below with whatever variant id(s) it managed to extract.
+  // Matches by variant id (what /cart/add actually receives), not product id, since a request
+  // only ever carries the specific variant being added.
+  function maybeConfirmFromAddToCart(variantIds) {
+    const candidate = getCandidate();
+    if (!candidate) return false;
+    const matched = variantIds.length > 0 && variantIds.some(function (vid) {
+      return candidate.variantIds.indexOf(vid) !== -1;
+    });
+    if (!matched) return false;
+    confirmSourcePostId(candidate.postId);
+    writeCartAttribute(candidate.postId);
+    sendEvent(candidate.postId, 'add_to_cart');
+    return true;
+  }
+
   // --- Bug 2: Patch Fetch Interceptor Crash ---
   const originalFetch = window.fetch;
   window.fetch = async function(...args) {
@@ -135,8 +226,8 @@
       }
 
       if (urlStr && urlStr.includes('/cart/add')) {
-        const postId = getSourcePostId();
-        if (postId) sendEvent(postId, 'add_to_cart');
+        const body = args[1] && args[1].body;
+        maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(body));
       }
       return response;
     } catch (e) {
@@ -147,21 +238,27 @@
 
   // --- Bug 3: Add Legacy AJAX (XMLHttpRequest) Fallback ---
   const originalXHR = window.XMLHttpRequest.prototype.open;
+  const originalXHRSend = window.XMLHttpRequest.prototype.send;
   window.XMLHttpRequest.prototype.open = function(method, url) {
     if (typeof url === 'string' && url.includes('/cart/add')) {
-      this.addEventListener('load', function() {
-        const postId = getSourcePostId();
-        if (postId) sendEvent(postId, 'add_to_cart');
-      });
+      this._blogger_isCartAdd = true;
     }
     return originalXHR.apply(this, arguments);
+  };
+  window.XMLHttpRequest.prototype.send = function(body) {
+    if (this._blogger_isCartAdd) {
+      const self = this;
+      this.addEventListener('load', function() {
+        maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(body));
+      });
+    }
+    return originalXHRSend.apply(this, arguments);
   };
 
   // 4. Track Add To Cart via standard Form Submit
   document.addEventListener('submit', function(e) {
     if (e.target.action && e.target.action.includes('/cart/add')) {
-      const postId = getSourcePostId();
-      if (postId) sendEvent(postId, 'add_to_cart');
+      maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(new FormData(e.target)));
     }
   });
 
@@ -227,6 +324,11 @@
   // the visitor got there (ordinary button, accelerated/iframe checkout button, JS redirect, back
   // button, direct URL). This is the same "check where we actually are" pattern already used for
   // the thank-you page below, and is what actually guarantees checkout gets counted.
+  //
+  // Note this (and the thank-you tracking below) only ever fires for a CONFIRMED attribution
+  // (getSourcePostId) — i.e. only once a matching add-to-cart already happened this session. A
+  // visitor who checks out with only unrelated products in their cart has no confirmed
+  // attribution at all, so nothing is tracked here regardless of how recently they read a post.
   if (window.location.pathname.includes('/checkout') && !window.location.pathname.includes('/thank_you')) {
     if (!sessionStorage.getItem('blogger_tracked_checkout')) {
       const postId = getSourcePostId();
@@ -245,7 +347,7 @@
       if (postId) {
         let revenue = 0;
         let currency = 'USD';
-        
+
         if (window.Shopify && window.Shopify.checkout) {
           const priceStr = String(window.Shopify.checkout.total_price || '0');
           const parsedPrice = parseFloat(priceStr);
@@ -260,7 +362,7 @@
             revenue = parseFloat(priceText) || 0;
           }
         }
-        
+
         sendEvent(postId, 'conversion', revenue, currency);
         sessionStorage.setItem('blogger_tracked_order', 'true');
         // Clear source post session after successful conversion
