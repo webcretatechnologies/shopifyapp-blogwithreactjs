@@ -34,6 +34,7 @@ import {
 import ReactApexChart from "react-apexcharts";
 import KpiRow from "../components/common/KpiRow";
 import AnalyticsChart from "../components/analytics/AnalyticsChart";
+import TopPerformingPostsList from "../components/analytics/TopPerformingPostsList";
 import SetupGuide from "../components/SetupGuide";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
 import { analyticsTrackerActivateUrl } from "../utils/themeEmbedUtils";
@@ -582,41 +583,10 @@ export default function Dashboard() {
                       {analyticsLoading ? (
                         <SkeletonBodyText lines={4} />
                       ) : analytics?.topPosts?.length > 0 ? (
-                        <BlockStack gap="300">
-                          {analytics.topPosts.slice(0, 5).map((post) => (
-                            <div
-                              key={post.id}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => navigate(`/analytics/${post.id}`)}
-                              onKeyDown={(e) => e.key === "Enter" && navigate(`/analytics/${post.id}`)}
-                              style={{ cursor: "pointer" }}
-                            >
-                              <InlineStack align="space-between" blockAlign="center" wrap={false} gap="200">
-                                {/* minWidth:0 is load-bearing here: a flex/grid item defaults to
-                                    min-width:auto (refuses to shrink below its content's natural
-                                    width), so without this the title ignores `truncate` entirely
-                                    and overflows past the card edge instead — pushing the views
-                                    text off to the side, exactly the cropping this fixes. */}
-                                <div style={{ minWidth: 0, flex: 1 }}>
-                                  <BlockStack gap="025">
-                                    <Text variant="bodySm" fontWeight="semibold" truncate>
-                                      {post.title || "Untitled"}
-                                    </Text>
-                                    <Badge tone={post.status === "published" ? "success" : "info"}>
-                                      {post.status}
-                                    </Badge>
-                                  </BlockStack>
-                                </div>
-                                <div style={{ flexShrink: 0 }}>
-                                  <Text variant="bodySm" tone="subdued">
-                                    {(post.views || 0).toLocaleString()} views
-                                  </Text>
-                                </div>
-                              </InlineStack>
-                            </div>
-                          ))}
-                        </BlockStack>
+                        <TopPerformingPostsList
+                          posts={analytics.topPosts.slice(0, 5)}
+                          onSelectPost={(post) => navigate(`/analytics/${post.id}`)}
+                        />
                       ) : (
                         <Text tone="subdued" variant="bodySm">
                           {setupStatus?.analyticsTracker?.active

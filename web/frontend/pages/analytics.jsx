@@ -33,6 +33,7 @@ import KpiRow from "../components/common/KpiRow";
 import AnalyticsChart from "../components/analytics/AnalyticsChart";
 import DeviceChart from "../components/analytics/DeviceChart";
 import TopSources from "../components/analytics/TopSources";
+import TopPerformingPostsList from "../components/analytics/TopPerformingPostsList";
 import FunnelChart from "../components/analytics/FunnelChart";
 import CountryBreakdown from "../components/analytics/CountryBreakdown";
 import LockedOverlay from "../components/analytics/LockedOverlay";
@@ -441,94 +442,47 @@ export default function Analytics() {
                   <BlockStack gap="300">
                     <Text variant="headingMd" as="h3">Top performing posts</Text>
                     <Divider />
-                    {(!analytics?.topPosts || analytics.topPosts.length === 0) && (
+                    {(!analytics?.topPosts || analytics.topPosts.length === 0) ? (
                       <Text tone="subdued" variant="bodySm">
                         No data yet. Views & events are tracked from the
                         storefront automatically.
                       </Text>
-                    )}
+                    ) : (
                     <div style={{ maxHeight: 420, overflowY: "auto" }}>
-                    {analytics?.topPosts?.map((p, i) => (
-                      <div
-                        key={p.id}
-                        onClick={() => navigate(`/analytics/${p.id}`)}
-                        style={{ cursor: "pointer" }}
-                        role="link"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") navigate(`/analytics/${p.id}`);
-                        }}
-                      >
-                        <InlineStack align="space-between" blockAlign="center">
-                          <InlineStack gap="200" blockAlign="center">
-                            <Box
-                              background={i === 0 ? "bg-caution-strong" : "bg-subdued"}
-                              borderRadius="full"
-                              minWidth="24px"
-                              minHeight="24px"
-                            >
-                              <InlineStack align="center" blockAlign="center">
-                                <Text
-                                  variant="bodyXs"
-                                  fontWeight="bold"
-                                  tone={i === 0 ? "text-inverse" : "subdued"}
-                                >
-                                  {i + 1}
-                                </Text>
-                              </InlineStack>
-                            </Box>
-                            <BlockStack gap="025">
-                              <Text variant="bodySm" fontWeight="semibold">
-                                {p.title?.substring(0, 35) || "Untitled"}
-                                {p.title?.length > 35 ? "…" : ""}
+                      <TopPerformingPostsList
+                        posts={analytics.topPosts}
+                        onSelectPost={(post) => navigate(`/analytics/${post.id}`)}
+                        extraContent={(p) => p.addToCart > 0 ? (
+                          <InlineStack gap="300" blockAlign="center">
+                            <InlineStack gap="050" blockAlign="center">
+                              <Icon source={CartIcon} tone="subdued" />
+                              <Text variant="bodyXs" tone="subdued">
+                                {p.addToCart} cart
                               </Text>
-                              <Badge tone={p.status === "published" ? "success" : "info"}>
-                                {p.status}
-                              </Badge>
-                            </BlockStack>
-                          </InlineStack>
-                          <Text variant="bodySm" tone="subdued">
-                            {(p.views || 0).toLocaleString()} views
-                          </Text>
-                        </InlineStack>
-                        {p.addToCart > 0 && (
-                          <div style={{ marginTop: 6, paddingLeft: 34 }}>
-                            <InlineStack gap="300" blockAlign="center">
+                            </InlineStack>
+                            {p.conversions > 0 && (
                               <InlineStack gap="050" blockAlign="center">
-                                <Icon source={CartIcon} tone="subdued" />
-                                <Text variant="bodyXs" tone="subdued">
-                                  {p.addToCart} cart
+                                <Icon source={CheckCircleIcon} tone="success" />
+                                <Text variant="bodyXs" tone="success">
+                                  {p.conversions} conv
                                 </Text>
                               </InlineStack>
-                              {p.conversions > 0 && (
-                                <InlineStack gap="050" blockAlign="center">
-                                  <Icon source={CheckCircleIcon} tone="success" />
-                                  <Text variant="bodyXs" tone="success">
-                                    {p.conversions} conv
-                                  </Text>
-                                </InlineStack>
-                              )}
-                              {p.addToCartRate !== "0.00" && (
-                                <Text variant="bodyXs" tone="subdued">
-                                  {p.addToCartRate}% cart rate
-                                </Text>
-                              )}
-                              {p.revenue > 0 && (
-                                <Text variant="bodyXs" tone="subdued">
-                                  {formatMoney(p.revenue, currencyCode)}
-                                </Text>
-                              )}
-                            </InlineStack>
-                          </div>
-                        )}
-                        {i < analytics.topPosts.length - 1 && (
-                          <div style={{ margin: "8px 0" }}>
-                            <Divider />
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                            )}
+                            {p.addToCartRate !== "0.00" && (
+                              <Text variant="bodyXs" tone="subdued">
+                                {p.addToCartRate}% cart rate
+                              </Text>
+                            )}
+                            {p.revenue > 0 && (
+                              <Text variant="bodyXs" tone="subdued">
+                                {formatMoney(p.revenue, currencyCode)}
+                              </Text>
+                            )}
+                          </InlineStack>
+                        ) : null}
+                      />
                     </div>
+                    )}
                   </BlockStack>
                 </Box>
               </Card>
