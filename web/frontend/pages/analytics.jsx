@@ -62,7 +62,10 @@ export default function Analytics() {
   const [lastLoadedAt, setLastLoadedAt] = useState(null);
   const [nowTick, setNowTick] = useState(Date.now());
   const [shopDomain, setShopDomain] = useState(null);
-  const [currencyCode, setCurrencyCode] = useState("USD");
+  // null (not "USD") until the real store currency loads — "USD" was a silent default that
+  // rendered as a literal $ sign for a split second on every page load/refresh whenever the
+  // analytics fetch (a separate, independent request) happened to resolve first.
+  const [currencyCode, setCurrencyCode] = useState(null);
   const [setupStatus, setSetupStatus] = useState(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
@@ -300,7 +303,7 @@ export default function Analytics() {
         </Box>
       )}
 
-      {loading ? (
+      {loading || !currencyCode ? (
         <Box padding="800" align="center">
           <Spinner />
         </Box>

@@ -52,7 +52,9 @@ export default function PostAnalytics() {
   const [lastLoadedAt, setLastLoadedAt] = useState(null);
   const [nowTick, setNowTick] = useState(Date.now());
   const [shopDomain, setShopDomain] = useState(null);
-  const [currencyCode, setCurrencyCode] = useState("USD");
+  // null (not "USD") until the real store currency loads — see analytics.jsx for the full
+  // explanation of the flash-of-$ bug this avoids.
+  const [currencyCode, setCurrencyCode] = useState(null);
   const [setupStatus, setSetupStatus] = useState(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
@@ -257,7 +259,7 @@ export default function PostAnalytics() {
         </Box>
       )}
 
-      {loading ? (
+      {loading || !currencyCode ? (
         <Box padding="800" align="center">
           <Spinner />
         </Box>
