@@ -13,6 +13,27 @@ import { isFeatureEnabled } from "./PlanFeatureService.js";
 // different feature (view tracking), out of scope for this change.
 const APP_URL = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
 
+/** Resolve Blog Article Layout setting → CSS max-width value. */
+function resolveBlogLayoutWidth(settings = {}) {
+  switch (settings.blogLayout) {
+    case "narrow":
+      return "640px";
+    case "centered":
+      return "800px";
+    case "custom": {
+      const raw = parseInt(settings.blogLayoutCustomWidth, 10);
+      // Only emit a custom width that was explicitly saved in range — never silently clamp.
+      if (Number.isFinite(raw) && raw >= 320 && raw <= 2400) {
+        return `${raw}px`;
+      }
+      return "1200px";
+    }
+    case "full":
+    default:
+      return "100%";
+  }
+}
+
 /** A `data-settings` attribute value can itself contain further nested "settings" keys from
  * historical corruption (each sync/echo/reconcile round trip used to add another wrapper layer
  * before this was fixed — see the docblock at the compile() call site). Recursively unwrap
@@ -1667,7 +1688,7 @@ ${this.generateGlobalCss(settings)}
     --blogger-secondary-color: ${settings.secondaryColor || "#005bd3"};
     --blogger-text-color: ${settings.textColor || "#202223"};
     --blogger-font-family: ${settings.fontFamily || "system-ui"};
-    --blogger-layout-width: ${settings.blogLayout === "centered" ? "800px" : settings.blogLayout === "narrow" ? "640px" : "100%"};
+    --blogger-layout-width: ${resolveBlogLayoutWidth(settings)};
   }
 
   .blogger-article-container {
@@ -1940,7 +1961,7 @@ ${this.generateGlobalCss(settings)}
    */
   static generateLayoutCss(settings, { important = true } = {}) {
     const bang = important ? " !important" : "";
-    const layoutWidth = settings.blogLayout === "centered" ? "800px" : settings.blogLayout === "narrow" ? "640px" : "100%";
+    const layoutWidth = resolveBlogLayoutWidth(settings);
     const isOff = (v) => v === false || v === "false";
     return `  :root {
     --blogger-layout-width: ${layoutWidth};

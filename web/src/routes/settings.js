@@ -131,6 +131,7 @@ router.post("/", async (req, res) => {
       "textColor",
       "buttonRadius",
       "blogLayout",
+      "blogLayoutCustomWidth",
       "showReadingTime",
       "showAuthor",
       "showPublishedDate",
@@ -149,6 +150,18 @@ router.post("/", async (req, res) => {
     // skipping the save keeps the same defense-in-depth posture as the custom code fields above
     // rather than leaving a stray, never-consulted value sitting in the DB.
     const removeBrandingAllowed = isFeatureEnabled(shop.planKey, "remove_branding");
+
+    // Validate custom width BEFORE any upserts. Checking inside the loop let earlier keys
+    // (colors, radius, blogLayout) commit, then 422 — UI stayed dirty while DB/CSS already
+    // changed, and blogLayout could become "custom" with no valid stored width.
+    if (String(req.body.blogLayout ?? "") === "custom") {
+      const n = parseInt(String(req.body.blogLayoutCustomWidth ?? ""), 10);
+      if (!Number.isFinite(n) || n < 320 || n > 2400) {
+        return res.status(422).json({
+          error: "Custom width must be a whole number between 320 and 2400 pixels.",
+        });
+      }
+    }
 
     // Upsert all modified setting parameters
     for (const key of supportedKeys) {

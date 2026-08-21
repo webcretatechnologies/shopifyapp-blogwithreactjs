@@ -339,8 +339,14 @@
     }
   }
 
-  // 6. Track Conversions on Order Status (Thank You) page
-  if (window.location.pathname.includes('/thank_you') || window.location.pathname.includes('/orders/')) {
+  // 6. Track Conversions on Order Status / Thank You page only.
+  // Do NOT match `/account/orders/...` — that is customer order history and would fire a
+  // conversion (often $0) whenever a attributed visitor opens past orders in-account.
+  const path = window.location.pathname;
+  const isThankYouPage = path.includes('/thank_you');
+  const isCheckoutOrderStatusPage =
+    !path.includes('/account/') && /\/orders\/[^/]+/.test(path);
+  if (isThankYouPage || isCheckoutOrderStatusPage) {
     const trackedOrder = sessionStorage.getItem('blogger_tracked_order');
     if (!trackedOrder) {
       const postId = getSourcePostId();
