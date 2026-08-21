@@ -112,6 +112,7 @@ import trackingRoutes from "./src/routes/tracking.js";
 import publicStylesRoutes from "./src/routes/publicStyles.js";
 import sitemapIndexRoutes from "./src/routes/sitemapIndex.js";
 import relatedPostsRoutes from "./src/routes/relatedPosts.js";
+import sidebarRoutes from "./src/routes/sidebar.js";
 import blogTemplateRoutes from "./src/routes/blogTemplates.js";
 
 // Process-level event handlers to prevent crashes from unhandled network errors
@@ -153,6 +154,7 @@ app.use("/", sitemapIndexRoutes);
 
 // ─── Public Related Posts Routes (BEFORE Shopify auth — fetched live from the storefront) ──
 app.use("/", relatedPostsRoutes);
+app.use("/", sidebarRoutes);
 
 // ─── App Proxy Routes (Validated via Shopify Signature) ──────────────────────
 app.use("/api/proxy", proxyRoutes);
@@ -612,6 +614,9 @@ app.use("/api/comments", commentRoutes);
 
 // Settings
 app.use("/api/settings", settingsRoutes);
+
+import categoryRoutes from "./src/routes/categories.js";
+app.use("/api/categories", categoryRoutes);
 
 // Billing
 app.use("/api/billing", billingRoutes);

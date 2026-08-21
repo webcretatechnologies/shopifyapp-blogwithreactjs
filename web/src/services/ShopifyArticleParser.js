@@ -426,6 +426,17 @@ export class ShopifyArticleParser {
     // duplicating (and re-duplicating) indefinitely.
     $(".blogger-related-posts").remove();
 
+    // Two-column sidebar layout wrappers (EditorContentCompiler.compileForStorefront)
+    $(".blogger-article-sidebar, [data-blog-sidebar]").remove();
+    $(".blogger-article-main").each((_, el) => {
+      const $el = $(el);
+      $el.replaceWith($el.contents());
+    });
+    $(".blogger-article-layout").each((_, el) => {
+      const $el = $(el);
+      $el.replaceWith($el.contents());
+    });
+
     // Byline (author / published date / reading time — EditorContentCompiler.compileForStorefront)
     // and the custom header/footer placeholders (Settings → Advanced) are the same class of
     // app-generated, sync-time-only markup with no data-type to re-edit. Without stripping them

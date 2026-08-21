@@ -2,6 +2,7 @@ import express from "express";
 import shopify, { prisma } from "../../shopify.js";
 import ThemeStyleService from "../services/ThemeStyleService.js";
 import { isFeatureEnabled } from "../services/PlanFeatureService.js";
+import { ArticleSyncService } from "../services/ArticleSyncService.js";
 
 const router = express.Router();
 
@@ -137,11 +138,21 @@ router.post("/", async (req, res) => {
       "showPublishedDate",
       "showRelatedPosts",
       "relatedPostsCount",
+      "relatedPostsLayout",
+      "relatedPostsSourceMode",
+      "blogSidebarEnabled",
+      "blogSidebarPosition",
+      "blogSidebarWidth",
+      "blogSidebarWidgets",
       "defaultAuthor",
       "customHeaderCode",
       "customFooterCode",
       "showPoweredByBadge"
     ];
+
+    const RELATED_LAYOUTS = new Set(["grid", "list", "slider"]);
+    const RELATED_MODES = new Set(["smart", "category", "random", "manual"]);
+    const SIDEBAR_POSITIONS = new Set(["right", "left"]);
 
     const customCodeAllowed = isFeatureEnabled(shop.planKey, "custom_code_injection");
     // remove_branding (Starter+) is what lets a shop remove the "Powered by" badge at all — a
@@ -163,12 +174,62 @@ router.post("/", async (req, res) => {
       }
     }
 
+    if (req.body.relatedPostsLayout !== undefined) {
+      const layout = String(req.body.relatedPostsLayout).toLowerCase();
+      if (!RELATED_LAYOUTS.has(layout)) {
+        return res.status(422).json({ error: "Related posts layout must be grid, list, or slider." });
+      }
+      req.body.relatedPostsLayout = layout;
+    }
+
+    if (req.body.relatedPostsSourceMode !== undefined) {
+      const mode = String(req.body.relatedPostsSourceMode).toLowerCase();
+      if (!RELATED_MODES.has(mode)) {
+        return res.status(422).json({ error: "Related posts source must be smart, category, random, or manual." });
+      }
+      req.body.relatedPostsSourceMode = mode;
+    }
+
+    if (req.body.relatedPostsCount !== undefined) {
+      const n = parseInt(String(req.body.relatedPostsCount), 10);
+      if (![2, 3, 4, 6, 8, 12].includes(n)) {
+        return res.status(422).json({ error: "Related posts count must be 2, 3, 4, 6, 8, or 12." });
+      }
+    }
+
+    if (req.body.blogSidebarPosition !== undefined) {
+      const pos = String(req.body.blogSidebarPosition).toLowerCase();
+      if (!SIDEBAR_POSITIONS.has(pos)) {
+        return res.status(422).json({ error: "Sidebar position must be left or right." });
+      }
+      req.body.blogSidebarPosition = pos;
+    }
+
+    if (req.body.blogSidebarWidth !== undefined) {
+      const w = parseInt(String(req.body.blogSidebarWidth), 10);
+      if (!Number.isFinite(w) || w < 240 || w > 420) {
+        return res.status(422).json({ error: "Sidebar width must be between 240 and 420 pixels." });
+      }
+      req.body.blogSidebarWidth = String(w);
+    }
+
+    const sidebarAllowed = isFeatureEnabled(shop.planKey, "blog_sidebar");
+
     // Upsert all modified setting parameters
     for (const key of supportedKeys) {
       // Custom header/footer code injection is Pro-only — silently skip the save rather than
       // reject the whole settings form, same posture as the SEO field sanitization in posts.js.
       if ((key === "customHeaderCode" || key === "customFooterCode") && !customCodeAllowed) continue;
       if (key === "showPoweredByBadge" && !removeBrandingAllowed) continue;
+      if (
+        (key === "blogSidebarEnabled" ||
+          key === "blogSidebarPosition" ||
+          key === "blogSidebarWidth" ||
+          key === "blogSidebarWidgets") &&
+        !sidebarAllowed
+      ) {
+        continue;
+      }
       if (req.body[key] !== undefined) {
         const valStr = String(req.body[key]);
         await prisma.shopSetting.upsert({
@@ -196,6 +257,48 @@ router.post("/", async (req, res) => {
   } catch (error) {
     console.error("Error saving settings:", error);
     res.status(500).json({ error: "Failed to save settings" });
+  }
+});
+
+/**
+ * Re-push published (linked) posts so the sidebar layout shell exists in body_html.
+ * Live widget content still updates without this; the aside placeholder itself needs a sync.
+ */
+router.post("/apply-sidebar-layout", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session?.shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
+    if (!shop) return res.status(404).json({ error: "Shop not found" });
+    if (!isFeatureEnabled(shop.planKey, "blog_sidebar")) {
+      return res.status(403).json({ error: "Blog sidebar is available on Starter and above." });
+    }
+
+    const linkedPosts = await prisma.post.findMany({
+      where: {
+        shopId: shop.id,
+        status: "published",
+        shopifyArticle: { is: { shopifyBlogId: { not: null }, shopifyArticleId: { not: null } } },
+      },
+      select: { id: true, title: true },
+    });
+
+    let updated = 0;
+    const errors = [];
+    for (const post of linkedPosts) {
+      try {
+        await ArticleSyncService.pushPostToShopify(post.id, { publishMode: true });
+        updated += 1;
+      } catch (err) {
+        errors.push({ postId: post.id, title: post.title, error: err.message });
+      }
+    }
+
+    res.json({ success: true, updated, total: linkedPosts.length, errors });
+  } catch (error) {
+    console.error("POST /api/settings/apply-sidebar-layout error:", error);
+    res.status(500).json({ error: "Failed to apply sidebar layout" });
   }
 });
 

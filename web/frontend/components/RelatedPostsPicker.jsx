@@ -13,7 +13,7 @@ import { useState, useCallback, useMemo, useRef } from "react";
 import { Autocomplete, Icon, InlineStack, Tag, Text, Thumbnail, BlockStack } from "@shopify/polaris";
 import { SearchIcon } from "@shopify/polaris-icons";
 
-export default function RelatedPostsPicker({ value = [], onChange, excludePostId = null }) {
+export default function RelatedPostsPicker({ value = [], onChange, excludePostId = null, requireManual = false }) {
   const [inputValue, setInputValue] = useState("");
   const [options, setOptions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -71,7 +71,11 @@ export default function RelatedPostsPicker({ value = [], onChange, excludePostId
       prefix={<Icon source={SearchIcon} />}
       placeholder="Search for a post..."
       autoComplete="off"
-      helpText="Leave empty to automatically show related posts based on category and tags."
+      helpText={
+        requireManual
+          ? "Select the posts to show. With Manual source, only these picks appear on the storefront."
+          : "Optional. When set, these picks override automatic related posts for this article."
+      }
     />
   );
 

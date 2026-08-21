@@ -8,7 +8,6 @@ import {
   Text,
   Badge,
   Button,
-  ButtonGroup,
   BlockStack,
   InlineStack,
   Box,
@@ -17,18 +16,6 @@ import {
   Scrollable,
   RadioButton,
 } from "@shopify/polaris";
-
-/**
- * Escape HTML for safe rendering inside <pre>.
- */
-function escapeHtml(str) {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 /**
  * Format a label for the field name (capitalize, add spaces).
@@ -69,12 +56,10 @@ function formatValue(field, value) {
  * Single-field resolution row — shows local vs remote with radio buttons to choose.
  */
 function FieldResolutionRow({ field, conflict, resolution, onChange }) {
-  const localLabel = conflict.local === null || conflict.local === undefined ? "—" : String(conflict.local).substring(0, 500);
-  const remoteLabel = conflict.remote === null || conflict.remote === undefined ? "—" : String(
-    field === "content"
-      ? (conflict.remote?.storefrontHtml || "[Structured content from Shopify]")
-      : conflict.remote
-  ).substring(0, 500);
+  // React text nodes escape automatically — use formatValue (not String()+escapeHtml) so
+  // content objects and HTML compare as readable text, not "[object Object]" / "&lt;...".
+  const localLabel = formatValue(field, conflict.local).substring(0, 500);
+  const remoteLabel = formatValue(field, conflict.remote).substring(0, 500);
 
   return (
     <Box
@@ -113,7 +98,7 @@ function FieldResolutionRow({ field, conflict, resolution, onChange }) {
                 borderRadius="075"
                 style={{ fontSize: "12px", lineHeight: "1.4", maxHeight: "120px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
               >
-                {escapeHtml(localLabel)}
+                {localLabel}
               </Box>
             </BlockStack>
           </Box>
@@ -138,7 +123,7 @@ function FieldResolutionRow({ field, conflict, resolution, onChange }) {
                 borderRadius="075"
                 style={{ fontSize: "12px", lineHeight: "1.4", maxHeight: "120px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
               >
-                {escapeHtml(remoteLabel)}
+                {remoteLabel}
               </Box>
             </BlockStack>
           </Box>
@@ -152,14 +137,16 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
   const [conflictPayload, setConflictPayload] = useState(null);
   const [diff, setDiff] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const [resolving, setResolving] = useState(false);
   const [resolutions, setResolutions] = useState({});
 
   const fetchConflictData = useCallback(async () => {
     if (!postId) return;
     setLoading(true);
-    setError(null);
+    setLoadError(null);
+    setActionError(null);
     try {
       // Fetch the full diff
       const diffRes = await fetch(`/api/posts/${postId}/conflict-diff`);
@@ -213,7 +200,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
         setResolutions(initial);
       }
     } catch (err) {
-      setError(err.message);
+      setLoadError(err.message);
     } finally {
       setLoading(false);
     }
@@ -225,13 +212,15 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
     } else {
       setConflictPayload(null);
       setDiff(null);
-      setError(null);
+      setLoadError(null);
+      setActionError(null);
       setResolving(false);
       setResolutions({});
     }
   }, [open, postId, fetchConflictData]);
 
   const handleFieldResolution = useCallback((field, choice) => {
+    setActionError(null);
     setResolutions((prev) => ({ ...prev, [field]: choice }));
   }, []);
 
@@ -243,6 +232,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
       allSame[field] = choice;
     }
     setResolutions(allSame);
+    setActionError(null);
 
     // Submit resolution
     setResolving(true);
@@ -260,7 +250,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
         resolutions: allSame,
       });
     } catch (err) {
-      setError(`Failed to resolve: ${err.message}`);
+      setActionError(`Failed to resolve: ${err.message}`);
     } finally {
       setResolving(false);
     }
@@ -268,6 +258,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
 
   const handleResolveSelected = useCallback(async () => {
     setResolving(true);
+    setActionError(null);
     try {
       const res = await fetch(`/api/posts/${postId}/resolve-conflict`, {
         method: "POST",
@@ -282,7 +273,9 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
         resolutions,
       });
     } catch (err) {
-      setError(`Failed to resolve: ${err.message}`);
+      // Keep the per-field UI and the merchant's picks — do not swap to a load-error
+      // screen that Retry would refetch and reset every field back to "local".
+      setActionError(`Failed to resolve: ${err.message}`);
     } finally {
       setResolving(false);
     }
@@ -306,18 +299,13 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
       }
       titleHidden={false}
       large
-      primaryAction={
-        <ButtonGroup>
-          <Button
-            tone="critical"
-            loading={resolving}
-            disabled={resolving || conflictFields.length === 0}
-            onClick={handleResolveSelected}
-          >
-            Apply Selected ({conflictFields.filter((f) => resolutions[f] === "local").length} local, {conflictFields.filter((f) => resolutions[f] === "remote").length} remote)
-          </Button>
-        </ButtonGroup>
-      }
+      primaryAction={{
+        content: `Apply Selected (${conflictFields.filter((f) => resolutions[f] === "local").length} local, ${conflictFields.filter((f) => resolutions[f] === "remote").length} remote)`,
+        onAction: handleResolveSelected,
+        loading: resolving,
+        disabled: resolving || conflictFields.length === 0 || loading || !!loadError,
+        destructive: true,
+      }}
       secondaryActions={[
         {
           content: "Cancel",
@@ -336,9 +324,9 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
               </Text>
             </Box>
           </Box>
-        ) : error ? (
+        ) : loadError ? (
           <Banner tone="critical">
-            <p>{error}</p>
+            <p>{loadError}</p>
             <Button onClick={fetchConflictData}>Retry</Button>
           </Banner>
         ) : conflictFields.length === 0 ? (
@@ -347,6 +335,11 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
           </Text>
         ) : (
           <BlockStack gap="400">
+            {actionError && (
+              <Banner tone="critical" onDismiss={() => setActionError(null)}>
+                <p>{actionError}</p>
+              </Banner>
+            )}
             <Banner tone="warning">
               <BlockStack gap="200">
                 <Text variant="bodyMd" fontWeight="semibold" as="p">
@@ -370,6 +363,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
                   onClick={() => {
                     const all = {};
                     conflictFields.forEach((f) => { all[f] = "local"; });
+                    setActionError(null);
                     setResolutions(all);
                   }}
                 >
@@ -381,6 +375,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
                   onClick={() => {
                     const all = {};
                     conflictFields.forEach((f) => { all[f] = "remote"; });
+                    setActionError(null);
                     setResolutions(all);
                   }}
                 >

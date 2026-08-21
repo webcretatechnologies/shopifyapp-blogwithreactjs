@@ -80,6 +80,10 @@ export default defineConfig({
       "^/sitemap-index\\.xml(/|(\\?.*)?$)": proxyOptions,
       "^/related-posts\\.json(/|(\\?.*)?$)": proxyOptions,
       "^/related-posts\\.js(/|(\\?.*)?$)": proxyOptions,
+      // Blog sidebar live assets (same public mount as related-posts — without these,
+      // `shopify app dev` serves the Vite SPA HTML for /sidebar.js and the sidebar never activates).
+      "^/sidebar\\.json(/|(\\?.*)?$)": proxyOptions,
+      "^/sidebar\\.js(/|(\\?.*)?$)": proxyOptions,
       "^/custom-code\\.json(/|(\\?.*)?$)": proxyOptions,
       "^/branding\\.json(/|(\\?.*)?$)": proxyOptions,
       "^/privacy-policy(/|(\\?.*)?$)": proxyOptions,

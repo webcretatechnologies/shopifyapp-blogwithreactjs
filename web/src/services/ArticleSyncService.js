@@ -50,6 +50,27 @@ function computeMetaRobotsDirective(noindex, nofollow) {
   return `${noindex ? "noindex" : "index"}, ${nofollow ? "nofollow" : "follow"}`;
 }
 
+/**
+ * Shopify article tags for outbound sync.
+ * App "categories" are Post.categoryId only — they are not Shopify tags unless we push them.
+ * The storefront Categories widget links to /blogs/{handle}/tagged/{slug}, so the category
+ * slug must be included here or those archives stay empty while counts still reflect category posts.
+ */
+function collectOutboundTagNames(post) {
+  const names = new Set();
+  for (const pt of post.tags || []) {
+    const n = (pt?.tag?.name || (typeof pt === "string" ? pt : "")).trim();
+    if (n) names.add(n);
+  }
+  const catSlug = post.category?.slug?.trim();
+  if (catSlug) names.add(catSlug);
+  return Array.from(names);
+}
+
+function formatOutboundTags(post) {
+  return collectOutboundTagNames(post).join(", ");
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 //  GRAPHQL ID / SHAPE ADAPTERS
 //
@@ -125,11 +146,16 @@ function toArticleGraphQLInput({ title, body_html, author, published, tags, hand
     input.summary = summary || "";
   }
   
-  const tagList = (tags || "")
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-  if (tagList.length > 0) input.tags = tagList;
+  const tagList = Array.isArray(tags)
+    ? tags.map((t) => String(t).trim()).filter(Boolean)
+    : (tags || "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+  // Always set tags (including []) so clearing/removing a synced category slug sticks on Shopify.
+  if (tags !== undefined && tags !== null) {
+    input.tags = tagList;
+  }
   if (image?.src) input.image = { url: image.src, ...(image.altText ? { altText: image.altText } : {}) };
 
   const metafields = [];
@@ -913,6 +939,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     include: {
       shopifyArticle: true,
       tags: { include: { tag: true } },
+      category: true,
       shop: true,
       products: { include: { product: true }, orderBy: { position: "asc" } },
     },
@@ -931,10 +958,8 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   // Compile content for storefront
   let storefrontHtml = await buildStorefrontHtmlForPost(post, post.contentHtml || "", validSession, graphqlClient);
 
-  // Tag string
-  const tagNames = post.tags
-    ? post.tags.map((pt) => pt.tag?.name).filter(Boolean).join(", ")
-    : "";
+  // Merchant tags + category slug (so /blogs/.../tagged/{slug} matches Categories widget counts)
+  const tagNames = formatOutboundTags(post);
   // Scheduling: Shopify rejects isPublished:true combined with a future publishDate
   // ("Can't set isPublished to true and also set a future publish date" — verified against
   // a live store). The correct combination is isPublished:false + a future publishDate;
@@ -1216,6 +1241,7 @@ async function syncAfterLocalEdit(postId, { publishMode = false } = {}) {
     include: {
       shopifyArticle: true,
       tags: { include: { tag: true } },
+      category: true,
       shop: true,
     },
   });
@@ -1243,9 +1269,7 @@ async function syncAfterLocalEdit(postId, { publishMode = false } = {}) {
     return pushPostToShopify(postId, { publishMode });
   }
 
-  const localTagStr = post.tags
-    ? post.tags.map(pt => pt.tag?.name).filter(Boolean).sort().join(",")
-    : "";
+  const localTagStr = formatOutboundTags(post);
   const localState = normalizeLocalState(post, localTagStr);
   const remoteState = normalizeRemoteState(remote);
   const baseFields = post.shopifyArticle.lastSyncedSnapshot?.fields || null;

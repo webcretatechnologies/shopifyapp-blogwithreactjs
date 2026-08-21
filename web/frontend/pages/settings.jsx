@@ -61,10 +61,52 @@ function getCustomWidthError(blogLayout, rawWidth) {
   return null;
 }
 
-const RELATED_POSTS_OPTIONS = ["2", "3", "4", "6"].map((n) => ({
+const RELATED_POSTS_OPTIONS = ["2", "3", "4", "6", "8", "12"].map((n) => ({
   label: `${n} posts`,
   value: n,
 }));
+
+const RELATED_LAYOUT_OPTIONS = [
+  { label: "Grid", value: "grid" },
+  { label: "List", value: "list" },
+  { label: "Slider", value: "slider" },
+];
+
+const RELATED_SOURCE_OPTIONS = [
+  { label: "Smart match (category + tags)", value: "smart" },
+  { label: "Same category", value: "category" },
+  { label: "Random", value: "random" },
+  { label: "Manual only", value: "manual" },
+];
+
+const SIDEBAR_POSITION_OPTIONS = [
+  { label: "Right", value: "right" },
+  { label: "Left", value: "left" },
+];
+
+const SIDEBAR_WIDTH_OPTIONS = [
+  { label: "280 px", value: "280" },
+  { label: "320 px", value: "320" },
+  { label: "360 px", value: "360" },
+];
+
+const DEFAULT_SIDEBAR_WIDGETS = [
+  { id: "related_1", type: "related_posts", enabled: true, settings: { title: "Related posts", count: 4 } },
+  { id: "categories_1", type: "categories", enabled: true, settings: { title: "Categories", showCounts: true } },
+  { id: "products_1", type: "products", enabled: false, settings: { title: "Products", source: "post_products", maxItems: 3, ctaLabel: "View product" } },
+  { id: "rich_1", type: "rich_text", enabled: false, settings: { title: "", body: "" } },
+  { id: "cta_1", type: "image_cta", enabled: false, settings: { title: "", imageUrl: "", linkUrl: "", buttonText: "Learn more" } },
+];
+
+function parseSidebarWidgets(raw) {
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch {
+    /* fall through */
+  }
+  return DEFAULT_SIDEBAR_WIDGETS;
+}
 
 const TABS = [
   { id: "appearance", content: "Appearance" },
@@ -101,6 +143,12 @@ const DEFAULT_SETTINGS = {
   showPublishedDate: true,
   showRelatedPosts: true,
   relatedPostsCount: "3",
+  relatedPostsLayout: "grid",
+  relatedPostsSourceMode: "smart",
+  blogSidebarEnabled: false,
+  blogSidebarPosition: "right",
+  blogSidebarWidth: "320",
+  blogSidebarWidgets: JSON.stringify(DEFAULT_SIDEBAR_WIDGETS),
   defaultAuthor: "",
   customHeaderCode: "",
   customFooterCode: "",
@@ -640,14 +688,324 @@ export default function Settings() {
                     </InlineGrid>
                     {settings.showRelatedPosts && (
                       <Box paddingInlineStart="600">
-                        <Select
-                          label="Number of related posts"
-                          options={RELATED_POSTS_OPTIONS}
-                          value={settings.relatedPostsCount}
-                          onChange={set("relatedPostsCount")}
-                        />
+                        <BlockStack gap="300">
+                          <Select
+                            label="Number of related posts"
+                            options={RELATED_POSTS_OPTIONS}
+                            value={settings.relatedPostsCount}
+                            onChange={set("relatedPostsCount")}
+                          />
+                          <Select
+                            label="Layout"
+                            options={RELATED_LAYOUT_OPTIONS}
+                            value={settings.relatedPostsLayout || "grid"}
+                            onChange={set("relatedPostsLayout")}
+                            helpText="Grid, list, or slider on the storefront related-posts block."
+                          />
+                          <Select
+                            label="Default source"
+                            options={RELATED_SOURCE_OPTIONS}
+                            value={settings.relatedPostsSourceMode || "smart"}
+                            onChange={set("relatedPostsSourceMode")}
+                            helpText="Posts can override this in the editor. Manual only uses posts you pick on each article."
+                          />
+                        </BlockStack>
                       </Box>
                     )}
+                  </SectionCard>
+                </Layout.Section>
+
+                <Layout.Section>
+                  <SectionCard
+                    title="Blog sidebar"
+                    trailing={
+                      features.blog_sidebar?.enabled ? null : <Badge>Starter+</Badge>
+                    }
+                  >
+                    {!features.blog_sidebar?.enabled && (
+                      <UpgradePrompt
+                        feature="Blog sidebar"
+                        message="A two-column article layout with related posts, categories, products, and promo widgets is available on Starter and above."
+                        onUpgrade={handleUpgradeNow}
+                      />
+                    )}
+                    <Checkbox
+                      label="Enable blog sidebar"
+                      checked={!!settings.blogSidebarEnabled && settings.blogSidebarEnabled !== "false"}
+                      onChange={(v) => set("blogSidebarEnabled")(v)}
+                      disabled={!features.blog_sidebar?.enabled}
+                      helpText="Shows a left or right column on synced articles. Enable, then Save & Sync published posts (or use Apply layout below) so the sidebar placeholder exists."
+                    />
+                    {features.blog_sidebar?.enabled &&
+                      !!settings.blogSidebarEnabled &&
+                      settings.blogSidebarEnabled !== "false" && (
+                        <BlockStack gap="400">
+                          <InlineGrid columns={{ xs: 1, sm: 2 }} gap="300">
+                            <Select
+                              label="Position"
+                              options={SIDEBAR_POSITION_OPTIONS}
+                              value={settings.blogSidebarPosition || "right"}
+                              onChange={set("blogSidebarPosition")}
+                            />
+                            <Select
+                              label="Width"
+                              options={SIDEBAR_WIDTH_OPTIONS}
+                              value={settings.blogSidebarWidth || "320"}
+                              onChange={set("blogSidebarWidth")}
+                            />
+                          </InlineGrid>
+                          <Text as="h3" variant="headingSm">
+                            Widgets
+                          </Text>
+                          <Text as="p" variant="bodySm" tone="subdued">
+                            When the Related posts widget is on, related cards appear in the sidebar only (not at the bottom).
+                          </Text>
+                          {parseSidebarWidgets(settings.blogSidebarWidgets).map((widget, idx) => (
+                            <Card key={widget.id || idx}>
+                              <BlockStack gap="300">
+                                <InlineStack align="space-between" blockAlign="center">
+                                  <Text as="span" variant="bodyMd" fontWeight="semibold">
+                                    {widget.type === "related_posts"
+                                      ? "Related posts"
+                                      : widget.type === "categories"
+                                        ? "Categories"
+                                        : widget.type === "products"
+                                          ? "Products"
+                                          : widget.type === "rich_text"
+                                            ? "Rich text"
+                                            : widget.type === "image_cta"
+                                              ? "Image / CTA"
+                                              : widget.type}
+                                  </Text>
+                                  <InlineStack gap="200">
+                                    <Button
+                                      size="slim"
+                                      disabled={idx === 0}
+                                      onClick={() => {
+                                        const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                        if (idx <= 0) return;
+                                        const next = [...list];
+                                        [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+                                        set("blogSidebarWidgets")(JSON.stringify(next));
+                                      }}
+                                    >
+                                      Up
+                                    </Button>
+                                    <Button
+                                      size="slim"
+                                      disabled={idx >= parseSidebarWidgets(settings.blogSidebarWidgets).length - 1}
+                                      onClick={() => {
+                                        const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                        if (idx >= list.length - 1) return;
+                                        const next = [...list];
+                                        [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+                                        set("blogSidebarWidgets")(JSON.stringify(next));
+                                      }}
+                                    >
+                                      Down
+                                    </Button>
+                                    <Checkbox
+                                      label="On"
+                                      labelHidden
+                                      checked={!!widget.enabled}
+                                      onChange={(checked) => {
+                                        const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                        list[idx] = { ...list[idx], enabled: checked };
+                                        set("blogSidebarWidgets")(JSON.stringify(list));
+                                      }}
+                                    />
+                                  </InlineStack>
+                                </InlineStack>
+                                {widget.enabled && (
+                                  <BlockStack gap="200">
+                                    <TextField
+                                      label="Title"
+                                      value={widget.settings?.title || ""}
+                                      onChange={(title) => {
+                                        const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                        list[idx] = {
+                                          ...list[idx],
+                                          settings: { ...(list[idx].settings || {}), title },
+                                        };
+                                        set("blogSidebarWidgets")(JSON.stringify(list));
+                                      }}
+                                      autoComplete="off"
+                                    />
+                                    {widget.type === "related_posts" && (
+                                      <Select
+                                        label="Count"
+                                        options={RELATED_POSTS_OPTIONS}
+                                        value={String(widget.settings?.count || 4)}
+                                        onChange={(count) => {
+                                          const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                          list[idx] = {
+                                            ...list[idx],
+                                            settings: {
+                                              ...(list[idx].settings || {}),
+                                              count: parseInt(count, 10),
+                                            },
+                                          };
+                                          set("blogSidebarWidgets")(JSON.stringify(list));
+                                        }}
+                                      />
+                                    )}
+                                    {widget.type === "rich_text" && (
+                                      <TextField
+                                        label="Body"
+                                        value={widget.settings?.body || ""}
+                                        onChange={(body) => {
+                                          const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                          list[idx] = {
+                                            ...list[idx],
+                                            settings: { ...(list[idx].settings || {}), body },
+                                          };
+                                          set("blogSidebarWidgets")(JSON.stringify(list));
+                                        }}
+                                        multiline={3}
+                                        autoComplete="off"
+                                      />
+                                    )}
+                                    {widget.type === "image_cta" && (
+                                      <>
+                                        <TextField
+                                          label="Image URL"
+                                          value={widget.settings?.imageUrl || ""}
+                                          onChange={(imageUrl) => {
+                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                            list[idx] = {
+                                              ...list[idx],
+                                              settings: { ...(list[idx].settings || {}), imageUrl },
+                                            };
+                                            set("blogSidebarWidgets")(JSON.stringify(list));
+                                          }}
+                                          autoComplete="off"
+                                        />
+                                        <TextField
+                                          label="Link URL"
+                                          value={widget.settings?.linkUrl || ""}
+                                          onChange={(linkUrl) => {
+                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                            list[idx] = {
+                                              ...list[idx],
+                                              settings: { ...(list[idx].settings || {}), linkUrl },
+                                            };
+                                            set("blogSidebarWidgets")(JSON.stringify(list));
+                                          }}
+                                          autoComplete="off"
+                                        />
+                                        <TextField
+                                          label="Button text"
+                                          value={widget.settings?.buttonText || ""}
+                                          onChange={(buttonText) => {
+                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                            list[idx] = {
+                                              ...list[idx],
+                                              settings: { ...(list[idx].settings || {}), buttonText },
+                                            };
+                                            set("blogSidebarWidgets")(JSON.stringify(list));
+                                          }}
+                                          autoComplete="off"
+                                        />
+                                      </>
+                                    )}
+                                    {widget.type === "products" && (
+                                      <>
+                                        <Select
+                                          label="Source"
+                                          options={[
+                                            { label: "Products on this post", value: "post_products" },
+                                            { label: "Manual product IDs", value: "manual" },
+                                          ]}
+                                          value={widget.settings?.source || "post_products"}
+                                          onChange={(source) => {
+                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                            list[idx] = {
+                                              ...list[idx],
+                                              settings: { ...(list[idx].settings || {}), source },
+                                            };
+                                            set("blogSidebarWidgets")(JSON.stringify(list));
+                                          }}
+                                        />
+                                        {widget.settings?.source === "manual" && (
+                                          <TextField
+                                            label="Product handles (comma-separated)"
+                                            value={(widget.settings?.productHandles || []).join(", ")}
+                                            onChange={(raw) => {
+                                              const productHandles = raw
+                                                .split(",")
+                                                .map((s) => s.trim())
+                                                .filter(Boolean);
+                                              const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                              list[idx] = {
+                                                ...list[idx],
+                                                settings: { ...(list[idx].settings || {}), productHandles },
+                                              };
+                                              set("blogSidebarWidgets")(JSON.stringify(list));
+                                            }}
+                                            helpText="Enter Shopify product handles, e.g. blue-t-shirt, winter-hat"
+                                            autoComplete="off"
+                                          />
+                                        )}
+                                        <Select
+                                          label="Max items"
+                                          options={["1", "2", "3", "4", "6"].map((n) => ({
+                                            label: n,
+                                            value: n,
+                                          }))}
+                                          value={String(widget.settings?.maxItems || 3)}
+                                          onChange={(maxItems) => {
+                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                            list[idx] = {
+                                              ...list[idx],
+                                              settings: {
+                                                ...(list[idx].settings || {}),
+                                                maxItems: parseInt(maxItems, 10),
+                                              },
+                                            };
+                                            set("blogSidebarWidgets")(JSON.stringify(list));
+                                          }}
+                                        />
+                                      </>
+                                    )}
+                                    {widget.type === "categories" && (
+                                      <Checkbox
+                                        label="Show post counts"
+                                        checked={widget.settings?.showCounts !== false}
+                                        onChange={(showCounts) => {
+                                          const list = parseSidebarWidgets(settings.blogSidebarWidgets);
+                                          list[idx] = {
+                                            ...list[idx],
+                                            settings: { ...(list[idx].settings || {}), showCounts },
+                                          };
+                                          set("blogSidebarWidgets")(JSON.stringify(list));
+                                        }}
+                                      />
+                                    )}
+                                  </BlockStack>
+                                )}
+                              </BlockStack>
+                            </Card>
+                          ))}
+                          <Button
+                            onClick={async () => {
+                              try {
+                                const res = await fetch("/api/settings/apply-sidebar-layout", {
+                                  method: "POST",
+                                });
+                                const data = await res.json();
+                                if (!res.ok) throw new Error(data.error || "Failed");
+                                setToast({
+                                  content: `Applied layout to ${data.updated || 0} published post(s).`,
+                                });
+                              } catch (e) {
+                                setToast({ content: e.message || "Apply failed", error: true });
+                              }
+                            }}
+                          >
+                            Apply sidebar layout to all published posts
+                          </Button>
+                        </BlockStack>
+                      )}
                   </SectionCard>
                 </Layout.Section>
               </>

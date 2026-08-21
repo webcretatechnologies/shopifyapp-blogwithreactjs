@@ -197,6 +197,13 @@
   // add-to-cart interception point below with whatever variant id(s) it managed to extract.
   // Matches by variant id (what /cart/add actually receives), not product id, since a request
   // only ever carries the specific variant being added.
+  //
+  // Themes often both submit a /cart/add form AND fire fetch/XHR for the same add. Without a
+  // short once-per-add guard, that records two add_to_cart events for one click.
+  var lastAddToCartKey = null;
+  var lastAddToCartAt = 0;
+  var ADD_TO_CART_DEDUP_MS = 2500;
+
   function maybeConfirmFromAddToCart(variantIds) {
     const candidate = getCandidate();
     if (!candidate) return false;
@@ -204,30 +211,66 @@
       return candidate.variantIds.indexOf(vid) !== -1;
     });
     if (!matched) return false;
+
+    var key = String(candidate.postId) + ':' + variantIds.map(String).sort().join(',');
+    var now = Date.now();
+    if (lastAddToCartKey === key && (now - lastAddToCartAt) < ADD_TO_CART_DEDUP_MS) {
+      return true;
+    }
+    lastAddToCartKey = key;
+    lastAddToCartAt = now;
+
     confirmSourcePostId(candidate.postId);
     writeCartAttribute(candidate.postId);
     sendEvent(candidate.postId, 'add_to_cart');
     return true;
   }
 
+  // Resolve cart-add body for both fetch(url, { body }) and fetch(new Request(...)).
+  // Must clone+read Request before the real fetch consumes its body stream.
+  async function resolveFetchCartAddBody(args) {
+    const init = args[1];
+    if (init && init.body != null) return init.body;
+    const urlArg = args[0];
+    if (typeof Request !== 'undefined' && urlArg instanceof Request) {
+      try {
+        const cloned = urlArg.clone();
+        const ct = (cloned.headers && cloned.headers.get('content-type')) || '';
+        if (ct.indexOf('multipart/form-data') !== -1 || ct.indexOf('application/x-www-form-urlencoded') !== -1) {
+          try {
+            return await cloned.formData();
+          } catch (e) {
+            return await cloned.text();
+          }
+        }
+        return await cloned.text();
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   // --- Bug 2: Patch Fetch Interceptor Crash ---
   const originalFetch = window.fetch;
   window.fetch = async function(...args) {
+    const urlArg = args[0];
+    let urlStr = "";
+    if (typeof urlArg === 'string') {
+      urlStr = urlArg;
+    } else if (typeof Request !== 'undefined' && urlArg instanceof Request) {
+      urlStr = urlArg.url;
+    }
+
+    let cartAddBody = null;
+    if (urlStr && urlStr.includes('/cart/add')) {
+      cartAddBody = await resolveFetchCartAddBody(args);
+    }
+
     try {
       const response = await originalFetch.apply(this, args);
-      const urlArg = args[0];
-      let urlStr = "";
-
-      // Safely extract URL whether it's a string or a Request object
-      if (typeof urlArg === 'string') {
-        urlStr = urlArg;
-      } else if (urlArg instanceof Request) {
-        urlStr = urlArg.url;
-      }
-
       if (urlStr && urlStr.includes('/cart/add')) {
-        const body = args[1] && args[1].body;
-        maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(body));
+        maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(cartAddBody));
       }
       return response;
     } catch (e) {

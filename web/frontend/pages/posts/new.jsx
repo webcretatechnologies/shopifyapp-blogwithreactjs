@@ -813,6 +813,7 @@ export default function PostEditor() {
     customCss: "",
     productSliderPosition: "none",
     editorMode: "builder", // Default to builder instead of wysiwyg
+    categoryId: null,
   });
   const [originalPost, setOriginalPost] = useState(null);
 
@@ -877,6 +878,10 @@ export default function PostEditor() {
   });
   const [seoExpanded, setSeoExpanded] = useState(false);
   const [relatedPostsSelection, setRelatedPostsSelection] = useState([]);
+  const [relatedPostsSourceMode, setRelatedPostsSourceMode] = useState("inherit");
+  const [blogSidebarOverride, setBlogSidebarOverride] = useState("inherit");
+  const [categories, setCategories] = useState([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [showRelatedPostsSetting, setShowRelatedPostsSetting] = useState(true);
   const [themeTemplate, setThemeTemplate] = useState("default");
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
@@ -933,6 +938,13 @@ export default function PostEditor() {
         }
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/categories")
+      .then((r) => r.json())
+      .then((d) => setCategories(d.categories || []))
+      .catch(() => setCategories([]));
   }, []);
 
   // Keep the draft/publish_now/schedule radio in sync with the loaded post's actual status.
@@ -1034,6 +1046,7 @@ export default function PostEditor() {
         excludeFromSitemap: !!data.post.excludeFromSitemap,
         richSnippetType: data.post.richSnippetType || "BlogPosting",
         relatedPosts: data.post.relatedPosts || [],
+        categoryId: data.post.categoryId || null,
       };
 
       const loadedTags = parseTags(data.post.tags);
@@ -1067,6 +1080,8 @@ export default function PostEditor() {
         richSnippetType: data.post.richSnippetType || "BlogPosting",
       });
       setRelatedPostsSelection(data.post.relatedPosts || []);
+      setRelatedPostsSourceMode(data.post.relatedPostsSourceMode || "inherit");
+      setBlogSidebarOverride(data.post.blogSidebarOverride || "inherit");
       if (data.post.metaTitle || data.post.metaDescription || data.post.metaRobotsNoindex || data.post.metaRobotsNofollow || (data.post.richSnippetType && data.post.richSnippetType !== "BlogPosting")) setSeoExpanded(true);
     } catch (err) {
       setError(err.message);
@@ -1204,7 +1219,10 @@ export default function PostEditor() {
     const currentRelatedIds = relatedPostsSelection.map((p) => p.id);
     const isRelatedPostsDirty =
       currentRelatedIds.length !== originalRelatedIds.length ||
-      !currentRelatedIds.every((id, i) => id === originalRelatedIds[i]);
+      !currentRelatedIds.every((id, i) => id === originalRelatedIds[i]) ||
+      (relatedPostsSourceMode || "inherit") !== (o.relatedPostsSourceMode || "inherit") ||
+      (blogSidebarOverride || "inherit") !== (o.blogSidebarOverride || "inherit") ||
+      (post.categoryId || null) !== (o.categoryId || null);
 
     const originalTags = o.tags || [];
     const isTagsDirty =
@@ -1212,7 +1230,7 @@ export default function PostEditor() {
       !tags.every((t) => originalTags.includes(t));
 
     return isPostDirty || isTagsDirty || isRelatedPostsDirty;
-  }, [isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData, isLoading, relatedPostsSelection]);
+  }, [isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData, isLoading, relatedPostsSelection, relatedPostsSourceMode, blogSidebarOverride]);
 
   const saveBarId = "post-editor-save-bar";
 
@@ -1399,6 +1417,9 @@ export default function PostEditor() {
       editorMode: post.editorMode || "builder",
       ...seoData,
       relatedPostIds: relatedPostsSelection.map((p) => p.id),
+      relatedPostsSourceMode,
+      blogSidebarOverride,
+      categoryId: post.categoryId || null,
     };
   };
 
@@ -1469,6 +1490,8 @@ export default function PostEditor() {
           ...payload,
           tags: [...tags],
           relatedPosts: [...relatedPostsSelection],
+          relatedPostsSourceMode: relatedPostsSourceMode === "inherit" ? null : relatedPostsSourceMode,
+          blogSidebarOverride: blogSidebarOverride === "inherit" ? null : blogSidebarOverride,
           contentJson: currentSavedBlocks,
           // A save that reaches here just pushed OUR content to Shopify, so the sync direction
           // is unambiguously "app_to_shopify" now — without this, post.shopifyArticle (a nested
@@ -1520,6 +1543,8 @@ export default function PostEditor() {
         richSnippetType: originalPost.richSnippetType || "BlogPosting",
       });
       setRelatedPostsSelection(originalPost.relatedPosts || []);
+      setRelatedPostsSourceMode(originalPost.relatedPostsSourceMode || "inherit");
+      setBlogSidebarOverride(originalPost.blogSidebarOverride || "inherit");
     } else {
       setPost({
         title: "",
@@ -1532,6 +1557,7 @@ export default function PostEditor() {
         customCss: "",
         productSliderPosition: "none",
         editorMode: "builder",
+        categoryId: null,
       });
       useBuilderStore.getState().hydrate([]);
       setContentHtml("");
@@ -1551,6 +1577,8 @@ export default function PostEditor() {
         richSnippetType: "BlogPosting",
       });
       setRelatedPostsSelection([]);
+      setRelatedPostsSourceMode("inherit");
+      setBlogSidebarOverride("inherit");
     }
     if (window.shopify?.saveBar) {
       try { window.shopify.saveBar.hide(saveBarId); } catch (e) {}
@@ -2646,18 +2674,105 @@ export default function PostEditor() {
                           </Text>
                         </Banner>
                       )}
+                      <Select
+                        label="Category"
+                        options={[
+                          { label: "No category", value: "" },
+                          ...categories.map((c) => ({
+                            label: c.name,
+                            value: String(c.id),
+                          })),
+                        ]}
+                        value={post.categoryId ? String(post.categoryId) : ""}
+                        onChange={(v) =>
+                          setPost((p) => ({
+                            ...p,
+                            categoryId: v ? parseInt(v, 10) : null,
+                          }))
+                        }
+                        helpText="Used when related source is “Same category”."
+                      />
+                      <InlineStack gap="200" blockAlign="end">
+                        <div style={{ flex: 1 }}>
+                          <TextField
+                            label="Add category"
+                            labelHidden
+                            value={newCategoryName}
+                            onChange={setNewCategoryName}
+                            placeholder="New category name"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <Button
+                          disabled={!newCategoryName.trim()}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch("/api/categories", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ name: newCategoryName.trim() }),
+                              });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.error || "Failed");
+                              setCategories((prev) =>
+                                [...prev, { id: data.category.id, name: data.category.name, slug: data.category.slug }].sort(
+                                  (a, b) => a.name.localeCompare(b.name)
+                                )
+                              );
+                              setPost((p) => ({ ...p, categoryId: data.category.id }));
+                              setNewCategoryName("");
+                            } catch (e) {
+                              setToast({ content: e.message || "Could not create category", error: true });
+                            }
+                          }}
+                        >
+                          Add
+                        </Button>
+                      </InlineStack>
+                      <Select
+                        label="Related posts source"
+                        options={[
+                          { label: "Use shop default", value: "inherit" },
+                          { label: "Smart match (category + tags)", value: "smart" },
+                          { label: "Same category", value: "category" },
+                          { label: "Random", value: "random" },
+                          { label: "Manual picks", value: "manual" },
+                        ]}
+                        value={relatedPostsSourceMode || "inherit"}
+                        onChange={setRelatedPostsSourceMode}
+                      />
                       {features.related_posts_manual?.enabled ? (
-                        <RelatedPostsPicker
-                          value={relatedPostsSelection}
-                          onChange={setRelatedPostsSelection}
-                          excludePostId={post.id}
-                        />
+                        relatedPostsSourceMode === "manual" || relatedPostsSourceMode === "inherit" ? (
+                          <RelatedPostsPicker
+                            value={relatedPostsSelection}
+                            onChange={setRelatedPostsSelection}
+                            excludePostId={post.id}
+                            requireManual={relatedPostsSourceMode === "manual"}
+                          />
+                        ) : (
+                          <Text as="p" variant="bodySm" tone="subdued">
+                            Related posts will be chosen automatically using this source. Switch to Manual to pick specific articles.
+                          </Text>
+                        )
                       ) : (
                         <UpgradePrompt
                           onUpgrade={handleUpgradeNow}
                           requiredPlan="Starter"
                           title="Related posts are picked automatically on this plan"
                           description="Upgrade to manually choose which articles show here."
+                        />
+                      )}
+                      {features.blog_sidebar?.enabled && (
+                        <Select
+                          label="Sidebar for this post"
+                          options={[
+                            { label: "Use shop default", value: "inherit" },
+                            { label: "Show sidebar", value: "on" },
+                            { label: "Hide sidebar", value: "off" },
+                          ]}
+                          value={blogSidebarOverride || "inherit"}
+                          onChange={setBlogSidebarOverride}
+                          helpText="Overrides Settings → Blog sidebar for this article only (after Save & Sync)."
                         />
                       )}
                     </BlockStack>

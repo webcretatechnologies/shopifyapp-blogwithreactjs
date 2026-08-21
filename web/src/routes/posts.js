@@ -260,12 +260,29 @@ router.post("/", async (req, res) => {
       excludeFromSitemap,
       richSnippetType,
       relatedPostIds = [],
+      relatedPostsSourceMode,
+      blogSidebarOverride,
     } = req.body;
 
     if (!title) return res.status(422).json({ error: "Title is required" });
 
     if (Array.isArray(relatedPostIds) && relatedPostIds.length > 0 && !isFeatureEnabled(shop.planKey, "related_posts_manual")) {
       return res.status(403).json({ error: "Manually selecting related posts requires the Starter plan or higher." });
+    }
+
+    const modeVal =
+      relatedPostsSourceMode === undefined || relatedPostsSourceMode === null || relatedPostsSourceMode === "" || relatedPostsSourceMode === "inherit"
+        ? null
+        : String(relatedPostsSourceMode).toLowerCase();
+    if (modeVal && !["smart", "category", "random", "manual"].includes(modeVal)) {
+      return res.status(422).json({ error: "Invalid relatedPostsSourceMode" });
+    }
+    const sidebarOv =
+      blogSidebarOverride === undefined || blogSidebarOverride === null || blogSidebarOverride === "" || blogSidebarOverride === "inherit"
+        ? null
+        : String(blogSidebarOverride).toLowerCase();
+    if (sidebarOv && !["on", "off"].includes(sidebarOv)) {
+      return res.status(422).json({ error: "Invalid blogSidebarOverride" });
     }
 
     const blocks = Array.isArray(contentJson) ? contentJson : [];
@@ -306,6 +323,8 @@ router.post("/", async (req, res) => {
         productSliderSource,
         productSliderConfig: productSliderConfig || null,
         categoryId: categoryId ? parseInt(categoryId) : null,
+        relatedPostsSourceMode: modeVal,
+        blogSidebarOverride: sidebarOv,
         editorMode: "builder",
         metaTitle: metaTitle || null,
         metaDescription: metaDescription || null,
@@ -396,10 +415,35 @@ router.put("/:id", async (req, res) => {
       richSnippetType,
       blogId,
       relatedPostIds,
+      relatedPostsSourceMode,
+      blogSidebarOverride,
     } = req.body;
 
     if (Array.isArray(relatedPostIds) && relatedPostIds.length > 0 && !isFeatureEnabled(shop.planKey, "related_posts_manual")) {
       return res.status(403).json({ error: "Manually selecting related posts requires the Starter plan or higher." });
+    }
+
+    let relatedModeUpdate = {};
+    if (relatedPostsSourceMode !== undefined) {
+      const modeVal =
+        relatedPostsSourceMode === null || relatedPostsSourceMode === "" || relatedPostsSourceMode === "inherit"
+          ? null
+          : String(relatedPostsSourceMode).toLowerCase();
+      if (modeVal && !["smart", "category", "random", "manual"].includes(modeVal)) {
+        return res.status(422).json({ error: "Invalid relatedPostsSourceMode" });
+      }
+      relatedModeUpdate = { relatedPostsSourceMode: modeVal };
+    }
+    let sidebarOverrideUpdate = {};
+    if (blogSidebarOverride !== undefined) {
+      const sidebarOv =
+        blogSidebarOverride === null || blogSidebarOverride === "" || blogSidebarOverride === "inherit"
+          ? null
+          : String(blogSidebarOverride).toLowerCase();
+      if (sidebarOv && !["on", "off"].includes(sidebarOv)) {
+        return res.status(422).json({ error: "Invalid blogSidebarOverride" });
+      }
+      sidebarOverrideUpdate = { blogSidebarOverride: sidebarOv };
     }
 
     const blocks = contentJson !== undefined ? (Array.isArray(contentJson) ? contentJson : []) : post.contentJson || [];
@@ -439,6 +483,8 @@ router.put("/:id", async (req, res) => {
         ...(productSliderSource && { productSliderSource }),
         ...(productSliderConfig && { productSliderConfig }),
         ...(categoryId !== undefined && { categoryId: categoryId ? parseInt(categoryId) : null }),
+        ...relatedModeUpdate,
+        ...sidebarOverrideUpdate,
         ...(publishedAt && { publishedAt: new Date(publishedAt) }),
         editorMode: finalEditorMode,
         metaTitle: metaTitle !== undefined ? metaTitle : post.metaTitle,
@@ -657,6 +703,8 @@ router.post("/:id/clone", async (req, res) => {
         productSliderSource: sourcePost.productSliderSource,
         productSliderConfig: sourcePost.productSliderConfig,
         categoryId: sourcePost.categoryId,
+        relatedPostsSourceMode: sourcePost.relatedPostsSourceMode,
+        blogSidebarOverride: sourcePost.blogSidebarOverride,
         editorMode: sourcePost.editorMode,
         metaTitle: sourcePost.metaTitle,
         metaDescription: sourcePost.metaDescription,
@@ -1761,6 +1809,8 @@ function serializePost(post) {
     productSliderSource: post.productSliderSource,
     categoryId: post.categoryId,
     category: post.category || null,
+    relatedPostsSourceMode: post.relatedPostsSourceMode || null,
+    blogSidebarOverride: post.blogSidebarOverride || null,
     tags: post.tags ? post.tags.map((pt) => pt.tag?.name || pt) : [],
     products: post.products
       ? post.products.map((pp) => ({

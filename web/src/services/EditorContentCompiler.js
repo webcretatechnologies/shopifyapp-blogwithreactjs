@@ -1883,6 +1883,228 @@ ${this.generateGlobalCss(settings)}
     overflow: hidden;
   }
 
+  /* List layout */
+  .blogger-related-posts__list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .blogger-related-posts__list-item {
+    display: flex !important;
+    align-items: flex-start;
+    gap: 14px;
+    text-decoration: none !important;
+    color: inherit !important;
+    padding: 10px;
+    border: 1px solid #e1e3e5;
+    border-radius: 10px;
+    background: #fff;
+    transition: box-shadow 0.15s ease;
+  }
+  .blogger-related-posts__list-item:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+  .blogger-related-posts__list-thumb {
+    width: 88px !important;
+    height: 66px !important;
+    object-fit: cover !important;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: #f1f2f3;
+  }
+  .blogger-related-posts__list-thumb--empty {
+    display: block;
+  }
+  .blogger-related-posts__list-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .blogger-related-posts__list-body .blogger-related-posts__item-title {
+    padding: 0 !important;
+  }
+  .blogger-related-posts__list-excerpt {
+    font-size: 0.85em;
+    color: #6d7175;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Slider layout */
+  .blogger-related-posts__slider {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .blogger-related-posts__slider-track {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex: 1;
+    padding: 4px 2px 12px;
+  }
+  .blogger-related-posts__slider-track::-webkit-scrollbar { display: none; }
+  .blogger-related-posts__slide {
+    flex: 0 0 min(280px, 80%);
+    scroll-snap-align: start;
+    max-width: 280px;
+  }
+  .blogger-related-posts__slider-btn {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid #c9cccf;
+    background: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    color: #202223;
+  }
+  .blogger-related-posts__slider-btn:hover {
+    background: #f6f6f7;
+  }
+
+  /* Two-column article + sidebar
+     IMPORTANT: do NOT reserve a sidebar column until JS successfully fills widgets.
+     An empty <aside> is often stripped/collapsed by Shopify's article sanitizer; if we still
+     use grid-template-columns: 1fr 320px with only .blogger-article-main left, the second
+     track is blank white space (the storefront bug merchants reported). */
+  .blogger-article-layout {
+    display: block;
+    width: 100%;
+    max-width: var(--blogger-layout-width, 800px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .blogger-article-layout.blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-right,
+  .blogger-article-layout.blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-left {
+    display: grid;
+    gap: 28px;
+    align-items: start;
+    /* Article content width + sidebar + gap, capped by viewport */
+    max-width: min(
+      100%,
+      calc(var(--blogger-layout-width, 800px) + var(--blogger-sidebar-width, 320px) + 28px)
+    );
+  }
+  .blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-right {
+    grid-template-columns: minmax(0, 1fr) var(--blogger-sidebar-width, 320px);
+  }
+  .blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-left {
+    grid-template-columns: var(--blogger-sidebar-width, 320px) minmax(0, 1fr);
+  }
+  .blogger-article-layout--sidebar-left .blogger-article-sidebar { order: -1; }
+  .blogger-article-main .blogger-article-container {
+    max-width: none !important;
+    margin: 0 !important;
+  }
+  .blogger-article-sidebar {
+    display: none;
+  }
+  .blogger-article-layout--sidebar-active .blogger-article-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    position: sticky;
+    top: 24px;
+  }
+  /* Hide bottom related only once the sidebar is live AND it owns related posts */
+  .blogger-article-layout--sidebar-active[data-sidebar-related="1"] .blogger-related-posts {
+    display: none !important;
+  }
+  .blogger-sidebar-widget {
+    padding: 16px;
+    border: 1px solid #e1e3e5;
+    border-radius: 10px;
+    background: #fff;
+  }
+  .blogger-sidebar-widget__title {
+    font-size: 1.05em;
+    font-weight: 600;
+    margin: 0 0 12px;
+  }
+  .blogger-sidebar-widget .blogger-related-posts {
+    margin: 0;
+    padding: 0;
+    border: none;
+  }
+  .blogger-sidebar-categories {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .blogger-sidebar-categories > li,
+  .blogger-sidebar-category {
+    margin: 0 0 12px;
+  }
+  .blogger-sidebar-category__name {
+    font-weight: 600;
+  }
+  .blogger-sidebar-category__posts {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0 0 0 10px;
+  }
+  .blogger-sidebar-category__posts li {
+    margin: 0 0 4px;
+  }
+  .blogger-sidebar-categories a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .blogger-sidebar-categories a:hover {
+    text-decoration: underline;
+  }
+  .blogger-sidebar-product {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+    text-decoration: none;
+    color: inherit;
+  }
+  .blogger-sidebar-product img {
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+  .blogger-sidebar-cta img {
+    width: 100%;
+    border-radius: 8px;
+    display: block;
+    margin-bottom: 10px;
+  }
+  .blogger-sidebar-cta__btn {
+    display: inline-block;
+    padding: 8px 14px;
+    background: var(--blogger-primary, #008060);
+    color: #fff !important;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 0.9em;
+  }
+  @media (max-width: 768px) {
+    .blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-right,
+    .blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-left {
+      grid-template-columns: 1fr;
+      max-width: var(--blogger-layout-width, 800px);
+    }
+    .blogger-article-layout--sidebar-active .blogger-article-sidebar {
+      position: static;
+      order: 2;
+    }
+    .blogger-article-main { order: 1; }
+  }
+
 
   /* Table styling for Tiptap native tables */
   .blogger-article-container table {
@@ -1962,15 +2184,75 @@ ${this.generateGlobalCss(settings)}
   static generateLayoutCss(settings, { important = true } = {}) {
     const bang = important ? " !important" : "";
     const layoutWidth = resolveBlogLayoutWidth(settings);
+    const sidebarW = parseInt(settings.blogSidebarWidth, 10);
+    const sidebarWidth = Number.isFinite(sidebarW) && sidebarW >= 240 && sidebarW <= 420
+      ? `${sidebarW}px`
+      : "320px";
     const isOff = (v) => v === false || v === "false";
     return `  :root {
     --blogger-layout-width: ${layoutWidth};
+    --blogger-sidebar-width: ${sidebarWidth};
   }
 
   .blogger-article-container {
     max-width: var(--blogger-layout-width)${bang};
     margin-left: auto !important;
     margin-right: auto !important;
+  }
+
+  .blogger-article-layout {
+    max-width: var(--blogger-layout-width)${bang};
+    margin-left: auto !important;
+    margin-right: auto !important;
+    /* Live override: never reserve a blank sidebar column until JS activates the layout.
+       Overrides older baked generateGlobalCss that used grid-template-columns: 1fr 320px
+       unconditionally (which produced empty white space when the aside was empty/stripped). */
+    display: block${bang};
+  }
+
+  .blogger-article-layout.blogger-article-layout--sidebar-active {
+    display: grid${bang};
+    gap: 28px;
+    align-items: start;
+    max-width: min(
+      100%,
+      calc(var(--blogger-layout-width) + var(--blogger-sidebar-width, 320px) + 28px)
+    )${bang};
+  }
+
+  .blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-right {
+    grid-template-columns: minmax(0, 1fr) var(--blogger-sidebar-width, 320px)${bang};
+  }
+
+  .blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-left {
+    grid-template-columns: var(--blogger-sidebar-width, 320px) minmax(0, 1fr)${bang};
+  }
+
+  .blogger-article-sidebar {
+    display: none${bang};
+  }
+
+  .blogger-article-layout--sidebar-active .blogger-article-sidebar {
+    display: flex${bang};
+    flex-direction: column;
+    gap: 20px;
+    position: sticky;
+    top: 24px;
+  }
+
+  .blogger-article-layout--sidebar-active[data-sidebar-related="1"] .blogger-related-posts {
+    display: none${bang};
+  }
+
+  @media (max-width: 768px) {
+    .blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-right,
+    .blogger-article-layout--sidebar-active.blogger-article-layout--sidebar-left {
+      grid-template-columns: 1fr${bang};
+      max-width: var(--blogger-layout-width)${bang};
+    }
+    .blogger-article-layout--sidebar-active .blogger-article-sidebar {
+      position: static${bang};
+    }
   }
 
   .blogger-author {
@@ -2154,22 +2436,69 @@ ${this.generateGlobalCss(settings)}
       ? `\n<style id="blogger-post-custom-css">\n${customCss}\n</style>\n`
       : "";
 
-    // One shared bootstrap script covers both related posts and custom header/footer code below —
-    // emitted whenever there's a domain to build fetch URLs from, regardless of whether this
-    // specific article also has a related-posts placeholder.
+    // One shared bootstrap script covers related posts, custom header/footer, branding —
+    // emitted whenever there's a domain to build fetch URLs from.
     const liveScriptTag = domain
       ? `<script src="${APP_URL}/related-posts.js" defer></script>`
       : "";
 
-    // Related posts — a placeholder, NOT baked HTML. Real content is fetched live from
-    // /related-posts.json (web/src/routes/relatedPosts.js) on every storefront page view, so
-    // toggling showRelatedPosts or changing relatedPostsCount applies instantly to every
-    // already-published post with no resync — same live-update reasoning as the /styles.css
-    // <link> above, just for data instead of CSS. Omitted only when there's no postId (e.g. the
-    // /preview route, which has no saved post yet) or no domain to build the fetch URL.
-    const relatedPostsHtml = (postId && domain)
-      ? `<div class="blogger-related-posts" data-related-posts data-post-id="${postId}" data-shop="${escapeHtml(domain)}"></div>`
-      : "";
+    let postSidebarOverride = null;
+    if (postId) {
+      try {
+        const p = await prisma.post.findUnique({
+          where: { id: postId },
+          select: { blogSidebarOverride: true },
+        });
+        postSidebarOverride = p?.blogSidebarOverride || null;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const shopSidebarOn =
+      (settings.blogSidebarEnabled === true || settings.blogSidebarEnabled === "true") &&
+      isFeatureEnabled(shopRow?.planKey, "blog_sidebar");
+    let sidebarEnabled = shopSidebarOn;
+    if (String(postSidebarOverride || "").toLowerCase() === "off") sidebarEnabled = false;
+    if (String(postSidebarOverride || "").toLowerCase() === "on" && isFeatureEnabled(shopRow?.planKey, "blog_sidebar")) {
+      sidebarEnabled = true;
+    }
+
+    let sidebarRelatedOn = false;
+    if (sidebarEnabled) {
+      try {
+        const widgets = JSON.parse(settings.blogSidebarWidgets || "[]");
+        sidebarRelatedOn = Array.isArray(widgets) && widgets.some((w) => w?.type === "related_posts" && w.enabled);
+      } catch {
+        sidebarRelatedOn = false;
+      }
+    }
+
+    // Always emit the bottom related placeholder. When the sidebar Related widget loads
+    // successfully, sidebar.js marks the layout active and CSS hides this bottom block —
+    // so a failed/stripped sidebar never leaves the article with zero related posts.
+    const relatedPostsHtml =
+      postId && domain
+        ? `<div class="blogger-related-posts" data-related-posts data-post-id="${postId}" data-shop="${escapeHtml(domain)}"></div>`
+        : "";
+
+    const sidebarPos = String(settings.blogSidebarPosition || "right").toLowerCase() === "left" ? "left" : "right";
+    const sidebarScriptTag =
+      sidebarEnabled && domain
+        ? `<script src="${APP_URL}/sidebar.js" defer></script>`
+        : "";
+    const sidebarAside =
+      sidebarEnabled && postId && domain
+        ? // Non-empty placeholder: Shopify's article sanitizer collapses truly-empty block
+          // elements (and may drop an empty <aside> entirely), which left a CSS grid track
+          // with no node and looked like blank sidebar space. The &nbsp; + class keep it alive.
+          `<aside class="blogger-article-sidebar" data-blog-sidebar data-post-id="${postId}" data-shop="${escapeHtml(domain)}"><span class="blogger-sidebar-placeholder" aria-hidden="true">&nbsp;</span></aside>`
+        : "";
+
+    // Hint that Related is configured for the sidebar. sidebar.js clears this attribute if the
+    // Related widget does not actually render (e.g. blogHandle lookup failed) so CSS does not
+    // hide the bottom related block while the sidebar slot is empty.
+    const sidebarRelatedAttr = sidebarRelatedOn ? ` data-sidebar-related="1"` : "";
 
     // Custom header/footer code (Settings → Advanced) — also placeholders now, not baked HTML.
     // Previously this text was inserted directly at sync time, meaning a merchant who changed
@@ -2225,6 +2554,12 @@ ${this.generateGlobalCss(settings)}
       ? `<div class="blogger-byline">${bylineParts.join("")}</div>\n`
       : "";
 
-    return `${fallbackStyles}${liveStylesLink}${customCssBlock}${liveScriptTag}${headerPlaceholder}\n<div class="blogger-article-container">\n${bylineHtml}${compiled}\n${relatedPostsHtml}\n</div>${footerPlaceholder}`;
+    const articleInner = `<div class="blogger-article-container">\n${bylineHtml}${compiled}\n${relatedPostsHtml}\n</div>`;
+    const articleBody =
+      sidebarEnabled && sidebarAside
+        ? `<div class="blogger-article-layout blogger-article-layout--sidebar-${sidebarPos}"${sidebarRelatedAttr}>\n<div class="blogger-article-main">\n${articleInner}\n</div>\n${sidebarAside}\n</div>`
+        : articleInner;
+
+    return `${fallbackStyles}${liveStylesLink}${customCssBlock}${liveScriptTag}${sidebarScriptTag}${headerPlaceholder}\n${articleBody}${footerPlaceholder}`;
   }
 }

@@ -23,7 +23,7 @@
 import express from "express";
 import { prisma } from "../../shopify.js";
 import shopify from "../../shopify.js";
-import { getRelatedPosts } from "../services/RelatedPostsService.js";
+import { getRelatedPosts, resolveRelatedSourceMode, normalizeRelatedSourceMode } from "../services/RelatedPostsService.js";
 import { isFeatureEnabled } from "../services/PlanFeatureService.js";
 import { APP_NAME, APP_BRANDING_URL } from "../utils/appName.js";
 
@@ -33,6 +33,18 @@ const router = express.Router();
 // public base URL, needed here so the served script knows where to fetch related-posts.json from
 // without requiring an extra data-* attribute on the placeholder div.
 const APP_URL = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
+
+const RELATED_LAYOUTS = new Set(["grid", "list", "slider"]);
+
+function parseSettings(shop) {
+  return (shop.settings || []).reduce((acc, s) => {
+    let val = s.value;
+    if (val === "true") val = true;
+    else if (val === "false") val = false;
+    acc[s.key] = val;
+    return acc;
+  }, {});
+}
 
 // ─── Abuse guard ──────────────────────────────────────────────────────────
 const CACHE_TTL_MS = 15 * 1000;
@@ -96,16 +108,17 @@ router.get("/related-posts.json", async (req, res) => {
       return;
     }
 
-    const settings = (shop.settings || []).reduce((acc, s) => {
-      let val = s.value;
-      if (val === "true") val = true;
-      else if (val === "false") val = false;
-      acc[s.key] = val;
-      return acc;
-    }, {});
+    const settings = parseSettings(shop);
+
+    // Bottom related is always available from this endpoint. When the sidebar Related widget
+    // successfully loads, CSS on .blogger-article-layout--sidebar-active[data-sidebar-related]
+    // hides the bottom block — so a broken/stripped sidebar never leaves merchants with zero
+    // related posts (and we never call a removed helper that would 500 this route).
 
     const showRelated = settings.showRelatedPosts !== false && settings.showRelatedPosts !== "false";
     const count = parseInt(settings.relatedPostsCount, 10) || 3;
+    const layoutRaw = String(settings.relatedPostsLayout || "grid").toLowerCase();
+    const layout = RELATED_LAYOUTS.has(layoutRaw) ? layoutRaw : "grid";
     if (!showRelated || count <= 0) {
       dataCache.set(cacheKey, { body: empty, expiresAt: Date.now() + CACHE_TTL_MS });
       res.send(empty);
@@ -114,7 +127,10 @@ router.get("/related-posts.json", async (req, res) => {
 
     const post = await prisma.post.findFirst({
       where: { id: postId, shopId: shop.id },
-      select: { shopifyArticle: { select: { shopifyBlogId: true } } },
+      select: {
+        relatedPostsSourceMode: true,
+        shopifyArticle: { select: { shopifyBlogId: true } },
+      },
     });
     const blogId = post?.shopifyArticle?.shopifyBlogId;
     if (!post || !blogId) {
@@ -141,14 +157,22 @@ router.get("/related-posts.json", async (req, res) => {
       return;
     }
 
-    const relatedPosts = await getRelatedPosts(postId, shop.id, blogId, count);
+    const mode = resolveRelatedSourceMode(settings.relatedPostsSourceMode, post.relatedPostsSourceMode);
+    const relatedPosts = await getRelatedPosts(postId, shop.id, blogId, { count, mode });
     const items = relatedPosts.map((p) => ({
       title: p.title,
       href: `https://${shopDomain}/blogs/${blogHandle}/${p.slug}`,
       image: p.featuredImage || null,
+      excerpt: p.excerpt || null,
     }));
 
-    const body = JSON.stringify({ show: items.length > 0, items });
+    const body = JSON.stringify({
+      show: items.length > 0,
+      layout,
+      count,
+      mode: normalizeRelatedSourceMode(mode),
+      items,
+    });
     dataCache.set(cacheKey, { body, expiresAt: Date.now() + CACHE_TTL_MS });
     res.send(body);
   } catch (err) {
@@ -283,27 +307,87 @@ const RELATED_POSTS_SCRIPT = `(function () {
       .replace(/"/g, "&quot;");
   }
 
-  function render(container, items) {
-    var html = '<h3 class="blogger-related-posts__title">Related Posts</h3><div class="blogger-related-posts__grid">';
+  function cardImageHtml(item) {
+    if (item.image) {
+      return '<div class="blogger-related-posts__image-wrap">' +
+        '<img class="blogger-related-posts__image-bg" src="' + escapeHtml(item.image) + '" alt="" aria-hidden="true" loading="lazy">' +
+        '<img class="blogger-related-posts__image" src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(item.title) + '" loading="lazy">' +
+        '</div>';
+    }
+    return '<div class="blogger-related-posts__image-placeholder"></div>';
+  }
+
+  function renderGrid(items) {
+    var html = '<div class="blogger-related-posts__grid">';
     items.forEach(function (item) {
       html += '<a class="blogger-related-posts__item" href="' + escapeHtml(item.href) + '">';
-      if (item.image) {
-        // Blurred backdrop (__image-bg) + sharp uncropped foreground image — avoids both cropping
-        // banner-style source images and plain empty-gray letterboxing. See the CSS comment in
-        // EditorContentCompiler.js's generateGlobalCss() for the full reasoning.
-        html += '<div class="blogger-related-posts__image-wrap">';
-        html += '<img class="blogger-related-posts__image-bg" src="' + escapeHtml(item.image) + '" alt="" aria-hidden="true" loading="lazy">';
-        html += '<img class="blogger-related-posts__image" src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(item.title) + '" loading="lazy">';
-        html += '</div>';
-      } else {
-        // Keeps every card the same height even when a post has no featured image, instead of
-        // its title floating at the top while sibling cards' titles sit below their images.
-        html += '<div class="blogger-related-posts__image-placeholder"></div>';
-      }
+      html += cardImageHtml(item);
       html += '<span class="blogger-related-posts__item-title">' + escapeHtml(item.title) + '</span></a>';
     });
     html += '</div>';
-    container.innerHTML = html;
+    return html;
+  }
+
+  function renderList(items) {
+    var html = '<div class="blogger-related-posts__list">';
+    items.forEach(function (item) {
+      html += '<a class="blogger-related-posts__list-item" href="' + escapeHtml(item.href) + '">';
+      if (item.image) {
+        html += '<img class="blogger-related-posts__list-thumb" src="' + escapeHtml(item.image) + '" alt="" loading="lazy">';
+      } else {
+        html += '<div class="blogger-related-posts__list-thumb blogger-related-posts__list-thumb--empty"></div>';
+      }
+      html += '<span class="blogger-related-posts__list-body"><span class="blogger-related-posts__item-title">' + escapeHtml(item.title) + '</span>';
+      if (item.excerpt) {
+        html += '<span class="blogger-related-posts__list-excerpt">' + escapeHtml(item.excerpt) + '</span>';
+      }
+      html += '</span></a>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderSlider(items) {
+    var html = '<div class="blogger-related-posts__slider" data-related-slider>';
+    html += '<button type="button" class="blogger-related-posts__slider-btn blogger-related-posts__slider-btn--prev" aria-label="Previous">&#10094;</button>';
+    html += '<div class="blogger-related-posts__slider-track">';
+    items.forEach(function (item) {
+      html += '<a class="blogger-related-posts__item blogger-related-posts__slide" href="' + escapeHtml(item.href) + '">';
+      html += cardImageHtml(item);
+      html += '<span class="blogger-related-posts__item-title">' + escapeHtml(item.title) + '</span></a>';
+    });
+    html += '</div>';
+    html += '<button type="button" class="blogger-related-posts__slider-btn blogger-related-posts__slider-btn--next" aria-label="Next">&#10095;</button>';
+    html += '</div>';
+    return html;
+  }
+
+  function bindSlider(container) {
+    var root = container.querySelector('[data-related-slider]');
+    if (!root) return;
+    var track = root.querySelector('.blogger-related-posts__slider-track');
+    var prev = root.querySelector('.blogger-related-posts__slider-btn--prev');
+    var next = root.querySelector('.blogger-related-posts__slider-btn--next');
+    if (!track) return;
+    var step = function () {
+      var first = track.querySelector('.blogger-related-posts__slide');
+      return first ? first.getBoundingClientRect().width + 16 : 280;
+    };
+    if (prev) prev.addEventListener('click', function () { track.scrollBy({ left: -step(), behavior: 'smooth' }); });
+    if (next) next.addEventListener('click', function () { track.scrollBy({ left: step(), behavior: 'smooth' }); });
+  }
+
+  function render(container, data) {
+    var items = data.items || [];
+    var layout = data.layout === 'list' || data.layout === 'slider' ? data.layout : 'grid';
+    var body =
+      layout === 'list' ? renderList(items) :
+      layout === 'slider' ? renderSlider(items) :
+      renderGrid(items);
+    container.innerHTML = '<h3 class="blogger-related-posts__title">Related Posts</h3>' + body;
+    container.classList.remove('blogger-related-posts--grid', 'blogger-related-posts--list', 'blogger-related-posts--slider');
+    container.classList.add('blogger-related-posts--' + layout);
+    if (layout === 'slider') bindSlider(container);
   }
 
   // Shopify's own storefront always exposes window.Shopify.shop — used as a fallback source of
@@ -352,7 +436,7 @@ const RELATED_POSTS_SCRIPT = `(function () {
         .then(function (res) { return res.json(); })
         .then(function (data) {
           if (data && data.show && Array.isArray(data.items) && data.items.length > 0) {
-            render(container, data.items);
+            render(container, data);
           }
         })
         .catch(function () {});

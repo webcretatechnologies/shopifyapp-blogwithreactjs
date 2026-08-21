@@ -151,6 +151,10 @@ model Post {
   richSnippetType       String            @default("BlogPosting")
   richSnippetData       Json?
   trackingKey           String?           @unique
+  /** Related posts source override: inherit | smart | category | random | manual. Null = inherit shop default. */
+  relatedPostsSourceMode String?
+  /** Per-post sidebar override: inherit | on | off. Null = inherit shop default. */
+  blogSidebarOverride   String?
   category              Category?         @relation(fields: [categoryId], references: [id])
   shop                  Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
   analytics             PostAnalytic[]
