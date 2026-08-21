@@ -14,8 +14,50 @@ import { isFeatureEnabled } from "../services/PlanFeatureService.js";
 
 const router = express.Router();
 const APP_URL = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
-const CACHE_TTL_MS = 15 * 1000;
+const CACHE_TTL_MS = 60 * 1000;
+const BLOG_HANDLE_TTL_MS = 10 * 60 * 1000;
 const dataCache = new Map();
+const blogHandleCache = new Map();
+
+async function resolveBlogHandle(session, blogId, shopifyArticleId) {
+  const cacheKey = blogId
+    ? `blog:${blogId}`
+    : shopifyArticleId
+      ? `article:${shopifyArticleId}`
+      : null;
+  if (cacheKey) {
+    const hit = blogHandleCache.get(cacheKey);
+    if (hit && hit.expiresAt > Date.now()) return hit.handle;
+  }
+
+  let blogHandle = null;
+  try {
+    const client = new shopify.api.clients.Graphql({
+      session: { shop: session.shop, accessToken: session.accessToken, isOnline: false },
+    });
+    if (blogId) {
+      const blogRes = await client.request(
+        `query GetBlogHandle($id: ID!) { blog(id: $id) { handle } }`,
+        { variables: { id: `gid://shopify/Blog/${blogId}` } }
+      );
+      blogHandle = blogRes.data?.blog?.handle || null;
+    }
+    if (!blogHandle && shopifyArticleId) {
+      const articleRes = await client.request(
+        `query GetArticleBlog($id: ID!) { article(id: $id) { blog { handle } } }`,
+        { variables: { id: `gid://shopify/Article/${shopifyArticleId}` } }
+      );
+      blogHandle = articleRes.data?.article?.blog?.handle || null;
+    }
+  } catch (e) {
+    console.error("sidebar.json blog handle:", e.message);
+  }
+
+  if (cacheKey && blogHandle) {
+    blogHandleCache.set(cacheKey, { handle: blogHandle, expiresAt: Date.now() + BLOG_HANDLE_TTL_MS });
+  }
+  return blogHandle;
+}
 
 function parseSettings(shop) {
   return (shop.settings || []).reduce((acc, s) => {
@@ -30,7 +72,19 @@ function parseSettings(shop) {
 function defaultWidgets() {
   return [
     { id: "related_1", type: "related_posts", enabled: true, settings: { title: "Related posts", count: 4 } },
-    { id: "categories_1", type: "categories", enabled: true, settings: { title: "Categories", showCounts: true } },
+    {
+      id: "categories_1",
+      type: "categories",
+      enabled: true,
+      settings: {
+        title: "Categories",
+        showCounts: true,
+        showPosts: true,
+        maxPosts: 3,
+        sort: "name",
+        includeCategoryIds: [],
+      },
+    },
   ];
 }
 
@@ -60,7 +114,7 @@ async function resolvePostId(shopDomain, query) {
 router.get("/sidebar.json", async (req, res) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cache-Control", "public, max-age=15");
+  res.setHeader("Cache-Control", "public, max-age=60");
 
   const shopDomain = String(req.query.shop || "").trim();
   const postId = await resolvePostId(shopDomain, req.query);
@@ -126,148 +180,153 @@ router.get("/sidebar.json", async (req, res) => {
     const blogId = post.shopifyArticle?.shopifyBlogId;
     const shopifyArticleId = post.shopifyArticle?.shopifyArticleId;
     if (session && (blogId || shopifyArticleId)) {
-      try {
-        const client = new shopify.api.clients.Graphql({
-          session: { shop: session.shop, accessToken: session.accessToken, isOnline: false },
-        });
-        if (blogId) {
-          const blogRes = await client.request(
-            `query GetBlogHandle($id: ID!) { blog(id: $id) { handle } }`,
-            { variables: { id: `gid://shopify/Blog/${blogId}` } }
-          );
-          blogHandle = blogRes.data?.blog?.handle || null;
-        }
-        // Fallback: article → blog.handle (covers missing/stale blogId or blog() returning null)
-        if (!blogHandle && shopifyArticleId) {
-          const articleRes = await client.request(
-            `query GetArticleBlog($id: ID!) { article(id: $id) { blog { handle } } }`,
-            { variables: { id: `gid://shopify/Article/${shopifyArticleId}` } }
-          );
-          blogHandle = articleRes.data?.article?.blog?.handle || null;
-        }
-      } catch (e) {
-        console.error("sidebar.json blog handle:", e.message);
-      }
+      blogHandle = await resolveBlogHandle(session, blogId, shopifyArticleId);
     }
 
-    const widgets = [];
-    for (const w of widgetsConfig) {
-      const title = w.settings?.title || "";
-      if (w.type === "related_posts") {
-        // Need blogId for the related query and blogHandle for storefront hrefs.
-        // If either is missing, skip this widget — sidebar.js must clear data-sidebar-related
-        // so the bottom related block is not CSS-hidden while this slot stays empty.
-        if (!blogId || !blogHandle) continue;
-        const count = parseInt(w.settings?.count, 10) || 4;
-        const mode = resolveRelatedSourceMode(settings.relatedPostsSourceMode, post.relatedPostsSourceMode);
-        const related = await getRelatedPosts(postId, shop.id, blogId, { count, mode });
-        if (!related.length) continue;
-        widgets.push({
-          type: "related_posts",
-          title: title || "Related posts",
-          layout: "list",
-          items: related.map((p) => ({
-            title: p.title,
-            href: `https://${shopDomain}/blogs/${blogHandle}/${p.slug}`,
-            image: p.featuredImage || null,
-            excerpt: p.excerpt || null,
-          })),
-        });
-      } else if (w.type === "categories") {
-        const cats = await prisma.category.findMany({
-          where: { shopId: shop.id },
-          orderBy: { name: "asc" },
-          include: {
-            _count: { select: { posts: { where: { status: "published" } } } },
-            posts: {
-              where: { status: "published" },
-              orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
-              take: 12,
-              select: { title: true, slug: true },
-            },
-          },
-        });
-        const showCounts = w.settings?.showCounts !== false;
-        // Categories are Post.categoryId — not Shopify tags. Tagged archive hrefs only work after
-        // ArticleSyncService pushes the category slug as a tag; always include direct post links
-        // so the widget lists the same articles the count reflects, even before a resync.
-        const catItems = cats
-          .filter((c) => c._count.posts > 0)
-          .map((c) => ({
-            name: c.name,
-            slug: c.slug,
-            count: showCounts ? c._count.posts : null,
-            href: blogHandle
-              ? `https://${shopDomain}/blogs/${blogHandle}/tagged/${encodeURIComponent(c.slug)}`
-              : `https://${shopDomain}/blogs`,
-            posts: blogHandle
-              ? (c.posts || []).map((p) => ({
-                  title: p.title,
-                  href: `https://${shopDomain}/blogs/${blogHandle}/${p.slug}`,
-                }))
-              : [],
-          }));
-        if (!catItems.length) continue;
-        widgets.push({
-          type: "categories",
-          title: title || "Categories",
-          items: catItems,
-        });
-      } else if (w.type === "rich_text") {
-        const body = String(w.settings?.body || "").slice(0, 5000).trim();
-        if (!body) continue;
-        widgets.push({
-          type: "rich_text",
-          title,
-          body,
-        });
-      } else if (w.type === "image_cta") {
-        const imageUrl = w.settings?.imageUrl || "";
-        const linkUrl = w.settings?.linkUrl || "";
-        const buttonText = w.settings?.buttonText || "Learn more";
-        if (!imageUrl && !(buttonText && linkUrl)) continue;
-        widgets.push({
-          type: "image_cta",
-          title,
-          imageUrl,
-          linkUrl,
-          buttonText,
-        });
-      } else if (w.type === "products") {
-        const maxItems = parseInt(w.settings?.maxItems, 10) || 3;
-        const source = w.settings?.source || "post_products";
-        let products = [];
-        if (source === "manual") {
-          const handles = Array.isArray(w.settings?.productHandles) ? w.settings.productHandles : [];
-          products = handles.slice(0, maxItems).map((handle) => ({
-            title: handle,
-            handle,
-            href: `https://${shopDomain}/products/${encodeURIComponent(handle)}`,
-            image: null,
-          }));
-        } else {
-          products = (post.products || []).slice(0, maxItems).map((pp) => {
-            const p = pp.product || {};
-            const handle = p.handle || null;
-            return {
-              title: p.title || "Product",
-              handle,
-              href: handle
-                ? `https://${shopDomain}/products/${encodeURIComponent(handle)}`
-                : `https://${shopDomain}/products`,
-              image: p.image || null,
-            };
-          });
+    // Build widget payloads in parallel — sequential awaits were the main storefront delay.
+    const widgetResults = await Promise.all(
+      widgetsConfig.map(async (w) => {
+        const title = w.settings?.title || "";
+        if (w.type === "related_posts") {
+          if (!blogId || !blogHandle) return null;
+          const count = parseInt(w.settings?.count, 10) || 4;
+          const mode = resolveRelatedSourceMode(settings.relatedPostsSourceMode, post.relatedPostsSourceMode);
+          const related = await getRelatedPosts(postId, shop.id, blogId, { count, mode });
+          if (!related.length) return null;
+          return {
+            type: "related_posts",
+            title: title || "Related posts",
+            layout: "list",
+            items: related.map((p) => ({
+              title: p.title,
+              href: `https://${shopDomain}/blogs/${blogHandle}/${p.slug}`,
+              image: p.featuredImage || null,
+              excerpt: p.excerpt || null,
+            })),
+          };
         }
-        if (!products.length) continue;
-        widgets.push({
-          type: "products",
-          title: title || "Products",
-          ctaLabel: w.settings?.ctaLabel || "View product",
-          items: products,
-        });
-      }
-    }
+        if (w.type === "categories") {
+          const showCounts = w.settings?.showCounts !== false;
+          const showPosts = w.settings?.showPosts !== false;
+          const maxPosts = Math.min(6, Math.max(1, parseInt(w.settings?.maxPosts, 10) || 3));
+          const sort = String(w.settings?.sort || "name").toLowerCase() === "count" ? "count" : "name";
+          const includeRaw = w.settings?.includeCategoryIds;
+          const includeIds = Array.isArray(includeRaw)
+            ? includeRaw.map((id) => parseInt(id, 10)).filter((id) => Number.isInteger(id))
+            : [];
+
+          const cats = await prisma.category.findMany({
+            where: {
+              shopId: shop.id,
+              ...(includeIds.length ? { id: { in: includeIds } } : {}),
+            },
+            orderBy: { name: "asc" },
+            include: {
+              _count: {
+                select: {
+                  posts: { where: { status: "published", id: { not: postId } } },
+                },
+              },
+              ...(showPosts
+                ? {
+                    posts: {
+                      where: { status: "published", id: { not: postId } },
+                      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+                      take: maxPosts,
+                      select: { id: true, title: true, slug: true },
+                    },
+                  }
+                : {}),
+            },
+          });
+
+          // Skip categories with no *other* published posts — otherwise viewing the only
+          // post in "Recipes" leaves a lonely "Recipes (1)" with nothing useful underneath.
+          let catItems = cats
+            .filter((c) => c._count.posts > 0)
+            .map((c) => ({
+              name: c.name,
+              slug: c.slug,
+              count: showCounts ? c._count.posts : null,
+              postCount: c._count.posts,
+              href: blogHandle
+                ? `https://${shopDomain}/blogs/${blogHandle}/tagged/${encodeURIComponent(c.slug)}`
+                : `https://${shopDomain}/blogs`,
+              posts:
+                showPosts && blogHandle
+                  ? (c.posts || [])
+                      .filter((p) => p.id !== postId)
+                      .map((p) => ({
+                        title: p.title,
+                        href: `https://${shopDomain}/blogs/${blogHandle}/${p.slug}`,
+                      }))
+                  : [],
+            }));
+
+          if (sort === "count") {
+            catItems.sort((a, b) => b.postCount - a.postCount || a.name.localeCompare(b.name));
+          } else {
+            catItems.sort((a, b) => a.name.localeCompare(b.name));
+          }
+          catItems = catItems.map(({ postCount, ...rest }) => rest);
+          if (!catItems.length) return null;
+          return {
+            type: "categories",
+            title: title || "Categories",
+            items: catItems,
+          };
+        }
+        if (w.type === "rich_text") {
+          const body = String(w.settings?.body || "").slice(0, 5000).trim();
+          if (!body) return null;
+          return { type: "rich_text", title, body };
+        }
+        if (w.type === "image_cta") {
+          const imageUrl = w.settings?.imageUrl || "";
+          const linkUrl = w.settings?.linkUrl || "";
+          const buttonText = w.settings?.buttonText || "Learn more";
+          if (!imageUrl && !(buttonText && linkUrl)) return null;
+          return { type: "image_cta", title, imageUrl, linkUrl, buttonText };
+        }
+        if (w.type === "products") {
+          const maxItems = parseInt(w.settings?.maxItems, 10) || 3;
+          const source = w.settings?.source || "post_products";
+          let products = [];
+          if (source === "manual") {
+            const handles = Array.isArray(w.settings?.productHandles) ? w.settings.productHandles : [];
+            products = handles.slice(0, maxItems).map((handle) => ({
+              title: handle,
+              handle,
+              href: `https://${shopDomain}/products/${encodeURIComponent(handle)}`,
+              image: null,
+            }));
+          } else {
+            products = (post.products || []).slice(0, maxItems).map((pp) => {
+              const p = pp.product || {};
+              const handle = p.handle || null;
+              return {
+                title: p.title || "Product",
+                handle,
+                href: handle
+                  ? `https://${shopDomain}/products/${encodeURIComponent(handle)}`
+                  : `https://${shopDomain}/products`,
+                image: p.image || null,
+              };
+            });
+          }
+          if (!products.length) return null;
+          return {
+            type: "products",
+            title: title || "Products",
+            ctaLabel: w.settings?.ctaLabel || "View product",
+            items: products,
+          };
+        }
+        return null;
+      })
+    );
+
+    const widgets = widgetResults.filter(Boolean);
 
     const body = JSON.stringify({
       show: widgets.length > 0,
@@ -285,7 +344,7 @@ router.get("/sidebar.json", async (req, res) => {
 
 router.get("/sidebar.js", (req, res) => {
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
-  res.setHeader("Cache-Control", "public, max-age=15");
+  res.setHeader("Cache-Control", "public, max-age=300");
   res.send(SIDEBAR_SCRIPT);
 });
 
@@ -314,6 +373,58 @@ const SIDEBAR_SCRIPT = `(function () {
     } catch (e) {
       return null;
     }
+  }
+
+  function getLayout(container) {
+    var layout = container.closest ? container.closest('.blogger-article-layout') : null;
+    if (!layout && container.parentElement && container.parentElement.classList &&
+        container.parentElement.classList.contains('blogger-article-layout')) {
+      layout = container.parentElement;
+    }
+    return layout;
+  }
+
+  function skeletonHtml() {
+    return '<div class="blogger-sidebar-loading" aria-busy="true" aria-label="Loading sidebar">' +
+      '<div class="blogger-sidebar-skeleton-card"></div>' +
+      '<div class="blogger-sidebar-skeleton-card"></div>' +
+      '<div class="blogger-sidebar-skeleton-card"></div>' +
+      '</div>';
+  }
+
+  function showPending(container) {
+    var layout = getLayout(container);
+    if (!layout) return;
+    // Two-column shell immediately — do not hide bottom related until widgets actually load.
+    layout.classList.add('blogger-article-layout--sidebar-pending');
+    layout.classList.remove('blogger-article-layout--sidebar-active');
+    layout.removeAttribute('data-sidebar-related');
+    if (!container.querySelector('.blogger-sidebar-widget') &&
+        !container.querySelector('.blogger-sidebar-loading')) {
+      container.innerHTML = skeletonHtml();
+    }
+  }
+
+  function activateLayout(container, hasRelated) {
+    var layout = getLayout(container);
+    if (!layout) return;
+    layout.classList.remove('blogger-article-layout--sidebar-pending');
+    layout.classList.add('blogger-article-layout--sidebar-active');
+    if (hasRelated) {
+      layout.setAttribute('data-sidebar-related', '1');
+    } else {
+      layout.removeAttribute('data-sidebar-related');
+    }
+  }
+
+  function deactivateLayout(container) {
+    var layout = getLayout(container);
+    if (layout) {
+      layout.classList.remove('blogger-article-layout--sidebar-pending');
+      layout.classList.remove('blogger-article-layout--sidebar-active');
+      layout.removeAttribute('data-sidebar-related');
+    }
+    container.innerHTML = '';
   }
 
   function relatedListHtml(items) {
@@ -351,8 +462,11 @@ const SIDEBAR_SCRIPT = `(function () {
       html += '<ul class="blogger-sidebar-categories">';
       w.items.forEach(function (c) {
         html += '<li class="blogger-sidebar-category">';
-        html += '<a class="blogger-sidebar-category__name" href="' + escapeHtml(c.href) + '">' + escapeHtml(c.name);
-        if (c.count != null) html += ' <span>(' + escapeHtml(String(c.count)) + ')</span>';
+        html += '<a class="blogger-sidebar-category__name" href="' + escapeHtml(c.href) + '">';
+        html += '<span class="blogger-sidebar-category__label">' + escapeHtml(c.name) + '</span>';
+        if (c.count != null) {
+          html += ' <span class="blogger-sidebar-category__count">(' + escapeHtml(String(c.count)) + ')</span>';
+        }
         html += '</a>';
         if (c.posts && c.posts.length) {
           html += '<ul class="blogger-sidebar-category__posts">';
@@ -388,28 +502,9 @@ const SIDEBAR_SCRIPT = `(function () {
     return html;
   }
 
-  function activateLayout(container, hasRelated) {
-    var layout = container.closest ? container.closest('.blogger-article-layout') : null;
-    if (!layout && container.parentElement && container.parentElement.classList &&
-        container.parentElement.classList.contains('blogger-article-layout')) {
-      layout = container.parentElement;
-    }
-    if (!layout) return;
-    layout.classList.add('blogger-article-layout--sidebar-active');
-    // Published markup sets data-sidebar-related whenever the Related widget is *configured*.
-    // Only keep it when Related actually rendered here — otherwise CSS would hide the bottom
-    // related block while the sidebar slot is empty (e.g. blogHandle lookup failed).
-    if (hasRelated) {
-      layout.setAttribute('data-sidebar-related', '1');
-    } else {
-      layout.removeAttribute('data-sidebar-related');
-    }
-  }
-
   function ensureSidebarContainer() {
     var containers = document.querySelectorAll('[data-blog-sidebar], .blogger-article-sidebar');
     if (containers.length) return containers;
-    // Aside was stripped — recreate inside any layout shell still present
     var layouts = document.querySelectorAll('.blogger-article-layout');
     var created = [];
     layouts.forEach(function (layout) {
@@ -429,18 +524,26 @@ const SIDEBAR_SCRIPT = `(function () {
       var postId = container.getAttribute('data-post-id');
       var shop = container.getAttribute('data-shop') || resolveShop();
       if (!shop) return;
+      // Reserve the column + skeleton before the network round-trip finishes.
+      showPending(container);
       var url = '${APP_URL}/sidebar.json?shop=' + encodeURIComponent(shop);
       if (postId) {
         url += '&postId=' + encodeURIComponent(postId);
       } else {
         var articleId = resolveShopifyArticleId();
-        if (!articleId) return;
+        if (!articleId) {
+          deactivateLayout(container);
+          return;
+        }
         url += '&shopifyArticleId=' + encodeURIComponent(articleId);
       }
       fetch(url)
         .then(function (res) { return res.json(); })
         .then(function (data) {
-          if (!data || !data.show || !Array.isArray(data.widgets) || !data.widgets.length) return;
+          if (!data || !data.show || !Array.isArray(data.widgets) || !data.widgets.length) {
+            deactivateLayout(container);
+            return;
+          }
           var html = '';
           var hasRelated = false;
           data.widgets.forEach(function (w) {
@@ -449,11 +552,16 @@ const SIDEBAR_SCRIPT = `(function () {
             html += chunk;
             if (w.type === 'related_posts') hasRelated = true;
           });
-          if (!html) return;
+          if (!html) {
+            deactivateLayout(container);
+            return;
+          }
           container.innerHTML = html;
           activateLayout(container, hasRelated);
         })
-        .catch(function () {});
+        .catch(function () {
+          deactivateLayout(container);
+        });
     });
   }
 

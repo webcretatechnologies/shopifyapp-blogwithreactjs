@@ -92,11 +92,33 @@ const SIDEBAR_WIDTH_OPTIONS = [
 
 const DEFAULT_SIDEBAR_WIDGETS = [
   { id: "related_1", type: "related_posts", enabled: true, settings: { title: "Related posts", count: 4 } },
-  { id: "categories_1", type: "categories", enabled: true, settings: { title: "Categories", showCounts: true } },
+  {
+    id: "categories_1",
+    type: "categories",
+    enabled: true,
+    settings: {
+      title: "Categories",
+      showCounts: true,
+      showPosts: true,
+      maxPosts: 3,
+      sort: "name",
+      includeCategoryIds: [],
+    },
+  },
   { id: "products_1", type: "products", enabled: false, settings: { title: "Products", source: "post_products", maxItems: 3, ctaLabel: "View product" } },
   { id: "rich_1", type: "rich_text", enabled: false, settings: { title: "", body: "" } },
   { id: "cta_1", type: "image_cta", enabled: false, settings: { title: "", imageUrl: "", linkUrl: "", buttonText: "Learn more" } },
 ];
+
+const CATEGORY_SORT_OPTIONS = [
+  { label: "Name (A–Z)", value: "name" },
+  { label: "Most posts", value: "count" },
+];
+
+const CATEGORY_MAX_POSTS_OPTIONS = ["1", "2", "3", "4", "5", "6"].map((n) => ({
+  label: `${n} post${n === "1" ? "" : "s"}`,
+  value: n,
+}));
 
 function parseSidebarWidgets(raw) {
   try {
@@ -106,6 +128,17 @@ function parseSidebarWidgets(raw) {
     /* fall through */
   }
   return DEFAULT_SIDEBAR_WIDGETS;
+}
+
+function patchSidebarWidget(widgetsJson, index, patch) {
+  const list = parseSidebarWidgets(widgetsJson);
+  if (!list[index]) return widgetsJson;
+  list[index] = {
+    ...list[index],
+    ...patch,
+    settings: { ...(list[index].settings || {}), ...(patch.settings || {}) },
+  };
+  return JSON.stringify(list);
 }
 
 const TABS = [
@@ -181,6 +214,14 @@ export default function Settings() {
   const [features, setFeatures] = useState({});
   const [showUpgradeSaveConfirm, setShowUpgradeSaveConfirm] = useState(false);
   const [isSavingForUpgrade, setIsSavingForUpgrade] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [categoryBusyId, setCategoryBusyId] = useState(null);
+  const [categoryToDelete, setCategoryToDelete] = useState(null);
 
   const set = (key) => (value) => setSettings((s) => ({ ...s, [key]: value }));
 
@@ -248,6 +289,21 @@ export default function Settings() {
       .catch(() => {});
   }, []);
 
+  const loadCategories = () => {
+    setCategoriesLoading(true);
+    fetch("/api/categories")
+      .then((r) => r.json())
+      .then((d) => setCategories(d.categories || []))
+      .catch(() => setCategories([]))
+      .finally(() => setCategoriesLoading(false));
+  };
+
+  useEffect(() => {
+    if (selectedTab === 1 && features.blog_sidebar?.enabled) {
+      loadCategories();
+    }
+  }, [selectedTab, features.blog_sidebar?.enabled]);
+
   // Re-check silently when the merchant switches back from the theme editor tab.
   useEffect(() => {
     const onVisible = () => {
@@ -292,6 +348,82 @@ export default function Settings() {
       setToast({ content: err.message, error: true });
     } finally {
       setIsSyncingTheme(false);
+    }
+  };
+
+  const updateSidebarWidget = (index, patch) => {
+    set("blogSidebarWidgets")(patchSidebarWidget(settings.blogSidebarWidgets, index, patch));
+  };
+
+  const handleCreateCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    setCreatingCategory(true);
+    try {
+      const res = await fetch("/api/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't create category");
+      setNewCategoryName("");
+      setToast({ content: `Created “${data.category?.name || name}”` });
+      loadCategories();
+    } catch (err) {
+      setToast({ content: err.message, error: true });
+    } finally {
+      setCreatingCategory(false);
+    }
+  };
+
+  const handleRenameCategory = async (id) => {
+    const name = editingCategoryName.trim();
+    if (!name) return;
+    setCategoryBusyId(id);
+    try {
+      const res = await fetch(`/api/categories/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't rename category");
+      setEditingCategoryId(null);
+      setEditingCategoryName("");
+      setToast({ content: "Category renamed" });
+      loadCategories();
+    } catch (err) {
+      setToast({ content: err.message, error: true });
+    } finally {
+      setCategoryBusyId(null);
+    }
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!categoryToDelete?.id) return;
+    const id = categoryToDelete.id;
+    setCategoryBusyId(id);
+    try {
+      const res = await fetch(`/api/categories/${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't delete category");
+      setCategoryToDelete(null);
+      setToast({ content: "Category deleted" });
+      // Drop deleted id from any Categories widget include filter
+      const list = parseSidebarWidgets(settings.blogSidebarWidgets).map((w) => {
+        if (w.type !== "categories") return w;
+        const ids = Array.isArray(w.settings?.includeCategoryIds)
+          ? w.settings.includeCategoryIds.filter((x) => parseInt(x, 10) !== id)
+          : [];
+        return { ...w, settings: { ...(w.settings || {}), includeCategoryIds: ids } };
+      });
+      setSettings((s) => ({ ...s, blogSidebarWidgets: JSON.stringify(list) }));
+      loadCategories();
+    } catch (err) {
+      setToast({ content: err.message, error: true });
+    } finally {
+      setCategoryBusyId(null);
     }
   };
 
@@ -433,6 +565,16 @@ export default function Settings() {
         onConfirm={confirmSaveThenUpgrade}
         onCancel={() => setShowUpgradeSaveConfirm(false)}
         loading={isSavingForUpgrade}
+      />
+      <ConfirmActionModal
+        open={!!categoryToDelete}
+        title={categoryToDelete ? `Delete “${categoryToDelete.name}”?` : "Delete category?"}
+        body="Posts in this category will keep their content but lose the category assignment. Empty categories never appear in the sidebar."
+        confirmText="Delete"
+        confirmTone="critical"
+        onConfirm={handleDeleteCategory}
+        onCancel={() => setCategoryToDelete(null)}
+        loading={categoryBusyId === categoryToDelete?.id}
       />
       <Page
         title="Settings"
@@ -754,6 +896,133 @@ export default function Settings() {
                               onChange={set("blogSidebarWidth")}
                             />
                           </InlineGrid>
+
+                          <Divider />
+                          <Text as="h3" variant="headingSm">
+                            Categories
+                          </Text>
+                          <Banner tone="info">
+                            <p>
+                              Assign a category on each post. Category slugs sync as Shopify tags so
+                              archive links work after Save &amp; Sync (or Apply sidebar layout below).
+                              Nested post links in the sidebar work even before a resync.
+                            </p>
+                          </Banner>
+                          <InlineStack gap="200" blockAlign="end" wrap={false}>
+                            <div style={{ flex: 1, minWidth: 160 }}>
+                              <TextField
+                                label="New category"
+                                labelHidden
+                                placeholder="e.g. Recipes"
+                                value={newCategoryName}
+                                onChange={setNewCategoryName}
+                                autoComplete="off"
+                                disabled={creatingCategory}
+                              />
+                            </div>
+                            <Button
+                              variant="primary"
+                              onClick={handleCreateCategory}
+                              loading={creatingCategory}
+                              disabled={!newCategoryName.trim()}
+                            >
+                              Add
+                            </Button>
+                          </InlineStack>
+                          {categoriesLoading ? (
+                            <InlineStack gap="200" blockAlign="center">
+                              <Spinner size="small" />
+                              <Text as="span" variant="bodySm" tone="subdued">
+                                Loading categories…
+                              </Text>
+                            </InlineStack>
+                          ) : categories.length === 0 ? (
+                            <Text as="p" variant="bodySm" tone="subdued">
+                              No categories yet. Create one above, then assign it on each post in the editor.
+                            </Text>
+                          ) : (
+                            <BlockStack gap="200">
+                              {categories.map((cat) => (
+                                <InlineStack
+                                  key={cat.id}
+                                  align="space-between"
+                                  blockAlign="center"
+                                  wrap
+                                  gap="200"
+                                >
+                                  {editingCategoryId === cat.id ? (
+                                    <InlineStack gap="200" blockAlign="end" wrap={false}>
+                                      <div style={{ minWidth: 140 }}>
+                                        <TextField
+                                          label="Name"
+                                          labelHidden
+                                          value={editingCategoryName}
+                                          onChange={setEditingCategoryName}
+                                          autoComplete="off"
+                                          disabled={categoryBusyId === cat.id}
+                                        />
+                                      </div>
+                                      <Button
+                                        size="slim"
+                                        variant="primary"
+                                        loading={categoryBusyId === cat.id}
+                                        onClick={() => handleRenameCategory(cat.id)}
+                                        disabled={!editingCategoryName.trim()}
+                                      >
+                                        Save
+                                      </Button>
+                                      <Button
+                                        size="slim"
+                                        onClick={() => {
+                                          setEditingCategoryId(null);
+                                          setEditingCategoryName("");
+                                        }}
+                                        disabled={categoryBusyId === cat.id}
+                                      >
+                                        Cancel
+                                      </Button>
+                                    </InlineStack>
+                                  ) : (
+                                    <BlockStack gap="050">
+                                      <InlineStack gap="200" blockAlign="center">
+                                        <Text as="span" variant="bodyMd" fontWeight="semibold">
+                                          {cat.name}
+                                        </Text>
+                                        <Badge>
+                                          {cat.postCount} published
+                                        </Badge>
+                                      </InlineStack>
+                                      <Text as="span" variant="bodySm" tone="subdued">
+                                        slug: {cat.slug}
+                                      </Text>
+                                    </BlockStack>
+                                  )}
+                                  {editingCategoryId !== cat.id && (
+                                    <InlineStack gap="100">
+                                      <Button
+                                        size="slim"
+                                        onClick={() => {
+                                          setEditingCategoryId(cat.id);
+                                          setEditingCategoryName(cat.name);
+                                        }}
+                                      >
+                                        Rename
+                                      </Button>
+                                      <Button
+                                        size="slim"
+                                        tone="critical"
+                                        onClick={() => setCategoryToDelete(cat)}
+                                      >
+                                        Delete
+                                      </Button>
+                                    </InlineStack>
+                                  )}
+                                </InlineStack>
+                              ))}
+                            </BlockStack>
+                          )}
+
+                          <Divider />
                           <Text as="h3" variant="headingSm">
                             Widgets
                           </Text>
@@ -968,18 +1237,83 @@ export default function Settings() {
                                       </>
                                     )}
                                     {widget.type === "categories" && (
-                                      <Checkbox
-                                        label="Show post counts"
-                                        checked={widget.settings?.showCounts !== false}
-                                        onChange={(showCounts) => {
-                                          const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                          list[idx] = {
-                                            ...list[idx],
-                                            settings: { ...(list[idx].settings || {}), showCounts },
-                                          };
-                                          set("blogSidebarWidgets")(JSON.stringify(list));
-                                        }}
-                                      />
+                                      <BlockStack gap="200">
+                                        <Checkbox
+                                          label="Show post counts"
+                                          checked={widget.settings?.showCounts !== false}
+                                          onChange={(showCounts) =>
+                                            updateSidebarWidget(idx, { settings: { showCounts } })
+                                          }
+                                        />
+                                        <Checkbox
+                                          label="Show recent posts under each category"
+                                          checked={widget.settings?.showPosts !== false}
+                                          onChange={(showPosts) =>
+                                            updateSidebarWidget(idx, { settings: { showPosts } })
+                                          }
+                                          helpText="Direct article links so visitors can open posts even before tag archives fill in."
+                                        />
+                                        {widget.settings?.showPosts !== false && (
+                                          <Select
+                                            label="Max posts per category"
+                                            options={CATEGORY_MAX_POSTS_OPTIONS}
+                                            value={String(widget.settings?.maxPosts ?? 3)}
+                                            onChange={(maxPosts) =>
+                                              updateSidebarWidget(idx, {
+                                                settings: { maxPosts: parseInt(maxPosts, 10) },
+                                              })
+                                            }
+                                          />
+                                        )}
+                                        <Select
+                                          label="Sort categories"
+                                          options={CATEGORY_SORT_OPTIONS}
+                                          value={
+                                            String(widget.settings?.sort || "name").toLowerCase() ===
+                                            "count"
+                                              ? "count"
+                                              : "name"
+                                          }
+                                          onChange={(sort) =>
+                                            updateSidebarWidget(idx, { settings: { sort } })
+                                          }
+                                        />
+                                        {categories.length > 0 && (
+                                          <BlockStack gap="100">
+                                            <Text as="p" variant="bodyMd">
+                                              Include only these categories (optional)
+                                            </Text>
+                                            <Text as="p" variant="bodySm" tone="subdued">
+                                              Leave all unchecked to show every category that has published posts.
+                                            </Text>
+                                            {categories.map((cat) => {
+                                              const selected = Array.isArray(
+                                                widget.settings?.includeCategoryIds
+                                              )
+                                                ? widget.settings.includeCategoryIds.map((x) =>
+                                                    parseInt(x, 10)
+                                                  )
+                                                : [];
+                                              const checked = selected.includes(cat.id);
+                                              return (
+                                                <Checkbox
+                                                  key={cat.id}
+                                                  label={`${cat.name} (${cat.postCount})`}
+                                                  checked={checked}
+                                                  onChange={(on) => {
+                                                    const next = on
+                                                      ? [...selected, cat.id]
+                                                      : selected.filter((id) => id !== cat.id);
+                                                    updateSidebarWidget(idx, {
+                                                      settings: { includeCategoryIds: next },
+                                                    });
+                                                  }}
+                                                />
+                                              );
+                                            })}
+                                          </BlockStack>
+                                        )}
+                                      </BlockStack>
                                     )}
                                   </BlockStack>
                                 )}
