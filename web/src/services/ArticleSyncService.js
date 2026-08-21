@@ -863,7 +863,7 @@ ${analyticsBlockEnd}`;
     }
   }
 
-  // ── Inject JSON-LD structured data (BlogPosting/Article/NewsArticle schema) ──
+  // ── Inject JSON-LD structured data (Article / Recipe / Product / Review / Video / Event / App) ──
   // jsonLdOverrides carries translation-specific title/description when compiling a
   // translated locale, so the schema's headline/description match the rendered language.
   const jsonLdScript = JsonLdService.renderPostSchema(

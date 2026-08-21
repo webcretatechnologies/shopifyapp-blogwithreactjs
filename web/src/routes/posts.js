@@ -23,8 +23,37 @@ import { getShopAnalytics, getPostAnalytics } from "../services/AnalyticsTrackin
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
-const RICH_SNIPPET_TYPES = ["BlogPosting", "Article", "NewsArticle", "None"];
+const RICH_SNIPPET_TYPES = [
+  "BlogPosting",
+  "Article",
+  "NewsArticle",
+  "Recipe",
+  "Product",
+  "Review",
+  "VideoObject",
+  "Event",
+  "SoftwareApplication",
+  "None",
+];
 const prisma = new PrismaClient();
+
+/** Keep only plain string/number/boolean values for type-specific rich-snippet fields. */
+function sanitizeRichSnippetData(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const out = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (typeof key !== "string" || key.length > 64) continue;
+    if (typeof raw === "string") {
+      const trimmed = raw.trim();
+      if (trimmed) out[key] = trimmed.slice(0, 2000);
+    } else if (typeof raw === "number" && Number.isFinite(raw)) {
+      out[key] = raw;
+    } else if (typeof raw === "boolean") {
+      out[key] = raw;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 // Downgrades SEO-adjacent fields to their plan-appropriate defaults instead of rejecting the
 // whole post save — these are optional fields embedded in a much larger multi-field save, so a
@@ -46,6 +75,7 @@ function sanitizeSeoFields(shop, body) {
     richSnippetType: richSnippets && RICH_SNIPPET_TYPES.includes(body.richSnippetType)
       ? body.richSnippetType
       : "BlogPosting",
+    richSnippetData: richSnippets ? sanitizeRichSnippetData(body.richSnippetData) : null,
   };
 }
 
@@ -68,6 +98,9 @@ function sanitizeSeoFieldsForUpdate(shop, body, post) {
     richSnippetType: richSnippets && body.richSnippetType !== undefined
       ? (RICH_SNIPPET_TYPES.includes(body.richSnippetType) ? body.richSnippetType : "BlogPosting")
       : post.richSnippetType,
+    richSnippetData: richSnippets && body.richSnippetData !== undefined
+      ? sanitizeRichSnippetData(body.richSnippetData)
+      : post.richSnippetData,
   };
 }
 
@@ -635,6 +668,7 @@ router.post("/:id/clone", async (req, res) => {
         metaRobotsNofollow: sourcePost.metaRobotsNofollow,
         excludeFromSitemap: sourcePost.excludeFromSitemap,
         richSnippetType: sourcePost.richSnippetType,
+        richSnippetData: sourcePost.richSnippetData,
         publishedAt: null,        // Clone is never auto-published
         trackingKey: null,        // Will be generated fresh on first view
       },
@@ -1754,6 +1788,7 @@ function serializePost(post) {
     metaRobotsNofollow: post.metaRobotsNofollow,
     excludeFromSitemap: post.excludeFromSitemap,
     richSnippetType: post.richSnippetType,
+    richSnippetData: post.richSnippetData || null,
     publishedAt: post.publishedAt,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,

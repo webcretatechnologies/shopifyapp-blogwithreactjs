@@ -149,6 +149,7 @@ model Post {
   metaRobotsNofollow    Boolean           @default(false)
   excludeFromSitemap    Boolean           @default(false)
   richSnippetType       String            @default("BlogPosting")
+  richSnippetData       Json?
   trackingKey           String?           @unique
   category              Category?         @relation(fields: [categoryId], references: [id])
   shop                  Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)

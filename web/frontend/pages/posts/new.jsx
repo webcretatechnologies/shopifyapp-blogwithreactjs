@@ -66,6 +66,12 @@ const RICH_SNIPPET_OPTIONS = [
   { label: "Blog posting", value: "BlogPosting" },
   { label: "Article", value: "Article" },
   { label: "News article", value: "NewsArticle" },
+  { label: "Recipe", value: "Recipe" },
+  { label: "Product", value: "Product" },
+  { label: "Review", value: "Review" },
+  { label: "Video", value: "VideoObject" },
+  { label: "Event", value: "Event" },
+  { label: "Software app", value: "SoftwareApplication" },
   { label: "None", value: "None" },
 ];
 
