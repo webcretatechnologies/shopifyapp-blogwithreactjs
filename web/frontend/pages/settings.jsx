@@ -36,6 +36,7 @@ import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
 import UpgradePrompt from "../components/UpgradePrompt";
 import ConfirmActionModal from "../components/ConfirmActionModal";
+import ShopifyFilePicker from "../components/ShopifyFilePicker";
 import { APP_NAME } from "../utils/appName";
 
 const LAYOUT_OPTIONS = [
@@ -91,7 +92,7 @@ const SIDEBAR_WIDTH_OPTIONS = [
 ];
 
 const DEFAULT_SIDEBAR_WIDGETS = [
-  { id: "related_1", type: "related_posts", enabled: true, settings: { title: "Related posts", count: 4 } },
+  { id: "related_1", type: "related_posts", enabled: true, settings: { title: "Related posts", count: 4, sourceMode: "smart" } },
   {
     id: "categories_1",
     type: "categories",
@@ -120,8 +121,33 @@ const DEFAULT_SIDEBAR_WIDGETS = [
       productIds: [],
     },
   },
-  { id: "rich_1", type: "rich_text", enabled: false, settings: { title: "", body: "" } },
-  { id: "cta_1", type: "image_cta", enabled: false, settings: { title: "", imageUrl: "", linkUrl: "", buttonText: "Learn more" } },
+  {
+    id: "rich_1",
+    type: "rich_text",
+    enabled: false,
+    settings: { title: "About", body: "", style: "default", linkUrl: "", buttonText: "" },
+  },
+  {
+    id: "cta_1",
+    type: "image_cta",
+    enabled: false,
+    settings: {
+      title: "",
+      imageUrl: "",
+      linkUrl: "",
+      buttonText: "Learn more",
+      caption: "",
+      altText: "",
+      openInNewTab: false,
+      showButton: true,
+      layout: "stacked",
+    },
+  },
+];
+
+const IMAGE_CTA_LAYOUTS = [
+  { value: "stacked", label: "Stacked", hint: "Photo, then button" },
+  { value: "overlay", label: "Overlay", hint: "Button on the photo" },
 ];
 
 const CATEGORY_SORT_OPTIONS = [
@@ -144,6 +170,795 @@ const PRODUCT_SOURCE_OPTIONS = [
   { label: "Manual picks", value: "manual" },
 ];
 
+const RICH_TEXT_STYLES = [
+  { value: "default", label: "Plain", hint: "Simple note" },
+  { value: "callout", label: "Callout", hint: "Accent bar" },
+  { value: "quote", label: "Quote", hint: "Italic excerpt" },
+];
+
+function richTextPreviewCopy(body) {
+  const text = String(body || "").trim();
+  return text || "Kitchen stories, recipes, and tips from our shop.";
+}
+
+/** Mini storefront mock of the sidebar rich-text widget — used as style tiles + live preview. */
+function RichTextWidgetMock({
+  title,
+  body,
+  style = "default",
+  buttonText,
+  showButton,
+  primary = "#008060",
+  textColor = "#202223",
+  radius = 4,
+  compact = false,
+}) {
+  const isCallout = style === "callout";
+  const isQuote = style === "quote";
+  const pad = compact ? 10 : 14;
+  const bodyStyle = {
+    margin: 0,
+    fontSize: compact ? 11 : 13,
+    lineHeight: 1.5,
+    color: textColor,
+    whiteSpace: "pre-wrap",
+    fontStyle: isQuote ? "italic" : "normal",
+  };
+  const boxStyle = {
+    ...(isCallout
+      ? {
+          background: "#f6f6f7",
+          borderRadius: 8,
+          padding: compact ? "8px 10px" : "10px 12px",
+          borderLeft: `3px solid ${primary}`,
+        }
+      : isQuote
+        ? {
+            padding: compact ? "2px 0 2px 10px" : "2px 0 2px 12px",
+            borderLeft: `3px solid ${primary}`,
+          }
+        : {}),
+  };
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e1e3e5",
+        borderRadius: 10,
+        padding: pad,
+        textAlign: "left",
+      }}
+    >
+      {title ? (
+        <div
+          style={{
+            fontWeight: 600,
+            fontSize: compact ? 12 : 14,
+            marginBottom: compact ? 8 : 10,
+            color: textColor,
+          }}
+        >
+          {title}
+        </div>
+      ) : null}
+      <div style={boxStyle}>
+        <p style={bodyStyle}>{richTextPreviewCopy(body)}</p>
+        {showButton ? (
+          <span
+            style={{
+              display: "inline-block",
+              marginTop: compact ? 8 : 12,
+              padding: compact ? "5px 10px" : "7px 12px",
+              background: primary,
+              color: "#fff",
+              borderRadius: Number(radius) || 4,
+              fontSize: compact ? 10 : 12,
+              fontWeight: 600,
+              fontStyle: "normal",
+            }}
+          >
+            {buttonText || "Learn more"}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SidebarOnBlogPreview({ children, position = "right", width = "320" }) {
+  const sidebarFirst = String(position).toLowerCase() === "left";
+  const sidebarPx = Math.min(360, Math.max(240, parseInt(width, 10) || 320));
+  const columns = sidebarFirst
+    ? `${sidebarPx}px minmax(0, 1fr)`
+    : `minmax(0, 1fr) ${sidebarPx}px`;
+  const article = (
+    <div
+      style={{
+        padding: 16,
+        background: "#fff",
+        borderRight: sidebarFirst ? "none" : "1px solid #e1e3e5",
+        borderLeft: sidebarFirst ? "1px solid #e1e3e5" : "none",
+      }}
+    >
+      <Text as="p" variant="bodySm" tone="subdued">
+        Article
+      </Text>
+      <div
+        style={{
+          height: 10,
+          width: "78%",
+          background: "#e1e3e5",
+          borderRadius: 4,
+          margin: "10px 0 8px",
+        }}
+      />
+      <div style={{ height: 8, width: "100%", background: "#f1f2f3", borderRadius: 4, marginBottom: 6 }} />
+      <div
+        style={{
+          height: 8,
+          width: "92%",
+          background: "#f1f2f3",
+          borderRadius: 4,
+          marginBottom: 6,
+        }}
+      />
+      <div style={{ height: 8, width: "64%", background: "#f1f2f3", borderRadius: 4 }} />
+    </div>
+  );
+  const sidebar = <div style={{ padding: 12 }}>{children}</div>;
+  return (
+    <BlockStack gap="200">
+      <Text as="p" variant="bodySm" tone="subdued">
+        How it looks on the blog (sample content)
+      </Text>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: columns,
+          gap: 0,
+          border: "1px solid #e1e3e5",
+          borderRadius: 10,
+          overflow: "hidden",
+          background: "#f6f6f7",
+        }}
+      >
+        {sidebarFirst ? (
+          <>
+            {sidebar}
+            {article}
+          </>
+        ) : (
+          <>
+            {article}
+            {sidebar}
+          </>
+        )}
+      </div>
+    </BlockStack>
+  );
+}
+
+const SAMPLE_RELATED = [
+  "Stainless vs glass measuring cups",
+  "How to store spices so they last",
+  "Letter punch sets for kitchen tins",
+  "Best dough dockers for pizza night",
+  "Incense placement in a pooja room",
+  "A baker’s guide to mixing bowls",
+  "Choosing a rolling pin that lasts",
+  "Weeknight masala for busy kitchens",
+  "Cast iron vs carbon steel pans",
+  "How to bloom spices for dal",
+  "Gift sets for bakers",
+  "Cleaning wooden spoons the right way",
+];
+
+const SAMPLE_CATEGORIES = [
+  {
+    name: "Recipes",
+    count: 8,
+    posts: [
+      "Weeknight masala for busy kitchens",
+      "How to bloom spices for dal",
+      "A baker’s guide to mixing bowls",
+      "Gift sets for bakers",
+      "Cast iron vs carbon steel pans",
+      "Cleaning wooden spoons the right way",
+    ],
+  },
+  {
+    name: "Kitchen tools",
+    count: 5,
+    posts: [
+      "Stainless vs glass measuring cups",
+      "Best dough dockers for pizza night",
+      "Choosing a rolling pin that lasts",
+      "Letter punch sets for kitchen tins",
+      "How to store spices so they last",
+      "Incense placement in a pooja room",
+    ],
+  },
+];
+
+const SAMPLE_PRODUCTS = [
+  { title: "1/4\" Letter Punch Sets", price: "$24.00" },
+  { title: "Cast iron dosa tawa", price: "$38.00" },
+  { title: "Hand-forged dough docker", price: "$19.00" },
+  { title: "Spice mill — brass", price: "$22.00" },
+  { title: "Beech rolling pin", price: "$16.00" },
+  { title: "Glass measuring cup set", price: "$14.00" },
+];
+
+function RelatedPostsWidgetMock({ title, count = 4, textColor = "#202223", hideTitle = false, compact = false }) {
+  const wanted = Math.min(12, Math.max(1, parseInt(count, 10) || 4));
+  const n = hideTitle || compact ? Math.min(compact ? 3 : 3, wanted) : wanted;
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e1e3e5",
+        borderRadius: 10,
+        padding: hideTitle || compact ? 8 : 14,
+        textAlign: "left",
+      }}
+    >
+      {hideTitle ? null : (
+        <div style={{ fontWeight: 600, fontSize: compact ? 12 : 14, marginBottom: compact ? 8 : 10, color: textColor }}>
+          {title || "Related posts"}
+        </div>
+      )}
+      {SAMPLE_RELATED.slice(0, n).map((label) => (
+        <div
+          key={label}
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 6,
+              background: "linear-gradient(135deg, #e8eeea 0%, #d4ddd4 100%)",
+              flexShrink: 0,
+            }}
+          />
+          <div
+            style={{
+              fontSize: 12,
+              lineHeight: 1.35,
+              color: textColor,
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+            }}
+          >
+            {label}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CategoriesWidgetMock({
+  title,
+  showCounts = true,
+  showPosts = true,
+  maxPosts = 3,
+  textColor = "#202223",
+  compact = false,
+}) {
+  const rows = compact ? SAMPLE_CATEGORIES.slice(0, 2) : SAMPLE_CATEGORIES;
+  const n = Math.min(compact ? 2 : 6, Math.max(1, parseInt(maxPosts, 10) || 3));
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e1e3e5",
+        borderRadius: 10,
+        padding: compact ? 8 : 14,
+        textAlign: "left",
+      }}
+    >
+      <div style={{ fontWeight: 600, fontSize: compact ? 12 : 14, marginBottom: compact ? 8 : 10, color: textColor }}>
+        {title || "Categories"}
+      </div>
+      {rows.map((c) => (
+        <div key={c.name} style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: textColor }}>
+            {c.name}
+            {showCounts ? (
+              <span style={{ fontWeight: 500, opacity: 0.65, fontSize: 12 }}>
+                {" "}
+                ({c.count ?? 0})
+              </span>
+            ) : null}
+          </div>
+          {showPosts && (c.posts || []).slice(0, n).map((p) => (
+            <div
+              key={p}
+              style={{
+                fontSize: 12,
+                marginTop: 4,
+                paddingLeft: 10,
+                borderLeft: "2px solid #e1e3e5",
+                color: textColor,
+                opacity: 0.9,
+              }}
+            >
+              {p}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProductsWidgetMock({
+  title,
+  maxItems = 3,
+  showImage = true,
+  showPrice = true,
+  ctaLabel = "View product",
+  source = "post_products",
+  primary = "#008060",
+  textColor = "#202223",
+  compact = false,
+}) {
+  const n = Math.min(compact ? 2 : 6, Math.max(1, parseInt(maxItems, 10) || 3));
+  const items = SAMPLE_PRODUCTS.slice(0, n);
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e1e3e5",
+        borderRadius: 10,
+        padding: compact ? 8 : 14,
+        textAlign: "left",
+      }}
+    >
+      <div style={{ fontWeight: 600, fontSize: compact ? 12 : 14, marginBottom: 4, color: textColor }}>
+        {title || "Products"}
+      </div>
+      <div style={{ fontSize: 11, color: "#6d7175", marginBottom: 10 }}>
+        {source === "manual" ? "Your picks" : "From this post"}
+      </div>
+      {items.map((item, i) => (
+        <div key={`${item.title}-${i}`} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+          {showImage ? (
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 6,
+                background: "linear-gradient(135deg, #e8eeea 0%, #d4ddd4 100%)",
+                flexShrink: 0,
+              }}
+            />
+          ) : null}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: textColor }}>{item.title}</div>
+            {showPrice ? (
+              <div style={{ fontSize: 12, fontWeight: 600, color: primary }}>{item.price}</div>
+            ) : null}
+            {ctaLabel ? (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: primary,
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                }}
+              >
+                {ctaLabel}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ImageCtaSamplePhoto({ height = 88, showLabel = true }) {
+  return (
+    <div
+      style={{
+        height,
+        borderRadius: 8,
+        background: "linear-gradient(135deg, #c5d5c8 0%, #8fa894 50%, #6b7f72 100%)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "flex-start",
+        padding: 8,
+        fontSize: 11,
+        color: "#fff",
+        fontWeight: 600,
+      }}
+    >
+      {showLabel ? "Sample image" : null}
+    </div>
+  );
+}
+
+function ImageCtaButtonMock({ label, primary, radius, compact }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: compact ? "5px 10px" : "7px 12px",
+        background: primary,
+        color: "#fff",
+        borderRadius: Number(radius) || 4,
+        fontSize: compact ? 10 : 12,
+        fontWeight: 600,
+      }}
+    >
+      {label || "Learn more"}
+    </span>
+  );
+}
+
+function ImageCtaWidgetMock({
+  title,
+  imageUrl,
+  buttonText,
+  caption,
+  layout = "stacked",
+  showButton = true,
+  primary = "#008060",
+  textColor = "#202223",
+  radius = 4,
+  compact = false,
+}) {
+  const isOverlay = layout === "overlay";
+  const pad = compact ? 10 : 14;
+  const imgH = compact ? 64 : 96;
+  const captionText = String(caption || "").trim() || "Spring bakeware — 20% off";
+  const photo = imageUrl ? (
+    <img
+      src={imageUrl}
+      alt=""
+      style={{
+        width: "100%",
+        height: imgH,
+        objectFit: "cover",
+        borderRadius: isOverlay ? 0 : 8,
+        display: "block",
+      }}
+    />
+  ) : (
+    <ImageCtaSamplePhoto height={imgH} showLabel={!isOverlay} />
+  );
+  const button = showButton ? (
+    <ImageCtaButtonMock
+      label={buttonText}
+      primary={primary}
+      radius={radius}
+      compact={compact}
+    />
+  ) : null;
+
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e1e3e5",
+        borderRadius: 10,
+        padding: pad,
+        textAlign: "left",
+      }}
+    >
+      <div
+        style={{
+          fontWeight: 600,
+          fontSize: compact ? 12 : 14,
+          marginBottom: compact ? 8 : 10,
+          color: textColor,
+        }}
+      >
+        {title || "This week in the shop"}
+      </div>
+      {isOverlay ? (
+        <div style={{ position: "relative", borderRadius: 8, overflow: "hidden" }}>
+          {photo}
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              bottom: 0,
+              padding: compact ? "10px 8px 8px" : "14px 10px 10px",
+              background: "linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,.08))",
+            }}
+          >
+            <div
+              style={{
+                color: "#fff",
+                fontSize: compact ? 11 : 12,
+                fontWeight: 600,
+                marginBottom: button ? 8 : 0,
+                lineHeight: 1.35,
+              }}
+            >
+              {captionText}
+            </div>
+            {button}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{ marginBottom: 8 }}>{photo}</div>
+          <div
+            style={{
+              fontSize: compact ? 11 : 12,
+              lineHeight: 1.35,
+              color: textColor,
+              opacity: 0.85,
+              marginBottom: button ? 10 : 0,
+            }}
+          >
+            {captionText}
+          </div>
+          {button}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ImageCtaImageField({ imageUrl, onChange }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const hasImage = !!String(imageUrl || "").trim();
+  return (
+    <BlockStack gap="200">
+      <Text as="p" variant="bodyMd">
+        Image
+      </Text>
+      {hasImage ? (
+        <BlockStack gap="200">
+          <div
+            style={{
+              borderRadius: 8,
+              overflow: "hidden",
+              border: "1px solid #e1e3e5",
+            }}
+          >
+            <img
+              src={imageUrl}
+              alt=""
+              style={{ width: "100%", maxHeight: 160, objectFit: "cover", display: "block" }}
+            />
+          </div>
+          <InlineStack gap="200">
+            <Button onClick={() => setPickerOpen(true)}>Change image</Button>
+            <Button tone="critical" onClick={() => onChange("")}>
+              Remove
+            </Button>
+          </InlineStack>
+        </BlockStack>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          style={{
+            width: "100%",
+            margin: 0,
+            padding: "22px 12px",
+            cursor: "pointer",
+            background: "#f6f6f7",
+            border: "1px dashed #c9cccf",
+            borderRadius: 8,
+            textAlign: "center",
+          }}
+        >
+          <Text as="span" variant="bodySm" fontWeight="semibold">
+            Choose from Shopify files
+          </Text>
+          <br />
+          <Text as="span" variant="bodySm" tone="subdued">
+            Browse your library or upload a new photo
+          </Text>
+        </button>
+      )}
+      <TextField
+        label="Image URL"
+        value={imageUrl || ""}
+        onChange={onChange}
+        placeholder="https://"
+        helpText={
+          hasImage
+            ? "You can also paste a CDN link."
+            : "Or paste a link if the photo isn’t in your Shopify library."
+        }
+        autoComplete="off"
+      />
+      <ShopifyFilePicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(url) => onChange(url || "")}
+      />
+    </BlockStack>
+  );
+}
+
+function ImageCtaLayoutPicker({
+  value,
+  onChange,
+  title,
+  imageUrl,
+  buttonText,
+  caption,
+  showButton,
+  primary,
+  textColor,
+  radius,
+  position,
+  width,
+}) {
+  const selected = value === "overlay" ? "overlay" : "stacked";
+  return (
+    <BlockStack gap="300">
+      <Text as="p" variant="bodySm" fontWeight="medium">
+        Layout
+      </Text>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: 10,
+        }}
+      >
+        {IMAGE_CTA_LAYOUTS.map((opt) => {
+          const isOn = selected === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onChange(opt.value)}
+              aria-pressed={isOn}
+              style={{
+                margin: 0,
+                padding: 8,
+                cursor: "pointer",
+                background: isOn ? "#f1f8f5" : "#fff",
+                border: `2px solid ${isOn ? primary : "#e1e3e5"}`,
+                borderRadius: 10,
+                boxShadow: isOn ? `0 0 0 1px ${primary}` : "none",
+              }}
+            >
+              <ImageCtaWidgetMock
+                title={title}
+                imageUrl={imageUrl}
+                buttonText={buttonText}
+                caption={caption}
+                layout={opt.value}
+                showButton={showButton}
+                primary={primary}
+                textColor={textColor}
+                radius={radius}
+                compact
+              />
+              <div style={{ marginTop: 8, textAlign: "left" }}>
+                <Text as="span" variant="bodySm" fontWeight="semibold">
+                  {opt.label}
+                </Text>
+                <br />
+                <Text as="span" variant="bodySm" tone="subdued">
+                  {opt.hint}
+                </Text>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <SidebarOnBlogPreview position={position} width={width}>
+        <ImageCtaWidgetMock
+          title={title}
+          imageUrl={imageUrl}
+          buttonText={buttonText}
+          caption={caption}
+          layout={selected}
+          showButton={showButton}
+          primary={primary}
+          textColor={textColor}
+          radius={radius}
+        />
+      </SidebarOnBlogPreview>
+    </BlockStack>
+  );
+}
+
+function RichTextStylePicker({
+  value,
+  onChange,
+  title,
+  body,
+  buttonText,
+  showButton,
+  primary,
+  textColor,
+  radius,
+  position,
+  width,
+}) {
+  const selected = value || "default";
+  return (
+    <BlockStack gap="300">
+      <Text as="p" variant="bodySm" fontWeight="medium">
+        Style
+      </Text>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: 10,
+        }}
+      >
+        {RICH_TEXT_STYLES.map((opt) => {
+          const isOn = selected === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onChange(opt.value)}
+              aria-pressed={isOn}
+              style={{
+                margin: 0,
+                padding: 8,
+                cursor: "pointer",
+                background: isOn ? "#f1f8f5" : "#fff",
+                border: `2px solid ${isOn ? primary : "#e1e3e5"}`,
+                borderRadius: 10,
+                boxShadow: isOn ? `0 0 0 1px ${primary}` : "none",
+              }}
+            >
+              <RichTextWidgetMock
+                title={title || "About"}
+                body={body}
+                style={opt.value}
+                buttonText={buttonText}
+                showButton={showButton}
+                primary={primary}
+                textColor={textColor}
+                radius={radius}
+                compact
+              />
+              <div style={{ marginTop: 8, textAlign: "left" }}>
+                <Text as="span" variant="bodySm" fontWeight="semibold">
+                  {opt.label}
+                </Text>
+                <br />
+                <Text as="span" variant="bodySm" tone="subdued">
+                  {opt.hint}
+                </Text>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <SidebarOnBlogPreview position={position} width={width}>
+        <RichTextWidgetMock
+          title={title || "About"}
+          body={body}
+          style={selected}
+          buttonText={buttonText}
+          showButton={showButton}
+          primary={primary}
+          textColor={textColor}
+          radius={radius}
+        />
+      </SidebarOnBlogPreview>
+    </BlockStack>
+  );
+}
+
 function parseSidebarWidgets(raw) {
   try {
     const parsed = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
@@ -152,6 +967,284 @@ function parseSidebarWidgets(raw) {
     /* fall through */
   }
   return DEFAULT_SIDEBAR_WIDGETS;
+}
+
+const UNIQUE_WIDGET_TYPES = new Set(["related_posts", "recent_posts", "categories", "products"]);
+
+const WIDGET_TYPE_LABELS = {
+  related_posts: "Related posts",
+  recent_posts: "Recent posts",
+  categories: "Categories",
+  products: "Products",
+  rich_text: "Rich text",
+  image_cta: "Image / CTA",
+};
+
+const SOURCE_MODE_LABELS = {
+  smart: "Smart match",
+  category: "Same category",
+  random: "Random",
+  manual: "Manual picks",
+};
+
+function widgetTypeLabel(type) {
+  return WIDGET_TYPE_LABELS[type] || type;
+}
+
+function createSidebarWidget(type) {
+  const id = `${type}_${Date.now()}`;
+  if (type === "related_posts") {
+    return { id, type, enabled: true, settings: { title: "Related posts", count: 4, sourceMode: "smart" } };
+  }
+  if (type === "recent_posts") {
+    return { id, type, enabled: true, settings: { title: "Recent posts", count: 4 } };
+  }
+  if (type === "categories") {
+    return {
+      id,
+      type,
+      enabled: true,
+      settings: {
+        title: "Categories",
+        showCounts: true,
+        showPosts: true,
+        maxPosts: 3,
+        sort: "name",
+        includeCategoryIds: [],
+      },
+    };
+  }
+  if (type === "products") {
+    return {
+      id,
+      type,
+      enabled: true,
+      settings: {
+        title: "Products",
+        source: "post_products",
+        maxItems: 3,
+        showImage: true,
+        showPrice: true,
+        ctaLabel: "View product",
+        productHandles: [],
+        productIds: [],
+        productTitles: [],
+        productImages: [],
+      },
+    };
+  }
+  if (type === "rich_text") {
+    return { id, type, enabled: true, settings: { title: "About", body: "", style: "default", linkUrl: "", buttonText: "" } };
+  }
+  return {
+    id,
+    type: "image_cta",
+    enabled: true,
+    settings: {
+      title: "",
+      imageUrl: "",
+      linkUrl: "",
+      buttonText: "Learn more",
+      caption: "",
+      altText: "",
+      openInNewTab: false,
+      showButton: true,
+      layout: "stacked",
+    },
+  };
+}
+
+function widgetSummary(widget) {
+  const s = widget.settings || {};
+  if (!widget.enabled) return "Off";
+  if (widget.type === "related_posts") {
+    return `${s.count || 4} posts · ${SOURCE_MODE_LABELS[s.sourceMode] || SOURCE_MODE_LABELS.smart}`;
+  }
+  if (widget.type === "recent_posts") return `${s.count || 4} latest posts`;
+  if (widget.type === "categories") {
+    return s.showPosts !== false ? `With recent posts` : "Names only";
+  }
+  if (widget.type === "products") {
+    if (s.source === "manual") {
+      const n = Array.isArray(s.productHandles) ? s.productHandles.length : 0;
+      return n ? `${n} picked` : "No products picked";
+    }
+    return "From each post";
+  }
+  if (widget.type === "rich_text") {
+    const has = String(s.body || "").trim();
+    return has ? (s.style === "callout" ? "Callout" : s.style === "quote" ? "Quote" : "Note") : "Add your text";
+  }
+  if (widget.type === "image_cta") {
+    if (!String(s.imageUrl || "").trim()) return "Add a photo";
+    return s.layout === "overlay" ? "Overlay" : "Stacked";
+  }
+  return "On";
+}
+
+function SidebarWidgetPreview({ widget, settings, compact = false }) {
+  const s = widget.settings || {};
+  const primary = settings.primaryColor || "#008060";
+  const textColor = settings.textColor || "#202223";
+  const radius = settings.buttonRadius;
+  if (widget.type === "related_posts" || widget.type === "recent_posts") {
+    return (
+      <RelatedPostsWidgetMock
+        title={s.title || (widget.type === "recent_posts" ? "Recent posts" : "Related posts")}
+        count={s.count || 4}
+        textColor={textColor}
+        compact={compact}
+      />
+    );
+  }
+  if (widget.type === "categories") {
+    return (
+      <CategoriesWidgetMock
+        title={s.title || "Categories"}
+        showCounts={s.showCounts !== false}
+        showPosts={s.showPosts !== false}
+        maxPosts={s.maxPosts ?? 3}
+        textColor={textColor}
+        compact={compact}
+      />
+    );
+  }
+  if (widget.type === "products") {
+    return (
+      <ProductsWidgetMock
+        title={s.title || "Products"}
+        maxItems={s.maxItems ?? 3}
+        showImage={s.showImage !== false}
+        showPrice={s.showPrice !== false}
+        ctaLabel={s.ctaLabel ?? "View product"}
+        source={s.source || "post_products"}
+        primary={primary}
+        textColor={textColor}
+        compact={compact}
+      />
+    );
+  }
+  if (widget.type === "rich_text") {
+    return (
+      <RichTextWidgetMock
+        title={s.title || "About"}
+        body={s.body}
+        style={s.style || "default"}
+        buttonText={s.buttonText}
+        showButton={!!String(s.linkUrl || "").trim()}
+        primary={primary}
+        textColor={textColor}
+        radius={radius}
+        compact={compact}
+      />
+    );
+  }
+  if (widget.type === "image_cta") {
+    return (
+      <ImageCtaWidgetMock
+        title={s.title}
+        imageUrl={s.imageUrl}
+        buttonText={s.buttonText}
+        caption={s.caption}
+        layout={s.layout || "stacked"}
+        showButton={s.showButton !== false}
+        primary={primary}
+        textColor={textColor}
+        radius={radius}
+        compact={compact}
+      />
+    );
+  }
+  return null;
+}
+
+function CombinedSidebarPreview({ widgets, settings, position = "right", width = "320" }) {
+  const on = (widgets || []).filter((w) => w && w.enabled);
+  const sidebarFirst = String(position).toLowerCase() === "left";
+  const sidebarPx = Math.min(360, Math.max(240, parseInt(width, 10) || 320));
+  const columns = sidebarFirst
+    ? `${sidebarPx}px minmax(0, 1fr)`
+    : `minmax(0, 1fr) ${sidebarPx}px`;
+  const article = (
+    <div
+      style={{
+        padding: 16,
+        background: "#fff",
+        borderRight: sidebarFirst ? "none" : "1px solid #e1e3e5",
+        borderLeft: sidebarFirst ? "1px solid #e1e3e5" : "none",
+        minHeight: "100%",
+      }}
+    >
+      <Text as="p" variant="bodySm" tone="subdued">
+        Article
+      </Text>
+      <div style={{ height: 10, width: "78%", background: "#e1e3e5", borderRadius: 4, margin: "10px 0 8px" }} />
+      <div style={{ height: 8, width: "100%", background: "#f1f2f3", borderRadius: 4, marginBottom: 6 }} />
+      <div style={{ height: 8, width: "92%", background: "#f1f2f3", borderRadius: 4, marginBottom: 6 }} />
+      <div style={{ height: 8, width: "64%", background: "#f1f2f3", borderRadius: 4, marginBottom: 6 }} />
+      <div style={{ height: 8, width: "88%", background: "#f1f2f3", borderRadius: 4, marginBottom: 6 }} />
+      <div style={{ height: 8, width: "70%", background: "#f1f2f3", borderRadius: 4 }} />
+    </div>
+  );
+  const sidebar = (
+    <div
+      style={{
+        padding: 10,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        width: sidebarPx,
+        maxWidth: "100%",
+        boxSizing: "border-box",
+        background: "#f6f6f7",
+      }}
+    >
+      <Text as="p" variant="bodySm" tone="subdued">
+        {sidebarPx} px
+      </Text>
+      {on.length ? (
+        on.map((w) => (
+          <SidebarWidgetPreview key={w.id || w.type} widget={w} settings={settings} compact />
+        ))
+      ) : (
+        <Text as="p" variant="bodySm" tone="subdued">
+          No widgets are on yet. Turn one on below.
+        </Text>
+      )}
+    </div>
+  );
+  return (
+    <BlockStack gap="200">
+      <Text as="p" variant="bodySm" tone="subdued">
+        Full sidebar preview · {sidebarPx} px {sidebarFirst ? "left" : "right"} · {on.length}{" "}
+        widget{on.length === 1 ? "" : "s"} (sample content)
+      </Text>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: columns,
+          alignItems: "stretch",
+          gap: 0,
+          border: "1px solid #e1e3e5",
+          borderRadius: 10,
+          overflow: "hidden",
+          background: "#f6f6f7",
+        }}
+      >
+        {sidebarFirst ? (
+          <>
+            {sidebar}
+            {article}
+          </>
+        ) : (
+          <>
+            {article}
+            {sidebar}
+          </>
+        )}
+      </div>
+    </BlockStack>
+  );
 }
 
 function patchSidebarWidget(widgetsJson, index, patch) {
@@ -205,6 +1298,8 @@ const DEFAULT_SETTINGS = {
   blogSidebarEnabled: false,
   blogSidebarPosition: "right",
   blogSidebarWidth: "320",
+  blogSidebarHideOnMobile: false,
+  blogSidebarSticky: true,
   blogSidebarWidgets: JSON.stringify(DEFAULT_SIDEBAR_WIDGETS),
   defaultAuthor: "",
   customHeaderCode: "",
@@ -246,6 +1341,10 @@ export default function Settings() {
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [categoryBusyId, setCategoryBusyId] = useState(null);
   const [categoryToDelete, setCategoryToDelete] = useState(null);
+  const [expandedWidgetId, setExpandedWidgetId] = useState(null);
+  const [addWidgetType, setAddWidgetType] = useState("image_cta");
+  const [showApplyLayoutConfirm, setShowApplyLayoutConfirm] = useState(false);
+  const [isApplyingLayout, setIsApplyingLayout] = useState(false);
 
   const set = (key) => (value) => setSettings((s) => ({ ...s, [key]: value }));
 
@@ -254,6 +1353,10 @@ export default function Settings() {
     settings.blogLayoutCustomWidth
   );
   const isDirty = JSON.stringify(settings) !== JSON.stringify(originalSettings);
+  const sidebarWidgets = parseSidebarWidgets(settings.blogSidebarWidgets);
+  const sidebarOn =
+    !!settings.blogSidebarEnabled && settings.blogSidebarEnabled !== "false";
+  const relatedInSidebar = sidebarOn && sidebarWidgets.some((w) => w.type === "related_posts" && w.enabled);
 
   // Same problem/fix as posts/new.jsx's handleUpgradeNow: the default UpgradePrompt behavior
   // (navigate("/plans") directly) left the contextual save bar stuck visible on the Billing page
@@ -380,6 +1483,51 @@ export default function Settings() {
       ...s,
       blogSidebarWidgets: patchSidebarWidget(s.blogSidebarWidgets, index, patch),
     }));
+  };
+
+  const moveSidebarWidget = (index, dir) => {
+    const list = [...sidebarWidgets];
+    const nextIdx = index + dir;
+    if (nextIdx < 0 || nextIdx >= list.length) return;
+    [list[index], list[nextIdx]] = [list[nextIdx], list[index]];
+    set("blogSidebarWidgets")(JSON.stringify(list));
+  };
+
+  const addSidebarWidget = () => {
+    const type = addWidgetType || "image_cta";
+    if (UNIQUE_WIDGET_TYPES.has(type) && sidebarWidgets.some((w) => w.type === type)) {
+      setToast({ content: `${widgetTypeLabel(type)} is already in the sidebar.`, error: true });
+      return;
+    }
+    const next = [...sidebarWidgets, createSidebarWidget(type)];
+    set("blogSidebarWidgets")(JSON.stringify(next));
+    setExpandedWidgetId(next[next.length - 1].id);
+    setAddWidgetType("image_cta");
+  };
+
+  const removeSidebarWidget = (index) => {
+    const list = sidebarWidgets.filter((_, i) => i !== index);
+    set("blogSidebarWidgets")(JSON.stringify(list.length ? list : DEFAULT_SIDEBAR_WIDGETS));
+    setExpandedWidgetId(null);
+  };
+
+  const applySidebarLayout = async () => {
+    setIsApplyingLayout(true);
+    try {
+      if (isDirty) {
+        const saved = await handleSave();
+        if (!saved) return;
+      }
+      const res = await fetch("/api/settings/apply-sidebar-layout", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Couldn't apply layout");
+      setShowApplyLayoutConfirm(false);
+      setToast({ content: `Updated the sidebar column on ${data.updated || 0} published post(s).` });
+    } catch (e) {
+      setToast({ content: e.message || "Apply failed", error: true });
+    } finally {
+      setIsApplyingLayout(false);
+    }
   };
 
   const handleCreateCategory = async () => {
@@ -592,6 +1740,16 @@ export default function Settings() {
         onConfirm={confirmSaveThenUpgrade}
         onCancel={() => setShowUpgradeSaveConfirm(false)}
         loading={isSavingForUpgrade}
+      />
+      <ConfirmActionModal
+        open={showApplyLayoutConfirm}
+        title="Apply sidebar layout to published posts?"
+        body="This re-syncs every published post so the extra column exists in the article HTML. Widget content already updates when you save. Continue only if older posts are still missing the sidebar column."
+        confirmText="Save & apply"
+        confirmTone="primary"
+        onConfirm={applySidebarLayout}
+        onCancel={() => setShowApplyLayoutConfirm(false)}
+        loading={isApplyingLayout}
       />
       <ConfirmActionModal
         open={!!categoryToDelete}
@@ -850,12 +2008,25 @@ export default function Settings() {
                         onChange={set("showPublishedDate")}
                       />
                       <Checkbox
-                        label="Show related posts"
+                        label="Show related posts at the bottom of the article"
                         checked={settings.showRelatedPosts}
                         onChange={set("showRelatedPosts")}
+                        helpText={
+                          relatedInSidebar
+                            ? "The sidebar Related posts widget is on, so this bottom block stays hidden on the live blog."
+                            : undefined
+                        }
                       />
                     </InlineGrid>
-                    {settings.showRelatedPosts && (
+                    {relatedInSidebar ? (
+                      <Banner tone="info">
+                        <p>
+                          Related posts appear in the sidebar. Change how many posts and how they’re
+                          chosen on the Related posts widget below. The bottom-of-article block is
+                          hidden while that widget is on.
+                        </p>
+                      </Banner>
+                    ) : settings.showRelatedPosts ? (
                       <Box paddingInlineStart="600">
                         <BlockStack gap="300">
                           <Select
@@ -869,18 +2040,18 @@ export default function Settings() {
                             options={RELATED_LAYOUT_OPTIONS}
                             value={settings.relatedPostsLayout || "grid"}
                             onChange={set("relatedPostsLayout")}
-                            helpText="Grid, list, or slider on the storefront related-posts block."
+                            helpText="Grid, list, or slider under the article."
                           />
                           <Select
-                            label="Default source"
+                            label="How posts are chosen"
                             options={RELATED_SOURCE_OPTIONS}
                             value={settings.relatedPostsSourceMode || "smart"}
                             onChange={set("relatedPostsSourceMode")}
-                            helpText="Posts can override this in the editor. Manual only uses posts you pick on each article. Smart match, Same category, and Random ignore leftover manual picks."
+                            helpText="Posts can override this in the editor. Manual only uses posts you pick on each article."
                           />
                         </BlockStack>
                       </Box>
-                    )}
+                    ) : null}
                   </SectionCard>
                 </Layout.Section>
 
@@ -899,11 +2070,11 @@ export default function Settings() {
                       />
                     )}
                     <Checkbox
-                      label="Enable blog sidebar"
+                      label="Show a sidebar on blog posts"
                       checked={!!settings.blogSidebarEnabled && settings.blogSidebarEnabled !== "false"}
                       onChange={(v) => set("blogSidebarEnabled")(v)}
                       disabled={!features.blog_sidebar?.enabled}
-                      helpText="Shows a left or right column on synced articles. Enable, then Save & Sync published posts (or use Apply layout below) so the sidebar placeholder exists."
+                      helpText="Adds a column beside the article for related posts, categories, products, and promos."
                     />
                     {features.blog_sidebar?.enabled &&
                       !!settings.blogSidebarEnabled &&
@@ -923,6 +2094,31 @@ export default function Settings() {
                               onChange={set("blogSidebarWidth")}
                             />
                           </InlineGrid>
+                          <Checkbox
+                            label="Keep the sidebar visible while scrolling (desktop)"
+                            checked={settings.blogSidebarSticky !== false && settings.blogSidebarSticky !== "false"}
+                            onChange={set("blogSidebarSticky")}
+                          />
+                          <Checkbox
+                            label="Hide the sidebar on phones"
+                            checked={!!settings.blogSidebarHideOnMobile && settings.blogSidebarHideOnMobile !== "false"}
+                            onChange={set("blogSidebarHideOnMobile")}
+                            helpText="On phones the sidebar stacks under the article by default. Turn this on to hide it there."
+                          />
+
+                          <CombinedSidebarPreview
+                            widgets={sidebarWidgets}
+                            settings={settings}
+                            position={settings.blogSidebarPosition || "right"}
+                            width={settings.blogSidebarWidth || "320"}
+                          />
+
+                          <Banner tone="info">
+                            <p>
+                              Save settings to update widget content on the live blog. If older posts
+                              are still missing the extra column, use Apply layout at the bottom once.
+                            </p>
+                          </Banner>
 
                           <Divider />
                           <InlineStack align="space-between" blockAlign="center" wrap>
@@ -931,191 +2127,92 @@ export default function Settings() {
                             </Text>
                             <Button onClick={() => navigate("/categories")}>Manage categories</Button>
                           </InlineStack>
-                          <Banner tone="info">
-                            <p>
-                              Assign a category on each post. Category slugs sync as Shopify tags so
-                              archive links work after Save &amp; Sync (or Apply sidebar layout below).
-                              Nested post links in the sidebar work even before a resync.
-                            </p>
-                          </Banner>
-                          <InlineStack gap="200" blockAlign="end" wrap={false}>
-                            <div style={{ flex: 1, minWidth: 160 }}>
-                              <TextField
-                                label="New category"
-                                labelHidden
-                                placeholder="e.g. Recipes"
-                                value={newCategoryName}
-                                onChange={setNewCategoryName}
-                                autoComplete="off"
-                                disabled={creatingCategory}
-                              />
-                            </div>
-                            <Button
-                              variant="primary"
-                              onClick={handleCreateCategory}
-                              loading={creatingCategory}
-                              disabled={!newCategoryName.trim()}
-                            >
-                              Add
-                            </Button>
-                          </InlineStack>
-                          {categoriesLoading ? (
-                            <InlineStack gap="200" blockAlign="center">
-                              <Spinner size="small" />
-                              <Text as="span" variant="bodySm" tone="subdued">
-                                Loading categories…
-                              </Text>
-                            </InlineStack>
-                          ) : categories.length === 0 ? (
+                          <Text as="p" variant="bodySm" tone="subdued">
+                            Create and rename categories on the Categories page. Assign a category on
+                            each post. Choose which ones appear in the Categories widget below.
+                          </Text>
+                          {categories.length === 0 && !categoriesLoading ? (
                             <Text as="p" variant="bodySm" tone="subdued">
-                              No categories yet. Create one above, then assign it on each post in the editor.
+                              No categories yet. Add some on the Categories page, then assign them on posts.
                             </Text>
-                          ) : (
-                            <BlockStack gap="200">
-                              {categories.map((cat) => (
-                                <InlineStack
-                                  key={cat.id}
-                                  align="space-between"
-                                  blockAlign="center"
-                                  wrap
-                                  gap="200"
-                                >
-                                  {editingCategoryId === cat.id ? (
-                                    <InlineStack gap="200" blockAlign="end" wrap={false}>
-                                      <div style={{ minWidth: 140 }}>
-                                        <TextField
-                                          label="Name"
-                                          labelHidden
-                                          value={editingCategoryName}
-                                          onChange={setEditingCategoryName}
-                                          autoComplete="off"
-                                          disabled={categoryBusyId === cat.id}
-                                        />
-                                      </div>
-                                      <Button
-                                        size="slim"
-                                        variant="primary"
-                                        loading={categoryBusyId === cat.id}
-                                        onClick={() => handleRenameCategory(cat.id)}
-                                        disabled={!editingCategoryName.trim()}
-                                      >
-                                        Save
-                                      </Button>
-                                      <Button
-                                        size="slim"
-                                        onClick={() => {
-                                          setEditingCategoryId(null);
-                                          setEditingCategoryName("");
-                                        }}
-                                        disabled={categoryBusyId === cat.id}
-                                      >
-                                        Cancel
-                                      </Button>
-                                    </InlineStack>
-                                  ) : (
-                                    <BlockStack gap="050">
-                                      <InlineStack gap="200" blockAlign="center">
-                                        <Text as="span" variant="bodyMd" fontWeight="semibold">
-                                          {cat.name}
-                                        </Text>
-                                        <Badge>
-                                          {cat.postCount} published
-                                        </Badge>
-                                      </InlineStack>
-                                      <Text as="span" variant="bodySm" tone="subdued">
-                                        slug: {cat.slug}
-                                      </Text>
-                                    </BlockStack>
-                                  )}
-                                  {editingCategoryId !== cat.id && (
-                                    <InlineStack gap="100">
-                                      <Button
-                                        size="slim"
-                                        onClick={() => {
-                                          setEditingCategoryId(cat.id);
-                                          setEditingCategoryName(cat.name);
-                                        }}
-                                      >
-                                        Rename
-                                      </Button>
-                                      <Button
-                                        size="slim"
-                                        tone="critical"
-                                        onClick={() => setCategoryToDelete(cat)}
-                                      >
-                                        Delete
-                                      </Button>
-                                    </InlineStack>
-                                  )}
-                                </InlineStack>
-                              ))}
-                            </BlockStack>
-                          )}
+                          ) : null}
 
                           <Divider />
                           <Text as="h3" variant="headingSm">
                             Widgets
                           </Text>
                           <Text as="p" variant="bodySm" tone="subdued">
-                            When the Related posts widget is on, related cards appear in the sidebar only (not at the bottom).
+                            Turn a widget on to show it. Open it to edit. Related posts in the sidebar
+                            replace the block under the article.
                           </Text>
-                          {parseSidebarWidgets(settings.blogSidebarWidgets).map((widget, idx) => (
+                          {sidebarWidgets.map((widget, idx) => (
                             <Card key={widget.id || idx}>
                               <BlockStack gap="300">
-                                <InlineStack align="space-between" blockAlign="center">
-                                  <Text as="span" variant="bodyMd" fontWeight="semibold">
-                                    {widget.type === "related_posts"
-                                      ? "Related posts"
-                                      : widget.type === "categories"
-                                        ? "Categories"
-                                        : widget.type === "products"
-                                          ? "Products"
-                                          : widget.type === "rich_text"
-                                            ? "Rich text"
-                                            : widget.type === "image_cta"
-                                              ? "Image / CTA"
-                                              : widget.type}
-                                  </Text>
-                                  <InlineStack gap="200">
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "auto minmax(0, 1fr) auto",
+                                    alignItems: "center",
+                                    columnGap: 12,
+                                    rowGap: 8,
+                                  }}
+                                >
+                                  <Button
+                                    variant="plain"
+                                    onClick={() =>
+                                      setExpandedWidgetId((id) =>
+                                        id === widget.id ? null : widget.id
+                                      )
+                                    }
+                                    disclosure={expandedWidgetId === widget.id ? "up" : "down"}
+                                  >
+                                    {expandedWidgetId === widget.id ? "Hide" : "Edit"}
+                                  </Button>
+                                  <BlockStack gap="050">
+                                    <Text as="span" variant="bodyMd" fontWeight="semibold">
+                                      {widgetTypeLabel(widget.type)}
+                                    </Text>
+                                    <Text as="span" variant="bodySm" tone="subdued">
+                                      {widgetSummary(widget)}
+                                    </Text>
+                                  </BlockStack>
+                                  <InlineStack gap="200" blockAlign="center" wrap={false}>
                                     <Button
                                       size="slim"
                                       disabled={idx === 0}
-                                      onClick={() => {
-                                        const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                        if (idx <= 0) return;
-                                        const next = [...list];
-                                        [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-                                        set("blogSidebarWidgets")(JSON.stringify(next));
-                                      }}
+                                      onClick={() => moveSidebarWidget(idx, -1)}
                                     >
                                       Up
                                     </Button>
                                     <Button
                                       size="slim"
-                                      disabled={idx >= parseSidebarWidgets(settings.blogSidebarWidgets).length - 1}
-                                      onClick={() => {
-                                        const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                        if (idx >= list.length - 1) return;
-                                        const next = [...list];
-                                        [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-                                        set("blogSidebarWidgets")(JSON.stringify(next));
-                                      }}
+                                      disabled={idx >= sidebarWidgets.length - 1}
+                                      onClick={() => moveSidebarWidget(idx, 1)}
                                     >
                                       Down
                                     </Button>
                                     <Checkbox
-                                      label="On"
-                                      labelHidden
+                                      label="Show on blog"
                                       checked={!!widget.enabled}
                                       onChange={(checked) => {
-                                        const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                        list[idx] = { ...list[idx], enabled: checked };
-                                        set("blogSidebarWidgets")(JSON.stringify(list));
+                                        updateSidebarWidget(idx, { enabled: checked });
                                       }}
                                     />
+                                    {(widget.type === "image_cta" ||
+                                      widget.type === "rich_text" ||
+                                      widget.type === "recent_posts" ||
+                                      sidebarWidgets.length > 1) && (
+                                      <Button
+                                        size="slim"
+                                        tone="critical"
+                                        onClick={() => removeSidebarWidget(idx)}
+                                      >
+                                        Remove
+                                      </Button>
+                                    )}
                                   </InlineStack>
-                                </InlineStack>
-                                {widget.enabled && (
+                                </div>
+                                {expandedWidgetId === widget.id && (
                                   <BlockStack gap="200">
                                     <TextField
                                       label="Title"
@@ -1128,84 +2225,244 @@ export default function Settings() {
                                         };
                                         set("blogSidebarWidgets")(JSON.stringify(list));
                                       }}
+                                      helpText={
+                                        widget.type === "image_cta"
+                                          ? "Shown above the promo. Leave blank to hide."
+                                          : undefined
+                                      }
                                       autoComplete="off"
                                     />
                                     {widget.type === "related_posts" && (
-                                      <Select
-                                        label="Count"
-                                        options={RELATED_POSTS_OPTIONS}
-                                        value={String(widget.settings?.count || 4)}
-                                        onChange={(count) => {
-                                          const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                          list[idx] = {
-                                            ...list[idx],
-                                            settings: {
-                                              ...(list[idx].settings || {}),
-                                              count: parseInt(count, 10),
-                                            },
-                                          };
-                                          set("blogSidebarWidgets")(JSON.stringify(list));
-                                        }}
-                                      />
+                                      <BlockStack gap="200">
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          These cards appear beside the article. How they’re chosen
+                                          is the shop default; a post can still override it in the editor.
+                                        </Text>
+                                        <Select
+                                          label="How many posts"
+                                          options={RELATED_POSTS_OPTIONS}
+                                          value={String(widget.settings?.count || 4)}
+                                          onChange={(count) => {
+                                            const n = parseInt(count, 10);
+                                            setSettings((s) => ({
+                                              ...s,
+                                              relatedPostsCount: String(n),
+                                              blogSidebarWidgets: patchSidebarWidget(
+                                                s.blogSidebarWidgets,
+                                                idx,
+                                                { settings: { count: n } }
+                                              ),
+                                            }));
+                                          }}
+                                        />
+                                        <Select
+                                          label="How posts are chosen"
+                                          options={RELATED_SOURCE_OPTIONS}
+                                          value={
+                                            widget.settings?.sourceMode ||
+                                            settings.relatedPostsSourceMode ||
+                                            "smart"
+                                          }
+                                          onChange={(sourceMode) => {
+                                            setSettings((s) => ({
+                                              ...s,
+                                              relatedPostsSourceMode: sourceMode,
+                                              blogSidebarWidgets: patchSidebarWidget(
+                                                s.blogSidebarWidgets,
+                                                idx,
+                                                { settings: { sourceMode } }
+                                              ),
+                                            }));
+                                          }}
+                                          helpText="Smart match uses category and tags. Manual only uses posts you pick on each article."
+                                        />
+                                        <SidebarOnBlogPreview
+                                          position={settings.blogSidebarPosition}
+                                          width={settings.blogSidebarWidth}
+                                        >
+                                          <RelatedPostsWidgetMock
+                                            title={widget.settings?.title || "Related posts"}
+                                            count={widget.settings?.count || 4}
+                                            textColor={settings.textColor}
+                                          />
+                                        </SidebarOnBlogPreview>
+                                      </BlockStack>
+                                    )}
+                                    {widget.type === "recent_posts" && (
+                                      <BlockStack gap="200">
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          Newest published articles from this blog, same order as
+                                          Manage posts. The article you’re reading is left out, so
+                                          visitors aren’t sent back to the same page. This is not
+                                          Related posts — that widget picks similar articles by
+                                          category and tags.
+                                        </Text>
+                                        <Select
+                                          label="How many posts"
+                                          options={RELATED_POSTS_OPTIONS}
+                                          value={String(widget.settings?.count || 4)}
+                                          onChange={(count) =>
+                                            updateSidebarWidget(idx, {
+                                              settings: { count: parseInt(count, 10) },
+                                            })
+                                          }
+                                        />
+                                        <SidebarOnBlogPreview
+                                          position={settings.blogSidebarPosition}
+                                          width={settings.blogSidebarWidth}
+                                        >
+                                          <RelatedPostsWidgetMock
+                                            title={widget.settings?.title || "Recent posts"}
+                                            count={widget.settings?.count || 4}
+                                            textColor={settings.textColor}
+                                          />
+                                        </SidebarOnBlogPreview>
+                                      </BlockStack>
                                     )}
                                     {widget.type === "rich_text" && (
-                                      <TextField
-                                        label="Body"
-                                        value={widget.settings?.body || ""}
-                                        onChange={(body) => {
-                                          const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                          list[idx] = {
-                                            ...list[idx],
-                                            settings: { ...(list[idx].settings || {}), body },
-                                          };
-                                          set("blogSidebarWidgets")(JSON.stringify(list));
-                                        }}
-                                        multiline={3}
-                                        autoComplete="off"
-                                      />
+                                      <BlockStack gap="200">
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          A short note, bio, or promo beside the article. Line breaks
+                                          are kept. Add an optional button if you want a link.
+                                        </Text>
+                                        <TextField
+                                          label="Body"
+                                          value={widget.settings?.body || ""}
+                                          onChange={(body) =>
+                                            updateSidebarWidget(idx, { settings: { body } })
+                                          }
+                                          multiline={6}
+                                          maxLength={2000}
+                                          showCharacterCount
+                                          placeholder="e.g. Kitchen stories, recipes, and tips from our shop."
+                                          autoComplete="off"
+                                        />
+                                        <RichTextStylePicker
+                                          value={widget.settings?.style || "default"}
+                                          onChange={(style) =>
+                                            updateSidebarWidget(idx, { settings: { style } })
+                                          }
+                                          title={widget.settings?.title}
+                                          body={widget.settings?.body}
+                                          buttonText={widget.settings?.buttonText}
+                                          showButton={!!String(widget.settings?.linkUrl || "").trim()}
+                                          primary={settings.primaryColor || "#008060"}
+                                          textColor={settings.textColor || "#202223"}
+                                          radius={settings.buttonRadius}
+                                          position={settings.blogSidebarPosition}
+                                          width={settings.blogSidebarWidth}
+                                        />
+                                        <TextField
+                                          label="Button link (optional)"
+                                          value={widget.settings?.linkUrl || ""}
+                                          onChange={(linkUrl) =>
+                                            updateSidebarWidget(idx, { settings: { linkUrl } })
+                                          }
+                                          placeholder="https://"
+                                          autoComplete="off"
+                                        />
+                                        {String(widget.settings?.linkUrl || "").trim() ? (
+                                          <TextField
+                                            label="Button text"
+                                            value={widget.settings?.buttonText || ""}
+                                            onChange={(buttonText) =>
+                                              updateSidebarWidget(idx, { settings: { buttonText } })
+                                            }
+                                            placeholder="Learn more"
+                                            autoComplete="off"
+                                          />
+                                        ) : null}
+                                      </BlockStack>
                                     )}
                                     {widget.type === "image_cta" && (
-                                      <>
+                                      <BlockStack gap="200">
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          A photo promo beside the article — a sale, collection, or
+                                          newsletter. The preview always shows sample content so you
+                                          can judge the layout before you add a photo.
+                                        </Text>
+                                        <ImageCtaImageField
+                                          imageUrl={widget.settings?.imageUrl || ""}
+                                          onChange={(imageUrl) =>
+                                            updateSidebarWidget(idx, { settings: { imageUrl } })
+                                          }
+                                        />
                                         <TextField
-                                          label="Image URL"
-                                          value={widget.settings?.imageUrl || ""}
-                                          onChange={(imageUrl) => {
-                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                            list[idx] = {
-                                              ...list[idx],
-                                              settings: { ...(list[idx].settings || {}), imageUrl },
-                                            };
-                                            set("blogSidebarWidgets")(JSON.stringify(list));
-                                          }}
+                                          label="Caption (optional)"
+                                          value={widget.settings?.caption || ""}
+                                          onChange={(caption) =>
+                                            updateSidebarWidget(idx, { settings: { caption } })
+                                          }
+                                          placeholder="Spring bakeware — 20% off"
+                                          helpText="Short line under the photo, or on top of it in Overlay."
+                                          maxLength={120}
+                                          showCharacterCount
                                           autoComplete="off"
                                         />
                                         <TextField
-                                          label="Link URL"
+                                          label="Alt text"
+                                          value={widget.settings?.altText || ""}
+                                          onChange={(altText) =>
+                                            updateSidebarWidget(idx, { settings: { altText } })
+                                          }
+                                          placeholder="Describe the photo"
+                                          helpText="Read by screen readers. If blank, the caption or title is used."
+                                          maxLength={200}
+                                          autoComplete="off"
+                                        />
+                                        <TextField
+                                          label="Link"
                                           value={widget.settings?.linkUrl || ""}
-                                          onChange={(linkUrl) => {
-                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                            list[idx] = {
-                                              ...list[idx],
-                                              settings: { ...(list[idx].settings || {}), linkUrl },
-                                            };
-                                            set("blogSidebarWidgets")(JSON.stringify(list));
-                                          }}
+                                          onChange={(linkUrl) =>
+                                            updateSidebarWidget(idx, { settings: { linkUrl } })
+                                          }
+                                          placeholder="https:// or /collections/sale"
+                                          helpText="Where the photo and button go. Collection, product, page, or any URL."
                                           autoComplete="off"
                                         />
-                                        <TextField
-                                          label="Button text"
-                                          value={widget.settings?.buttonText || ""}
-                                          onChange={(buttonText) => {
-                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                            list[idx] = {
-                                              ...list[idx],
-                                              settings: { ...(list[idx].settings || {}), buttonText },
-                                            };
-                                            set("blogSidebarWidgets")(JSON.stringify(list));
-                                          }}
-                                          autoComplete="off"
+                                        <Checkbox
+                                          label="Open link in a new tab"
+                                          checked={!!widget.settings?.openInNewTab}
+                                          onChange={(openInNewTab) =>
+                                            updateSidebarWidget(idx, { settings: { openInNewTab } })
+                                          }
                                         />
-                                      </>
+                                        <Checkbox
+                                          label="Show a button"
+                                          checked={widget.settings?.showButton !== false}
+                                          onChange={(showButton) =>
+                                            updateSidebarWidget(idx, { settings: { showButton } })
+                                          }
+                                          helpText="Off = photo-only. The photo still uses the link above."
+                                        />
+                                        {widget.settings?.showButton !== false && (
+                                          <TextField
+                                            label="Button text"
+                                            value={widget.settings?.buttonText || ""}
+                                            onChange={(buttonText) =>
+                                              updateSidebarWidget(idx, { settings: { buttonText } })
+                                            }
+                                            placeholder="Learn more"
+                                            autoComplete="off"
+                                          />
+                                        )}
+                                        <ImageCtaLayoutPicker
+                                          value={widget.settings?.layout || "stacked"}
+                                          onChange={(layout) =>
+                                            updateSidebarWidget(idx, { settings: { layout } })
+                                          }
+                                          title={widget.settings?.title}
+                                          imageUrl={widget.settings?.imageUrl}
+                                          buttonText={widget.settings?.buttonText}
+                                          caption={widget.settings?.caption}
+                                          showButton={widget.settings?.showButton !== false}
+                                          primary={settings.primaryColor || "#008060"}
+                                          textColor={settings.textColor}
+                                          radius={settings.buttonRadius}
+                                          position={settings.blogSidebarPosition}
+                                          width={settings.blogSidebarWidth}
+                                        />
+                                      </BlockStack>
                                     )}
                                     {widget.type === "products" && (
                                       <BlockStack gap="200">
@@ -1285,6 +2542,8 @@ export default function Settings() {
                                                     if (!selection?.length) return;
                                                     const productHandles = [];
                                                     const productIds = [];
+                                                    const productTitles = [];
+                                                    const productImages = [];
                                                     const seen = new Set();
                                                     for (const p of selection) {
                                                       const handle = p?.handle;
@@ -1292,9 +2551,16 @@ export default function Settings() {
                                                       seen.add(handle);
                                                       productHandles.push(handle);
                                                       if (p.id) productIds.push(String(p.id));
+                                                      productTitles.push(p.title || handle);
+                                                      const img =
+                                                        p.images?.[0]?.originalSrc ||
+                                                        p.images?.[0]?.src ||
+                                                        p.featuredImage?.url ||
+                                                        "";
+                                                      productImages.push(img);
                                                     }
                                                     updateSidebarWidget(idx, {
-                                                      settings: { productHandles, productIds },
+                                                      settings: { productHandles, productIds, productTitles, productImages },
                                                     });
                                                   } catch (e) {
                                                     if (e?.message !== "cancelled" && e?.code !== "CANCELLED") {
@@ -1313,7 +2579,7 @@ export default function Settings() {
                                                   tone="critical"
                                                   onClick={() =>
                                                     updateSidebarWidget(idx, {
-                                                      settings: { productHandles: [], productIds: [] },
+                                                      settings: { productHandles: [], productIds: [], productTitles: [], productImages: [] },
                                                     })
                                                   }
                                                 >
@@ -1330,9 +2596,37 @@ export default function Settings() {
                                                     blockAlign="center"
                                                     gap="200"
                                                   >
-                                                    <Text as="span" variant="bodySm">
-                                                      {handle}
-                                                    </Text>
+                                                    <InlineStack gap="200" blockAlign="center">
+                                                      {widget.settings?.productImages?.[handleIdx] ? (
+                                                        <img
+                                                          src={widget.settings.productImages[handleIdx]}
+                                                          alt=""
+                                                          style={{
+                                                            width: 36,
+                                                            height: 36,
+                                                            objectFit: "cover",
+                                                            borderRadius: 6,
+                                                          }}
+                                                        />
+                                                      ) : (
+                                                        <div
+                                                          style={{
+                                                            width: 36,
+                                                            height: 36,
+                                                            borderRadius: 6,
+                                                            background: "#f1f2f3",
+                                                          }}
+                                                        />
+                                                      )}
+                                                      <BlockStack gap="050">
+                                                        <Text as="span" variant="bodySm" fontWeight="semibold">
+                                                          {widget.settings?.productTitles?.[handleIdx] || handle}
+                                                        </Text>
+                                                        <Text as="span" variant="bodySm" tone="subdued">
+                                                          {handle}
+                                                        </Text>
+                                                      </BlockStack>
+                                                    </InlineStack>
                                                     <Button
                                                       size="slim"
                                                       onClick={() => {
@@ -1344,6 +2638,8 @@ export default function Settings() {
                                                           settings: {
                                                             productHandles: handles.filter((h) => h !== handle),
                                                             productIds: ids.filter((_, i) => i !== handleIdx),
+                                                            productTitles: (widget.settings?.productTitles || []).filter((_, i) => i !== handleIdx),
+                                                            productImages: (widget.settings?.productImages || []).filter((_, i) => i !== handleIdx),
                                                           },
                                                         });
                                                       }}
@@ -1393,6 +2689,21 @@ export default function Settings() {
                                           helpText="Leave blank to hide the CTA line; the card still links to the product."
                                           autoComplete="off"
                                         />
+                                        <SidebarOnBlogPreview
+                                          position={settings.blogSidebarPosition}
+                                          width={settings.blogSidebarWidth}
+                                        >
+                                          <ProductsWidgetMock
+                                            title={widget.settings?.title || "Products"}
+                                            maxItems={widget.settings?.maxItems ?? 3}
+                                            showImage={widget.settings?.showImage !== false}
+                                            showPrice={widget.settings?.showPrice !== false}
+                                            ctaLabel={widget.settings?.ctaLabel ?? "View product"}
+                                            source={widget.settings?.source || "post_products"}
+                                            primary={settings.primaryColor || "#008060"}
+                                            textColor={settings.textColor}
+                                          />
+                                        </SidebarOnBlogPreview>
                                       </BlockStack>
                                     )}
                                     {widget.type === "categories" && (
@@ -1472,6 +2783,18 @@ export default function Settings() {
                                             })}
                                           </BlockStack>
                                         )}
+                                        <SidebarOnBlogPreview
+                                          position={settings.blogSidebarPosition}
+                                          width={settings.blogSidebarWidth}
+                                        >
+                                          <CategoriesWidgetMock
+                                            title={widget.settings?.title || "Categories"}
+                                            showCounts={widget.settings?.showCounts !== false}
+                                            showPosts={widget.settings?.showPosts !== false}
+                                            maxPosts={widget.settings?.maxPosts ?? 3}
+                                            textColor={settings.textColor}
+                                          />
+                                        </SidebarOnBlogPreview>
                                       </BlockStack>
                                     )}
                                   </BlockStack>
@@ -1479,23 +2802,49 @@ export default function Settings() {
                               </BlockStack>
                             </Card>
                           ))}
-                          <Button
-                            onClick={async () => {
-                              try {
-                                const res = await fetch("/api/settings/apply-sidebar-layout", {
-                                  method: "POST",
-                                });
-                                const data = await res.json();
-                                if (!res.ok) throw new Error(data.error || "Failed");
-                                setToast({
-                                  content: `Applied layout to ${data.updated || 0} published post(s).`,
-                                });
-                              } catch (e) {
-                                setToast({ content: e.message || "Apply failed", error: true });
-                              }
-                            }}
-                          >
-                            Apply sidebar layout to all published posts
+                          <Divider />
+                          <Text as="h3" variant="headingSm">
+                            Add a widget
+                          </Text>
+                          <InlineStack gap="200" blockAlign="end" wrap>
+                            <div style={{ minWidth: 180 }}>
+                              <Select
+                                label="Widget type"
+                                labelHidden
+                                options={[
+                                  { label: "Image / CTA", value: "image_cta" },
+                                  { label: "Rich text", value: "rich_text" },
+                                  !sidebarWidgets.some((w) => w.type === "recent_posts") && {
+                                    label: "Recent posts",
+                                    value: "recent_posts",
+                                  },
+                                  !sidebarWidgets.some((w) => w.type === "related_posts") && {
+                                    label: "Related posts",
+                                    value: "related_posts",
+                                  },
+                                  !sidebarWidgets.some((w) => w.type === "categories") && {
+                                    label: "Categories",
+                                    value: "categories",
+                                  },
+                                  !sidebarWidgets.some((w) => w.type === "products") && {
+                                    label: "Products",
+                                    value: "products",
+                                  },
+                                ].filter(Boolean)}
+                                value={addWidgetType}
+                                onChange={setAddWidgetType}
+                              />
+                            </div>
+                            <Button onClick={addSidebarWidget}>Add widget</Button>
+                          </InlineStack>
+
+                          <Divider />
+                          <Text as="p" variant="bodySm" tone="subdued">
+                            Widget content updates after you save. Use this only if published posts
+                            still show one column (the empty sidebar placeholder is missing).
+                          </Text>
+                          <Button onClick={() => setShowApplyLayoutConfirm(true)}>
+                            Apply layout to published posts
                           </Button>
                         </BlockStack>
                       )}

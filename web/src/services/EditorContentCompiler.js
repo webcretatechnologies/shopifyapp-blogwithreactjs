@@ -1627,7 +1627,7 @@ ${listHtml}
     return `
       <div style="display: flex; flex-direction: ${isHorizontal ? "row" : "column"}; height: 100%; flex: 1; ${isCompact ? "align-items: center;" : ""} border: 1px solid ${borderColor}; border-radius: ${borderRadius}px; background: ${backgroundColor}; overflow: hidden; margin: 16px 0; box-sizing: border-box;">
         ${imageHtml}
-        <div style="flex: 1; min-width: 200px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="flex: 1; min-width: 0; padding: 16px; display: flex; flex-direction: column; justify-content: space-between;">
           <div style="flex: 1;">
             <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;"><a href="${productUrl}" style="color: inherit; text-decoration: none;">${escapeHtml(title)}</a></h3>
             ${priceHtml}
@@ -1693,6 +1693,9 @@ ${this.generateGlobalCss(settings)}
 
   .blogger-article-container {
     max-width: var(--blogger-layout-width);
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     margin-left: auto !important;
     margin-right: auto !important;
     font-family: var(--blogger-font-family) !important;
@@ -1702,6 +1705,16 @@ ${this.generateGlobalCss(settings)}
     color: var(--blogger-text-color);
     padding-bottom: 80px !important;
     margin-bottom: 80px !important;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+  }
+
+  .blogger-article-container img,
+  .blogger-article-container video,
+  .blogger-article-container iframe,
+  .blogger-article-container svg {
+    max-width: 100% !important;
+    height: auto;
   }
 
   /* Ensure template article and blog pages have bottom space */
@@ -2159,6 +2172,44 @@ ${this.generateGlobalCss(settings)}
     display: block;
     margin-bottom: 10px;
   }
+  .blogger-sidebar-cta__media {
+    position: relative;
+    display: block;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .blogger-sidebar-cta__media img {
+    margin-bottom: 0;
+    border-radius: 8px;
+  }
+  .blogger-sidebar-cta__imgwrap {
+    display: block;
+  }
+  .blogger-sidebar-cta__caption {
+    font-size: 0.88em;
+    line-height: 1.4;
+    margin: 0 0 10px;
+    opacity: 0.88;
+  }
+  .blogger-sidebar-cta--overlay .blogger-sidebar-cta__overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 16px 12px 12px;
+    background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,.08));
+    pointer-events: none;
+  }
+  .blogger-sidebar-cta--overlay .blogger-sidebar-cta__overlay a {
+    pointer-events: auto;
+  }
+  .blogger-sidebar-cta--overlay .blogger-sidebar-cta__caption {
+    color: #fff;
+    opacity: 1;
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
   .blogger-sidebar-cta__btn {
     display: inline-block;
     padding: 8px 14px;
@@ -2167,6 +2218,46 @@ ${this.generateGlobalCss(settings)}
     text-decoration: none;
     border-radius: 6px;
     font-size: 0.9em;
+  }
+  .blogger-sidebar-richtext {
+    font-size: 0.95em;
+    line-height: 1.55;
+  }
+  .blogger-sidebar-richtext p {
+    margin: 0 0 0.8em;
+  }
+  .blogger-sidebar-richtext p:last-child {
+    margin-bottom: 0;
+  }
+  .blogger-sidebar-richtext a {
+    color: var(--blogger-primary-color, #008060);
+    text-underline-offset: 2px;
+  }
+  .blogger-sidebar-richtext--callout {
+    background: #f6f6f7;
+    border-radius: 8px;
+    padding: 12px 14px;
+    border-left: 3px solid var(--blogger-primary-color, #008060);
+  }
+  .blogger-sidebar-richtext--quote {
+    font-style: italic;
+    padding: 2px 0 2px 14px;
+    border-left: 3px solid var(--blogger-primary-color, #008060);
+  }
+  .blogger-sidebar-richtext__btn {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 8px 14px;
+    background: var(--blogger-primary-color, #008060);
+    color: #fff !important;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: 600;
+    font-style: normal;
+  }
+  .blogger-sidebar-richtext__btn:hover {
+    opacity: 0.92;
   }
   @media (max-width: 768px) {
     .blogger-article-layout--sidebar-pending.blogger-article-layout--sidebar-right,
@@ -2185,10 +2276,13 @@ ${this.generateGlobalCss(settings)}
   }
 
 
-  /* Table styling for Tiptap native tables */
+  /* Table styling for Tiptap native tables.
+     Never set min-width here — 480px used to force phones to zoom the whole article
+     down like a desktop page. Wide tables scroll inside the article instead. */
   .blogger-article-container table {
     width: 100%;
-    min-width: 480px;
+    max-width: 100%;
+    min-width: 0;
     border-collapse: collapse;
     border: 1px solid #e1e3e5;
     border-radius: 8px;
@@ -2240,10 +2334,25 @@ ${this.generateGlobalCss(settings)}
      viewport width on its own — collapse it at common breakpoints. */
   @media (max-width: 640px) {
     .blogger-article-container .blogger-product-grid {
-      grid-template-columns: repeat(2, 1fr) !important;
+      grid-template-columns: 1fr !important;
     }
   }
-  @media (max-width: 420px) {
+
+  @media (max-width: 768px) {
+    .blogger-article-layout,
+    .blogger-article-main,
+    .blogger-article-container {
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+    }
+    .blogger-article-container table,
+    .blogger-article-container pre {
+      display: block;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
     .blogger-article-container .blogger-product-grid {
       grid-template-columns: 1fr !important;
     }
@@ -2272,6 +2381,8 @@ ${this.generateGlobalCss(settings)}
     const secondary = settings.secondaryColor || "#005bd3";
     const text = settings.textColor || "#202223";
     const isOff = (v) => v === false || v === "false";
+    const hideSidebarMobile = settings.blogSidebarHideOnMobile === true || settings.blogSidebarHideOnMobile === "true";
+    const stickySidebar = settings.blogSidebarSticky !== false && settings.blogSidebarSticky !== "false";
     return `  :root {
     --blogger-layout-width: ${layoutWidth};
     --blogger-sidebar-width: ${sidebarWidth};
@@ -2324,7 +2435,7 @@ ${this.generateGlobalCss(settings)}
     display: flex${bang};
     flex-direction: column;
     gap: 20px;
-    position: sticky;
+    position: ${stickySidebar ? "sticky" : "static"}${bang};
     top: 24px;
   }
 
@@ -2362,7 +2473,7 @@ ${this.generateGlobalCss(settings)}
     }
     .blogger-article-layout--sidebar-pending .blogger-article-sidebar,
     .blogger-article-layout--sidebar-active .blogger-article-sidebar {
-      position: static${bang};
+      ${hideSidebarMobile ? `display: none${bang};` : `position: static${bang};`}
     }
   }
 
@@ -2371,9 +2482,82 @@ ${this.generateGlobalCss(settings)}
     color: var(--blogger-primary-color, ${primary})${bang};
   }
 
-  .blogger-sidebar-cta__btn {
+  .blogger-sidebar-cta__btn,
+  .blogger-sidebar-richtext__btn {
     background: var(--blogger-primary-color, ${primary})${bang};
     color: #fff${bang};
+  }
+
+  .blogger-sidebar-cta__media {
+    position: relative;
+    display: block;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .blogger-sidebar-cta__media img {
+    margin-bottom: 0;
+    border-radius: 8px;
+  }
+  .blogger-sidebar-cta--overlay .blogger-sidebar-cta__overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 16px 12px 12px;
+    background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,.08));
+    pointer-events: none;
+  }
+  .blogger-sidebar-cta--overlay .blogger-sidebar-cta__overlay a {
+    pointer-events: auto;
+  }
+  .blogger-sidebar-cta--overlay .blogger-sidebar-cta__caption {
+    color: #fff;
+    opacity: 1;
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+  .blogger-sidebar-cta__caption {
+    font-size: 0.88em;
+    line-height: 1.4;
+    margin: 0 0 10px;
+    opacity: 0.88;
+  }
+
+  .blogger-sidebar-richtext {
+    font-size: 0.95em;
+    line-height: 1.55;
+  }
+  .blogger-sidebar-richtext p {
+    margin: 0 0 0.8em;
+  }
+  .blogger-sidebar-richtext p:last-child {
+    margin-bottom: 0;
+  }
+  .blogger-sidebar-richtext a {
+    color: var(--blogger-primary-color, ${primary});
+    text-underline-offset: 2px;
+  }
+  .blogger-sidebar-richtext--callout {
+    background: #f6f6f7;
+    border-radius: 8px;
+    padding: 12px 14px;
+    border-left: 3px solid var(--blogger-primary-color, ${primary});
+  }
+  .blogger-sidebar-richtext--quote {
+    font-style: italic;
+    padding: 2px 0 2px 14px;
+    border-left: 3px solid var(--blogger-primary-color, ${primary});
+  }
+  .blogger-sidebar-richtext__btn {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 8px 14px;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: 600;
+    font-style: normal;
   }
 
   .blogger-sidebar-widget__title,
@@ -2391,6 +2575,61 @@ ${this.generateGlobalCss(settings)}
 
   .blogger-reading-time {
     display: ${isOff(settings.showReadingTime) ? `none${bang}` : "inline-flex"};
+  }
+
+  /* Live mobile reflow — served from /styles.css so already-synced posts pick this up
+     without a resync. Tables used to set min-width: 480px, which made phones scale the
+     whole article like a desktop page. */
+  .blogger-article-layout,
+  .blogger-article-main,
+  .blogger-article-container {
+    min-width: 0${bang};
+    box-sizing: border-box${bang};
+  }
+  .blogger-article-container img,
+  .blogger-article-container video,
+  .blogger-article-container iframe,
+  .blogger-article-container svg {
+    max-width: 100%${bang};
+    height: auto;
+  }
+  .blogger-article-container table {
+    min-width: 0${bang};
+    max-width: 100%${bang};
+  }
+
+  @media (max-width: 768px) {
+    .blogger-article-layout.blogger-article-layout--sidebar-pending,
+    .blogger-article-layout.blogger-article-layout--sidebar-active,
+    .blogger-article-layout {
+      display: flex${bang};
+      flex-direction: column${bang};
+      width: 100%${bang};
+      max-width: 100%${bang};
+      gap: 20px;
+    }
+    .blogger-article-main,
+    .blogger-article-container {
+      width: 100%${bang};
+      max-width: 100%${bang};
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .blogger-article-container table,
+    .blogger-article-container pre {
+      display: block;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .blogger-article-container .blogger-product-grid {
+      grid-template-columns: 1fr${bang};
+    }
+    .blogger-article-container [style*="min-width: 200px"] {
+      min-width: 0${bang};
+    }
+    .blogger-article-container [style*="flex-direction: row"] {
+      flex-wrap: wrap${bang};
+    }
   }`;
   }
 

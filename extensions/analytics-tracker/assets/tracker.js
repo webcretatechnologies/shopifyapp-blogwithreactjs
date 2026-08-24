@@ -212,6 +212,10 @@
     });
     if (!matched) return false;
 
+    // Fetch/XHR already counted this add. Drop the native-submit pending flag so a later
+    // /cart or /checkout load cannot record a second add_to_cart after the 2.5s window.
+    clearPendingNativeCartAdd();
+
     var key = String(candidate.postId) + ':' + variantIds.map(String).sort().join(',');
     var now = Date.now();
     if (lastAddToCartKey === key && (now - lastAddToCartAt) < ADD_TO_CART_DEDUP_MS) {
@@ -309,6 +313,10 @@
   var PENDING_NATIVE_CART_ADD_KEY = 'blogger_pending_cart_add';
   var PENDING_NATIVE_CART_ADD_MS = 20000;
 
+  function clearPendingNativeCartAdd() {
+    try { sessionStorage.removeItem(PENDING_NATIVE_CART_ADD_KEY); } catch (err) {}
+  }
+
   function pathLooksLikeCartOrCheckout() {
     var path = window.location.pathname || '';
     return path === '/cart' || /\/cart\/?$/.test(path) || path.indexOf('/checkout') !== -1;
@@ -327,6 +335,9 @@
     } catch (err) {}
   }
 
+  // Capture a native POST only if no later handler preventDefault's (AJAX themes). Writing
+  // pending synchronously is required so a real navigation still has the flag; retracting
+  // after the event stack is what stops AJAX adds from also confirming on a later /cart load.
   document.addEventListener('submit', function(e) {
     var form = e.target;
     if (!form || (form.tagName || '').toUpperCase() !== 'FORM') return;
@@ -339,6 +350,9 @@
         at: Date.now(),
       }));
     } catch (err) {}
+    setTimeout(function () {
+      if (e.defaultPrevented) clearPendingNativeCartAdd();
+    }, 0);
   });
 
   consumePendingNativeCartAdd();

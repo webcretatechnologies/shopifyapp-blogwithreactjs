@@ -143,6 +143,8 @@ router.post("/", async (req, res) => {
       "blogSidebarEnabled",
       "blogSidebarPosition",
       "blogSidebarWidth",
+      "blogSidebarHideOnMobile",
+      "blogSidebarSticky",
       "blogSidebarWidgets",
       "defaultAuthor",
       "customHeaderCode",
@@ -225,6 +227,8 @@ router.post("/", async (req, res) => {
         (key === "blogSidebarEnabled" ||
           key === "blogSidebarPosition" ||
           key === "blogSidebarWidth" ||
+          key === "blogSidebarHideOnMobile" ||
+          key === "blogSidebarSticky" ||
           key === "blogSidebarWidgets") &&
         !sidebarAllowed
       ) {

@@ -15,6 +15,19 @@ import { formatPrice } from "../utils/priceUtils.js";
 
 const router = express.Router();
 const APP_URL = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
+
+function sanitizePublicUrl(raw, max = 500) {
+  const s = String(raw || "").trim().slice(0, max);
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s) || s.startsWith("/")) return s;
+  return "";
+}
+
+function sanitizeImageUrl(raw) {
+  const s = String(raw || "").trim().slice(0, 2000);
+  return /^https?:\/\//i.test(s) ? s : "";
+}
+
 const CACHE_TTL_MS = 60 * 1000;
 const BLOG_HANDLE_TTL_MS = 10 * 60 * 1000;
 const dataCache = new Map();
@@ -257,7 +270,11 @@ router.get("/sidebar.json", async (req, res) => {
         if (w.type === "related_posts") {
           if (!blogId || !blogHandle) return null;
           const count = parseInt(w.settings?.count, 10) || 4;
-          const mode = resolveRelatedSourceMode(settings.relatedPostsSourceMode, post.relatedPostsSourceMode);
+          const widgetMode = w.settings?.sourceMode || w.settings?.source;
+          const mode = resolveRelatedSourceMode(
+            widgetMode || settings.relatedPostsSourceMode,
+            post.relatedPostsSourceMode
+          );
           const related = await getRelatedPosts(postId, shop.id, blogId, { count, mode });
           if (!related.length) return null;
           return {
@@ -265,6 +282,38 @@ router.get("/sidebar.json", async (req, res) => {
             title: title || "Related posts",
             layout: "list",
             items: related.map((p) => ({
+              title: p.title,
+              href: `https://${shopDomain}/blogs/${blogHandle}/${p.slug}`,
+              image: p.featuredImage || null,
+              excerpt: p.excerpt || null,
+            })),
+          };
+        }
+        if (w.type === "recent_posts") {
+          if (!blogId || !blogHandle) return null;
+          const count = Math.min(12, Math.max(1, parseInt(w.settings?.count, 10) || 4));
+          // Same order as Manage posts (Created): newest article first.
+          // Do not use updatedAt — editing an older post would jump it to the top.
+          // Do not use publishedAt alone — a missing/older publish time hid newer posts
+          // (e.g. "Top 10 Best Incense Sticks") behind older ones that had a timestamp.
+          const recent = await prisma.post.findMany({
+            where: {
+              shopId: shop.id,
+              status: "published",
+              id: { not: postId },
+              shopifyArticle: {
+                is: { shopifyBlogId: String(blogId) },
+              },
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: count,
+            select: { title: true, slug: true, featuredImage: true, excerpt: true },
+          });
+          if (!recent.length) return null;
+          return {
+            type: "recent_posts",
+            title: title || "Recent posts",
+            items: recent.map((p) => ({
               title: p.title,
               href: `https://${shopDomain}/blogs/${blogHandle}/${p.slug}`,
               image: p.featuredImage || null,
@@ -344,16 +393,45 @@ router.get("/sidebar.json", async (req, res) => {
           };
         }
         if (w.type === "rich_text") {
-          const body = String(w.settings?.body || "").slice(0, 5000).trim();
-          if (!body) return null;
-          return { type: "rich_text", title, body };
+          const body = String(w.settings?.body || "").slice(0, 2000).trim();
+          const styleRaw = String(w.settings?.style || "default").toLowerCase();
+          const style = ["callout", "quote"].includes(styleRaw) ? styleRaw : "default";
+          const linkUrl = sanitizePublicUrl(w.settings?.linkUrl);
+          const buttonText = String(w.settings?.buttonText || "Learn more").slice(0, 60).trim();
+          if (!body && !(linkUrl && buttonText)) return null;
+          return {
+            type: "rich_text",
+            title,
+            body,
+            style,
+            linkUrl: linkUrl || null,
+            buttonText: linkUrl ? (buttonText || "Learn more") : null,
+          };
         }
         if (w.type === "image_cta") {
-          const imageUrl = w.settings?.imageUrl || "";
-          const linkUrl = w.settings?.linkUrl || "";
-          const buttonText = w.settings?.buttonText || "Learn more";
-          if (!imageUrl && !(buttonText && linkUrl)) return null;
-          return { type: "image_cta", title, imageUrl, linkUrl, buttonText };
+          const imageUrl = sanitizeImageUrl(w.settings?.imageUrl);
+          const linkUrl = sanitizePublicUrl(w.settings?.linkUrl);
+          const showButton = w.settings?.showButton !== false;
+          const buttonText = String(w.settings?.buttonText || "Learn more").slice(0, 60).trim();
+          const caption = String(w.settings?.caption || "").slice(0, 120).trim();
+          const altText = String(w.settings?.altText || "").slice(0, 200).trim();
+          const layout = String(w.settings?.layout || "stacked").toLowerCase() === "overlay"
+            ? "overlay"
+            : "stacked";
+          const openInNewTab = !!w.settings?.openInNewTab;
+          if (!imageUrl && !(showButton && buttonText && linkUrl)) return null;
+          return {
+            type: "image_cta",
+            title,
+            imageUrl,
+            linkUrl,
+            buttonText: showButton && linkUrl ? (buttonText || "Learn more") : "",
+            caption,
+            altText: altText || caption || title || "",
+            openInNewTab,
+            showButton: showButton && !!linkUrl,
+            layout: imageUrl ? layout : "stacked",
+          };
         }
         if (w.type === "products") {
           const maxItems = Math.min(6, Math.max(1, parseInt(w.settings?.maxItems, 10) || 3));
@@ -454,6 +532,22 @@ const SIDEBAR_SCRIPT = `(function () {
       .replace(/"/g, "&quot;");
   }
 
+  function formatRichtextBody(raw) {
+    var escaped = escapeHtml(raw || '').replace(/\\r\\n/g, '\\n').trim();
+    if (!escaped) return '';
+    escaped = escaped.replace(/(https?:\\/\\/[^\\s<]+)/g, function (url) {
+      var clean = url.replace(/[.,)\\]]+$/, '');
+      var trail = url.slice(clean.length);
+      return '<a href="' + clean + '" rel="noopener noreferrer" target="_blank">' + clean + '</a>' + trail;
+    });
+    var parts = escaped.split(/\\n{2,}/);
+    var html = '';
+    for (var i = 0; i < parts.length; i++) {
+      html += '<p>' + parts[i].replace(/\\n/g, '<br>') + '</p>';
+    }
+    return html;
+  }
+
   function resolveShop() {
     try {
       if (window.Shopify && window.Shopify.shop) return window.Shopify.shop;
@@ -539,12 +633,53 @@ const SIDEBAR_SCRIPT = `(function () {
     return html;
   }
 
+  function linkAttrs(href, newTab) {
+    var attrs = ' href="' + escapeHtml(href) + '"';
+    if (newTab) attrs += ' target="_blank" rel="noopener noreferrer"';
+    return attrs;
+  }
+
+  function renderImageCta(w) {
+    var layout = w.layout === 'overlay' && w.imageUrl ? 'overlay' : 'stacked';
+    var href = w.linkUrl || '';
+    var newTab = !!w.openInNewTab;
+    var showBtn = !!(w.showButton && w.buttonText && href);
+    var img = '';
+    if (w.imageUrl) {
+      img = '<img src="' + escapeHtml(w.imageUrl) + '" alt="' + escapeHtml(w.altText || '') + '" loading="lazy">';
+    }
+    var html = '<div class="blogger-sidebar-cta blogger-sidebar-cta--' + layout + '">';
+    if (layout === 'overlay') {
+      html += '<div class="blogger-sidebar-cta__media">';
+      if (href) html += '<a class="blogger-sidebar-cta__imgwrap"' + linkAttrs(href, newTab) + '>' + img + '</a>';
+      else html += img;
+      if (w.caption || showBtn) {
+        html += '<div class="blogger-sidebar-cta__overlay">';
+        if (w.caption) html += '<p class="blogger-sidebar-cta__caption">' + escapeHtml(w.caption) + '</p>';
+        if (showBtn) html += '<a class="blogger-sidebar-cta__btn"' + linkAttrs(href, newTab) + '>' + escapeHtml(w.buttonText) + '</a>';
+        html += '</div>';
+      }
+      html += '</div>';
+    } else {
+      if (img) {
+        html += '<div class="blogger-sidebar-cta__media">';
+        if (href) html += '<a' + linkAttrs(href, newTab) + '>' + img + '</a>';
+        else html += img;
+        html += '</div>';
+      }
+      if (w.caption) html += '<p class="blogger-sidebar-cta__caption">' + escapeHtml(w.caption) + '</p>';
+      if (showBtn) html += '<a class="blogger-sidebar-cta__btn"' + linkAttrs(href, newTab) + '>' + escapeHtml(w.buttonText) + '</a>';
+    }
+    html += '</div>';
+    return html;
+  }
+
   function widgetHasContent(w) {
     if (!w || !w.type) return false;
-    if (w.type === 'related_posts' || w.type === 'categories' || w.type === 'products') {
+    if (w.type === 'related_posts' || w.type === 'recent_posts' || w.type === 'categories' || w.type === 'products') {
       return !!(w.items && w.items.length);
     }
-    if (w.type === 'rich_text') return !!(w.body && String(w.body).trim());
+    if (w.type === 'rich_text') return !!(w.body && String(w.body).trim()) || !!(w.linkUrl && w.buttonText);
     if (w.type === 'image_cta') return !!(w.imageUrl || (w.buttonText && w.linkUrl));
     return false;
   }
@@ -553,7 +688,7 @@ const SIDEBAR_SCRIPT = `(function () {
     if (!widgetHasContent(w)) return '';
     var html = '<div class="blogger-sidebar-widget blogger-sidebar-widget--' + escapeHtml(w.type) + '">';
     if (w.title) html += '<h3 class="blogger-sidebar-widget__title">' + escapeHtml(w.title) + '</h3>';
-    if (w.type === 'related_posts') {
+    if (w.type === 'related_posts' || w.type === 'recent_posts') {
       html += relatedListHtml(w.items);
     } else if (w.type === 'categories') {
       html += '<ul class="blogger-sidebar-categories">';
@@ -576,18 +711,15 @@ const SIDEBAR_SCRIPT = `(function () {
       });
       html += '</ul>';
     } else if (w.type === 'rich_text') {
-      html += '<div class="blogger-sidebar-richtext">' + escapeHtml(w.body || '').replace(/\\n/g, '<br>') + '</div>';
-    } else if (w.type === 'image_cta') {
-      html += '<div class="blogger-sidebar-cta">';
-      if (w.imageUrl) {
-        var img = '<img src="' + escapeHtml(w.imageUrl) + '" alt="">';
-        if (w.linkUrl) img = '<a href="' + escapeHtml(w.linkUrl) + '">' + img + '</a>';
-        html += img;
-      }
-      if (w.buttonText && w.linkUrl) {
-        html += '<a class="blogger-sidebar-cta__btn" href="' + escapeHtml(w.linkUrl) + '">' + escapeHtml(w.buttonText) + '</a>';
+      var styleClass = w.style === 'callout' || w.style === 'quote' ? ' blogger-sidebar-richtext--' + w.style : '';
+      html += '<div class="blogger-sidebar-richtext' + styleClass + '">';
+      html += formatRichtextBody(w.body || '');
+      if (w.linkUrl && w.buttonText) {
+        html += '<a class="blogger-sidebar-richtext__btn" href="' + escapeHtml(w.linkUrl) + '">' + escapeHtml(w.buttonText) + '</a>';
       }
       html += '</div>';
+    } else if (w.type === 'image_cta') {
+      html += renderImageCta(w);
     } else if (w.type === 'products') {
       w.items.forEach(function (p) {
         html += '<a class="blogger-sidebar-product" href="' + escapeHtml(p.href) + '">';

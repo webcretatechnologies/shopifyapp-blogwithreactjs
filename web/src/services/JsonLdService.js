@@ -348,19 +348,19 @@ export default class JsonLdService {
 
   static attachProductMentions(schema, post, options = {}) {
     if (!Array.isArray(post.products) || post.products.length === 0) return;
-    schema.mentions = post.products.slice(0, 5).map((p) => ({
-      "@type": "Product",
-      name: p.title || "",
-      ...(p.image && { image: p.image }),
-      ...(p.price && {
-        offers: {
-          "@type": "Offer",
-          price: p.price,
-          priceCurrency: p.currency || options.currency || "USD",
-        },
-      }),
-    }));
-  }
+      schema.mentions = post.products.slice(0, 5).map((p) => ({
+        "@type": "Product",
+        name: p.title || "",
+        ...(p.image && { image: p.image }),
+        ...(p.price && {
+          offers: {
+            "@type": "Offer",
+            price: p.price,
+            priceCurrency: p.currency || options.currency || "USD",
+          },
+        }),
+      }));
+    }
 
   static renderPostSchema(post, shopDomain, options = {}) {
     const schema = JsonLdService.generatePostSchema(post, shopDomain, options);

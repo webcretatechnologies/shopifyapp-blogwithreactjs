@@ -45,7 +45,7 @@ import { analyticsTrackerActivateUrl } from "../utils/themeEmbedUtils";
 const DEFAULT_RANGE = (() => {
   const end = new Date();
   end.setHours(0, 0, 0, 0);
-  const start = new Date(end);
+  const start = new Date(end);  
   start.setDate(start.getDate() - 29);
   return { start, end };
 })();
