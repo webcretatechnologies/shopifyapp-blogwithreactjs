@@ -39,11 +39,7 @@ router.get("/", async (req, res) => {
       where: { shopId: shop.id },
       orderBy: { name: "asc" },
       include: {
-        _count: {
-          select: {
-            posts: { where: { status: "published" } },
-          },
-        },
+        _count: { select: { posts: true } },
       },
     });
 
@@ -53,6 +49,8 @@ router.get("/", async (req, res) => {
         name: c.name,
         slug: c.slug,
         postCount: c._count.posts,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
       })),
     });
   } catch (err) {
@@ -82,6 +80,36 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error("POST /api/categories error:", err);
     res.status(500).json({ error: "Failed to create category" });
+  }
+});
+
+router.get("/:id", async (req, res) => {
+  try {
+    const shop = await getShop(req, res);
+    if (!shop) return;
+
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const category = await prisma.category.findFirst({
+      where: { id, shopId: shop.id },
+      include: { _count: { select: { posts: true } } },
+    });
+    if (!category) return res.status(404).json({ error: "Category not found" });
+
+    res.json({
+      category: {
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        postCount: category._count.posts,
+        createdAt: category.createdAt,
+        updatedAt: category.updatedAt,
+      },
+    });
+  } catch (err) {
+    console.error("GET /api/categories/:id error:", err);
+    res.status(500).json({ error: "Failed to load category" });
   }
 });
 

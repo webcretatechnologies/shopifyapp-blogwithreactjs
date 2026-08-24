@@ -464,7 +464,7 @@ export default function ArticleImporter() {
             <BlockStack gap="400">
               {error && (
                 <Banner
-                  title="Import Error"
+                  title="Import error"
                   tone="critical"
                   onDismiss={() => setError(null)}
                 >

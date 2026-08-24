@@ -1092,7 +1092,7 @@ export default function PostTranslationPage() {
       <Frame>
         <TitleBar title="Translate">
           <button variant="breadcrumb" onClick={() => navigate(`/posts/${id}/edit`)}>
-            Back to Edit
+            Back to edit
           </button>
         </TitleBar>
         <Page title="Translate" backAction={{ onAction: () => navigate(-1) }}>
@@ -1100,7 +1100,7 @@ export default function PostTranslationPage() {
             <Layout.Section>
               <UpgradePrompt
                 requiredPlan="Pro"
-                title="Multi Language Translation is a Pro feature"
+                title="Multi-language translation is a Pro feature"
                 description="Upgrade to Pro to translate this article into other languages."
               />
             </Layout.Section>
@@ -1113,7 +1113,7 @@ export default function PostTranslationPage() {
   if (!post) {
     return (
       <Frame>
-        <Page title="Post Not Found">
+        <Page title="Post not found">
           <Banner tone="critical">The requested article could not be loaded.</Banner>
         </Page>
       </Frame>
@@ -1122,9 +1122,9 @@ export default function PostTranslationPage() {
 
   return (
     <Frame>
-      <TitleBar title="Translate Post">
+      <TitleBar title="Translate post">
         <button variant="breadcrumb" onClick={() => navigate(`/posts/${id}/edit`)}>
-          Back to Edit
+          Back to edit
         </button>
       </TitleBar>
       {toast && (
@@ -1159,10 +1159,10 @@ export default function PostTranslationPage() {
 
       <Page
         backAction={{
-          ...smartBackAction(navigate, location, `/posts/${id}/edit`, "Back to Edit"),
+          ...smartBackAction(navigate, location, `/posts/${id}/edit`, "Back to edit"),
           icon: ArrowLeftIcon,
         }}
-        title="Translate Post"
+        title="Translate post"
         subtitle={`Translating: ${post.title}`}
       >
         <Layout>
@@ -1174,7 +1174,7 @@ export default function PostTranslationPage() {
                   <InlineStack gap="300" blockAlign="center">
                     <Box width="280px">
                       <Select
-                        label="Target Language"
+                        label="Target language"
                         labelHidden
                         options={storeLocales}
                         value={selectedLocale}
@@ -1183,7 +1183,7 @@ export default function PostTranslationPage() {
                       />
                     </Box>
                     <Badge tone={completionStats.percentage === 100 ? "success" : "attention"} size="medium">
-                      {completionStats.percentage === 100 ? "Fully Translated (100%)" : `${completionStats.filled} of ${completionStats.total} fields translated (${completionStats.percentage}%)`}
+                      {completionStats.percentage === 100 ? "Fully translated (100%)" : `${completionStats.filled} of ${completionStats.total} fields translated (${completionStats.percentage}%)`}
                     </Badge>
                   </InlineStack>
 
@@ -1241,7 +1241,7 @@ export default function PostTranslationPage() {
                   <InlineStack gap="200" blockAlign="center">
                     <Icon source={LanguageIcon} tone="success" />
                     <Text variant="headingSm" as="h3" fontWeight="bold">
-                      Translated ({selectedLocaleObj?.label || selectedLocale || "Target Language"})
+                      Translated ({selectedLocaleObj?.label || selectedLocale || "Target language"})
                     </Text>
                   </InlineStack>
                   <Badge tone="success">Editable Fields</Badge>
@@ -1330,7 +1330,7 @@ export default function PostTranslationPage() {
                           {/* Block-Specific Structured Input Fields */}
                           {block.type === "Heading" && (
                             <TranslationRowPair
-                              title="Heading Text"
+                              title="Heading text"
                               originalValue={s.text}
                               translatedValue={trans.text || ""}
                               onChange={(val) => handleBlockTranslationChange(block.id, "text", val)}
@@ -1340,7 +1340,7 @@ export default function PostTranslationPage() {
                           {(block.type === "FaqBlock" || block.type === "faq") && (
                             <BlockStack gap="300">
                               <TranslationRowPair
-                                title="FAQ Section Title"
+                                title="FAQ section title"
                                 originalValue={s.title || "Frequently Asked Questions"}
                                 translatedValue={trans.title || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "title", val)}
@@ -1386,13 +1386,13 @@ export default function PostTranslationPage() {
                           {block.type === "Callout" && (
                             <BlockStack gap="300">
                               <TranslationRowPair
-                                title="Callout Title"
+                                title="Callout title"
                                 originalValue={s.title}
                                 translatedValue={trans.title || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "title", val)}
                               />
                               <TranslationRowPair
-                                title="Callout Body"
+                                title="Callout body"
                                 originalValue={s.body || s.text}
                                 translatedValue={trans.body || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "body", val)}
@@ -1404,20 +1404,20 @@ export default function PostTranslationPage() {
                           {(block.type === "Hero" || block.type === "HeroSection") && (
                             <BlockStack gap="300">
                               <TranslationRowPair
-                                title="Hero Headline"
+                                title="Hero headline"
                                 originalValue={s.heading || s.title}
                                 translatedValue={trans.heading || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "heading", val)}
                               />
                               <TranslationRowPair
-                                title="Hero Subheading"
+                                title="Hero subheading"
                                 originalValue={s.subheading || s.body}
                                 translatedValue={trans.subheading || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "subheading", val)}
                                 multiline={2}
                               />
                               <TranslationRowPair
-                                title="Button Label"
+                                title="Button label"
                                 originalValue={s.ctaText || s.buttonText}
                                 translatedValue={trans.ctaText || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "ctaText", val)}
@@ -1427,7 +1427,7 @@ export default function PostTranslationPage() {
 
                           {block.type === "TableOfContents" && (
                             <TranslationRowPair
-                              title="Table of Contents Title"
+                              title="Table of contents title"
                               originalValue={s.title}
                               translatedValue={trans.title || ""}
                               onChange={(val) => handleBlockTranslationChange(block.id, "title", val)}
@@ -1437,13 +1437,13 @@ export default function PostTranslationPage() {
                           {block.type === "Image" && (
                             <BlockStack gap="300">
                               <TranslationRowPair
-                                title="Image Alt Text"
+                                title="Image alt text"
                                 originalValue={s.alt}
                                 translatedValue={trans.alt || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "alt", val)}
                               />
                               <TranslationRowPair
-                                title="Image Caption"
+                                title="Image caption"
                                 originalValue={s.caption}
                                 translatedValue={trans.caption || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "caption", val)}
@@ -1453,7 +1453,7 @@ export default function PostTranslationPage() {
 
                           {block.type === "VideoEmbed" && (
                             <TranslationRowPair
-                              title="Video Caption"
+                              title="Video caption"
                               originalValue={s.caption}
                               translatedValue={trans.caption || ""}
                               onChange={(val) => handleBlockTranslationChange(block.id, "caption", val)}
@@ -1462,7 +1462,7 @@ export default function PostTranslationPage() {
 
                           {block.type === "ButtonBlock" && (
                             <TranslationRowPair
-                              title="Button Text"
+                              title="Button text"
                               originalValue={s.text}
                               translatedValue={trans.text || ""}
                               onChange={(val) => handleBlockTranslationChange(block.id, "text", val)}
@@ -1472,13 +1472,13 @@ export default function PostTranslationPage() {
                           {block.type === "BuyButton" && (
                             <BlockStack gap="300">
                               <TranslationRowPair
-                                title="Button Text"
+                                title="Button text"
                                 originalValue={s.buttonText}
                                 translatedValue={trans.buttonText || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "buttonText", val)}
                               />
                               <TranslationRowPair
-                                title="Badge Text"
+                                title="Badge text"
                                 originalValue={s.badge}
                                 translatedValue={trans.badge || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "badge", val)}
@@ -1489,13 +1489,13 @@ export default function PostTranslationPage() {
                           {["ProductGrid", "Collection", "ProductSlider"].includes(block.type) && (
                             <BlockStack gap="300">
                               <TranslationRowPair
-                                title="Section Title"
+                                title="Section title"
                                 originalValue={s.title || s.heading}
                                 translatedValue={trans.title || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "title", val)}
                               />
                               <TranslationRowPair
-                                title="Button Text"
+                                title="Button text"
                                 originalValue={s.buttonText}
                                 translatedValue={trans.buttonText || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "buttonText", val)}
@@ -1505,7 +1505,7 @@ export default function PostTranslationPage() {
 
                           {block.type === "ProductCard" && (
                             <TranslationRowPair
-                              title="Button Text"
+                              title="Button text"
                               originalValue={s.buttonText}
                               translatedValue={trans.buttonText || ""}
                               onChange={(val) => handleBlockTranslationChange(block.id, "buttonText", val)}
@@ -1536,7 +1536,7 @@ export default function PostTranslationPage() {
                             "ProductGrid", "Collection", "ProductSlider", "ProductCard", "Table",
                           ].includes(block.type) && (
                               <TranslationRowPair
-                                title="Content Text"
+                                title="Content text"
                                 originalValue={stripHtml(formatTextValue(s.content || s.text || (typeof s === "string" ? s : "")))}
                                 translatedValue={trans.content || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "content", val)}
@@ -1561,7 +1561,7 @@ export default function PostTranslationPage() {
                 </Text>
 
                 <TranslationRowPair
-                  title="Meta Title"
+                  title="Meta title"
                   originalValue={post.metaTitle || post.title}
                   translatedValue={translatedMetaTitle}
                   onChange={(val) => setTranslatedMetaTitle(val)}
@@ -1572,7 +1572,7 @@ export default function PostTranslationPage() {
                 <Divider />
 
                 <TranslationRowPair
-                  title="Meta Description"
+                  title="Meta description"
                   originalValue={stripHtml(post.metaDescription || "")}
                   translatedValue={translatedMetaDesc}
                   onChange={(val) => setTranslatedMetaDesc(val)}

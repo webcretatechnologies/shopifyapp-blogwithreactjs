@@ -218,14 +218,14 @@ export default function Analytics() {
         ]),
       },
       {
-        title: "Top Posts",
+        title: "Top posts",
         headers: ["Title", "Status", "Views", "Unique Visitors", "Add to Cart", "Add to Cart Rate", "Conversions", "Conversion Rate", "Revenue"],
         rows: (analytics.topPosts || []).map((p) => [
           p.title, p.status, p.views || 0, p.uniqueVisitors || 0, p.addToCart || 0, `${p.addToCartRate ?? "0.00"}%`, p.conversions || 0, `${p.conversionRate ?? "0.00"}%`, roundMoney(p.revenue),
         ]),
       },
       {
-        title: "Device Breakdown",
+        title: "Device breakdown",
         headers: ["Device", "Count"],
         rows: [
           ["Desktop", analytics.deviceBreakdown?.desktop || 0],
@@ -234,7 +234,7 @@ export default function Analytics() {
         ],
       },
       {
-        title: "Traffic Sources",
+        title: "Traffic sources",
         headers: ["Source", "Count"],
         rows: (analytics.topSources || []).map((s2) => [s2.name, s2.count]),
       },
@@ -346,20 +346,20 @@ export default function Analytics() {
                 <Card>
                   <Box padding="400">
                     <BlockStack gap="300">
-                      <Text variant="headingMd">Conversion Metrics Comparison</Text>
+                      <Text variant="headingMd">Conversion metrics comparison</Text>
                       <Divider />
                       <IndexTable
                         resourceName={{ singular: "metric", plural: "metrics" }}
                         itemCount={3}
                         selectable={false}
                         headings={[
-                          { title: "Funnel Stage" },
-                          { title: "Total Count" },
-                          { title: "Conversion Rate" },
+                          { title: "Funnel stage" },
+                          { title: "Total count" },
+                          { title: "Conversion rate" },
                         ]}
                       >
                         <IndexTable.Row id="add-to-cart" position={0}>
-                          <IndexTable.Cell><Text fontWeight="bold" as="span">Add to Cart</Text></IndexTable.Cell>
+                          <IndexTable.Cell><Text fontWeight="bold" as="span">Add to cart</Text></IndexTable.Cell>
                           <IndexTable.Cell>{(stats?.totalAddToCart ?? 0).toLocaleString()}</IndexTable.Cell>
                           <IndexTable.Cell>{stats?.addToCartRate ?? "0.00"}%</IndexTable.Cell>
                         </IndexTable.Row>
@@ -369,7 +369,7 @@ export default function Analytics() {
                           <IndexTable.Cell>{stats?.checkoutRate ?? "0.00"}%</IndexTable.Cell>
                         </IndexTable.Row>
                         <IndexTable.Row id="conversions" position={2}>
-                          <IndexTable.Cell><Text fontWeight="bold" as="span">Successful Conversions</Text></IndexTable.Cell>
+                          <IndexTable.Cell><Text fontWeight="bold" as="span">Successful conversions</Text></IndexTable.Cell>
                           <IndexTable.Cell>{(stats?.totalConversions ?? 0).toLocaleString()}</IndexTable.Cell>
                           <IndexTable.Cell>{stats?.conversionRate ?? "0.00"}%</IndexTable.Cell>
                         </IndexTable.Row>

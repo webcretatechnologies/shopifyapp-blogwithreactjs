@@ -178,14 +178,14 @@ export default function PostAnalytics() {
         ],
       },
       {
-        title: "Daily Totals",
+        title: "Daily totals",
         headers: ["Date", "Views", "Unique Visitors", "Add to Cart", "Checkouts", "Conversions", "Revenue"],
         rows: analytics.daily.map((d) => [
           d.date, d.views || 0, d.uniqueVisitors || 0, d.addToCart || 0, d.checkouts || 0, d.conversions || 0, roundMoney(d.revenue),
         ]),
       },
       {
-        title: "Device Breakdown",
+        title: "Device breakdown",
         headers: ["Device", "Count"],
         rows: [
           ["Desktop", analytics.deviceBreakdown?.desktop || 0],
@@ -194,7 +194,7 @@ export default function PostAnalytics() {
         ],
       },
       {
-        title: "Traffic Sources",
+        title: "Traffic sources",
         headers: ["Source", "Count"],
         rows: (analytics.topSources || []).map((s2) => [s2.name, s2.count]),
       },

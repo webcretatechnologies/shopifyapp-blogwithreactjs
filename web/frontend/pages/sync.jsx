@@ -262,7 +262,7 @@ export default function SyncDashboard() {
               onClick={() => forceSync(post)}
               title={
                 !features.sync_actions?.enabled
-                  ? "Force Sync is available on Starter and above"
+                  ? "Force sync is available on Starter and above"
                   : !post.shopifyArticle?.shopifyBlogId
                     ? "Post is not linked to a Shopify blog"
                     : "Force sync to Shopify"
@@ -317,7 +317,7 @@ export default function SyncDashboard() {
     );
   });    return (
     <Frame>
-      <TitleBar title="Sync Status" />
+      <TitleBar title="Sync status" />
       {toast && (
         <Toast
           content={toast.content}
@@ -326,18 +326,18 @@ export default function SyncDashboard() {
         />
       )}
       <Page
-        title="Sync Status"
+        title="Sync status"
         subtitle="Manage the 2-way synchronization between your app and Shopify"
         backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
         primaryAction={{
-          content: reconciling ? "Reconciling..." : "Reconcile All",
+          content: reconciling ? "Reconciling..." : "Reconcile all",
           onAction: handleReconcile,
           loading: reconciling,
           disabled: !features.sync_actions?.enabled,
         }}
         secondaryActions={[
           {
-            content: bulkResyncing ? "Resyncing..." : "Resync All Posts",
+            content: bulkResyncing ? "Resyncing..." : "Resync all posts",
             icon: RefreshIcon,
             onAction: handleBulkResync,
             loading: bulkResyncing,
@@ -359,13 +359,13 @@ export default function SyncDashboard() {
             <Banner>
               <p>
                 Posts linked to a Shopify blog are synchronized in both directions.
-                Use <strong>Force Sync</strong> to push app content to Shopify,
-                or <strong>Reconcile All</strong> to check each post against Shopify
+                Use <strong>Force sync</strong> to push app content to Shopify,
+                or <strong>Reconcile all</strong> to check each post against Shopify
                 and catch any changes.
                 The sync uses baseline field-level merge and surfaces only true same-field conflicts.
                 Related posts and custom header/footer code update live once a post carries the
                 current sync format — no per-post resync needed for setting changes after that. If
-                a post was last synced before this was added, use <strong>Resync All Posts</strong>
+                a post was last synced before this was added, use <strong>Resync all posts</strong>
                 once to bring it onto the live mechanism; every setting change after that applies
                 automatically.
               </p>
@@ -376,7 +376,7 @@ export default function SyncDashboard() {
             <Layout.Section>
               <UpgradePrompt
                 requiredPlan="Starter"
-                title="Force Sync, Reconcile All, and Resync All Posts are Starter features"
+                title="Force sync, Reconcile all, and Resync all posts are Starter features"
                 description="Your posts still stay in sync automatically — Shopify-side edits keep pulling in on every plan. Upgrade to manually push, bulk-resync, or reconcile posts on demand."
               />
             </Layout.Section>

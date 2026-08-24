@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Box, Text, BlockStack, InlineStack, IndexTable, Button, TextField, Select } from "@shopify/polaris";
 import AnalyticsChart from "../../analytics/AnalyticsChart";
 
@@ -20,8 +20,15 @@ export default function ActivityModule({ active, adminFetch, setError }) {
   const [targetType, setTargetType] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const loadSeq = useRef(0);
+
+  const setFilter = (setter) => (value) => {
+    setter(value);
+    setActivitiesPage(1);
+  };
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const params = new URLSearchParams({ page: String(activitiesPage), limit: "20" });
       if (search) params.set("search", search);
@@ -29,10 +36,12 @@ export default function ActivityModule({ active, adminFetch, setError }) {
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
       const data = await adminFetch(`/admin-api/activities?${params.toString()}`);
+      if (seq !== loadSeq.current) return;
       setActivities(data.activities || []);
       setActivitiesTotal(data.total || 0);
       setDailyVolume(data.dailyVolume || []);
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setError(err.message);
     }
   }, [adminFetch, activitiesPage, search, targetType, dateFrom, dateTo, setError]);
@@ -40,10 +49,6 @@ export default function ActivityModule({ active, adminFetch, setError }) {
   useEffect(() => {
     if (active) load();
   }, [active, load]);
-
-  useEffect(() => {
-    setActivitiesPage(1);
-  }, [search, targetType, dateFrom, dateTo]);
 
   if (!active) return null;
 
@@ -70,18 +75,18 @@ export default function ActivityModule({ active, adminFetch, setError }) {
                   labelHidden
                   placeholder="Search action…"
                   value={search}
-                  onChange={setSearch}
+                  onChange={setFilter(setSearch)}
                   autoComplete="off"
                 />
               </div>
               <div style={{ minWidth: "180px" }}>
-                <Select label="Target type" labelHidden options={TARGET_TYPE_OPTIONS} value={targetType} onChange={setTargetType} />
+                <Select label="Target type" labelHidden options={TARGET_TYPE_OPTIONS} value={targetType} onChange={setFilter(setTargetType)} />
               </div>
               <div style={{ minWidth: "160px" }}>
-                <TextField label="From" labelHidden type="date" value={dateFrom} onChange={setDateFrom} autoComplete="off" />
+                <TextField label="From" labelHidden type="date" value={dateFrom} onChange={setFilter(setDateFrom)} autoComplete="off" />
               </div>
               <div style={{ minWidth: "160px" }}>
-                <TextField label="To" labelHidden type="date" value={dateTo} onChange={setDateTo} autoComplete="off" />
+                <TextField label="To" labelHidden type="date" value={dateTo} onChange={setFilter(setDateTo)} autoComplete="off" />
               </div>
             </InlineStack>
 

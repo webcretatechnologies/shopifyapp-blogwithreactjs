@@ -269,7 +269,7 @@
 
     try {
       const response = await originalFetch.apply(this, args);
-      if (urlStr && urlStr.includes('/cart/add')) {
+      if (urlStr && urlStr.includes('/cart/add') && response && response.ok) {
         maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(cartAddBody));
       }
       return response;
@@ -292,18 +292,57 @@
     if (this._blogger_isCartAdd) {
       const self = this;
       this.addEventListener('load', function() {
-        maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(body));
+        if (self.status >= 200 && self.status < 300) {
+          maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(body));
+        }
       });
     }
     return originalXHRSend.apply(this, arguments);
   };
 
-  // 4. Track Add To Cart via standard Form Submit
+  // 4. Native /cart/add form submit — do NOT confirm here. Fetch/XHR wait for HTTP 2xx;
+  // submit fires before the POST, so preventDefault (theme AJAX) or a failed add would
+  // still promote the candidate, write the cart attribute, and record add_to_cart.
+  // If another handler already preventDefault'd, those interceptors confirm on success.
+  // If the browser continues with a native POST, Shopify redirects to /cart (or checkout)
+  // on success and stays on the product page on failure — consume the pending flag then.
+  var PENDING_NATIVE_CART_ADD_KEY = 'blogger_pending_cart_add';
+  var PENDING_NATIVE_CART_ADD_MS = 20000;
+
+  function pathLooksLikeCartOrCheckout() {
+    var path = window.location.pathname || '';
+    return path === '/cart' || /\/cart\/?$/.test(path) || path.indexOf('/checkout') !== -1;
+  }
+
+  function consumePendingNativeCartAdd() {
+    try {
+      var raw = sessionStorage.getItem(PENDING_NATIVE_CART_ADD_KEY);
+      sessionStorage.removeItem(PENDING_NATIVE_CART_ADD_KEY);
+      if (!raw) return;
+      var pending = JSON.parse(raw);
+      if (!pending || !pending.variantIds || (Date.now() - pending.at) > PENDING_NATIVE_CART_ADD_MS) return;
+      if (pathLooksLikeCartOrCheckout()) {
+        maybeConfirmFromAddToCart(pending.variantIds);
+      }
+    } catch (err) {}
+  }
+
   document.addEventListener('submit', function(e) {
-    if (e.target.action && e.target.action.includes('/cart/add')) {
-      maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(new FormData(e.target)));
-    }
+    var form = e.target;
+    if (!form || (form.tagName || '').toUpperCase() !== 'FORM') return;
+    var action = String(form.action || form.getAttribute('action') || '');
+    if (action.indexOf('/cart/add') === -1) return;
+    if (e.defaultPrevented) return;
+    try {
+      sessionStorage.setItem(PENDING_NATIVE_CART_ADD_KEY, JSON.stringify({
+        variantIds: extractVariantIdsFromCartAddBody(new FormData(form)),
+        at: Date.now(),
+      }));
+    } catch (err) {}
   });
+
+  consumePendingNativeCartAdd();
+  window.addEventListener('pageshow', consumePendingNativeCartAdd);
 
   // 5. Track Checkout initiation
   function markCheckoutTracked() {

@@ -341,7 +341,7 @@ export default function Comments() {
               {normalizedStatus !== "spam" ? (
                 <Button size="micro" onClick={() => handleModerate("spam", [id])}>Spam</Button>
               ) : (
-                <Button size="micro" onClick={() => handleModerate("not_spam", [id])}>Not Spam</Button>
+                <Button size="micro" onClick={() => handleModerate("not_spam", [id])}>Not spam</Button>
               )}
 
               <CommentActionPopover
@@ -385,7 +385,7 @@ export default function Comments() {
           {protectedDataRequired && (
             <Layout.Section>
               <Banner
-                title="Shopify Permission Required: Protected Customer Data Access"
+                title="Shopify permission required: protected customer data access"
                 tone="warning"
               >
                 <BlockStack gap="200">

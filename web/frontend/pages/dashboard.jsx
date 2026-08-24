@@ -102,7 +102,7 @@ function PublishCadenceChart({ cadence, loading, fullWidth = false }) {
       <Box padding="400" minHeight={fullWidth ? "300px" : "360px"}>
         <BlockStack gap="300">
           <InlineStack align="space-between" blockAlign="center">
-            <Text variant="headingMd" as="h3">Publish Cadence</Text>
+            <Text variant="headingMd" as="h3">Publish cadence</Text>
             <Text variant="bodySm" tone="subdued">{totalInWindow} in last 8 weeks</Text>
           </InlineStack>
           <Divider />
@@ -445,7 +445,7 @@ export default function Dashboard() {
                   <BlockStack gap="400">
                     <InlineStack align="space-between" blockAlign="start" gap="400" wrap={false}>
                       <BlockStack gap="050">
-                        <Text variant="headingSm" as="h3">Plan Usage</Text>
+                        <Text variant="headingSm" as="h3">Plan usage</Text>
                         <Text variant="bodySm" tone="subdued">
                           {billingCycle?.renewsOn
                             ? `Current billing period · resets ${new Date(billingCycle.renewsOn).toLocaleDateString("en-GB")}`
@@ -454,7 +454,7 @@ export default function Dashboard() {
                       </BlockStack>
                       <InlineStack gap="200" blockAlign="center">
                         <Badge tone={atLimit ? "critical" : nearLimit ? "warning" : "success"}>
-                          {`${(planUsage?.plan || "free").replace(/^\w/, (c) => c.toUpperCase())} Plan`}
+                          {`${(planUsage?.plan || "free").replace(/^\w/, (c) => c.toUpperCase())} plan`}
                         </Badge>
                         <Button
                           size="slim"
@@ -534,7 +534,7 @@ export default function Dashboard() {
             ) : (
               <AnalyticsChart
                 data={analytics?.daily || []}
-                title={advancedLocked ? "Blog performance — last 30 days (Views)" : "Blog performance — last 30 days"}
+                title={advancedLocked ? "Blog performance — last 30 days (views)" : "Blog performance — last 30 days"}
                 period={analytics?.daily?.length || 1}
                 showPeriodSelector={false}
                 series={

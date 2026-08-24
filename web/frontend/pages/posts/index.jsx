@@ -580,7 +580,7 @@ export default function Articles() {
             : ""
         }
         primaryAction={{
-          content: "New Article",
+          content: "New article",
           icon: PlusIcon,
           disabled: postsAtLimit,
           onAction: () => navigate("/posts/new"),
@@ -589,6 +589,10 @@ export default function Articles() {
           {
             content: "Manage blogs",
             onAction: () => navigate("/blogs"),
+          },
+          {
+            content: "Manage categories",
+            onAction: () => navigate("/categories"),
           },
           {
             content: "Manage comments",

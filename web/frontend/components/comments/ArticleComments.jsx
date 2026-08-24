@@ -210,7 +210,7 @@ export default function ArticleComments({ articleId }) {
                         {normalizedStatus !== "spam" ? (
                           <Button size="micro" onClick={() => handleModerate("spam", [comment.id])}>Spam</Button>
                         ) : (
-                          <Button size="micro" onClick={() => handleModerate("not_spam", [comment.id])}>Not Spam</Button>
+                          <Button size="micro" onClick={() => handleModerate("not_spam", [comment.id])}>Not spam</Button>
                         )}
                         <CommentActionPopover
                           onDelete={() => {

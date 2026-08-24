@@ -176,11 +176,11 @@ export default function BlogTemplatesLibrary() {
   return (
     <Page
       fullWidth
-      title="Blog Templates"
+      title="Blog templates"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
       subtitle="Pre-built, professionally structured layouts for the drag & drop builder — pick one to start a new post."
     >
-      <TitleBar title="Blog Templates" />
+      <TitleBar title="Blog templates" />
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">

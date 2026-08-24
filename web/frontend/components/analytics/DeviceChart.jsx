@@ -50,7 +50,7 @@ export default function DeviceChart({ breakdown = { desktop: 0, mobile: 0, table
     <Card>
       <Box padding="400" minHeight="360px">
         <BlockStack gap="300">
-          <Text variant="headingMd">Device Breakdown</Text>
+          <Text variant="headingMd">Device breakdown</Text>
           <div
             style={{ maxWidth: "260px", margin: "0 auto" }}
             role="img"

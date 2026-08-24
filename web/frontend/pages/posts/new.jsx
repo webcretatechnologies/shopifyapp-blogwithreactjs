@@ -834,6 +834,7 @@ export default function PostEditor() {
   const [newBlogTitle, setNewBlogTitle] = useState("");
   const [isCreatingBlog, setIsCreatingBlog] = useState(false);
   const [blogSearchValue, setBlogSearchValue] = useState("");
+  const [categorySearchValue, setCategorySearchValue] = useState("");
   const [features, setFeatures] = useState({});
   const [isLoading, setIsLoading] = useState(isEditing);
   const [isSaving, setIsSaving] = useState(false);
@@ -1851,7 +1852,7 @@ export default function PostEditor() {
           </div>
         </div>
       )}
-      <TitleBar title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}>
+      <TitleBar title={isEditing ? `Edit: ${post.title || "Article"}` : "New article"}>
         <button variant="breadcrumb" onClick={() => leaveEditor("/posts")}>
           Articles
         </button>
@@ -1945,7 +1946,7 @@ export default function PostEditor() {
       <Page
         fullWidth
         backAction={smartBackAction(leaveEditor, location, "/posts", "Articles")}
-        title={isEditing ? `Edit: ${post.title || "Article"}` : "New Article"}
+        title={isEditing ? `Edit: ${post.title || "Article"}` : "New article"}
         titleMetadata={statusBadge}
       >
         <Layout>
@@ -2298,7 +2299,7 @@ export default function PostEditor() {
                         <UpgradePrompt
                           onUpgrade={handleUpgradeNow}
                           requiredPlan="Pro"
-                          title="Blog Post Scheduling is a Pro feature"
+                          title="Blog post scheduling is a Pro feature"
                           description="Upgrade to Pro to schedule articles for future publication."
                         />
                       )}
@@ -2678,61 +2679,120 @@ export default function PostEditor() {
                           </Text>
                         </Banner>
                       )}
-                      <Select
-                        label="Category"
-                        options={[
-                          { label: "No category", value: "" },
-                          ...categories.map((c) => ({
-                            label: c.name,
-                            value: String(c.id),
-                          })),
-                        ]}
-                        value={post.categoryId ? String(post.categoryId) : ""}
-                        onChange={(v) =>
-                          setPost((p) => ({
-                            ...p,
-                            categoryId: v ? parseInt(v, 10) : null,
-                          }))
-                        }
-                        helpText="Used when related source is “Same category”."
-                      />
-                      <InlineStack gap="200" blockAlign="end">
-                        <div style={{ flex: 1 }}>
-                          <TextField
-                            label="Add category"
-                            labelHidden
-                            value={newCategoryName}
-                            onChange={setNewCategoryName}
-                            placeholder="New category name"
-                            autoComplete="off"
-                          />
-                        </div>
-                        <Button
-                          disabled={!newCategoryName.trim()}
-                          onClick={async () => {
-                            try {
-                              const res = await fetch("/api/categories", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ name: newCategoryName.trim() }),
-                              });
-                              const data = await res.json();
-                              if (!res.ok) throw new Error(data.error || "Failed");
-                              setCategories((prev) =>
-                                [...prev, { id: data.category.id, name: data.category.name, slug: data.category.slug }].sort(
-                                  (a, b) => a.name.localeCompare(b.name)
-                                )
-                              );
-                              setPost((p) => ({ ...p, categoryId: data.category.id }));
-                              setNewCategoryName("");
-                            } catch (e) {
-                              setToast({ content: e.message || "Could not create category", error: true });
-                            }
-                          }}
+                      <BlockStack gap="100">
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text variant="bodyMd" fontWeight="medium" as="label">
+                            Category
+                          </Text>
+                          <Button variant="plain" onClick={() => leaveEditor("/categories")}>
+                            Manage categories
+                          </Button>
+                        </InlineStack>
+                        <Combobox
+                          activator={
+                            <Combobox.TextField
+                              label="Category"
+                              labelHidden
+                              value={
+                                categorySearchValue !== ""
+                                  ? categorySearchValue
+                                  : categories.find((c) => c.id === post.categoryId)?.name || ""
+                              }
+                              placeholder="Search categories"
+                              autoComplete="off"
+                              onChange={setCategorySearchValue}
+                              onFocus={() => setCategorySearchValue("")}
+                            />
+                          }
                         >
-                          Add
-                        </Button>
-                      </InlineStack>
+                          <Listbox
+                            onSelect={async (val) => {
+                              if (val === "MANAGE") {
+                                setCategorySearchValue("");
+                                leaveEditor("/categories");
+                                return;
+                              }
+                              if (val === "CLEAR") {
+                                setPost((p) => ({ ...p, categoryId: null }));
+                                setCategorySearchValue("");
+                                return;
+                              }
+                              if (val === "CREATE_NEW") {
+                                const name = (categorySearchValue || newCategoryName).trim();
+                                if (!name) {
+                                  setToast({ content: "Type a category name first", error: true });
+                                  return;
+                                }
+                                try {
+                                  const res = await fetch("/api/categories", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ name }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data.error || "Failed");
+                                  setCategories((prev) =>
+                                    [...prev, { id: data.category.id, name: data.category.name, slug: data.category.slug }].sort(
+                                      (a, b) => a.name.localeCompare(b.name)
+                                    )
+                                  );
+                                  setPost((p) => ({ ...p, categoryId: data.category.id }));
+                                  setCategorySearchValue("");
+                                  setNewCategoryName("");
+                                } catch (e) {
+                                  setToast({ content: e.message || "Could not create category", error: true });
+                                }
+                                return;
+                              }
+                              const selected = categories.find((c) => String(c.id) === val);
+                              setPost((p) => ({ ...p, categoryId: selected ? selected.id : null }));
+                              setCategorySearchValue(selected?.name || "");
+                            }}
+                          >
+                            <Listbox.Header>Categories</Listbox.Header>
+                            <Listbox.Option value="CLEAR" selected={!post.categoryId}>
+                              <Listbox.TextOption selected={!post.categoryId}>
+                                No category
+                              </Listbox.TextOption>
+                            </Listbox.Option>
+                            {categories
+                              .filter(
+                                (c) =>
+                                  !categorySearchValue ||
+                                  c.name.toLowerCase().includes(categorySearchValue.toLowerCase())
+                              )
+                              .map((c) => (
+                                <Listbox.Option
+                                  key={c.id}
+                                  value={String(c.id)}
+                                  selected={c.id === post.categoryId}
+                                  accessibilityLabel={c.name}
+                                >
+                                  <Listbox.TextOption selected={c.id === post.categoryId}>
+                                    {c.name}
+                                  </Listbox.TextOption>
+                                </Listbox.Option>
+                              ))}
+                            <Listbox.Header>Actions</Listbox.Header>
+                            {categorySearchValue.trim() &&
+                              !categories.some(
+                                (c) => c.name.toLowerCase() === categorySearchValue.trim().toLowerCase()
+                              ) && (
+                                <Listbox.Option value="CREATE_NEW" accessibilityLabel="Create a new category">
+                                  <Listbox.TextOption>
+                                    + Create “{categorySearchValue.trim()}”
+                                  </Listbox.TextOption>
+                                </Listbox.Option>
+                              )}
+                            <Listbox.Option value="MANAGE" accessibilityLabel="Manage categories">
+                              <Listbox.TextOption>Manage categories…</Listbox.TextOption>
+                            </Listbox.Option>
+                          </Listbox>
+                        </Combobox>
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          Used when related source is “Same category”.
+                        </Text>
+                      </BlockStack>
                       <Select
                         label="Related posts source"
                         options={[

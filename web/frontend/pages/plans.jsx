@@ -240,9 +240,9 @@ export default function Plans() {
 
   return (
     <>
-    <TitleBar title="Plans & Billing" />
+    <TitleBar title="Plans & billing" />
     <Page
-      title="Plans & Billing"
+      title="Plans & billing"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
     >
       <Layout>
@@ -280,7 +280,7 @@ export default function Plans() {
               <BlockStack gap="400">
                 <InlineStack align="space-between" blockAlign="start" gap="400" wrap={false}>
                   <BlockStack gap="050">
-                    <Text as="h3" variant="headingMd">Plan Usage</Text>
+                    <Text as="h3" variant="headingMd">Plan usage</Text>
                     <Text as="p" variant="bodySm" tone="subdued">
                       {billingCycle?.renewsOn
                         ? `Current billing period · resets ${formatDate(billingCycle.renewsOn)}`
@@ -377,7 +377,7 @@ export default function Plans() {
         <Layout.Section>
           <Box paddingBlockStart="600" paddingBlockEnd="400">
             <BlockStack gap="100">
-              <Text as="h2" variant="headingLg">Choose Your Plan</Text>
+              <Text as="h2" variant="headingLg">Choose your plan</Text>
               <Text as="p" variant="bodyMd" tone="subdued">
                 Upgrade or downgrade at any time. Changes take effect immediately.
               </Text>

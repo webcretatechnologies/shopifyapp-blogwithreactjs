@@ -176,7 +176,7 @@ export default function NewBlog() {
 
   return (
     <Frame>
-      <TitleBar title="New Blog">
+      <TitleBar title="Add blog">
         <button variant="breadcrumb" onClick={() => navigate("/blogs")}>
           Blogs
         </button>

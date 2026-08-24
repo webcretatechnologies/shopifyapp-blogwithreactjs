@@ -99,9 +99,9 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
               >
                 <Icon source={StoreIcon} tone="subdued" />
               </Box>
-              <Text variant="headingSm" as="h2">Shopify Sync</Text>
+              <Text variant="headingSm" as="h2">Shopify sync</Text>
             </InlineStack>
-            <Badge tone="attention">Not Synced</Badge>
+            <Badge tone="attention">Not synced</Badge>
           </InlineStack>
 
           <Box
@@ -154,7 +154,7 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
                 tone={stateConfig.tone === "success" ? "success" : "subdued"}
               />
             </Box>
-            <Text variant="headingSm" as="h2">Shopify Sync</Text>
+            <Text variant="headingSm" as="h2">Shopify sync</Text>
           </InlineStack>
 
           <InlineStack gap="150" blockAlign="center">
@@ -216,7 +216,7 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
         {/* Sync Details Grid */}
         <BlockStack gap="200">
           <InlineStack align="space-between" blockAlign="center">
-            <Text variant="bodySm" tone="subdued">Sync Mode</Text>
+            <Text variant="bodySm" tone="subdued">Sync mode</Text>
             <Badge tone={article.syncMode === "managed_by_app" ? "success" : "info"} size="small">
               {article.syncMode === "managed_by_app" ? "Managed by App" : "External Sync"}
             </Badge>
@@ -232,7 +232,7 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
           )}
 
           <InlineStack align="space-between" blockAlign="center">
-            <Text variant="bodySm" tone="subdued">Last Synced</Text>
+            <Text variant="bodySm" tone="subdued">Last synced</Text>
             <InlineStack gap="100" blockAlign="center">
               <Icon source={ClockIcon} tone="subdued" />
               <Text variant="bodySm" fontWeight="medium">
@@ -244,7 +244,7 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
 
         {/* Warning Banner for External Edits */}
         {(isDegraded || isConflict) && (
-          <Banner tone="warning" title="External Edits Detected">
+          <Banner tone="warning" title="External edits detected">
             <Text variant="bodySm">
               Direct modifications were detected on Shopify. Saving will overwrite theme changes with your visual layout.
             </Text>

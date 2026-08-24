@@ -168,7 +168,7 @@ function patchSidebarWidget(widgetsJson, index, patch) {
 const TABS = [
   { id: "appearance", content: "Appearance" },
   { id: "content", content: "Content & display" },
-  { id: "seo", content: "SEO & Sitemap" },
+  { id: "seo", content: "SEO & sitemap" },
   { id: "advanced", content: "Advanced" },
 ];
 
@@ -925,9 +925,12 @@ export default function Settings() {
                           </InlineGrid>
 
                           <Divider />
-                          <Text as="h3" variant="headingSm">
-                            Categories
-                          </Text>
+                          <InlineStack align="space-between" blockAlign="center" wrap>
+                            <Text as="h3" variant="headingSm">
+                              Categories
+                            </Text>
+                            <Button onClick={() => navigate("/categories")}>Manage categories</Button>
+                          </InlineStack>
                           <Banner tone="info">
                             <p>
                               Assign a category on each post. Category slugs sync as Shopify tags so
@@ -1611,7 +1614,7 @@ export default function Settings() {
                     <UpgradePrompt
                       onUpgrade={handleUpgradeNow}
                       requiredPlan="Pro"
-                      title="Custom Global Header & Footer is a Pro feature"
+                      title="Custom global header and footer is a Pro feature"
                       description="Inject your own CSS or JavaScript above and below every published article."
                     />
                   )}
@@ -1668,7 +1671,7 @@ export default function Settings() {
                   </Text>
                   <InlineStack align="end">
                     <Button onClick={() => navigate("/sync")}>
-                      Open Sync Status
+                      Open sync status
                     </Button>
                   </InlineStack>
                 </SectionCard>
