@@ -939,10 +939,8 @@ class BlockRenderer {
       seed = BlockRenderer.firstProductBlockSeedId(blocks) || "";
     }
 
-    // If products are explicitly provided, treat as manual regardless of source setting
-    if (source !== "manual" && products.length > 0) {
-      source = "manual";
-    }
+    // Leftover attached products must not override Recommendations. Same class of bug as
+    // related-posts leftover picks: only Manual source should use a stored product list.
     const manualActive = source === "manual" && products.length > 0;
     const sliderActive = ["top", "bottom", "both"].includes(position) && (manualActive || seed !== "");
     const needsSliderScript = sliderActive || hasInlineSlider;
@@ -957,8 +955,9 @@ class BlockRenderer {
       return innerHtml;
     }
 
-    const top = (position === "top" || position === "both") ? this.productSliderPlaceholder("top", seed, products, config, source) : "";
-    const bottom = (position === "bottom" || position === "both") ? this.productSliderPlaceholder("bottom", seed, products, config, source) : "";
+    const productsForSource = source === "manual" ? products : [];
+    const top = (position === "top" || position === "both") ? this.productSliderPlaceholder("top", seed, productsForSource, config, source) : "";
+    const bottom = (position === "bottom" || position === "both") ? this.productSliderPlaceholder("bottom", seed, productsForSource, config, source) : "";
 
     return top + innerHtml + bottom;
   }

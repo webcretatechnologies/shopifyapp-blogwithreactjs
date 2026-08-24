@@ -90,12 +90,9 @@ export async function getRelatedPosts(postId, shopId, shopifyBlogId, countOrOpts
     return getManualPicks(postId, count);
   }
 
-  // Backward compatible: on smart mode, existing manual picks still win (old behavior).
-  // Explicit category/random ignore picks so those modes stay predictable.
-  if (mode === "smart") {
-    const manual = await getManualPicks(postId, count);
-    if (manual.length > 0) return manual;
-  }
+  // Leftover PostRelatedPost rows must not leak into other modes. Merchants often switch
+  // Manual → Smart/Same category/Random without deleting old picks; those rows stay so
+  // switching back to Manual can restore them, but they are only used in Manual.
 
   if (!shopifyBlogId) return [];
 

@@ -883,6 +883,7 @@ export default function PostEditor() {
   const [categories, setCategories] = useState([]);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [showRelatedPostsSetting, setShowRelatedPostsSetting] = useState(true);
+  const [shopRelatedSourceMode, setShopRelatedSourceMode] = useState("smart");
   const [themeTemplate, setThemeTemplate] = useState("default");
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
 
@@ -935,6 +936,9 @@ export default function PostEditor() {
         }
         if (settings?.showRelatedPosts !== undefined) {
           setShowRelatedPostsSetting(settings.showRelatedPosts !== false && settings.showRelatedPosts !== "false");
+        }
+        if (settings?.relatedPostsSourceMode) {
+          setShopRelatedSourceMode(String(settings.relatedPostsSourceMode).toLowerCase());
         }
       })
       .catch(() => {});
@@ -2742,16 +2746,26 @@ export default function PostEditor() {
                         onChange={setRelatedPostsSourceMode}
                       />
                       {features.related_posts_manual?.enabled ? (
-                        relatedPostsSourceMode === "manual" || relatedPostsSourceMode === "inherit" ? (
+                        relatedPostsSourceMode === "manual" ? (
                           <RelatedPostsPicker
                             value={relatedPostsSelection}
                             onChange={setRelatedPostsSelection}
                             excludePostId={post.id}
-                            requireManual={relatedPostsSourceMode === "manual"}
+                            requireManual
                           />
                         ) : (
                           <Text as="p" variant="bodySm" tone="subdued">
-                            Related posts will be chosen automatically using this source. Switch to Manual to pick specific articles.
+                            {relatedPostsSourceMode === "inherit"
+                              ? (shopRelatedSourceMode === "manual"
+                                ? "Uses shop default: Manual picks. Leftover picks on this post will still appear. Choose Smart match, Same category, or Random to ignore them."
+                                : `Uses shop default: ${
+                                    shopRelatedSourceMode === "category"
+                                      ? "Same category"
+                                      : shopRelatedSourceMode === "random"
+                                        ? "Random"
+                                        : "Smart match"
+                                  }. Leftover manual picks are ignored.`)
+                              : "Related posts are chosen automatically with this source. Leftover manual picks are ignored. Switch to Manual picks to choose specific articles."}
                           </Text>
                         )
                       ) : (

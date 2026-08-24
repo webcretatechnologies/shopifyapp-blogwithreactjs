@@ -11,6 +11,7 @@ import { prisma } from "../../shopify.js";
 import shopify from "../../shopify.js";
 import { getRelatedPosts, resolveRelatedSourceMode } from "../services/RelatedPostsService.js";
 import { isFeatureEnabled } from "../services/PlanFeatureService.js";
+import { formatPrice } from "../utils/priceUtils.js";
 
 const router = express.Router();
 const APP_URL = process.env.HOST || process.env.APP_URL || `https://${process.env.SHOPIFY_APP_HOST || "localhost:3000"}`;
@@ -57,6 +58,72 @@ async function resolveBlogHandle(session, blogId, shopifyArticleId) {
     blogHandleCache.set(cacheKey, { handle: blogHandle, expiresAt: Date.now() + BLOG_HANDLE_TTL_MS });
   }
   return blogHandle;
+}
+
+/**
+ * Manual sidebar picks may reference products that were never attached to a post,
+ * so they aren't in the local Product cache. Fetch from Shopify and upsert so the
+ * storefront gets title/image/price instead of a bare handle.
+ */
+async function fetchAndCacheProductsByHandles(session, shopId, handles) {
+  const out = new Map();
+  if (!session?.accessToken || !handles?.length) return out;
+
+  const client = new shopify.api.clients.Graphql({
+    session: { shop: session.shop, accessToken: session.accessToken, isOnline: false },
+  });
+  const query = handles.map((h) => `handle:${String(h).trim()}`).filter(Boolean).join(" OR ");
+  if (!query) return out;
+
+  const result = await client.request(
+    `query ProductsByHandles($query: String!, $first: Int!) {
+      products(query: $query, first: $first) {
+        edges {
+          node {
+            id
+            title
+            handle
+            featuredImage { url }
+            priceRangeV2 { minVariantPrice { amount } }
+            variants(first: 1) {
+              edges { node { id availableForSale } }
+            }
+          }
+        }
+      }
+    }`,
+    { variables: { query, first: Math.min(handles.length, 50) } }
+  );
+
+  for (const { node } of result.data?.products?.edges || []) {
+    if (!node?.id || !node.handle) continue;
+    const priceRaw = node.priceRangeV2?.minVariantPrice?.amount;
+    const priceVal = priceRaw != null && priceRaw !== "" ? parseFloat(priceRaw) : null;
+    const row = await prisma.product.upsert({
+      where: { shopifyProductId: node.id },
+      create: {
+        shopId,
+        shopifyProductId: node.id,
+        title: node.title || node.handle,
+        handle: node.handle,
+        image: node.featuredImage?.url || null,
+        price: Number.isFinite(priceVal) ? priceVal : null,
+        variantId: node.variants?.edges?.[0]?.node?.id || null,
+        variantAvailable: node.variants?.edges?.[0]?.node?.availableForSale ?? true,
+      },
+      update: {
+        title: node.title || node.handle,
+        handle: node.handle,
+        image: node.featuredImage?.url || null,
+        price: Number.isFinite(priceVal) ? priceVal : null,
+        variantId: node.variants?.edges?.[0]?.node?.id || null,
+        variantAvailable: node.variants?.edges?.[0]?.node?.availableForSale ?? true,
+      },
+      select: { title: true, handle: true, image: true, price: true },
+    });
+    out.set(row.handle, row);
+  }
+  return out;
 }
 
 function parseSettings(shop) {
@@ -289,36 +356,66 @@ router.get("/sidebar.json", async (req, res) => {
           return { type: "image_cta", title, imageUrl, linkUrl, buttonText };
         }
         if (w.type === "products") {
-          const maxItems = parseInt(w.settings?.maxItems, 10) || 3;
+          const maxItems = Math.min(6, Math.max(1, parseInt(w.settings?.maxItems, 10) || 3));
           const source = w.settings?.source || "post_products";
+          const showImage = w.settings?.showImage !== false;
+          const showPrice = w.settings?.showPrice !== false;
+          const ctaLabel = String(w.settings?.ctaLabel ?? "View product").trim();
+
+          const mapProduct = (p) => {
+            const handle = p.handle || null;
+            if (!handle && !p.title) return null;
+            return {
+              title: p.title || handle || "Product",
+              href: handle
+                ? `https://${shopDomain}/products/${encodeURIComponent(handle)}`
+                : `https://${shopDomain}/products`,
+              image: showImage && p.image ? p.image : null,
+              price: showPrice && p.price != null && p.price !== "" ? formatPrice(p.price) : null,
+              ctaLabel: ctaLabel || null,
+            };
+          };
+
           let products = [];
           if (source === "manual") {
-            const handles = Array.isArray(w.settings?.productHandles) ? w.settings.productHandles : [];
-            products = handles.slice(0, maxItems).map((handle) => ({
-              title: handle,
-              handle,
-              href: `https://${shopDomain}/products/${encodeURIComponent(handle)}`,
-              image: null,
-            }));
+            const handles = (Array.isArray(w.settings?.productHandles) ? w.settings.productHandles : [])
+              .map((h) => String(h || "").trim())
+              .filter(Boolean)
+              .slice(0, maxItems);
+            if (handles.length) {
+              const rows = await prisma.product.findMany({
+                where: { shopId: shop.id, handle: { in: handles } },
+                select: { title: true, handle: true, image: true, price: true },
+              });
+              const byHandle = new Map(rows.map((r) => [r.handle, r]));
+              const missing = handles.filter((h) => !byHandle.has(h));
+              if (missing.length && session) {
+                try {
+                  const fetched = await fetchAndCacheProductsByHandles(session, shop.id, missing);
+                  for (const [handle, row] of fetched) byHandle.set(handle, row);
+                } catch (e) {
+                  console.error("sidebar.json products hydrate:", e.message);
+                }
+              }
+              products = handles
+                .map((handle) => {
+                  const row = byHandle.get(handle);
+                  if (row) return mapProduct(row);
+                  // Still unknown after Shopify lookup — keep a working product link
+                  return mapProduct({ title: handle, handle, image: null, price: null });
+                })
+                .filter(Boolean);
+            }
           } else {
-            products = (post.products || []).slice(0, maxItems).map((pp) => {
-              const p = pp.product || {};
-              const handle = p.handle || null;
-              return {
-                title: p.title || "Product",
-                handle,
-                href: handle
-                  ? `https://${shopDomain}/products/${encodeURIComponent(handle)}`
-                  : `https://${shopDomain}/products`,
-                image: p.image || null,
-              };
-            });
+            products = (post.products || [])
+              .slice(0, maxItems)
+              .map((pp) => mapProduct(pp.product || {}))
+              .filter(Boolean);
           }
           if (!products.length) return null;
           return {
             type: "products",
             title: title || "Products",
-            ctaLabel: w.settings?.ctaLabel || "View product",
             items: products,
           };
         }
@@ -494,8 +591,18 @@ const SIDEBAR_SCRIPT = `(function () {
     } else if (w.type === 'products') {
       w.items.forEach(function (p) {
         html += '<a class="blogger-sidebar-product" href="' + escapeHtml(p.href) + '">';
-        if (p.image) html += '<img src="' + escapeHtml(p.image) + '" alt="">';
-        html += '<span>' + escapeHtml(p.title) + '</span></a>';
+        if (p.image) {
+          html += '<img class="blogger-sidebar-product__thumb" src="' + escapeHtml(p.image) + '" alt="" loading="lazy">';
+        }
+        html += '<span class="blogger-sidebar-product__body">';
+        html += '<span class="blogger-sidebar-product__title">' + escapeHtml(p.title) + '</span>';
+        if (p.price) {
+          html += '<span class="blogger-sidebar-product__price">' + escapeHtml(p.price) + '</span>';
+        }
+        if (p.ctaLabel) {
+          html += '<span class="blogger-sidebar-product__cta">' + escapeHtml(p.ctaLabel) + '</span>';
+        }
+        html += '</span></a>';
       });
     }
     html += '</div>';

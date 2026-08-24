@@ -105,7 +105,21 @@ const DEFAULT_SIDEBAR_WIDGETS = [
       includeCategoryIds: [],
     },
   },
-  { id: "products_1", type: "products", enabled: false, settings: { title: "Products", source: "post_products", maxItems: 3, ctaLabel: "View product" } },
+  {
+    id: "products_1",
+    type: "products",
+    enabled: false,
+    settings: {
+      title: "Products",
+      source: "post_products",
+      maxItems: 3,
+      showImage: true,
+      showPrice: true,
+      ctaLabel: "View product",
+      productHandles: [],
+      productIds: [],
+    },
+  },
   { id: "rich_1", type: "rich_text", enabled: false, settings: { title: "", body: "" } },
   { id: "cta_1", type: "image_cta", enabled: false, settings: { title: "", imageUrl: "", linkUrl: "", buttonText: "Learn more" } },
 ];
@@ -119,6 +133,16 @@ const CATEGORY_MAX_POSTS_OPTIONS = ["1", "2", "3", "4", "5", "6"].map((n) => ({
   label: `${n} post${n === "1" ? "" : "s"}`,
   value: n,
 }));
+
+const PRODUCT_MAX_ITEMS_OPTIONS = ["1", "2", "3", "4", "5", "6"].map((n) => ({
+  label: `${n} product${n === "1" ? "" : "s"}`,
+  value: n,
+}));
+
+const PRODUCT_SOURCE_OPTIONS = [
+  { label: "Products on this post", value: "post_products" },
+  { label: "Manual picks", value: "manual" },
+];
 
 function parseSidebarWidgets(raw) {
   try {
@@ -352,7 +376,10 @@ export default function Settings() {
   };
 
   const updateSidebarWidget = (index, patch) => {
-    set("blogSidebarWidgets")(patchSidebarWidget(settings.blogSidebarWidgets, index, patch));
+    setSettings((s) => ({
+      ...s,
+      blogSidebarWidgets: patchSidebarWidget(s.blogSidebarWidgets, index, patch),
+    }));
   };
 
   const handleCreateCategory = async () => {
@@ -849,7 +876,7 @@ export default function Settings() {
                             options={RELATED_SOURCE_OPTIONS}
                             value={settings.relatedPostsSourceMode || "smart"}
                             onChange={set("relatedPostsSourceMode")}
-                            helpText="Posts can override this in the editor. Manual only uses posts you pick on each article."
+                            helpText="Posts can override this in the editor. Manual only uses posts you pick on each article. Smart match, Same category, and Random ignore leftover manual picks."
                           />
                         </BlockStack>
                       </Box>
@@ -1178,63 +1205,192 @@ export default function Settings() {
                                       </>
                                     )}
                                     {widget.type === "products" && (
-                                      <>
+                                      <BlockStack gap="200">
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          Attach products on the post (editor), or pick shop-wide products for Manual.
+                                          Sidebar uses your catalog cache—re-pick or re-save post products if images/prices look stale.
+                                        </Text>
                                         <Select
                                           label="Source"
-                                          options={[
-                                            { label: "Products on this post", value: "post_products" },
-                                            { label: "Manual product IDs", value: "manual" },
-                                          ]}
+                                          options={PRODUCT_SOURCE_OPTIONS}
                                           value={widget.settings?.source || "post_products"}
-                                          onChange={(source) => {
-                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                            list[idx] = {
-                                              ...list[idx],
-                                              settings: { ...(list[idx].settings || {}), source },
-                                            };
-                                            set("blogSidebarWidgets")(JSON.stringify(list));
-                                          }}
+                                          onChange={(source) =>
+                                            updateSidebarWidget(idx, { settings: { source } })
+                                          }
                                         />
                                         {widget.settings?.source === "manual" && (
-                                          <TextField
-                                            label="Product handles (comma-separated)"
-                                            value={(widget.settings?.productHandles || []).join(", ")}
-                                            onChange={(raw) => {
-                                              const productHandles = raw
-                                                .split(",")
-                                                .map((s) => s.trim())
-                                                .filter(Boolean);
-                                              const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                              list[idx] = {
-                                                ...list[idx],
-                                                settings: { ...(list[idx].settings || {}), productHandles },
-                                              };
-                                              set("blogSidebarWidgets")(JSON.stringify(list));
-                                            }}
-                                            helpText="Enter Shopify product handles, e.g. blue-t-shirt, winter-hat"
-                                            autoComplete="off"
-                                          />
+                                          <BlockStack gap="200">
+                                            <InlineStack gap="200" wrap>
+                                              <Button
+                                                onClick={async () => {
+                                                  if (!window.shopify?.resourcePicker) {
+                                                    setToast({
+                                                      content: "Product picker is only available inside Shopify admin.",
+                                                      error: true,
+                                                    });
+                                                    return;
+                                                  }
+                                                  try {
+                                                    const handles = Array.isArray(widget.settings?.productHandles)
+                                                      ? widget.settings.productHandles.filter(Boolean)
+                                                      : [];
+                                                    let ids = Array.isArray(widget.settings?.productIds)
+                                                      ? widget.settings.productIds.filter(Boolean)
+                                                      : [];
+
+                                                    // Older saves only stored handles — resolve GIDs so the picker pre-selects them
+                                                    if (handles.length && ids.length !== handles.length) {
+                                                      try {
+                                                        const q = handles
+                                                          .map((h) => `handle:${String(h).trim()}`)
+                                                          .join(" OR ");
+                                                        const res = await fetch(
+                                                          `/api/posts/shopify/products?query=${encodeURIComponent(q)}&limit=${Math.max(handles.length, 1)}`
+                                                        );
+                                                        if (res.ok) {
+                                                          const data = await res.json();
+                                                          const byHandle = new Map(
+                                                            (data.products || []).map((p) => [
+                                                              p.handle,
+                                                              p.shopifyProductId,
+                                                            ])
+                                                          );
+                                                          ids = handles
+                                                            .map((h) => byHandle.get(h))
+                                                            .filter(Boolean);
+                                                        }
+                                                      } catch {
+                                                        /* open picker without preselection if lookup fails */
+                                                      }
+                                                    }
+
+                                                    const selectionIds = ids.map((id) => {
+                                                      const s = String(id);
+                                                      return {
+                                                        id: s.startsWith("gid://")
+                                                          ? s
+                                                          : `gid://shopify/Product/${s}`,
+                                                      };
+                                                    });
+
+                                                    const selection = await window.shopify.resourcePicker({
+                                                      type: "product",
+                                                      multiple: true,
+                                                      selectionIds,
+                                                    });
+                                                    // Cancel / empty: leave existing picks alone
+                                                    if (!selection?.length) return;
+                                                    const productHandles = [];
+                                                    const productIds = [];
+                                                    const seen = new Set();
+                                                    for (const p of selection) {
+                                                      const handle = p?.handle;
+                                                      if (!handle || seen.has(handle)) continue;
+                                                      seen.add(handle);
+                                                      productHandles.push(handle);
+                                                      if (p.id) productIds.push(String(p.id));
+                                                    }
+                                                    updateSidebarWidget(idx, {
+                                                      settings: { productHandles, productIds },
+                                                    });
+                                                  } catch (e) {
+                                                    if (e?.message !== "cancelled" && e?.code !== "CANCELLED") {
+                                                      setToast({
+                                                        content: e?.message || "Couldn't open product picker",
+                                                        error: true,
+                                                      });
+                                                    }
+                                                  }
+                                                }}
+                                              >
+                                                Pick products
+                                              </Button>
+                                              {(widget.settings?.productHandles || []).length > 0 && (
+                                                <Button
+                                                  tone="critical"
+                                                  onClick={() =>
+                                                    updateSidebarWidget(idx, {
+                                                      settings: { productHandles: [], productIds: [] },
+                                                    })
+                                                  }
+                                                >
+                                                  Clear
+                                                </Button>
+                                              )}
+                                            </InlineStack>
+                                            {(widget.settings?.productHandles || []).length > 0 ? (
+                                              <BlockStack gap="100">
+                                                {(widget.settings.productHandles || []).map((handle, handleIdx) => (
+                                                  <InlineStack
+                                                    key={handle}
+                                                    align="space-between"
+                                                    blockAlign="center"
+                                                    gap="200"
+                                                  >
+                                                    <Text as="span" variant="bodySm">
+                                                      {handle}
+                                                    </Text>
+                                                    <Button
+                                                      size="slim"
+                                                      onClick={() => {
+                                                        const handles = widget.settings?.productHandles || [];
+                                                        const ids = Array.isArray(widget.settings?.productIds)
+                                                          ? widget.settings.productIds
+                                                          : [];
+                                                        updateSidebarWidget(idx, {
+                                                          settings: {
+                                                            productHandles: handles.filter((h) => h !== handle),
+                                                            productIds: ids.filter((_, i) => i !== handleIdx),
+                                                          },
+                                                        });
+                                                      }}
+                                                    >
+                                                      Remove
+                                                    </Button>
+                                                  </InlineStack>
+                                                ))}
+                                              </BlockStack>
+                                            ) : (
+                                              <Text as="p" variant="bodySm" tone="subdued">
+                                                No products selected yet.
+                                              </Text>
+                                            )}
+                                          </BlockStack>
                                         )}
                                         <Select
                                           label="Max items"
-                                          options={["1", "2", "3", "4", "6"].map((n) => ({
-                                            label: n,
-                                            value: n,
-                                          }))}
-                                          value={String(widget.settings?.maxItems || 3)}
-                                          onChange={(maxItems) => {
-                                            const list = parseSidebarWidgets(settings.blogSidebarWidgets);
-                                            list[idx] = {
-                                              ...list[idx],
-                                              settings: {
-                                                ...(list[idx].settings || {}),
-                                                maxItems: parseInt(maxItems, 10),
-                                              },
-                                            };
-                                            set("blogSidebarWidgets")(JSON.stringify(list));
-                                          }}
+                                          options={PRODUCT_MAX_ITEMS_OPTIONS}
+                                          value={String(widget.settings?.maxItems ?? 3)}
+                                          onChange={(maxItems) =>
+                                            updateSidebarWidget(idx, {
+                                              settings: { maxItems: parseInt(maxItems, 10) },
+                                            })
+                                          }
                                         />
-                                      </>
+                                        <Checkbox
+                                          label="Show images"
+                                          checked={widget.settings?.showImage !== false}
+                                          onChange={(showImage) =>
+                                            updateSidebarWidget(idx, { settings: { showImage } })
+                                          }
+                                        />
+                                        <Checkbox
+                                          label="Show price"
+                                          checked={widget.settings?.showPrice !== false}
+                                          onChange={(showPrice) =>
+                                            updateSidebarWidget(idx, { settings: { showPrice } })
+                                          }
+                                        />
+                                        <TextField
+                                          label="CTA label"
+                                          value={widget.settings?.ctaLabel ?? "View product"}
+                                          onChange={(ctaLabel) =>
+                                            updateSidebarWidget(idx, { settings: { ctaLabel } })
+                                          }
+                                          helpText="Leave blank to hide the CTA line; the card still links to the product."
+                                          autoComplete="off"
+                                        />
+                                      </BlockStack>
                                     )}
                                     {widget.type === "categories" && (
                                       <BlockStack gap="200">

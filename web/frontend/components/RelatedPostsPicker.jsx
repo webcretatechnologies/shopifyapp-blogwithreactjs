@@ -73,7 +73,7 @@ export default function RelatedPostsPicker({ value = [], onChange, excludePostId
       autoComplete="off"
       helpText={
         requireManual
-          ? "Select the posts to show. With Manual source, only these picks appear on the storefront."
+          ? "Search and add the articles that should appear as related posts on the storefront."
           : "Optional. When set, these picks override automatic related posts for this article."
       }
     />

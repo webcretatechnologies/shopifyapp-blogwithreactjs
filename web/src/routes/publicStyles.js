@@ -6,9 +6,9 @@
  * statically at sync time. This is what makes changing the layout setting apply to every post
  * instantly, including posts that are never re-synced.
  *
- * Deliberately scoped to layout width only — colors and font are NOT served here; colors apply
- * via BlockRegistry's theme-color sync when a new block is created, and font is baked in at
- * each article's own sync time (see EditorContentCompiler.generateGlobalCss's docblock).
+ * Deliberately scoped to layout width, brand color CSS variables (for sidebar accents), and
+ * byline visibility — font is NOT served here; it is baked in at each article's own sync time
+ * (see EditorContentCompiler.generateGlobalCss's docblock).
  *
  * Accessed cross-domain from Shopify storefronts, so it must be mounted BEFORE any Shopify
  * session validation middleware — same placement/requirement as tracking.js.

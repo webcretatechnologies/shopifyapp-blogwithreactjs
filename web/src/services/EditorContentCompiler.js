@@ -2110,17 +2110,48 @@ ${this.generateGlobalCss(settings)}
   }
   .blogger-sidebar-product {
     display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 12px;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 14px;
     text-decoration: none;
     color: inherit;
   }
-  .blogger-sidebar-product img {
+  .blogger-sidebar-product:last-child {
+    margin-bottom: 0;
+  }
+  .blogger-sidebar-product__thumb {
     width: 56px;
     height: 56px;
     object-fit: cover;
     border-radius: 6px;
+    flex-shrink: 0;
+    background: #f6f6f7;
+  }
+  .blogger-sidebar-product__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    line-height: 1.35;
+  }
+  .blogger-sidebar-product__title {
+    font-weight: 600;
+    font-size: 0.95em;
+  }
+  .blogger-sidebar-product__price {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: var(--blogger-primary-color, #008060);
+  }
+  .blogger-sidebar-product__cta {
+    font-size: 0.85em;
+    margin-top: 2px;
+    color: var(--blogger-primary-color, #008060);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .blogger-sidebar-product:hover .blogger-sidebar-product__title {
+    text-decoration: underline;
   }
   .blogger-sidebar-cta img {
     width: 100%;
@@ -2131,7 +2162,7 @@ ${this.generateGlobalCss(settings)}
   .blogger-sidebar-cta__btn {
     display: inline-block;
     padding: 8px 14px;
-    background: var(--blogger-primary, #008060);
+    background: var(--blogger-primary-color, #008060);
     color: #fff !important;
     text-decoration: none;
     border-radius: 6px;
@@ -2221,13 +2252,14 @@ ${this.generateGlobalCss(settings)}
 
   /**
    * Raw CSS for the settings that need to be LIVE and site-wide (served from the public
-   * `/styles.css` endpoint, linked from every newly-synced article): layout width, plus the
-   * byline element toggles (show author / published date / reading time). Colors and font are
-   * intentionally NOT part of this shared stylesheet (see generateGlobalCss's docblock for why)
-   * — those still bake at sync time. The byline elements themselves (.blogger-author etc.) are
-   * always baked into the article HTML (see compileForStorefront); only their visibility lives
-   * here, so toggling these Settings applies to every already-published post on its next
-   * storefront view instead of requiring a resync.
+   * `/styles.css` endpoint, linked from every newly-synced article): layout width, brand color
+   * CSS variables (so sidebar/product accents follow Settings live), plus the byline element
+   * toggles (show author / published date / reading time). Font is intentionally NOT part of
+   * this shared stylesheet (see generateGlobalCss's docblock for why) — it still bakes at sync
+   * time. The byline elements themselves (.blogger-author etc.) are always baked into the
+   * article HTML (see compileForStorefront); only their visibility lives here, so toggling
+   * these Settings applies to every already-published post on its next storefront view instead
+   * of requiring a resync.
    */
   static generateLayoutCss(settings, { important = true } = {}) {
     const bang = important ? " !important" : "";
@@ -2236,10 +2268,16 @@ ${this.generateGlobalCss(settings)}
     const sidebarWidth = Number.isFinite(sidebarW) && sidebarW >= 240 && sidebarW <= 420
       ? `${sidebarW}px`
       : "320px";
+    const primary = settings.primaryColor || "#008060";
+    const secondary = settings.secondaryColor || "#005bd3";
+    const text = settings.textColor || "#202223";
     const isOff = (v) => v === false || v === "false";
     return `  :root {
     --blogger-layout-width: ${layoutWidth};
     --blogger-sidebar-width: ${sidebarWidth};
+    --blogger-primary-color: ${primary};
+    --blogger-secondary-color: ${secondary};
+    --blogger-text-color: ${text};
   }
 
   .blogger-article-container {
@@ -2326,6 +2364,21 @@ ${this.generateGlobalCss(settings)}
     .blogger-article-layout--sidebar-active .blogger-article-sidebar {
       position: static${bang};
     }
+  }
+
+  .blogger-sidebar-product__price,
+  .blogger-sidebar-product__cta {
+    color: var(--blogger-primary-color, ${primary})${bang};
+  }
+
+  .blogger-sidebar-cta__btn {
+    background: var(--blogger-primary-color, ${primary})${bang};
+    color: #fff${bang};
+  }
+
+  .blogger-sidebar-widget__title,
+  .blogger-sidebar-product__title {
+    color: var(--blogger-text-color, ${text});
   }
 
   .blogger-author {
@@ -2487,12 +2540,11 @@ ${this.generateGlobalCss(settings)}
 </style>
 `;
 
-    // Live layout-width stylesheet link — the fix for "changing Blog Article Layout should
-    // apply everywhere instantly, not just to posts that get individually re-synced." Any
-    // future layout-width change is picked up by this article on its very next storefront page
-    // view, forever, with zero further action on this specific post. Silently overrides the
-    // fallback above via the CSS !important tie-break, not by replacing/removing it. Colors and
-    // font are intentionally NOT part of this shared link — see generateGlobalCss()'s docblock.
+    // Live layout stylesheet link — the fix for "changing Blog Article Layout / brand colors
+    // should apply everywhere instantly, not just to posts that get individually re-synced."
+    // Any future layout-width or brand-color change is picked up by this article on its very
+    // next storefront page view. Silently overrides baked fallbacks via CSS !important.
+    // Font is intentionally NOT part of this shared link — see generateGlobalCss()'s docblock.
     const liveStylesLink = domain
       ? `<link rel="stylesheet" href="${APP_URL}/styles.css?shop=${encodeURIComponent(domain)}">`
       : "";
