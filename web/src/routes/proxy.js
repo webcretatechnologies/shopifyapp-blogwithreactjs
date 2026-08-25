@@ -205,6 +205,8 @@ router.get("/listing.css", verifyProxySignature, async (req, res) => {
       }, {});
     }
     const { EditorContentCompiler } = await import("../services/EditorContentCompiler.js");
+    const { listingLayoutForPlan } = await import("../services/ListingLayoutMetafield.js");
+    settings.blogListingLayout = listingLayoutForPlan(shop?.planKey, settings.blogListingLayout);
     res.send(EditorContentCompiler.generateLayoutCss(settings, { important: true }));
   } catch (err) {
     console.error("[Proxy] listing.css error:", err);

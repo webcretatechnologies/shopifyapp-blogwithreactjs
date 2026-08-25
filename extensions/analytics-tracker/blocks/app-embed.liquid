@@ -13,6 +13,8 @@
 {% endcomment %}
 {% if template.name == 'blog' %}
   {% assign listing_layout = shop.metafields.blog_app.listing_layout.value | default: shop.metafields.blog_app.listing_layout %}
+  {% comment %} Free plan stores "theme" so we leave the merchant's theme listing alone. {% endcomment %}
+  {% if listing_layout != blank and listing_layout != 'theme' and listing_layout != 'default' %}
   <style id="blogger-listing-critical">
     .blog-articles,
     .blog-articles,
@@ -145,6 +147,7 @@
     {% endif %}
   </style>
   <link rel="stylesheet" href="/apps/blog-analytics/listing.css" fetchpriority="high">
+  {% endif %}
 {% endif %}
 
 <script>

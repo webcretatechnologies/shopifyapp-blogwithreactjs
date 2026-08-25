@@ -1,7 +1,8 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
-import { getArticleLimit, buildTieredPlanFeatures } from "../services/PlanFeatureService.js";
+import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled } from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
+import { listingLayoutForPlan, writeListingLayoutMetafield, THEME_LISTING_LAYOUT } from "../services/ListingLayoutMetafield.js";
 
 const router = express.Router();
 
@@ -196,6 +197,14 @@ router.get("/check", async (req, res) => {
     // the merchant billing page could show a stale limit.
     const postLimit = getArticleLimit(activePlan);
 
+    try {
+      if (!isFeatureEnabled(activePlan, "listing_layout")) {
+        await writeListingLayoutMetafield(session, THEME_LISTING_LAYOUT);
+      }
+    } catch (metaErr) {
+      console.warn("[Billing] listing_layout metafield sync skipped:", metaErr.message);
+    }
+
     // Trial/renewal info — only meaningful when there's a real active subscription (Free has
     // neither a trial clock nor a renewal date).
     let billingCycle = null;
@@ -270,6 +279,11 @@ router.post("/request", async (req, res) => {
       const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
       if (shop && shop.planKey !== "free") {
         await prisma.shop.update({ where: { id: shop.id }, data: { planKey: "free" } });
+      }
+      try {
+        await writeListingLayoutMetafield(session, listingLayoutForPlan("free", null));
+      } catch (metaErr) {
+        console.warn("[Billing] listing_layout metafield sync skipped:", metaErr.message);
       }
 
       // Return the confirmed final state directly instead of making the frontend immediately

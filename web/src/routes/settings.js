@@ -3,6 +3,7 @@ import shopify, { prisma } from "../../shopify.js";
 import ThemeStyleService from "../services/ThemeStyleService.js";
 import { isFeatureEnabled } from "../services/PlanFeatureService.js";
 import { ArticleSyncService } from "../services/ArticleSyncService.js";
+import { listingLayoutForPlan, writeListingLayoutMetafield } from "../services/ListingLayoutMetafield.js";
 
 const router = express.Router();
 
@@ -102,6 +103,15 @@ router.get("/", async (req, res) => {
       acc[setting.key] = val;
       return acc;
     }, {});
+
+    try {
+      await writeListingLayoutMetafield(
+        session,
+        listingLayoutForPlan(shop.planKey, settingsObject.blogListingLayout)
+      );
+    } catch (metaErr) {
+      console.warn("[Settings] listing_layout metafield sync skipped:", metaErr.message);
+    }
 
     res.json({ settings: settingsObject });
   } catch (error) {
@@ -234,6 +244,7 @@ router.post("/", async (req, res) => {
     }
 
     const sidebarAllowed = isFeatureEnabled(shop.planKey, "blog_sidebar");
+    const listingLayoutAllowed = isFeatureEnabled(shop.planKey, "listing_layout");
 
     // Upsert all modified setting parameters
     for (const key of supportedKeys) {
@@ -252,6 +263,7 @@ router.post("/", async (req, res) => {
       ) {
         continue;
       }
+      if (key === "blogListingLayout" && !listingLayoutAllowed) continue;
       if (req.body[key] !== undefined) {
         const valStr = String(req.body[key]);
         await prisma.shopSetting.upsert({
@@ -277,32 +289,8 @@ router.post("/", async (req, res) => {
       const layoutRow = await prisma.shopSetting.findUnique({
         where: { shopId_key: { shopId: shop.id, key: "blogListingLayout" } },
       });
-      const listingLayout = String(layoutRow?.value || "featured_2").toLowerCase();
-      const client = new shopify.api.clients.Graphql({ session });
-      const shopData = await client.request(`query { shop { id } }`);
-      const shopGid = shopData.data?.shop?.id;
-      if (shopGid) {
-        await client.request(
-          `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
-            metafieldsSet(metafields: $metafields) {
-              userErrors { field message }
-            }
-          }`,
-          {
-            variables: {
-              metafields: [
-                {
-                  ownerId: shopGid,
-                  namespace: "blog_app",
-                  key: "listing_layout",
-                  type: "single_line_text_field",
-                  value: LISTING_LAYOUTS.has(listingLayout) ? listingLayout : "featured_2",
-                },
-              ],
-            },
-          }
-        );
-      }
+      const listingLayout = listingLayoutForPlan(shop.planKey, layoutRow?.value);
+      await writeListingLayoutMetafield(session, listingLayout);
     } catch (metaErr) {
       console.warn("[Settings] listing_layout metafield sync skipped:", metaErr.message);
     }
@@ -330,7 +318,7 @@ router.post("/apply-sidebar-layout", async (req, res) => {
     const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
     if (!shop) return res.status(404).json({ error: "Shop not found" });
     if (!isFeatureEnabled(shop.planKey, "blog_sidebar")) {
-      return res.status(403).json({ error: "Blog sidebar is available on Starter and above." });
+      return res.status(403).json({ error: "Blog sidebar is available on Pro and above." });
     }
 
     const linkedPosts = await prisma.post.findMany({

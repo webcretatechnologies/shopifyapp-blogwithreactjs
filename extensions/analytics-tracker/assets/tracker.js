@@ -255,51 +255,59 @@
     return null;
   }
 
-  // --- Bug 2: Patch Fetch Interceptor Crash ---
+  // Regular function (not async) so call-site `this` is preserved for fetch polyfills.
   const originalFetch = window.fetch;
-  window.fetch = async function(...args) {
-    const urlArg = args[0];
-    let urlStr = "";
-    if (typeof urlArg === 'string') {
-      urlStr = urlArg;
-    } else if (typeof Request !== 'undefined' && urlArg instanceof Request) {
-      urlStr = urlArg.url;
-    }
+  window.fetch = function () {
+    const args = arguments;
+    const fetchThis = this;
+    return (async function () {
+      const urlArg = args[0];
+      let urlStr = "";
+      if (typeof urlArg === "string") {
+        urlStr = urlArg;
+      } else if (typeof Request !== "undefined" && urlArg instanceof Request) {
+        urlStr = urlArg.url;
+      }
 
-    let cartAddBody = null;
-    if (urlStr && urlStr.includes('/cart/add')) {
-      cartAddBody = await resolveFetchCartAddBody(args);
-    }
+      let cartAddBody = null;
+      if (urlStr && urlStr.indexOf("/cart/add") !== -1) {
+        try {
+          cartAddBody = await resolveFetchCartAddBody(args);
+        } catch (e) {
+          cartAddBody = null;
+        }
+      }
 
-    try {
-      const response = await originalFetch.apply(this, args);
-      if (urlStr && urlStr.includes('/cart/add') && response && response.ok) {
-        maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(cartAddBody));
+      const response = await originalFetch.apply(fetchThis, args);
+      if (urlStr && urlStr.indexOf("/cart/add") !== -1 && response && response.ok) {
+        try {
+          maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(cartAddBody));
+        } catch (e) {}
       }
       return response;
-    } catch (e) {
-      // Re-throw to not break storefront functionality if fetch naturally fails
-      throw e;
-    }
+    })();
   };
 
-  // --- Bug 3: Add Legacy AJAX (XMLHttpRequest) Fallback ---
   const originalXHR = window.XMLHttpRequest.prototype.open;
   const originalXHRSend = window.XMLHttpRequest.prototype.send;
-  window.XMLHttpRequest.prototype.open = function(method, url) {
-    if (typeof url === 'string' && url.includes('/cart/add')) {
-      this._blogger_isCartAdd = true;
-    }
+  window.XMLHttpRequest.prototype.open = function (method, url) {
+    this._blogger_isCartAdd = typeof url === "string" && url.indexOf("/cart/add") !== -1;
     return originalXHR.apply(this, arguments);
   };
-  window.XMLHttpRequest.prototype.send = function(body) {
+  window.XMLHttpRequest.prototype.send = function (body) {
     if (this._blogger_isCartAdd) {
+      if (this._blogger_cartAddLoadHandler) {
+        this.removeEventListener("load", this._blogger_cartAddLoadHandler);
+      }
       const self = this;
-      this.addEventListener('load', function() {
+      this._blogger_cartAddLoadHandler = function () {
         if (self.status >= 200 && self.status < 300) {
-          maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(body));
+          try {
+            maybeConfirmFromAddToCart(extractVariantIdsFromCartAddBody(body));
+          } catch (e) {}
         }
-      });
+      };
+      this.addEventListener("load", this._blogger_cartAddLoadHandler);
     }
     return originalXHRSend.apply(this, arguments);
   };

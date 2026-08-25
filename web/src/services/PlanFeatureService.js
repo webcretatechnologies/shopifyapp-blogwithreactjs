@@ -44,6 +44,7 @@ const PLAN_DEFAULTS = {
     sync_actions: { enabled: false, limit: null },
     related_posts_manual: { enabled: false, limit: null },
     blog_sidebar: { enabled: false, limit: null },
+    listing_layout: { enabled: false, limit: null },
     translations: { enabled: false, limit: null },
     seo_advanced: { enabled: true, limit: null },
     meta_robots: { enabled: false, limit: null },
@@ -86,7 +87,8 @@ const PLAN_DEFAULTS = {
     post_scheduling: { enabled: false, limit: null },
     sync_actions: { enabled: true, limit: null },
     related_posts_manual: { enabled: true, limit: null },
-    blog_sidebar: { enabled: true, limit: null },
+    blog_sidebar: { enabled: false, limit: null },
+    listing_layout: { enabled: true, limit: null },
     translations: { enabled: false, limit: null },
     seo_advanced: { enabled: true, limit: null },
     meta_robots: { enabled: true, limit: null },
@@ -130,6 +132,7 @@ const PLAN_DEFAULTS = {
     sync_actions: { enabled: true, limit: null },
     related_posts_manual: { enabled: true, limit: null },
     blog_sidebar: { enabled: true, limit: null },
+    listing_layout: { enabled: true, limit: null },
     translations: { enabled: true, limit: null },
     seo_advanced: { enabled: true, limit: null },
     meta_robots: { enabled: true, limit: null },
@@ -173,6 +176,7 @@ const PLAN_DEFAULTS = {
     sync_actions: { enabled: true, limit: null },
     related_posts_manual: { enabled: true, limit: null },
     blog_sidebar: { enabled: true, limit: null },
+    listing_layout: { enabled: true, limit: null },
     translations: { enabled: true, limit: null },
     seo_advanced: { enabled: true, limit: null },
     meta_robots: { enabled: true, limit: null },
@@ -189,6 +193,33 @@ const PLAN_DEFAULTS = {
 };
 
 let cachedFeatures = { ...PLAN_DEFAULTS };
+
+/** Keys whose plan placement was changed in code — upsert so existing DBs match. */
+const PLACEMENT_SYNC_KEYS = ["blog_sidebar", "listing_layout"];
+
+/**
+ * Writes PLAN_DEFAULTS into PlanFeature. Missing rows are created. `overwriteKeys`
+ * are updated even when a row already exists (used when a feature moves between plans).
+ */
+export async function upsertPlanFeaturesFromDefaults({ overwriteKeys = [] } = {}) {
+  for (const [plan, fMap] of Object.entries(PLAN_DEFAULTS)) {
+    for (const [featureKey, opt] of Object.entries(fMap)) {
+      const existing = await prisma.planFeature.findUnique({
+        where: { plan_featureKey: { plan, featureKey } },
+      });
+      if (!existing) {
+        await prisma.planFeature.create({
+          data: { plan, featureKey, enabled: opt.enabled, limit: opt.limit },
+        });
+      } else if (overwriteKeys.includes(featureKey)) {
+        await prisma.planFeature.update({
+          where: { plan_featureKey: { plan, featureKey } },
+          data: { enabled: opt.enabled, limit: opt.limit },
+        });
+      }
+    }
+  }
+}
 
 export async function initPlanFeatures() {
   try {
@@ -209,6 +240,8 @@ export async function initPlanFeatures() {
       await prisma.planFeature.createMany({
         data: dataToCreate,
       });
+    } else {
+      await upsertPlanFeaturesFromDefaults({ overwriteKeys: PLACEMENT_SYNC_KEYS });
     }
 
     // Retrieve live values from database
@@ -332,6 +365,7 @@ const MASTER_BULLETS = [
   { label: "Meta Robots & Rich Snippets", keys: ["meta_robots", "rich_snippets"] },
   { label: "Custom CSS", keys: ["custom_css"] },
   { label: "Related Posts", keys: ["related_posts_manual"] },
+  { label: "Listing Layout", keys: ["listing_layout"] },
   { label: "Blog Sidebar", keys: ["blog_sidebar"] },
   { label: "Remove \"Powered By\" Branding", keys: ["remove_branding"] },
   { label: "Blog Post Scheduling", keys: ["post_scheduling"] },
@@ -451,6 +485,7 @@ const FEATURE_COMPARISON_ROWS = [
   { feature: "Clone Article", cell: (f) => (f.clone_article?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },
   { feature: "FAQ Blocks", cell: (f) => (f.faq?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },
   { feature: "Related Blogs", cell: (f) => (f.related_posts_manual?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },
+  { feature: "Listing Layout", cell: (f) => (f.listing_layout?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },
   { feature: "Blog Sidebar", cell: (f) => (f.blog_sidebar?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },
   { feature: "Author Attribution", cell: () => ({ icon: "yes", text: "" }) }, // free-text field, unrestricted at every tier
   { feature: "Table of Contents", cell: (f) => (f.toc?.enabled ? { icon: "yes", text: "" } : { icon: "no", text: "" }) },

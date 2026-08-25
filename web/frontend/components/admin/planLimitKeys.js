@@ -57,9 +57,11 @@ export const TIER_BULLETS = {
     { label: "Custom CSS", keys: ["custom_css"] },
     { label: "Analytics Dashboard", keys: ["analytics_dashboard"] },
     { label: "Related Posts", keys: ["related_posts_manual"] },
+    { label: "Listing Layout", keys: ["listing_layout"] },
     { label: "Remove \"Powered By\" Branding", keys: ["remove_branding"] },
   ],
   pro: [
+    { label: "Blog Sidebar", keys: ["blog_sidebar"] },
     { label: "Blog Post Scheduling", keys: ["post_scheduling"] },
     { label: "Multi Language Translation", keys: ["translations"] },
     { label: "Hide Sections Based on Device", keys: ["device_visibility"] },

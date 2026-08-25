@@ -89,6 +89,11 @@ function listingImageFitCss(list, bang) {
  */
 function generateBlogListingCss(settings = {}, bang = " !important") {
   const layout = String(settings.blogListingLayout || "featured_2").toLowerCase();
+  // Free (and any shop without the listing_layout feature) must not override the
+  // theme's own blog index. "theme" is written on downgrade / gated CSS serve.
+  if (!layout || layout === "theme" || layout === "default") {
+    return "";
+  }
 
   // :is() so `${list} .card` does not leak `display`/`grid-template-columns` onto
   // the list container itself (comma lists only append the suffix to the last item).

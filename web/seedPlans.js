@@ -1,4 +1,8 @@
 import { PrismaClient } from "@prisma/client";
+import {
+  upsertPlanFeaturesFromDefaults,
+  refreshPlanFeaturesCache,
+} from "./src/services/PlanFeatureService.js";
 
 const prisma = new PrismaClient();
 
@@ -42,7 +46,12 @@ async function main() {
     });
   }
 
-  console.log("Seeding completed.");
+  await upsertPlanFeaturesFromDefaults({
+    overwriteKeys: ["blog_sidebar", "listing_layout"],
+  });
+  await refreshPlanFeaturesCache();
+
+  console.log("Seeding completed (plans + plan features).");
 }
 
 main()

@@ -2127,11 +2127,27 @@ export default function Settings() {
                 </Layout.Section>
 
                 <Layout.Section>
-                  <SectionCard title="Blog listing page">
+                  <SectionCard
+                    title="Blog listing page"
+                    trailing={
+                      features.listing_layout?.enabled ? null : <Badge>Starter+</Badge>
+                    }
+                  >
                     <Text as="p" variant="bodySm" tone="subdued">
                       Controls the News / blog index (the page that lists all posts), not the
                       individual article. Save settings, then refresh the listing on your store.
+                      {!features.listing_layout?.enabled
+                        ? " On Free, the storefront uses your theme's default blog layout."
+                        : ""}
                     </Text>
+                    {!features.listing_layout?.enabled && (
+                      <UpgradePrompt
+                        requiredPlan="Starter"
+                        title="Listing layout is a Starter feature"
+                        description="Grid, list, magazine, and featured mosaic layouts for the blog index are available on Starter and above."
+                        onUpgrade={handleUpgradeNow}
+                      />
+                    )}
                     <Text as="p" variant="bodySm" fontWeight="medium">
                       Layout
                     </Text>
@@ -2145,15 +2161,18 @@ export default function Settings() {
                       {BLOG_LISTING_LAYOUTS.map((opt) => {
                         const isOn = (settings.blogListingLayout || "featured_2") === opt.value;
                         const primary = settings.primaryColor || "#008060";
+                        const canPick = !!features.listing_layout?.enabled;
                         return (
                           <button
                             key={opt.value}
                             type="button"
-                            onClick={() => set("blogListingLayout")(opt.value)}
+                            disabled={!canPick}
+                            onClick={() => canPick && set("blogListingLayout")(opt.value)}
                             style={{
                               margin: 0,
                               padding: 10,
-                              cursor: "pointer",
+                              cursor: canPick ? "pointer" : "not-allowed",
+                              opacity: canPick ? 1 : 0.55,
                               textAlign: "left",
                               background: isOn ? "#f1f8f5" : "#fff",
                               border: `2px solid ${isOn ? primary : "#e1e3e5"}`,
@@ -2182,13 +2201,14 @@ export default function Settings() {
                   <SectionCard
                     title="Blog sidebar"
                     trailing={
-                      features.blog_sidebar?.enabled ? null : <Badge>Starter+</Badge>
+                      features.blog_sidebar?.enabled ? null : <Badge>Pro+</Badge>
                     }
                   >
                     {!features.blog_sidebar?.enabled && (
                       <UpgradePrompt
-                        feature="Blog sidebar"
-                        message="A two-column article layout with related posts, categories, products, and promo widgets is available on Starter and above."
+                        requiredPlan="Pro"
+                        title="Blog sidebar is a Pro feature"
+                        description="A two-column article layout with related posts, categories, products, and promo widgets is available on Pro and above."
                         onUpgrade={handleUpgradeNow}
                       />
                     )}

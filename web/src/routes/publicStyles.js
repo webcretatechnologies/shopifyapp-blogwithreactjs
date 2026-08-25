@@ -61,6 +61,8 @@ router.get("/", async (req, res) => {
       }, {});
     }
 
+    const { listingLayoutForPlan } = await import("../services/ListingLayoutMetafield.js");
+    settings.blogListingLayout = listingLayoutForPlan(shop?.planKey, settings.blogListingLayout);
     const css = EditorContentCompiler.generateLayoutCss(settings, { important: true });
     cssCache.set(shopDomain, { css, expiresAt: Date.now() + CACHE_TTL_MS });
     res.send(css);
