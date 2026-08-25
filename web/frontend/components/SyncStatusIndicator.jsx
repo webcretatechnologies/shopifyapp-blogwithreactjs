@@ -72,14 +72,19 @@ export default function SyncStatusIndicator({ postId, initialArticle, postTitle 
     }
   }, [postId]);
 
+  const pollRef = useRef(poll);
+  pollRef.current = poll;
+
   useEffect(() => {
     if (!postId) return;
-    poll();
-    intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    pollRef.current();
+    intervalRef.current = setInterval(() => {
+      pollRef.current();
+    }, POLL_INTERVAL_MS);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [postId, poll]);
+  }, [postId]);
 
   useEffect(() => {
     if (initialArticle) setArticle(initialArticle);

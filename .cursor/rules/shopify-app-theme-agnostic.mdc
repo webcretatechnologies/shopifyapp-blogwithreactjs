@@ -1,0 +1,20 @@
+---
+description: This Shopify app must work on any merchant theme, not one store or Dawn-only.
+alwaysApply: true
+---
+
+# Theme-agnostic Shopify app (App Store)
+
+This app is built for **Shopify App Store distribution**. It will be installed on many stores, each with a different theme (Dawn, Spotlight, Horizon, Debut, custom OS 2.0, vintage, etc.).
+
+The current test shop is only a sandbox. Never design features, CSS, Liquid, or selectors as if they only need to work on that store or one theme.
+
+## Rules
+
+- Storefront CSS must target **common blog/article patterns**, not a single theme’s class names. Include Dawn-style (`.blog-articles`, `.article-card`) **and** fallbacks (`.blog__posts`, `.blog-list`, `.article`, `#MainContent` blog lists). Prefer `:is(...)` so comma lists do not leak properties onto the wrong node.
+- Listing CSS may change **layout only** (grid columns, featured spans, list = image left / text right). Do **not** restyle merchant theme chrome: colors, fonts, card backgrounds, borders, radius, or heading sizes.
+- Do not invent gray/white card skins. Leave the theme’s card look intact.
+- Posts **without** a featured image must still show title/date/excerpt — never an empty colored block. Do not hide `.card__inner` on those posts.
+- Images: fill the theme’s existing media box (`object-fit: cover`, centered). Do not add letterbox backgrounds. Only reset collage “featured” padding that creates empty holes (`padding-bottom: 22rem/44rem` → `var(--ratio-percent)`).
+- Prefer App Proxy, theme app extensions, and metafields over editing theme files. No “paste this into theme.liquid” as the real product path.
+- When a Dawn-specific workaround is required, also handle the case where those nodes are missing so other themes are not broken.

@@ -182,4 +182,34 @@ router.post("/event", express.json(), verifyProxySignature, async (req, res) => 
   }
 });
 
+// GET /api/proxy/listing.css — live listing + layout CSS on the storefront blog INDEX.
+// Shopify rewrites /apps/blog-analytics/listing.css here (with signature). Article pages already
+// link /styles.css from compiled HTML; the listing page does not, so this is required for
+// "Blog listing page" settings to apply.
+router.get("/listing.css", verifyProxySignature, async (req, res) => {
+    res.setHeader("Content-Type", "text/css; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { domain: req.shopDomain },
+      include: { settings: true },
+    });
+    let settings = {};
+    if (shop?.settings) {
+      settings = shop.settings.reduce((acc, setting) => {
+        let val = setting.value;
+        if (val === "true") val = true;
+        else if (val === "false") val = false;
+        acc[setting.key] = val;
+        return acc;
+      }, {});
+    }
+    const { EditorContentCompiler } = await import("../services/EditorContentCompiler.js");
+    res.send(EditorContentCompiler.generateLayoutCss(settings, { important: true }));
+  } catch (err) {
+    console.error("[Proxy] listing.css error:", err);
+    res.status(500).send("/* listing styles error */");
+  }
+});
+
 export default router;

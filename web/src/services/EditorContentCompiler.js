@@ -34,6 +34,251 @@ function resolveBlogLayoutWidth(settings = {}) {
   }
 }
 
+/**
+ * Dawn renamed the blog index in recent versions:
+ *   grid:  .blog-articles → .blog-articles
+ *   card:  .card--media → .card--media
+ *   empty: .card--standard → .card--text
+ * Target both so Settings layouts actually hit the live listing.
+ */
+function listingGridSelector() {
+  return ":is(.blog-articles, .blog-articles, .blog-articles.blog-articles--collage, .blog-articles.blog-articles--collage, .blog__posts, .blog-list, .blog-post-list, .main-blog .blog-articles, .main-blog .blog-articles, ul.blog-articles, ul.blog-articles, #MainContent .blog-articles, #MainContent .blog-articles)";
+}
+
+function listingCollageSelector() {
+  return ":is(.blog-articles--collage, .blog-articles--collage)";
+}
+
+/**
+ * Layout-only helpers. Do not restyle theme cards. Collage themes pad the
+ * first cell with 22rem/44rem — that creates empty holes; restore the
+ * card's own --ratio-percent. Images fill the existing media box (cover).
+ */
+function listingMediaCss(list, collage, first, bang, layout) {
+  return `
+  ${list} { align-items: start${bang}; }
+  ${collage} > *:nth-child(3n + 1) .ratio::before,
+  ${collage} > *:nth-child(3n + 2):last-child .ratio::before,
+  ${list} .article-card__image--small .ratio::before,
+  ${list} .article-card__image--medium .ratio::before,
+  ${list} .article-card__image--large .ratio::before {
+    padding-bottom: var(--ratio-percent, 66.67%)${bang};
+  }
+  ${first} .ratio::before {
+    padding-bottom: var(--ratio-percent, 66.67%)${bang};
+  }`;
+}
+
+function listingImageFitCss(list, bang) {
+  return `
+  ${list} .media > img,
+  ${list} .card__media img,
+  ${list} .article-card__image img,
+  ${list} .article-card .media img,
+  ${list} .card.article-card .media img {
+    object-fit: cover${bang};
+    object-position: center center${bang};
+    width: 100%${bang};
+    height: 100%${bang};
+  }`;
+}
+
+/**
+ * Storefront CSS for the Shopify blog INDEX (listing) page — Dawn and similar themes.
+ * Served live from /styles.css so Settings apply without a resync.
+ */
+function generateBlogListingCss(settings = {}, bang = " !important") {
+  const layout = String(settings.blogListingLayout || "featured_2").toLowerCase();
+
+  // :is() so `${list} .card` does not leak `display`/`grid-template-columns` onto
+  // the list container itself (comma lists only append the suffix to the last item).
+  const list = listingGridSelector();
+  const collage = listingCollageSelector();
+  const first = `${list} > *:first-child`;
+  const resetSpan = `${list} > *, ${collage} > *, ${collage} > *:nth-child(3n + 1), ${collage} > *:nth-child(3n + 2):last-child { grid-column: auto${bang}; grid-row: auto${bang}; width: 100%; max-width: 100%; text-align: left${bang}; }`;
+
+  let layoutRules = "";
+  if (layout === "grid_2") {
+    layoutRules = `
+  ${list} {
+    display: grid${bang};
+    grid-template-columns: repeat(2, minmax(0, 1fr))${bang};
+    gap: 1.5rem${bang};
+  }
+  ${first},
+  ${collage} > *:first-child {
+    grid-column: auto${bang};
+  }
+  @media (max-width: 749px) {
+    ${list} { grid-template-columns: 1fr${bang}; }
+  }`;
+  } else if (layout === "grid_3") {
+    layoutRules = `
+  ${list} {
+    display: grid${bang};
+    grid-template-columns: repeat(3, minmax(0, 1fr))${bang};
+    gap: 1.5rem${bang};
+  }
+  ${first},
+  ${collage} > *:first-child {
+    grid-column: auto${bang};
+  }
+  @media (max-width: 989px) {
+    ${list} { grid-template-columns: repeat(2, minmax(0, 1fr))${bang}; }
+  }
+  @media (max-width: 749px) {
+    ${list} { grid-template-columns: 1fr${bang}; }
+  }`;
+  } else if (layout === "featured_left") {
+    layoutRules = `
+  ${list} {
+    display: grid${bang};
+    grid-template-columns: 1.15fr minmax(0, 1fr)${bang};
+    grid-auto-flow: dense${bang};
+    gap: 1.5rem${bang};
+    align-items: start${bang};
+  }
+  ${first},
+  ${collage} > *:first-child {
+    grid-column: 1${bang};
+    grid-row: 1 / span 2${bang};
+  }
+  @media (max-width: 749px) {
+    ${list} { grid-template-columns: 1fr${bang}; }
+    ${first} { grid-column: auto${bang}; grid-row: auto${bang}; }
+  }`;
+  } else if (layout === "featured_right") {
+    layoutRules = `
+  ${list} {
+    display: grid${bang};
+    grid-template-columns: minmax(0, 1fr) 1.15fr${bang};
+    grid-auto-flow: dense${bang};
+    gap: 1.5rem${bang};
+    align-items: start${bang};
+  }
+  ${first},
+  ${collage} > *:first-child {
+    grid-column: 2${bang};
+    grid-row: 1 / span 2${bang};
+  }
+  @media (max-width: 749px) {
+    ${list} { grid-template-columns: 1fr${bang}; }
+    ${first} { grid-column: auto${bang}; grid-row: auto${bang}; }
+  }`;
+  } else if (layout === "magazine") {
+    layoutRules = `
+  ${list} {
+    display: grid${bang};
+    grid-template-columns: repeat(3, minmax(0, 1fr))${bang};
+    gap: 1.5rem${bang};
+  }
+  ${first},
+  ${collage} > *:first-child {
+    grid-column: 1 / span 2${bang};
+  }
+  @media (max-width: 989px) {
+    ${list} { grid-template-columns: repeat(2, minmax(0, 1fr))${bang}; }
+    ${first} { grid-column: 1 / -1${bang}; }
+  }
+  @media (max-width: 749px) {
+    ${list} { grid-template-columns: 1fr${bang}; }
+    ${first} { grid-column: auto${bang}; }
+  }`;
+  } else if (layout === "list") {
+    // One column of posts. Only rearrange cards that have a photo: image
+    // left, theme text on the right. No new colors, borders, or fonts.
+    layoutRules = `
+  ${list} {
+    display: grid${bang};
+    grid-template-columns: minmax(0, 1fr)${bang};
+    grid-auto-flow: row${bang};
+    gap: 1.5rem${bang};
+    column-count: 1${bang};
+  }
+  ${list} > *,
+  ${first},
+  ${collage} > *,
+  ${collage} > *:first-child,
+  ${collage} > *:nth-child(3n + 1),
+  ${collage} > *:nth-child(3n + 2):last-child {
+    grid-column: 1 / -1${bang};
+    width: 100%${bang};
+    max-width: 100%${bang};
+  }
+  ${list} .article-card-wrapper,
+  ${list} .card-wrapper {
+    display: block${bang};
+    width: 100%${bang};
+  }
+  ${list} .card.article-card:has(.media img),
+  ${list} .card.article-card:has(.card__media img),
+  ${list} .article-card:has(.media img) {
+    display: flex${bang};
+    flex-direction: row${bang};
+    align-items: stretch${bang};
+  }
+  ${list} .card.article-card:has(.media img) > .card__inner,
+  ${list} .card.article-card:has(.card__media img) > .card__inner,
+  ${list} .article-card:has(.media img) > .card__inner {
+    flex: 0 0 32%${bang};
+    max-width: 280px${bang};
+    width: 32%${bang};
+  }
+  ${list} .card.article-card:has(.media img) > .card__content,
+  ${list} .card.article-card:has(.card__media img) > .card__content,
+  ${list} .article-card:has(.media img) > .card__content {
+    flex: 1 1 auto${bang};
+    min-width: 0${bang};
+  }
+  ${list} .card.article-card:has(.media img) > .card__inner > .card__content,
+  ${list} .card.article-card:has(.card__media img) > .card__inner > .card__content {
+    display: none${bang};
+  }
+  @media (max-width: 749px) {
+    ${list} .card.article-card:has(.media img),
+    ${list} .article-card:has(.media img) {
+      flex-direction: column${bang};
+    }
+    ${list} .card.article-card:has(.media img) > .card__inner,
+    ${list} .article-card:has(.media img) > .card__inner {
+      flex: 0 0 auto${bang};
+      width: 100%${bang};
+      max-width: none${bang};
+    }
+  }`;
+  } else {
+    layoutRules = `
+  ${list} {
+    display: grid${bang};
+    grid-template-columns: repeat(2, minmax(0, 1fr))${bang};
+    gap: 1.5rem${bang};
+  }
+  @media (min-width: 750px) {
+    ${first},
+    ${collage} > *:first-child {
+      grid-column: 1 / -1${bang};
+    }
+  }
+  @media (max-width: 749px) {
+    ${list} { grid-template-columns: 1fr${bang}; }
+    ${first} { grid-column: auto${bang}; }
+  }`;
+  }
+
+  return `
+  /* Blog listing page (News / blog index) */
+  ${resetSpan}
+${layoutRules}
+${listingMediaCss(list, collage, first, bang, layout)}
+${listingImageFitCss(list, bang)}
+  ${list} .article-card__excerpt .blogger-byline,
+  ${list} .article-card__excerpt .blogger-author,
+  ${list} .article-card__excerpt .blogger-published-date,
+  ${list} .article-card__excerpt .blogger-reading-time {
+    display: none${bang};
+  }`;
+}
+
 /** A `data-settings` attribute value can itself contain further nested "settings" keys from
  * historical corruption (each sync/echo/reconcile round trip used to add another wrapper layer
  * before this was fixed — see the docblock at the compile() call site). Recursively unwrap
@@ -2630,7 +2875,9 @@ ${this.generateGlobalCss(settings)}
     .blogger-article-container [style*="flex-direction: row"] {
       flex-wrap: wrap${bang};
     }
-  }`;
+  }
+
+${generateBlogListingCss(settings, bang)}`;
   }
 
   static renderFaqBlock(attrs) {
@@ -2888,7 +3135,7 @@ ${this.generateGlobalCss(settings)}
     // separator sibling wouldn't know to hide itself when its neighbor does. Spacing comes from
     // the container's flex `gap` instead, so there's never an orphaned dot.
     const bylineHtml = bylineParts.length
-      ? `<div class="blogger-byline">${bylineParts.join("")}</div>\n`
+      ? `<div class="blogger-byline">${bylineParts.join(" ")}</div>\n`
       : "";
 
     const articleInner = `<div class="blogger-article-container">\n${bylineHtml}${compiled}\n${relatedPostsHtml}\n</div>`;

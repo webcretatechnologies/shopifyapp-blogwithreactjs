@@ -127,6 +127,37 @@ function articleFromGraphQL(article) {
   };
 }
 
+// Dawn's blog index uses article.excerpt, then falls back to truncating body_html.
+// We prepend a byline to body_html for the article page, so an empty summary becomes
+// "By NameAugust 20, 20269 min read…" on the listing. Always send a summary that
+// excludes that chrome.
+function stripHtmlToText(html) {
+  return String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildListingSummary(storefrontHtml, merchantExcerpt) {
+  const custom = stripHtmlToText(merchantExcerpt).replace(/^Table of Contents\s+/i, "");
+  if (custom) return custom.slice(0, 320);
+  const withoutChrome = String(storefrontHtml || "")
+    .replace(/<div class="blogger-byline"[\s\S]*?<\/div>/gi, " ")
+    .replace(/<div class="blogger-custom-header"[\s\S]*?<\/div>/gi, " ")
+    .replace(/<div class="blogger-custom-footer"[\s\S]*?<\/div>/gi, " ")
+    .replace(/<nav[^>]*class="[^"]*blog-toc[^"]*"[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<div[^>]*class="[^"]*sp-toc[^"]*"[\s\S]*?<\/div>/gi, " ")
+    .replace(/<link[^>]*>/gi, " ");
+  let text = stripHtmlToText(withoutChrome).replace(/^Table of Contents\s+/i, "");
+  if (!text) return "";
+  if (text.length <= 220) return text;
+  return `${text.slice(0, 220).replace(/\s+\S*$/, "")}…`;
+}
+
 function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image, summary, meta_title, meta_description, meta_robots, publishAt }) {
   const input = {
     title,
@@ -1015,7 +1046,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     tags: tagNames,
     handle: post.slug,
     image: featuredImageChanged && post.featuredImage ? { src: post.featuredImage, altText: post.featuredImageAlt || null } : null,
-    summary: post.excerpt,
+    summary: buildListingSummary(storefrontHtml, post.excerpt),
     meta_title: post.metaTitle,
     meta_description: post.metaDescription,
     meta_robots: metaRobotsDirective,

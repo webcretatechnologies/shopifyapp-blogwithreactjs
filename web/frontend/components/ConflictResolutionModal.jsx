@@ -150,21 +150,20 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
     try {
       // Fetch the full diff
       const diffRes = await fetch(`/api/posts/${postId}/conflict-diff`);
+      const diffData = await diffRes.json().catch(() => ({}));
       if (!diffRes.ok) {
-        const data = await diffRes.json();
-        throw new Error(data.error || "Failed to fetch diff");
+        throw new Error(diffData.error || "Failed to fetch diff");
       }
-      const diffData = await diffRes.json();
       setDiff(diffData.diff);
 
       // Try to fetch the conflict payload (stored in DB via sync-status)
       const statusRes = await fetch(`/api/posts/${postId}/sync-status`);
       if (statusRes.ok) {
-        const statusData = await statusRes.json();
+        const statusData = await statusRes.json().catch(() => ({}));
         // We need the post to get conflictPayload — load post
         const postRes = await fetch(`/api/posts/${postId}`);
         if (postRes.ok) {
-          const postData = await postRes.json();
+          const postData = await postRes.json().catch(() => ({}));
           const cp = postData.post?.shopifyArticle?.conflictPayload;
           if (cp?.fields) {
             setConflictPayload(cp);
@@ -182,7 +181,9 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
 
       // Fallback: build conflict fields from diff
       const changedFields = {};
-      for (const [field, data] of Object.entries(diffData.diff)) {
+      const diffFields =
+        diffData.diff && typeof diffData.diff === "object" ? diffData.diff : {};
+      for (const [field, data] of Object.entries(diffFields)) {
         if (data.changed && field !== "updatedAt") {
           changedFields[field] = {
             base: null,
@@ -242,7 +243,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resolutions: allSame }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Resolution failed");
       onResolved?.({
         resolution: choice,
@@ -265,7 +266,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resolutions }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Resolution failed");
       onResolved?.({
         resolution: "selected",

@@ -30,7 +30,7 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
       if (search) q.append("query", search);
 
       const res = await fetch(`/api/posts/shopify/files?${q.toString()}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load files");
 
       return data;
@@ -94,7 +94,7 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
 
     try {
       const res = await fetch("/api/posts/upload", { method: "POST", body: form });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Upload failed");
       
       // Immediately select the newly uploaded file and close the modal.

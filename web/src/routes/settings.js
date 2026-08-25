@@ -146,6 +146,7 @@ router.post("/", async (req, res) => {
       "blogSidebarHideOnMobile",
       "blogSidebarSticky",
       "blogSidebarWidgets",
+      "blogListingLayout",
       "defaultAuthor",
       "customHeaderCode",
       "customFooterCode",
@@ -155,6 +156,15 @@ router.post("/", async (req, res) => {
     const RELATED_LAYOUTS = new Set(["grid", "list", "slider"]);
     const RELATED_MODES = new Set(["smart", "category", "random", "manual"]);
     const SIDEBAR_POSITIONS = new Set(["right", "left"]);
+    const LISTING_LAYOUTS = new Set([
+      "featured_2",
+      "featured_left",
+      "featured_right",
+      "magazine",
+      "grid_2",
+      "grid_3",
+      "list",
+    ]);
 
     const customCodeAllowed = isFeatureEnabled(shop.planKey, "custom_code_injection");
     // remove_branding (Starter+) is what lets a shop remove the "Powered by" badge at all — a
@@ -215,6 +225,14 @@ router.post("/", async (req, res) => {
       req.body.blogSidebarWidth = String(w);
     }
 
+    if (req.body.blogListingLayout !== undefined) {
+      const layout = String(req.body.blogListingLayout).toLowerCase();
+      if (!LISTING_LAYOUTS.has(layout)) {
+        return res.status(422).json({ error: "Blog listing layout must be featured_2, featured_left, featured_right, magazine, grid_2, grid_3, or list." });
+      }
+      req.body.blogListingLayout = layout;
+    }
+
     const sidebarAllowed = isFeatureEnabled(shop.planKey, "blog_sidebar");
 
     // Upsert all modified setting parameters
@@ -251,6 +269,42 @@ router.post("/", async (req, res) => {
           },
         });
       }
+    }
+
+    // Mirror listing layout onto a shop metafield so the head embed can paint
+    // the correct grid on first HTML (avoids a flash of Dawn's default collage).
+    try {
+      const layoutRow = await prisma.shopSetting.findUnique({
+        where: { shopId_key: { shopId: shop.id, key: "blogListingLayout" } },
+      });
+      const listingLayout = String(layoutRow?.value || "featured_2").toLowerCase();
+      const client = new shopify.api.clients.Graphql({ session });
+      const shopData = await client.request(`query { shop { id } }`);
+      const shopGid = shopData.data?.shop?.id;
+      if (shopGid) {
+        await client.request(
+          `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+            metafieldsSet(metafields: $metafields) {
+              userErrors { field message }
+            }
+          }`,
+          {
+            variables: {
+              metafields: [
+                {
+                  ownerId: shopGid,
+                  namespace: "blog_app",
+                  key: "listing_layout",
+                  type: "single_line_text_field",
+                  value: LISTING_LAYOUTS.has(listingLayout) ? listingLayout : "featured_2",
+                },
+              ],
+            },
+          }
+        );
+      }
+    } catch (metaErr) {
+      console.warn("[Settings] listing_layout metafield sync skipped:", metaErr.message);
     }
 
     // Branding/layout/toggle settings and custom header/footer code are applied

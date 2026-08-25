@@ -91,6 +91,76 @@ const SIDEBAR_WIDTH_OPTIONS = [
   { label: "360 px", value: "360" },
 ];
 
+const BLOG_LISTING_LAYOUTS = [
+  { value: "featured_2", label: "Featured + 2 columns", hint: "First post full width, rest in two columns" },
+  { value: "featured_left", label: "Featured left", hint: "Large post on the left, two stacked on the right" },
+  { value: "featured_right", label: "Featured right", hint: "Two stacked on the left, large post on the right" },
+  { value: "magazine", label: "Magazine", hint: "Wide featured post, then a 3-column grid" },
+  { value: "grid_2", label: "2-column grid", hint: "Every post the same size" },
+  { value: "grid_3", label: "3-column grid", hint: "Compact cards in three columns" },
+  { value: "list", label: "List", hint: "Stacked rows, image on the left" },
+];
+
+function ListingLayoutMock({ layout }) {
+  const box = (span = 1, tall = false) => (
+    <div
+      style={{
+        gridColumn: span === 2 ? "span 2" : "auto",
+        height: tall ? 28 : 18,
+        borderRadius: 4,
+        background: "#d2d5d8",
+      }}
+    />
+  );
+  const wrap = (cols, children) => (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gap: 4,
+      }}
+    >
+      {children}
+    </div>
+  );
+  if (layout === "list") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} style={{ display: "flex", gap: 4 }}>
+            <div style={{ width: 22, height: 16, borderRadius: 3, background: "#d2d5d8", flexShrink: 0 }} />
+            <div style={{ flex: 1, height: 16, borderRadius: 3, background: "#e1e3e5" }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (layout === "featured_left") {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gridTemplateRows: "1fr 1fr", gap: 4, height: 40 }}>
+        <div style={{ gridRow: "span 2", borderRadius: 3, background: "#d2d5d8" }} />
+        {box()}
+        {box()}
+      </div>
+    );
+  }
+  if (layout === "featured_right") {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gridTemplateRows: "1fr 1fr", gap: 4, height: 40 }}>
+        {box()}
+        <div style={{ gridColumn: 2, gridRow: "1 / span 2", borderRadius: 3, background: "#d2d5d8" }} />
+        {box()}
+      </div>
+    );
+  }
+  if (layout === "magazine") {
+    return wrap(3, [box(2), box(), box(), box(), box()]);
+  }
+  if (layout === "grid_3") return wrap(3, [box(), box(), box(), box(), box(), box()]);
+  if (layout === "grid_2") return wrap(2, [box(), box(), box(), box()]);
+  return wrap(2, [box(2, true), box(), box()]);
+}
+
 const DEFAULT_SIDEBAR_WIDGETS = [
   { id: "related_1", type: "related_posts", enabled: true, settings: { title: "Related posts", count: 4, sourceMode: "smart" } },
   {
@@ -1300,6 +1370,7 @@ const DEFAULT_SETTINGS = {
   blogSidebarWidth: "320",
   blogSidebarHideOnMobile: false,
   blogSidebarSticky: true,
+  blogListingLayout: "featured_2",
   blogSidebarWidgets: JSON.stringify(DEFAULT_SIDEBAR_WIDGETS),
   defaultAuthor: "",
   customHeaderCode: "",
@@ -2052,6 +2123,58 @@ export default function Settings() {
                         </BlockStack>
                       </Box>
                     ) : null}
+                  </SectionCard>
+                </Layout.Section>
+
+                <Layout.Section>
+                  <SectionCard title="Blog listing page">
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      Controls the News / blog index (the page that lists all posts), not the
+                      individual article. Save settings, then refresh the listing on your store.
+                    </Text>
+                    <Text as="p" variant="bodySm" fontWeight="medium">
+                      Layout
+                    </Text>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                        gap: 10,
+                      }}
+                    >
+                      {BLOG_LISTING_LAYOUTS.map((opt) => {
+                        const isOn = (settings.blogListingLayout || "featured_2") === opt.value;
+                        const primary = settings.primaryColor || "#008060";
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => set("blogListingLayout")(opt.value)}
+                            style={{
+                              margin: 0,
+                              padding: 10,
+                              cursor: "pointer",
+                              textAlign: "left",
+                              background: isOn ? "#f1f8f5" : "#fff",
+                              border: `2px solid ${isOn ? primary : "#e1e3e5"}`,
+                              borderRadius: 10,
+                              boxShadow: isOn ? `0 0 0 1px ${primary}` : "none",
+                            }}
+                          >
+                            <ListingLayoutMock layout={opt.value} />
+                            <div style={{ marginTop: 8 }}>
+                              <Text as="span" variant="bodySm" fontWeight="semibold">
+                                {opt.label}
+                              </Text>
+                              <br />
+                              <Text as="span" variant="bodySm" tone="subdued">
+                                {opt.hint}
+                              </Text>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </SectionCard>
                 </Layout.Section>
 

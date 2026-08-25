@@ -1,22 +1,187 @@
 {% schema %}
 {
   "name": "Blog Analytics Tracker",
-  "target": "body",
+  "target": "head",
   "javascript": "tracker.js",
   "settings": []
 }
 {% endschema %}
 
+{% comment %}
+  Injected in <head> so listing CSS is render-blocking. A body <link> painted Dawn's
+  collage first, then jumped to the app layout after /apps/blog-analytics/listing.css loaded.
+{% endcomment %}
+{% if template.name == 'blog' %}
+  {% assign listing_layout = shop.metafields.blog_app.listing_layout.value | default: shop.metafields.blog_app.listing_layout %}
+  <style id="blogger-listing-critical">
+    .blog-articles,
+    .blog-articles,
+    .blog-articles.blog-articles--collage,
+    .blog-articles.blog-articles--collage,
+    .blog__posts,
+    ul.blog-articles,
+    ul.blog-articles {
+      display: grid !important;
+      gap: 1.5rem !important;
+      grid-auto-flow: row !important;
+    }
+    .blog-articles--collage > *,
+    .blog-articles--collage > *,
+    .blog-articles--collage > *:nth-child(3n + 1),
+    .blog-articles--collage > *:nth-child(3n + 1),
+    .blog-articles--collage > *:nth-child(3n + 2):last-child,
+    .blog-articles--collage > *:nth-child(3n + 2):last-child {
+      grid-column: auto !important;
+    }
+    .blog-articles--collage > *:nth-child(3n + 1) .ratio::before,
+    .blog-articles--collage > *:nth-child(3n + 2):last-child .ratio::before {
+      padding-bottom: var(--ratio-percent, 66.67%) !important;
+    }
+    .blog-articles .media > img,
+    .blog-articles .card__media img {
+      object-fit: cover !important;
+      object-position: center center !important;
+    }
+    {% if listing_layout == 'featured_left' %}
+    .blog-articles, .blog-articles {
+      grid-template-columns: 1.15fr minmax(0, 1fr) !important;
+      grid-auto-flow: dense !important;
+    }
+    .blog-articles > *:first-child,
+    .blog-articles > *:first-child,
+    .blog-articles--collage > *:first-child,
+    .blog-articles--collage > *:first-child {
+      grid-column: 1 !important;
+      grid-row: 1 / span 2 !important;
+    }
+    @media (max-width: 749px) {
+      .blog-articles, .blog-articles { grid-template-columns: 1fr !important; }
+      .blog-articles > *:first-child, .blog-articles > *:first-child { grid-column: auto !important; grid-row: auto !important; }
+    }
+    {% elsif listing_layout == 'featured_right' %}
+    .blog-articles, .blog-articles {
+      grid-template-columns: minmax(0, 1fr) 1.15fr !important;
+      grid-auto-flow: dense !important;
+    }
+    .blog-articles > *:first-child,
+    .blog-articles > *:first-child,
+    .blog-articles--collage > *:first-child,
+    .blog-articles--collage > *:first-child {
+      grid-column: 2 !important;
+      grid-row: 1 / span 2 !important;
+    }
+    @media (max-width: 749px) {
+      .blog-articles, .blog-articles { grid-template-columns: 1fr !important; }
+      .blog-articles > *:first-child, .blog-articles > *:first-child { grid-column: auto !important; grid-row: auto !important; }
+    }
+    {% elsif listing_layout == 'magazine' %}
+    .blog-articles, .blog-articles { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+    .blog-articles > *:first-child,
+    .blog-articles > *:first-child,
+    .blog-articles--collage > *:first-child,
+    .blog-articles--collage > *:first-child { grid-column: 1 / span 2 !important; }
+    @media (max-width: 989px) {
+      .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+      .blog-articles > *:first-child, .blog-articles > *:first-child { grid-column: 1 / -1 !important; }
+    }
+    @media (max-width: 749px) {
+      .blog-articles, .blog-articles { grid-template-columns: 1fr !important; }
+      .blog-articles > *:first-child, .blog-articles > *:first-child { grid-column: auto !important; }
+    }
+    {% elsif listing_layout == 'list' %}
+    .blog-articles, .blog-articles { grid-template-columns: minmax(0, 1fr) !important; }
+    .blog-articles .card.article-card:has(.media img),
+    .blog-articles .article-card:has(.media img) {
+      display: flex !important;
+      flex-direction: row !important;
+      align-items: stretch !important;
+    }
+    .blog-articles .card.article-card:has(.media img) > .card__inner {
+      flex: 0 0 32% !important;
+      max-width: 280px !important;
+      width: 32% !important;
+    }
+    .blog-articles .card.article-card:has(.media img) > .card__content {
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+    }
+    .blog-articles .card.article-card:has(.media img) > .card__inner > .card__content {
+      display: none !important;
+    }
+    @media (max-width: 749px) {
+      .blog-articles .card.article-card:has(.media img) { flex-direction: column !important; }
+      .blog-articles .card.article-card:has(.media img) > .card__inner {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        max-width: none !important;
+      }
+    }
+    {% elsif listing_layout == 'grid_3' %}
+    .blog-articles, .blog-articles { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+    @media (max-width: 989px) {
+      .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    }
+    @media (max-width: 749px) {
+      .blog-articles, .blog-articles { grid-template-columns: minmax(0, 1fr) !important; }
+    }
+    {% elsif listing_layout == 'grid_2' %}
+    .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    @media (max-width: 749px) {
+      .blog-articles, .blog-articles { grid-template-columns: minmax(0, 1fr) !important; }
+    }
+    {% elsif listing_layout == 'featured_2' %}
+    .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    @media (min-width: 750px) {
+      .blog-articles > *:first-child,
+      .blog-articles > *:first-child,
+      .blog-articles--collage > *:first-child,
+      .blog-articles--collage > *:first-child { grid-column: 1 / -1 !important; }
+    }
+    @media (max-width: 749px) {
+      .blog-articles, .blog-articles { grid-template-columns: minmax(0, 1fr) !important; }
+    }
+    {% else %}
+    .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    {% endif %}
+  </style>
+  <link rel="stylesheet" href="/apps/blog-analytics/listing.css" fetchpriority="high">
+{% endif %}
+
 <script>
   window.BloggerAnalytics = window.BloggerAnalytics || {};
   window.BloggerAnalytics.shop = "{{ shop.permanent_domain }}";
   window.BloggerAnalytics.template = "{{ template.name }}";
-  
+
   {% if article %}
     window.BloggerAnalytics.articleId = "{{ article.id }}";
   {% endif %}
-  
+
   {% if product %}
     window.BloggerAnalytics.productId = "{{ product.id }}";
   {% endif %}
 </script>
+
+{% if template.name == 'blog' %}
+<script>
+  (function () {
+    var months = "January|February|March|April|May|June|July|August|September|October|November|December";
+    var re = new RegExp(
+      "^By\\s+[\\s\\S]*?(?:" + months + ")\\s+\\d{1,2},\\s*\\d{4}\\s*\\d+\\s*min read\\s*",
+      "i"
+    );
+    function cleanExcerpt(el) {
+      var t = (el.textContent || "").replace(/^\s+/, "");
+      t = t.replace(re, "");
+      t = t.replace(/^Table of Contents\s+/i, "");
+      el.textContent = t.replace(/^\s+/, "");
+    }
+    function run() {
+      document.querySelectorAll(
+        ".article-card__excerpt, .blog-articles .rte, .blog-articles .article-card .rte"
+      ).forEach(cleanExcerpt);
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
+    else run();
+  })();
+</script>
+{% endif %}

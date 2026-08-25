@@ -34,7 +34,7 @@ export default function App() {
           {isAdminPath ? (
             <Routes pages={pages} />
           ) : (
-            <Box paddingBlockEnd="1600">
+            <Box paddingBlockEnd="400">
               <Routes pages={pages} />
             </Box>
           )}
