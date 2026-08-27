@@ -9,6 +9,8 @@ import {
   validateEventValue,
   extractFeaturedProductRefs,
 } from "../services/AnalyticsTrackingService.js";
+import { SIDEBAR_SCRIPT } from "./sidebar.js";
+import { RELATED_POSTS_SCRIPT } from "./relatedPosts.js";
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -212,6 +214,21 @@ router.get("/listing.css", verifyProxySignature, async (req, res) => {
     console.error("[Proxy] listing.css error:", err);
     res.status(500).send("/* listing styles error */");
   }
+});
+
+// GET /api/proxy/sidebar.js and /related-posts.js — Shopify rewrites
+// /apps/blog-analytics/sidebar.js here. Theme app embed loads these on article
+// templates so Shopify's article editor cannot strip the storefront scripts.
+router.get("/sidebar.js", verifyProxySignature, (req, res) => {
+  res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.send(SIDEBAR_SCRIPT);
+});
+
+router.get("/related-posts.js", verifyProxySignature, (req, res) => {
+  res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=15");
+  res.send(RELATED_POSTS_SCRIPT);
 });
 
 export default router;

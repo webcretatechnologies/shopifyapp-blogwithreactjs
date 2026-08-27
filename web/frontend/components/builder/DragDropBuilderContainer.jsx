@@ -400,14 +400,20 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
     const jsonStr = JSON.stringify(initialBlocksAst || []);
     if (lastInitialBlocksRef.current === null) {
       lastInitialBlocksRef.current = jsonStr;
-      hydrate(initialBlocksAst || []);
+      // The post editor already hydrates before snapshotting originalPost. Re-running
+      // hydrate() here regenerates missing block ids / default settings and makes a
+      // freshly loaded article look dirty (Shopify save bar) with no merchant edits.
+      const alreadyLoaded = JSON.stringify(getBlocksAst() || []);
+      if (alreadyLoaded !== jsonStr) {
+        hydrate(initialBlocksAst || []);
+      }
       return;
     }
     if (lastInitialBlocksRef.current !== jsonStr) {
       lastInitialBlocksRef.current = jsonStr;
       hydrate(initialBlocksAst);
     }
-  }, [initialBlocksAst, hydrate]);
+  }, [initialBlocksAst, hydrate, getBlocksAst]);
 
   // Sync back to parent (the new.jsx page) whenever blocks change
   const onChangeRef = useRef(onChange);

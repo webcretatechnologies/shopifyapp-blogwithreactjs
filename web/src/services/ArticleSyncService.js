@@ -23,6 +23,10 @@ import BlockRenderer from "./BlockRenderer.js";
 import { ensureTrackingKey } from "./AnalyticsTrackingService.js";
 import JsonLdService from "./JsonLdService.js";
 import { isFeatureEnabled } from "./PlanFeatureService.js";
+import {
+  storefrontChromeMissing,
+  isChromeOnlySanitization,
+} from "./storefrontChrome.js";
 
 const prisma = new PrismaClient();
 
@@ -354,6 +358,85 @@ function computeContentHash(fields) {
     handle: (fields.handle || fields.slug || "").trim(),
   };
   return crypto.createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+}
+
+function settingsMap(shop) {
+  const map = {};
+  for (const row of shop?.settings || []) {
+    map[row.key] = row.value;
+  }
+  return map;
+}
+
+function isSidebarEnabledForPost(shop, post) {
+  const settings = settingsMap(shop);
+  const shopOn =
+    (settings.blogSidebarEnabled === true || settings.blogSidebarEnabled === "true") &&
+    isFeatureEnabled(shop?.planKey, "blog_sidebar");
+  let enabled = shopOn;
+  const ov = String(post?.blogSidebarOverride || "").toLowerCase();
+  if (ov === "off") enabled = false;
+  if (ov === "on" && isFeatureEnabled(shop?.planKey, "blog_sidebar")) enabled = true;
+  return enabled;
+}
+
+async function persistChromeRestoreError(link, err) {
+  try {
+    await prisma.shopifyArticle.update({
+      where: { id: link.id },
+      data: { lastError: `Chrome restore failed: ${err.message}`.slice(0, 2000) },
+    });
+  } catch (e) {
+    console.warn("[ArticleSyncService] Could not persist chrome restore error:", e.message);
+  }
+}
+
+/**
+ * Re-push compiled HTML from local builder JSON when Shopify body_html is missing
+ * live chrome (scripts / sidebar shell / related-posts placeholder) or when a previous
+ * Shopify→app inbound left lastSyncDirection stuck at shopify_to_app.
+ * Does not parse Shopify HTML into contentJson.
+ */
+async function restoreStorefrontChrome({ shop, link, remoteHtml, reason, force = false }) {
+  if (!link?.postId) return { restored: false, skipped: true };
+  const post = link.post || await prisma.post.findUnique({ where: { id: link.postId } });
+  if (!post) return { restored: false, skipped: true };
+
+  const sidebarEnabled = isSidebarEnabledForPost(shop, post);
+  const missing = storefrontChromeMissing(remoteHtml, { sidebarEnabled });
+  const stuck = link.lastSyncDirection === "shopify_to_app";
+  if (!missing && !force && !stuck) {
+    return { restored: false, skipped: true };
+  }
+
+  try {
+    await pushPostToShopify(link.postId, {
+      publishMode: post.status === "published",
+    });
+    await logSyncEvent({
+      shopId: shop.id,
+      postId: link.postId,
+      shopifyArticleId: link.shopifyArticleId,
+      direction: "app_to_shopify",
+      eventType: "chrome_restore",
+      status: "applied",
+      message: `Restored storefront chrome (${reason}) for "${post.title}"`,
+    });
+    return { restored: true };
+  } catch (err) {
+    console.warn(`[ArticleSyncService] Chrome restore failed for ${link.postId}:`, err.message);
+    await persistChromeRestoreError(link, err);
+    await logSyncEvent({
+      shopId: shop.id,
+      postId: link.postId,
+      shopifyArticleId: link.shopifyArticleId,
+      direction: "app_to_shopify",
+      eventType: "chrome_restore",
+      status: "error",
+      message: `Chrome restore failed (${reason}): ${err.message}`,
+    });
+    return { restored: false, error: err.message };
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1410,7 +1493,10 @@ async function handleArticleWebhook(topic, shopDomain, body) {
 
 async function _handleArticleWebhookInner(topic, shopDomain, body) {
   const payload = typeof body === "string" ? JSON.parse(body) : body;
-  const shop = await prisma.shop.findUnique({ where: { domain: shopDomain } });
+  const shop = await prisma.shop.findUnique({
+    where: { domain: shopDomain },
+    include: { settings: true },
+  });
   if (!shop) {
     console.warn(`[ArticleSyncService] No shop found for domain: ${shopDomain}`);
     return;
@@ -1430,11 +1516,28 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
   // RECONCILE_INTERVAL_MINUTES) naturally detects the accumulated drift on its next pass and
   // applies it normally, the same as any other missed webhook.
   if (!isFeatureEnabled(shop.planKey, "sync_actions")) {
+    // Chrome restore is app→Shopify backup of live features, not inbound import.
+    // Run it even on Free so a Shopify-admin save cannot leave a blank sidebar forever.
+    if (topic === "ARTICLES_UPDATE") {
+      const chromeLink = await prisma.shopifyArticle.findFirst({
+        where: { shopifyArticleId },
+        include: { post: true },
+      });
+      if (chromeLink) {
+        await restoreStorefrontChrome({
+          shop,
+          link: chromeLink,
+          remoteHtml: payload.body_html || "",
+          reason: "free_plan_chrome_check",
+          force: chromeLink.lastSyncDirection === "shopify_to_app",
+        });
+      }
+    }
     await logSyncEvent({
       shopId: shop.id, shopifyArticleId,
       direction: "shopify_to_app", eventType: "webhook",
       status: "skipped_free_plan",
-      message: `${topic} skipped: 2-Way Sync is a Starter+ feature, shop is on ${shop.planKey}`,
+      message: `${topic} skipped inbound merge: 2-Way Sync is a Starter+ feature, shop is on ${shop.planKey}`,
     });
     return;
   }
@@ -1556,6 +1659,13 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
       // when nothing had actually changed. The content hash is the authoritative signal for
       // "did anything really change" — a timestamp bump from our own metafield write isn't that.
       if (inboundHash === link.lastOutboundHash) {
+        await restoreStorefrontChrome({
+          shop,
+          link,
+          remoteHtml: payload.body_html || "",
+          reason: "echo_skip_chrome_check",
+          force: link.lastSyncDirection === "shopify_to_app",
+        });
         await logSyncEvent({
           shopId: shop.id, postId: link.postId, shopifyArticleId,
           direction: "shopify_to_app", eventType: "webhook",
@@ -1567,11 +1677,35 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
 
       // ── Duplicate suppression ───────────────────────────────────
       if (inboundHash === link.lastInboundHash) {
+        await restoreStorefrontChrome({
+          shop,
+          link,
+          remoteHtml: payload.body_html || "",
+          reason: "duplicate_skip_chrome_check",
+          force: link.lastSyncDirection === "shopify_to_app",
+        });
         await logSyncEvent({
           shopId: shop.id, postId: link.postId, shopifyArticleId,
           direction: "shopify_to_app", eventType: "webhook",
           status: "skipped_duplicate",
           message: "ARTICLES_UPDATE skipped: duplicate inbound hash",
+        });
+        return;
+      }
+
+      // Shopify's admin editor often only strips scripts / data-* / empty asides.
+      // That is not a merchant content edit — restore compiled HTML from local JSON
+      // and do not parse the sanitized body into the builder.
+      const localCompiled =
+        link.lastSyncedSnapshot?.fields?.content?.storefrontHtml?.value || "";
+      const remoteHtml = payload.body_html || "";
+      if (localCompiled && isChromeOnlySanitization(localCompiled, remoteHtml)) {
+        await restoreStorefrontChrome({
+          shop,
+          link,
+          remoteHtml,
+          reason: "chrome_only_sanitization",
+          force: true,
         });
         return;
       }
@@ -1711,6 +1845,7 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
           });
         } catch (err) {
           console.warn(`[ArticleSyncService] Post-merge push back failed for ${link.postId}:`, err.message);
+          await persistChromeRestoreError(link, err);
         }
       } else if (!hasConflicts) {
         // A pure Shopify-side edit (no pending local edits to merge, so threeWayMerge saw no
@@ -1728,6 +1863,7 @@ async function _handleArticleWebhookInner(topic, shopDomain, body) {
           });
         } catch (err) {
           console.warn(`[ArticleSyncService] Auto-restore push back failed for ${link.postId}:`, err.message);
+          await persistChromeRestoreError(link, err);
         }
       }
 
@@ -1788,7 +1924,7 @@ async function reconcilePost(postId) {
     include: {
       shopifyArticle: true,
       tags: { include: { tag: true } },
-      shop: true,
+      shop: { include: { settings: true } },
     },
   });
 
@@ -1821,8 +1957,33 @@ async function reconcilePost(postId) {
     // comment in _handleArticleWebhookInner's echo suppression above. writeSyncMarker's metafield
     // write after every push bumps Shopify's article.updatedAt, so remoteIsNewer alone is not
     // reliable proof of a real edit; the content hash is.
+    const remoteHtml = remote.body_html || "";
+    const linkWithPost = { ...link, post };
+
+    // Hash match used to return in_sync and skip restore entirely — that's how a
+    // failed restore left lastSyncDirection at shopify_to_app and the live sidebar blank.
     if (inboundHash === link.lastOutboundHash || inboundHash === link.lastInboundHash) {
+      await restoreStorefrontChrome({
+        shop: post.shop,
+        link: linkWithPost,
+        remoteHtml,
+        reason: "reconcile_hash_match",
+        force: link.lastSyncDirection === "shopify_to_app",
+      });
       return { status: "in_sync" };
+    }
+
+    const localCompiled =
+      link.lastSyncedSnapshot?.fields?.content?.storefrontHtml?.value || "";
+    if (localCompiled && isChromeOnlySanitization(localCompiled, remoteHtml)) {
+      await restoreStorefrontChrome({
+        shop: post.shop,
+        link: linkWithPost,
+        remoteHtml,
+        reason: "reconcile_chrome_only",
+        force: true,
+      });
+      return { status: "chrome_restored" };
     }
 
     if (remoteIsNewer || (inboundHash !== link.lastInboundHash && inboundHash !== link.lastOutboundHash)) {
@@ -2001,4 +2162,6 @@ export const ArticleSyncService = {
   numericIdFromGid,
   articleFromGraphQL,
   fetchArticleByGid,
+  storefrontChromeMissing,
+  isChromeOnlySanitization,
 };

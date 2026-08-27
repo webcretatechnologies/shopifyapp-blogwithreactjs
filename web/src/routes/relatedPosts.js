@@ -298,7 +298,9 @@ router.get("/related-posts.js", (req, res) => {
   res.send(RELATED_POSTS_SCRIPT);
 });
 
-const RELATED_POSTS_SCRIPT = `(function () {
+export const RELATED_POSTS_SCRIPT = `(function () {
+  if (window.__bloggerRelatedPostsInit) return;
+  window.__bloggerRelatedPostsInit = true;
   function escapeHtml(str) {
     return String(str)
       .replace(/&/g, "&amp;")
@@ -400,6 +402,9 @@ const RELATED_POSTS_SCRIPT = `(function () {
     try {
       if (window.Shopify && window.Shopify.shop) return window.Shopify.shop;
     } catch (e) {}
+    try {
+      if (window.BloggerAnalytics && window.BloggerAnalytics.shop) return window.BloggerAnalytics.shop;
+    } catch (e) {}
     return null;
   }
 
@@ -410,6 +415,9 @@ const RELATED_POSTS_SCRIPT = `(function () {
   function resolveShopifyArticleId() {
     try {
       var gid = window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.resourceId;
+      if (!gid && window.BloggerAnalytics && window.BloggerAnalytics.articleId) {
+        gid = window.BloggerAnalytics.articleId;
+      }
       if (!gid) return null;
       var match = String(gid).match(/(\\d+)$/);
       return match ? match[1] : null;

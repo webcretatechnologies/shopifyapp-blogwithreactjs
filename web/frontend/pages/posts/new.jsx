@@ -1051,6 +1051,8 @@ export default function PostEditor() {
         excludeFromSitemap: !!data.post.excludeFromSitemap,
         richSnippetType: data.post.richSnippetType || "BlogPosting",
         relatedPosts: data.post.relatedPosts || [],
+        relatedPostsSourceMode: data.post.relatedPostsSourceMode || "inherit",
+        blogSidebarOverride: data.post.blogSidebarOverride || "inherit",
         categoryId: data.post.categoryId || null,
       };
 
@@ -1958,22 +1960,24 @@ export default function PostEditor() {
             </Layout.Section>
           )}
 
-          {/* lastSyncDirection: "shopify_to_app" means the most recent change came from a direct
-              edit in Shopify's own admin blog editor, not from this app. The backend already
-              tries to auto-restore live features (related posts / custom header-footer / the
-              branding badge, all of which Shopify's editor strips the data-* attributes off on
-              save) right after reconciling such an edit — this banner only stays visible when
-              that auto-restore hasn't happened yet or failed (no active session, rate limit,
-              etc.), since a successful auto-restore flips this back to "app_to_shopify". */}
+          {/* lastSyncDirection: "shopify_to_app" means the most recent change came from a
+              Shopify-admin edit (or a restore that has not finished yet). A successful
+              auto-restore flips this back to app_to_shopify, so the banner should not
+              appear after silent chrome restore. */}
           {isEditing && post.shopifyArticle?.lastSyncDirection === "shopify_to_app" && (
             <Layout.Section>
               <Banner tone="warning" title="This article was last edited directly in Shopify">
                 <BlockStack gap="200">
                   <p>
-                    Some live features (related posts, custom header/footer, the branding badge)
-                    read data that Shopify's own editor strips when you save there. Click Save
-                    &amp; Sync to restore them — no content will be lost.
+                    Some live features (related posts, the article sidebar, custom header/footer,
+                    the branding badge) rely on markup Shopify's editor strips on save. Click
+                    Save &amp; Sync to restore them — no content will be lost.
                   </p>
+                  {post.shopifyArticle?.lastError && (
+                    <p>
+                      Last restore attempt failed: {post.shopifyArticle.lastError}
+                    </p>
+                  )}
                   <div>
                     <Button
                       loading={isSavingBanner}

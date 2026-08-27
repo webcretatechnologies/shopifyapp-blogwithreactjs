@@ -164,6 +164,16 @@
   {% endif %}
 </script>
 
+{% comment %}
+  Article live features (sidebar + related posts) are loaded from the app proxy so
+  Shopify's admin article editor cannot strip the script tags out of body_html.
+  Safe to run twice with the body_html fallback scripts (each script no-ops on a second init).
+{% endcomment %}
+{% if template.name == 'article' or request.page_type == 'article' %}
+<script src="/apps/blog-analytics/sidebar.js" defer></script>
+<script src="/apps/blog-analytics/related-posts.js" defer></script>
+{% endif %}
+
 {% if template.name == 'blog' %}
 <script>
   (function () {

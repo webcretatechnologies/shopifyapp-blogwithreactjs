@@ -523,7 +523,9 @@ router.get("/sidebar.js", (req, res) => {
   res.send(SIDEBAR_SCRIPT);
 });
 
-const SIDEBAR_SCRIPT = `(function () {
+export const SIDEBAR_SCRIPT = `(function () {
+  if (window.__bloggerSidebarInit) return;
+  window.__bloggerSidebarInit = true;
   function escapeHtml(str) {
     return String(str)
       .replace(/&/g, "&amp;")
@@ -552,12 +554,18 @@ const SIDEBAR_SCRIPT = `(function () {
     try {
       if (window.Shopify && window.Shopify.shop) return window.Shopify.shop;
     } catch (e) {}
+    try {
+      if (window.BloggerAnalytics && window.BloggerAnalytics.shop) return window.BloggerAnalytics.shop;
+    } catch (e) {}
     return null;
   }
 
   function resolveShopifyArticleId() {
     try {
       var gid = window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.resourceId;
+      if (!gid && window.BloggerAnalytics && window.BloggerAnalytics.articleId) {
+        gid = window.BloggerAnalytics.articleId;
+      }
       if (!gid) return null;
       var match = String(gid).match(/(\\d+)$/);
       return match ? match[1] : null;
@@ -762,7 +770,10 @@ const SIDEBAR_SCRIPT = `(function () {
     Array.prototype.forEach.call(containers, function (container) {
       var postId = container.getAttribute('data-post-id');
       var shop = container.getAttribute('data-shop') || resolveShop();
-      if (!shop) return;
+      if (!shop) {
+        deactivateLayout(container);
+        return;
+      }
       // Reserve the column + skeleton before the network round-trip finishes.
       showPending(container);
       var url = '${APP_URL}/sidebar.json?shop=' + encodeURIComponent(shop);
