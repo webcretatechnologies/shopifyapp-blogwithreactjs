@@ -4,12 +4,12 @@
  * Each entry is a Builder block tree (see BlockRegistry.jsx). Omitted settings fall back to
  * registry / theme defaults via normalizeBlocksAst() when the template is applied.
  *
- * Gallery preview compiles this same tree — sample images/products are part of the template
+ * Gallery preview compiles this same tree - sample images/products are part of the template
  * so what the merchant sees on the card is what they get in the editor (they replace the
  * samples with their own catalog/files).
  */
 
-// `color` paints the text through Tiptap's textStyle mark rather than a block setting —
+// `color` paints the text through Tiptap's textStyle mark rather than a block setting -
 // RichText has no colour setting in any of the three renderers, and body copy set on a dark
 // section band was rendering near-black on near-black. The mark serialises to an inline
 // <span style="color:…">, so it survives the canvas, the gallery preview and the published
@@ -47,7 +47,7 @@ const columns = (count, children, gap) => ({
  * callout, the same near-black hero gradient and the same black headings, so 16
  * genuinely different layouts still read as one design in the gallery. Each
  * template now owns a hue and a set of art motifs, and every shared helper below
- * pulls from it — the colour identity is baked into the block tree, so it
+ * pulls from it - the colour identity is baked into the block tree, so it
  * survives apply → editor → published article the same way the layout does.
  */
 const hexToRgb = (hex) => {
@@ -68,7 +68,7 @@ const midOf = (hex) => mix(hex, "#ffffff", 0.42);
 const deepOf = (hex) => mix(hex, "#0b1220", 0.55);
 
 /**
- * @param {string} accent  the template's hue — headings, TOC, buttons, art
+ * @param {string} accent  the template's hue - headings, TOC, buttons, art
  * @param {object} opts    heroArt / arts motifs, TOC treatment, heading sizing
  */
 const palette = (accent, opts = {}) => ({
@@ -104,20 +104,25 @@ const palette = (accent, opts = {}) => ({
 });
 
 /* ── Sample art ───────────────────────────────────────────────────────────────
- * SVGs use double-quoted attributes — encodeURIComponent escapes those (%22).
+ * SVGs use double-quoted attributes - encodeURIComponent escapes those (%22).
  * It leaves ( ) ' alone though, and a gradient's fill="url(#g)" then closed an
  * unquoted CSS url(…) early, so heroes rendered as an empty grey box in the
  * canvas and on the storefront. Escape those three too, so the URI is safe in
  * url(…), url('…') and src="…".
  */
 /**
- * Sample photography comes from Burst (burst.shopify.com) — Shopify's own free stock
+ * Sample photography comes from Burst (burst.shopify.com) - Shopify's own free stock
  * library, served from their CDN, free for commercial use with no attribution. Using
  * Shopify's CDN rather than bundling megabytes of JPEGs keeps the app light, and the
  * merchant swaps these for their own shots (the "After you use it" checklist says so).
  */
 const BURST = "https://burst.shopifycdn.com/photos";
 const photo = (slug, width = 1400) => `${BURST}/${slug}.jpg?width=${width}&format=pjpg&exif=0&iptc=0`;
+
+// Product tiles are square boxes, so a landscape shot letterboxes with grey bars above and
+// below it. Burst's CDN crops server-side, so ask it for a square instead of fitting one.
+const productPhoto = (slug, size = 800) =>
+  `${BURST}/${slug}.jpg?width=${size}&height=${size}&crop=center&format=pjpg&exif=0&iptc=0`;
 
 const svgUri = (svg) =>
   `data:image/svg+xml;utf8,${encodeURIComponent(svg)
@@ -318,9 +323,11 @@ function withStyle(style, build) {
   const prevStyle = CURRENT;
   const prevSeq = artSeq;
   const prevPhoto = photoSeq;
+  const prevBuy = buySeq;
   CURRENT = style;
   artSeq = 0;
   photoSeq = 0;
+  buySeq = 0;
   try {
     const blocks = build();
     // Hero-less templates open on a tinted band so the card, the canvas and the article
@@ -342,6 +349,7 @@ function withStyle(style, build) {
     CURRENT = prevStyle;
     artSeq = prevSeq;
     photoSeq = prevPhoto;
+    buySeq = prevBuy;
   }
 }
 
@@ -410,12 +418,20 @@ const faq = (title, items, extra = {}) => ({
   children: [],
 });
 const toc = (extra) => ({ type: "TableOfContents", settings: extra || {}, children: [] });
+// Reset per template by withStyle(): as a module-level counter that only ever went up, which
+// product a buyButton({}) picked depended on how many buy buttons every template *before* it in
+// this file had created. In the A-vs-B template that handed the "Classic French Press" column a
+// pour-over card and vice versa.
 let buySeq = 0;
 const buyButton = (extra = {}) => ({
   type: "BuyButton",
   settings: {
     showPrice: true,
     buttonColor: cur().accent,
+    // Fill the section (or column) rather than the 600px default: a narrow card left-aligned
+    // in a wide tinted CTA band reads as a layout mistake, especially under a centred heading.
+    maxWidth: "100%",
+    imageSize: "150px",
     ...extra,
     product: extra.product || sampleProduct(buySeq++),
   },
@@ -505,7 +521,7 @@ const STYLE = {
     arts: ["detail", "landscape"],
     heroPhoto: photo("copper-kettle-pour-over-coffee"),
     photos: [photo("pour-over-coffee"), photo("high-end-pour-over-coffee-system")],
-    productPhotos: [photo("glass-coffee-pour", 800)],
+    productPhotos: [productPhoto("glass-coffee-pour")],
     products: [{ title: "Copper Pour-Over Kettle", price: "89.00", description: "Gooseneck spout, 1L, thermometer lid." }],
   }),
   howTo: palette("#1d4ed8", {
@@ -517,7 +533,7 @@ const STYLE = {
       photo("cleaning-supply-flatlay-white"),
       photo("flatlay-iron-skillet-with-meat-and-other-food"),
     ],
-    productPhotos: [photo("cleaning-supply-flatlay-bottom", 800), photo("cleaning-supply-bucket-in-kitchen", 800), photo("cleaning-blue-knolling-flatlay", 800)],
+    productPhotos: [productPhoto("cleaning-supply-flatlay-bottom"), productPhoto("cleaning-supply-bucket-in-kitchen"), productPhoto("cleaning-blue-knolling-flatlay")],
     products: [
       { title: "Chainmail Scrubber", price: "18.00" },
       { title: "Seasoning Oil, 8 oz", price: "14.00" },
@@ -529,7 +545,7 @@ const STYLE = {
     arts: ["rank"],
     heroPhoto: photo("handmade-soap-stacked"),
     photos: [photo("all-natural-handmade-soap"), photo("handmade-charcoal-soap"), photo("handmade-soap-wrapped")],
-    productPhotos: [photo("handmade-soap", 800), photo("handmade-charcoal-soap", 800), photo("all-natural-handmade-soap", 800)],
+    productPhotos: [productPhoto("handmade-soap"), productPhoto("handmade-charcoal-soap"), productPhoto("all-natural-handmade-soap")],
     products: [
       { title: "Oat & Honey Bar", price: "12.00" },
       { title: "Charcoal Detox Bar", price: "14.00" },
@@ -542,7 +558,7 @@ const STYLE = {
     h1Size: "36px",
     cardStyle: "border",
     photos: [photo("black-headphones"), photo("noise-cancelling-headphones")],
-    productPhotos: [photo("black-headphones-closeup", 800), photo("noise-cancelling-headphones", 800), photo("red-bluetooth-earbuds", 800)],
+    productPhotos: [productPhoto("black-headphones-closeup"), productPhoto("noise-cancelling-headphones"), productPhoto("red-bluetooth-earbuds")],
     products: [
       { title: "Studio ANC Over-Ear", price: "249.00" },
       { title: "Daily Wireless On-Ear", price: "129.00" },
@@ -556,7 +572,7 @@ const STYLE = {
     tocList: "bullet",
     cardStyle: "border",
     photos: [photo("mug-of-coffee-and-a-french-press-on-a-window-sill"), photo("pour-over-coffee")],
-    productPhotos: [photo("mug-of-coffee-and-a-french-press-on-a-window-sill", 800), photo("glass-coffee-pour", 800)],
+    productPhotos: [productPhoto("mug-of-coffee-and-a-french-press-on-a-window-sill"), productPhoto("glass-coffee-pour")],
     products: [
       { title: "Classic French Press, 1L", price: "45.00" },
       { title: "Ceramic Pour-Over Dripper", price: "38.00" },
@@ -570,7 +586,7 @@ const STYLE = {
     h2Align: "center",
     heroPhoto: photo("candle-burning"),
     photos: [photo("8-ounce-soy-candle"), photo("4-ounce-soy-candle")],
-    productPhotos: [photo("8-ounce-soy-candle", 800)],
+    productPhotos: [productPhoto("8-ounce-soy-candle")],
     products: [{ title: "Ember Soy Candle, 8 oz", price: "34.00", description: "Cedar, black pepper and vetiver. 55-hour burn." }],
   }),
   collection: palette("#4338ca", {
@@ -578,7 +594,7 @@ const STYLE = {
     arts: ["swatch", "flatlay"],
     heroPhoto: photo("simple-white-shirts-on-shop-clothing-rack"),
     photos: [photo("white-t-shirts-on-clothing-rack")],
-    productPhotos: [photo("white-t-shirts-on-clothing-rack", 800), photo("colorful-t-shirts-on-clothing-rack-size-medium", 800), photo("clothing-rack-t-shirts-for-sale-blank-sign", 800)],
+    productPhotos: [productPhoto("white-t-shirts-on-clothing-rack"), productPhoto("colorful-t-shirts-on-clothing-rack-size-medium"), productPhoto("clothing-rack-t-shirts-for-sale-blank-sign")],
     products: [
       { title: "Everyday Crew Tee", price: "38.00" },
       { title: "Boxy Linen Shirt", price: "88.00" },
@@ -591,7 +607,7 @@ const STYLE = {
     productArt: "tall",
     heroPhoto: photo("noise-cancelling-headphones"),
     photos: [photo("black-headphones-closeup")],
-    productPhotos: [photo("black-headphones", 800)],
+    productPhotos: [productPhoto("black-headphones")],
     products: [{ title: "Studio ANC Over-Ear", price: "249.00", description: "40-hour battery, adaptive noise cancelling." }],
   }),
   faq: palette("#475569", {
@@ -608,8 +624,8 @@ const STYLE = {
     tocStyle: "plain",
     cardStyle: "border",
     photos: [photo("tape-measure-on-wood"), photo("white-t-shirts-on-clothing-rack")],
-    productPhotos: [photo("simple-white-shirts-on-shop-clothing-rack", 800)],
-    products: [{ title: "Studio Heavyweight Tee", price: "42.00", description: "260 gsm cotton, boxy fit, sizes XS–3XL." }],
+    productPhotos: [productPhoto("simple-white-shirts-on-shop-clothing-rack")],
+    products: [{ title: "Studio Heavyweight Tee", price: "42.00", description: "260 gsm cotton, boxy fit, sizes XS-3XL." }],
   }),
   care: palette("#15803d", {
     arts: ["detail"],
@@ -617,7 +633,7 @@ const STYLE = {
     tocList: "numbered",
     cardStyle: "border",
     photos: [photo("suede-boots-fashion"), photo("boots-in-autumn-leaves")],
-    productPhotos: [photo("cleaning-supply-flatlay-white", 800), photo("cleaning-supply-bucket-over-grey", 800), photo("splashy-hand-cleaning", 800)],
+    productPhotos: [productPhoto("cleaning-supply-flatlay-white"), productPhoto("cleaning-supply-bucket-over-grey"), productPhoto("splashy-hand-cleaning")],
     products: [
       { title: "Suede Brush", price: "16.00" },
       { title: "Waterproofing Spray", price: "22.00" },
@@ -632,7 +648,7 @@ const STYLE = {
     cardStyle: "border",
     heroPhoto: photo("treat-yoself-cookies"),
     photos: [photo("cracking-egg-for-baking"), photo("cookies-on-milk")],
-    productPhotos: [photo("cookie-crumbs-left-by-santa", 800), photo("cup-of-tea-cookie", 800), photo("milk-cookies-for-santa", 800)],
+    productPhotos: [productPhoto("cookie-crumbs-left-by-santa"), productPhoto("cup-of-tea-cookie"), productPhoto("milk-cookies-for-santa")],
     products: [
       { title: "Nordic Baking Sheet", price: "39.00" },
       { title: "Vanilla Bean Paste", price: "18.00" },
@@ -659,7 +675,7 @@ const STYLE = {
     cardStyle: "minimal",
     heroPhoto: photo("cozy-fall-fashion-in-field"),
     photos: [photo("soft-flowy-outfit"), photo("outfit-of-the-day"), photo("gentlemans-fashion-flatlay")],
-    productPhotos: [photo("soft-flowy-outfit", 800), photo("gentlemans-fashion-flatlay", 800)],
+    productPhotos: [productPhoto("soft-flowy-outfit"), productPhoto("gentlemans-fashion-flatlay")],
     products: [
       { title: "Wool Overshirt", price: "165.00" },
       { title: "Pleated Midi Skirt", price: "98.00" },
@@ -671,7 +687,7 @@ const STYLE = {
     tocList: "bullet",
     cardStyle: "minimal",
     photos: [photo("woman-smiling-in-casual-wear"), photo("stylish-woman-smiling")],
-    productPhotos: [photo("glass-coffee-pour", 800)],
+    productPhotos: [productPhoto("glass-coffee-pour")],
     products: [{ title: "Copper Pour-Over Kettle", price: "89.00", description: "The kettle from Maya's setup." }],
   }),
   gift: palette("#a16207", {
@@ -681,7 +697,7 @@ const STYLE = {
     h1Align: "center",
     heroPhoto: photo("gift-wrapped-with-bow"),
     photos: [photo("gift-wrapping-supplies"), photo("holiday-gift-wrapping")],
-    productPhotos: [photo("8-ounce-soy-candle", 800), photo("handmade-soap-wrapped", 800), photo("teapot-cup-and-milk", 800), photo("cup-of-tea-cookie", 800)],
+    productPhotos: [productPhoto("8-ounce-soy-candle"), productPhoto("handmade-soap-wrapped"), productPhoto("teapot-cup-and-milk"), productPhoto("cup-of-tea-cookie")],
     products: [
       { title: "Ember Soy Candle", price: "34.00" },
       { title: "Soap Trio Gift Box", price: "32.00" },
@@ -704,7 +720,7 @@ const STYLE = {
       photo("under-eye-patches-for-skincare"),
       photo("woman-opening-cosmetic-jar"),
     ],
-    productPhotos: [photo("activated-charcoal-cosmetics", 800), photo("diy-cosmetic-tins", 800), photo("makeup-beauty-flatlay", 800)],
+    productPhotos: [productPhoto("activated-charcoal-cosmetics"), productPhoto("diy-cosmetic-tins"), productPhoto("makeup-beauty-flatlay")],
     products: [
       { title: "Gentle Milk Cleanser", price: "26.00" },
       { title: "5% Niacinamide Serum", price: "32.00" },
@@ -723,7 +739,7 @@ const STYLE = {
       photo("extended-hand-to-toe-pose-yoga"),
       photo("eagle-arms-yoga"),
     ],
-    productPhotos: [photo("teal-yoga-mat", 800), photo("purple-yoga-blocks", 800), photo("yoga-accessories", 800)],
+    productPhotos: [productPhoto("teal-yoga-mat"), productPhoto("purple-yoga-blocks"), productPhoto("yoga-accessories")],
     products: [
       { title: "Studio Yoga Mat, 5mm", price: "68.00" },
       { title: "Cork Yoga Block, Pair", price: "34.00" },
@@ -737,7 +753,7 @@ const STYLE = {
     cardStyle: "border",
     heroPhoto: photo("plant-wall-of-succulents"),
     photos: [photo("organic-green-plant-closeup"), photo("cozy-livingroom-with-window"), photo("bright-green-plant-closeup")],
-    productPhotos: [photo("green-pink-succulent", 800), photo("gardening-flatlay", 800), photo("yellow-background-gardening-tools", 800)],
+    productPhotos: [productPhoto("green-pink-succulent"), productPhoto("gardening-flatlay"), productPhoto("yellow-background-gardening-tools")],
     products: [
       { title: "Potted Snake Plant", price: "42.00" },
       { title: "Terracotta Pot, 8in", price: "24.00" },
@@ -751,7 +767,7 @@ const STYLE = {
     h1Align: "center",
     heroPhoto: photo("fresh-baked-pastry-at-modern-cafe"),
     photos: [photo("pizza-dough-ready-to-roll"), photo("cracking-egg-for-baking"), photo("puff-pastry-plated")],
-    productPhotos: [photo("cup-of-tea-cookie", 800), photo("croissant-coffee", 800), photo("slicing-fresh-bread", 800)],
+    productPhotos: [productPhoto("cup-of-tea-cookie"), productPhoto("croissant-coffee"), productPhoto("slicing-fresh-bread")],
     products: [
       { title: "Cinnamon Roll Kit", price: "36.00" },
       { title: "Ceylon Cinnamon, 4 oz", price: "14.00" },
@@ -766,7 +782,7 @@ const STYLE = {
     h1Size: "38px",
     heroPhoto: photo("gold-christmas-gift-wrap"),
     photos: [photo("christmas-gift-box"), photo("holiday-gift-wrapping"), photo("christmas-cookies")],
-    productPhotos: [photo("8-ounce-soy-candle", 800), photo("teapot-cup-and-milk", 800), photo("handmade-soap-stacked", 800), photo("4-ounce-soy-candle", 800)],
+    productPhotos: [productPhoto("8-ounce-soy-candle"), productPhoto("teapot-cup-and-milk"), productPhoto("handmade-soap-stacked"), productPhoto("4-ounce-soy-candle")],
     products: [
       { title: "Spiced Fir Candle", price: "36.00" },
       { title: "Stoneware Teapot", price: "48.00" },
@@ -780,7 +796,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "product-review",
     name: "Product Review",
-    description: "Honest single-product review — verdict first, pros & cons, then add to cart.",
+    description: "Honest single-product review - verdict first, pros & cons, then add to cart.",
     category: "Commerce",
     badge: "Popular",
     style: STYLE.review,
@@ -818,7 +834,7 @@ export const BLOG_TEMPLATES = [
           [
             heading("What we liked", 3),
             rich([
-              "The pour is genuinely controllable — you can hold a thin stream through a full 45-second bloom.",
+              "The pour is genuinely controllable - you can hold a thin stream through a full 45-second bloom.",
               "The lid thermometer settles in about 8 seconds, so you stop guessing at 96°C.",
               "Copper heats fast: 1 litre came up in 4 minutes 10 on a standard gas ring.",
             ]),
@@ -836,11 +852,11 @@ export const BLOG_TEMPLATES = [
         heading("How it performed", 2),
         rich([
           "First brew out of the box, the pour was steadier than the cheap gooseneck it replaced, and the difference showed up in the cup: the same 18 g dose tasted rounder and noticeably less sharp.",
-          "Thirty days in, it has been through roughly 60 brews with no pitting inside and no loosening at the handle rivets. The exterior has dulled a little — that's copper doing what copper does.",
+          "Thirty days in, it has been through roughly 60 brews with no pitting inside and no loosening at the handle rivets. The exterior has dulled a little - that's copper doing what copper does.",
         ]),
         image("Pour-over setup on the counter"),
       ]),
-      section({ backgroundColor: cur().tint, paddingTop: "32px", paddingBottom: "32px", borderRadius: "12px" }, [
+      section({ backgroundColor: cur().tint, paddingTop: "32px", paddingBottom: "32px", paddingLeft: "28px", paddingRight: "28px", borderRadius: "12px" }, [
         heading("Ready to try it?", 2, { align: "center" }),
         buyButton({ layout: "horizontal", showDescription: true }),
       ]),
@@ -848,7 +864,7 @@ export const BLOG_TEMPLATES = [
         faq("Common questions", [
           faqItem(
             "Is it worth $89 over a $30 gooseneck?",
-            "If you brew more than a few times a week, yes — the flow control and the lid thermometer are the two things cheap kettles get wrong. For occasional brewing, put the money into a grinder first."
+            "If you brew more than a few times a week, yes - the flow control and the lid thermometer are the two things cheap kettles get wrong. For occasional brewing, put the money into a grinder first."
           ),
           faqItem(
             "Does it work on induction?",
@@ -881,7 +897,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("What you'll need", 2),
         rich([
-          "Coarse salt, a chainmail scrubber or stiff brush, a lint-free cloth, and a high smoke-point oil — grapeseed or flaxseed. Skip the soap debate: a drop of dish soap is fine on a seasoned pan.",
+          "Coarse salt, a chainmail scrubber or stiff brush, a lint-free cloth, and a high smoke-point oil - grapeseed or flaxseed. Skip the soap debate: a drop of dish soap is fine on a seasoned pan.",
         ]),
       ]),
       divider(),
@@ -902,7 +918,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("Step 3: Oil it thinner than feels right", 2),
         rich([
-          "A half-teaspoon of oil over the whole pan, inside, outside and handle — then wipe it back off with a clean cloth until it looks dry. The film you can still see is already too thick.",
+          "A half-teaspoon of oil over the whole pan, inside, outside and handle - then wipe it back off with a clean cloth until it looks dry. The film you can still see is already too thick.",
         ]),
         callout({
           type: "tip",
@@ -914,7 +930,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("Step 4: Bake it upside down", 2),
         rich([
-          "Oven at 230°C, pan inverted on the middle rack, foil on the shelf below. One hour, then cool in the oven. Done right it comes out matte black and slick — repeat the cycle two more times on a bare pan.",
+          "Oven at 230°C, pan inverted on the middle rack, foil on the shelf below. One hour, then cool in the oven. Done right it comes out matte black and slick - repeat the cycle two more times on a bare pan.",
         ]),
         image("Seasoned skillet with food"),
       ]),
@@ -927,7 +943,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "top-picks-listicle",
     name: "Top Picks Listicle",
-    description: "Ranked 'best of' roundup — numbered sections, each with an image, blurb, and product card.",
+    description: "Ranked 'best of' roundup - numbered sections, each with an image, blurb, and product card.",
     category: "Commerce",
     badge: "Popular",
     style: STYLE.listicle,
@@ -958,7 +974,7 @@ export const BLOG_TEMPLATES = [
         heading("2. Best value: Charcoal Detox Bar", 2),
         image("Charcoal soap bar"),
         rich([
-          "Two dollars more than the oat bar and it lasted about a third longer — nine weeks of daily hand washing before it was a sliver. Best for anyone whose skin turns oily by mid-afternoon.",
+          "Two dollars more than the oat bar and it lasted about a third longer - nine weeks of daily hand washing before it was a sliver. Best for anyone whose skin turns oily by mid-afternoon.",
         ]),
         buyButton({}),
       ]),
@@ -966,7 +982,7 @@ export const BLOG_TEMPLATES = [
         heading("3. Best for reactive skin: Unscented Sensitive Bar", 2),
         image("Wrapped handmade soap"),
         rich([
-          "No essential oils at all, which is the point. If citrus or lavender bars have set you off before, start here and add scent back later — this is the one dermatologists in our reader survey kept naming.",
+          "No essential oils at all, which is the point. If citrus or lavender bars have set you off before, start here and add scent back later - this is the one dermatologists in our reader survey kept naming.",
         ]),
         buyButton({}),
       ]),
@@ -984,7 +1000,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "buying-guide",
     name: "Buying Guide",
-    description: "Helps undecided shoppers choose — spec table, trade-offs, and a clear recommendation.",
+    description: "Helps undecided shoppers choose - spec table, trade-offs, and a clear recommendation.",
     category: "Commerce",
     badge: null,
     style: STYLE.buying,
@@ -1000,7 +1016,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Start with how you'll use them", 2),
         rich([
-          "Open-plan office, six hours a day: comfort and clamp force matter more than raw cancellation — you'll take them off by lunch otherwise.",
+          "Open-plan office, six hours a day: comfort and clamp force matter more than raw cancellation - you'll take them off by lunch otherwise.",
           "Daily commute on a bus or train: cancellation depth and battery life win, weight barely registers on a 40-minute trip.",
           "Flights a few times a year: get over-ear, get a case, and stop reading spec sheets.",
         ]),
@@ -1009,7 +1025,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("The specs that actually matter", 2),
         rich([
-          "Clamp force is the one nobody prints. If a shop lets you wear a pair for ten minutes, do it — pressure at the temples is what ends long sessions.",
+          "Clamp force is the one nobody prints. If a shop lets you wear a pair for ten minutes, do it - pressure at the temples is what ends long sessions.",
           "Battery life over 30 hours is effectively unlimited: you'll charge weekly either way. Below 20 hours you'll charge mid-week and resent it.",
           "Driver size tells you almost nothing on its own. Ignore it.",
         ]),
@@ -1059,17 +1075,21 @@ export const BLOG_TEMPLATES = [
         columns(2, [
           [
             heading("Classic French Press", 2),
-            image("French press on a window sill"),
+            // A fixed height (object-fit already defaults to "cover" in compileBlocksToHtml's
+            // Image case) keeps this in step with its neighbour - the two source photos have
+            // different natural aspect ratios, and without a shared height one column ran much
+            // taller than the other, leaving a large blank gap under the shorter card.
+            image("French press on a window sill", { height: "260px" }),
             rich([
-              "Four minutes, one timer, no technique. Full-bodied and a little silty — for anyone who wants coffee, not a hobby.",
+              "Four minutes, one timer, no technique. Full-bodied and a little silty - for anyone who wants coffee, not a hobby.",
             ]),
             buyButton({}),
           ],
           [
             heading("Ceramic Pour-Over", 2),
-            image("Pour-over dripper mid-brew"),
+            image("Pour-over dripper mid-brew", { height: "260px" }),
             rich([
-              "Three minutes of hands-on pouring for a cleaner, brighter cup that shows off a good single origin — and punishes a bad grinder.",
+              "Three minutes of hands-on pouring for a cleaner, brighter cup that shows off a good single origin - and punishes a bad grinder.",
             ]),
             buyButton({}),
           ],
@@ -1117,19 +1137,19 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Why we made it", 2),
         rich([
-          "Every autumn we get the same message: something warm that isn't pumpkin, and please make it last longer than a weekend. Ember is the answer to both — eighteen months of blending, and a wax pour we tested to a 55-hour burn.",
+          "Every autumn we get the same message: something warm that isn't pumpkin, and please make it last longer than a weekend. Ember is the answer to both - eighteen months of blending, and a wax pour we tested to a 55-hour burn.",
         ]),
       ]),
       section({ paddingTop: "8px", paddingBottom: "24px" }, [
         heading("Three things you'll notice first", 2),
         columns(3, [
-          [heading("It fills a room cold", 3), rich(["The cedar carries before you light it — you'll smell it when you open the box."])],
+          [heading("It fills a room cold", 3), rich(["The cedar carries before you light it - you'll smell it when you open the box."])],
           [heading("An even burn pool", 3), rich(["A wider cotton wick reaches the edge in 90 minutes, so no wax tunnels down the side."])],
           [heading("55 hours, tested", 3), rich(["Burned in four-hour sessions until the wick gave out. Three of four jars passed 55."])],
         ]),
       ]),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [image("Ember candle, 8 oz")]),
-      section({ backgroundColor: cur().deep, paddingTop: "36px", paddingBottom: "36px" }, [
+      section({ backgroundColor: cur().deep, paddingTop: "36px", paddingBottom: "36px", paddingLeft: "28px", paddingRight: "28px" }, [
         heading("Be first to try it", 2, { align: "center", color: "#ffffff" }),
         rich(["First run is 400 jars. Orders placed before Friday ship Monday with a hand-numbered base."], { color: "#ffffff" }),
         buyButton({}),
@@ -1194,7 +1214,7 @@ export const BLOG_TEMPLATES = [
         callout({
           type: "success",
           title: "Verdict",
-          body: "Buy them if you work in an open-plan office and want the pair you forget you're wearing. Skip them if you mostly listen on the move — the buds are half the price and stay in your pocket.",
+          body: "Buy them if you work in an open-plan office and want the pair you forget you're wearing. Skip them if you mostly listen on the move - the buds are half the price and stay in your pocket.",
           emoji: "⚡",
         }),
       ]),
@@ -1222,11 +1242,11 @@ export const BLOG_TEMPLATES = [
         heading("What you get", 2),
         image("Headphones close-up"),
         rich([
-          "In the box: the headphones, a semi-rigid case, a USB-C cable and a 3.5 mm lead for aircraft. No charger, and the cable is short — 60 cm.",
+          "In the box: the headphones, a semi-rigid case, a USB-C cable and a 3.5 mm lead for aircraft. No charger, and the cable is short - 60 cm.",
           "Battery came in at 38 hours of real use against a claimed 40, with cancellation on the whole time.",
         ]),
       ]),
-      section({ backgroundColor: cur().deep, paddingTop: "32px", paddingBottom: "32px" }, [
+      section({ backgroundColor: cur().deep, paddingTop: "32px", paddingBottom: "32px", paddingLeft: "28px", paddingRight: "28px" }, [
         heading("Get it today", 2, { align: "center", color: "#ffffff" }),
         buyButton({}),
       ]),
@@ -1241,7 +1261,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "faq-support-article",
     name: "FAQ / Support",
-    description: "Organize the questions your support team answers every week — searchable, schema-ready.",
+    description: "Organize the questions your support team answers every week - searchable, schema-ready.",
     category: "Educational",
     badge: null,
     style: STYLE.faq,
@@ -1259,11 +1279,11 @@ export const BLOG_TEMPLATES = [
         faq("Shipping", [
           faqItem(
             "How long does shipping take?",
-            "Standard is 3–5 business days once the order leaves us, express is 1–2. Orders placed before 2pm on a weekday go out the same day."
+            "Standard is 3-5 business days once the order leaves us, express is 1-2. Orders placed before 2pm on a weekday go out the same day."
           ),
           faqItem(
             "Do you ship internationally?",
-            "We ship to 43 countries. Duties are calculated at checkout, so the price you pay is the final one — nothing is collected at the door."
+            "We ship to 43 countries. Duties are calculated at checkout, so the price you pay is the final one - nothing is collected at the door."
           ),
           faqItem(
             "Can I change my address after ordering?",
@@ -1277,18 +1297,18 @@ export const BLOG_TEMPLATES = [
         faq("Returns", [
           faqItem(
             "How do I start a return?",
-            "Open the returns portal with your order number and email. You'll get a prepaid label straight away and the refund lands 3–5 days after it reaches us."
+            "Open the returns portal with your order number and email. You'll get a prepaid label straight away and the refund lands 3-5 days after it reaches us."
           ),
           faqItem(
             "What's covered by the warranty?",
-            "Two years on manufacturing faults — stitching, hardware and finish. Normal wear, accidental damage and anything altered after purchase aren't covered."
+            "Two years on manufacturing faults - stitching, hardware and finish. Normal wear, accidental damage and anything altered after purchase aren't covered."
           ),
         ]),
       ]),
       section({ paddingTop: "8px", paddingBottom: "24px" }, [
         heading("Still stuck?", 2),
         rich([
-          "Live chat is staffed 9am–6pm on weekdays and usually answers in under two minutes. Email gets a reply the same working day.",
+          "Live chat is staffed 9am-6pm on weekdays and usually answers in under two minutes. Email gets a reply the same working day.",
         ]),
         button("Contact support", { url: "/pages/contact" }),
       ]),
@@ -1297,7 +1317,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "size-fit-guide",
     name: "Size & Fit Guide",
-    description: "Help shoppers pick the right size — measurements, how it fits, and a product close.",
+    description: "Help shoppers pick the right size - measurements, how it fits, and a product close.",
     category: "Educational",
     badge: null,
     style: STYLE.fit,
@@ -1306,14 +1326,14 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "16px", paddingBottom: "8px" }, [
         heading("How the Studio Heavyweight Tee Fits", 1),
         rich([
-          "It runs true to size with a deliberately boxy body. If you want it fitted through the chest, size down — it won't shrink into that shape on its own.",
+          "It runs true to size with a deliberately boxy body. If you want it fitted through the chest, size down - it won't shrink into that shape on its own.",
         ]),
       ]),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [tocPanel("Find your size", STYLE.fit)]),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Measure yourself", 2),
         rich([
-          "Take a tee you already like, lay it flat, and measure across the chest one inch below the armhole. Double that number and compare it to the chest column below — it's far more reliable than measuring your body.",
+          "Take a tee you already like, lay it flat, and measure across the chest one inch below the armhole. Double that number and compare it to the chest column below - it's far more reliable than measuring your body.",
         ]),
         image("Tape measure on a workbench"),
       ]),
@@ -1321,10 +1341,10 @@ export const BLOG_TEMPLATES = [
         heading("Size chart", 2),
         table(5, 4, [
           ["Size", "Chest (flat, in)", "Body length (in)", "Fits chest (in)"],
-          ["S", "20", "27", "34–36"],
-          ["M", "21.5", "28", "38–40"],
-          ["L", "23", "29", "42–44"],
-          ["XL", "24.5", "30", "46–48"],
+          ["S", "20", "27", "34-36"],
+          ["M", "21.5", "28", "38-40"],
+          ["L", "23", "29", "42-44"],
+          ["XL", "24.5", "30", "46-48"],
         ]),
       ]),
       section({ paddingTop: "8px", paddingBottom: "24px" }, [
@@ -1342,7 +1362,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "care-maintenance-guide",
     name: "Care & Maintenance",
-    description: "Keep the product looking new — cleaning, storage, and what to avoid.",
+    description: "Keep the product looking new - cleaning, storage, and what to avoid.",
     category: "Educational",
     badge: null,
     style: STYLE.care,
@@ -1358,14 +1378,14 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Everyday care", 2),
         rich([
-          "Brush the nap in one direction with a suede brush after each wear, while the boots are dry. Give them a full day between wears — the leather needs to release moisture or it stiffens.",
+          "Brush the nap in one direction with a suede brush after each wear, while the boots are dry. Give them a full day between wears - the leather needs to release moisture or it stiffens.",
         ]),
         image("Suede boots"),
       ]),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Deep clean", 2),
         rich([
-          "Once a season, or after a salt stain: lift dried dirt with a suede eraser, then brush against the nap and back with it. For water marks, dampen the whole panel evenly rather than spot-cleaning — that's what leaves a ring.",
+          "Once a season, or after a salt stain: lift dried dirt with a suede eraser, then brush against the nap and back with it. For water marks, dampen the whole panel evenly rather than spot-cleaning - that's what leaves a ring.",
         ]),
         image("Boots in autumn leaves"),
       ]),
@@ -1374,7 +1394,7 @@ export const BLOG_TEMPLATES = [
         callout({
           type: "warning",
           title: "Don't",
-          body: "Never dry them at a radiator — the glue in the sole gives out long before the leather does. And skip household cleaners: anything with detergent strips the nap flat for good.",
+          body: "Never dry them at a radiator - the glue in the sole gives out long before the leather does. And skip household cleaners: anything with detergent strips the nap flat for good.",
           emoji: "⚠️",
         }),
       ]),
@@ -1387,7 +1407,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "recipe-diy-tutorial",
     name: "Recipe / DIY",
-    description: "Materials, time, and numbered steps — built for recipes, crafts, and kitchen projects.",
+    description: "Materials, time, and numbered steps - built for recipes, crafts, and kitchen projects.",
     category: "Educational",
     badge: "New",
     style: STYLE.recipe,
@@ -1400,16 +1420,39 @@ export const BLOG_TEMPLATES = [
         showCta: false,
       }),
       section({ paddingTop: "28px", paddingBottom: "12px" }, [tocPanel("Make it", STYLE.recipe)]),
-      section({ paddingTop: "8px", paddingBottom: "16px" }, [
-        heading("Ingredients", 2),
-        rich([
-          "225 g unsalted butter · 200 g dark brown sugar · 100 g caster sugar · 2 eggs plus 1 yolk · 1 tsp vanilla bean paste · 320 g plain flour · 1 tsp bicarbonate of soda · 1 tsp fine salt · 300 g dark chocolate, chopped · flaky sea salt to finish.",
-        ]),
-      ]),
+      // Ingredients belong in a scannable amount/item table, not one run-on paragraph of
+      // dot-separated quantities - a cook reads this list standing at the counter.
+      section(
+        {
+          backgroundColor: cur().tint,
+          paddingTop: "28px",
+          paddingBottom: "28px",
+          paddingLeft: "28px",
+          paddingRight: "28px",
+          borderRadius: "12px",
+        },
+        [
+          heading("Ingredients", 2),
+          rich(["Makes 18 cookies. Bring the eggs to room temperature before you start."]),
+          table(11, 2, [
+            ["Amount", "Ingredient"],
+            ["225 g", "Unsalted butter"],
+            ["200 g", "Dark brown sugar"],
+            ["100 g", "Caster sugar"],
+            ["2 + 1", "Eggs, plus one extra yolk"],
+            ["1 tsp", "Vanilla bean paste"],
+            ["320 g", "Plain flour"],
+            ["1 tsp", "Bicarbonate of soda"],
+            ["1 tsp", "Fine salt"],
+            ["300 g", "Dark chocolate, chopped"],
+            ["To finish", "Flaky sea salt"],
+          ]),
+        ]
+      ),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Step 1: Brown the butter", 2),
         rich([
-          "Melt the butter over medium heat and keep going past the foam, swirling, until the milk solids at the bottom turn amber and it smells like toffee — about 6 minutes. Pour it into your mixing bowl, scraping in every brown fleck, and let it cool for 10 minutes.",
+          "Melt the butter over medium heat and keep going past the foam, swirling, until the milk solids at the bottom turn amber and it smells like toffee - about 6 minutes. Pour it into your mixing bowl, scraping in every brown fleck, and let it cool for 10 minutes.",
         ]),
       ]),
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
@@ -1428,7 +1471,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("Step 4: Bake at 180°C", 2),
         rich([
-          "Six balls per tray, well spaced, 11–13 minutes. Pull them when the edges are set and the centres still look underdone — they finish on the hot tray. Flaky salt goes on in the first minute out of the oven.",
+          "Six balls per tray, well spaced, 11-13 minutes. Pull them when the edges are set and the centres still look underdone - they finish on the hot tray. Flaky salt goes on in the first minute out of the oven.",
         ]),
         image("Finished cookies with milk"),
       ]),
@@ -1465,7 +1508,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("What we believe", 2),
         rich([
-          "Short ingredient lists, printed in full on every wrapper — including the ones that sound unglamorous.",
+          "Short ingredient lists, printed in full on every wrapper - including the ones that sound unglamorous.",
           "Cold process, cured six weeks, no shortcuts to get stock out faster in December.",
           "If a bar doesn't suit your skin, we'd rather refund it than have you finish it out of politeness.",
         ]),
@@ -1501,11 +1544,15 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "24px" }, [
         heading("Look 1: Saturday, cold and bright", 2),
         columns(2, [
-          [image("Soft flowing autumn outfit")],
+          // A lookbook look is an image against its copy and the shoppable piece, so the photo
+          // has to hold the column. Left at its natural height it came out ~232px against ~507px
+          // of text-plus-product on the right, leaving a column-tall hole beside the product
+          // card. Portrait crops suit a lookbook anyway. object-fit defaults to "cover".
+          [image("Soft flowing autumn outfit", { height: "460px" })],
           [
             rich([
               "The overshirt worn open over a heavyweight tee, with the pleated skirt and boots. It's the outfit that handles a 9°C morning and a warm café without a coat.",
-              "Roll the cuff twice — the wool is stiff out of the box and it softens where you fold it.",
+              "Roll the cuff twice - the wool is stiff out of the box and it softens where you fold it.",
             ]),
             productGrid({ columns: 1 }),
           ],
@@ -1514,7 +1561,8 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "24px" }, [
         heading("Look 2: Dinner, no coat", 2),
         columns(2, [
-          [image("Outfit of the day")],
+          // Shorter copy than Look 1, so a correspondingly shorter photo keeps this row balanced.
+          [image("Outfit of the day", { height: "385px" })],
           [
             rich([
               "Same overshirt buttoned to the top and belted, which changes the shape completely. Add the midi skirt and it reads as a jacket rather than a shirt.",
@@ -1551,7 +1599,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("What she tried", 2),
         rich([
-          "A cheaper gooseneck first — the pour was better but she was still guessing at temperature and boiling far more water than one cup needed.",
+          "A cheaper gooseneck first - the pour was better but she was still guessing at temperature and boiling far more water than one cup needed.",
           "Then a pod machine, which was fast and, in her words, \"not coffee I wanted to drink twice.\"",
         ]),
       ]),
@@ -1560,7 +1608,7 @@ export const BLOG_TEMPLATES = [
         callout({
           type: "success",
           title: "Five minutes, one cup, no second attempt",
-          body: "Boiling 400 ml instead of a full kettle and reading the lid thermometer took the guesswork out. Six weeks in, she's made one bitter cup — and that was a stale bag of beans.",
+          body: "Boiling 400 ml instead of a full kettle and reading the lid thermometer took the guesswork out. Six weeks in, she's made one bitter cup - and that was a stale bag of beans.",
           emoji: "✨",
         }),
         image("Smiling customer with a coffee"),
@@ -1574,7 +1622,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "gift-guide",
     name: "Gift Guide",
-    description: "Occasion-based gift guide in shoppable groups — built for holiday and seasonal traffic.",
+    description: "Occasion-based gift guide in shoppable groups - built for holiday and seasonal traffic.",
     category: "Seasonal",
     badge: "Popular",
     style: STYLE.gift,
@@ -1599,7 +1647,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "24px" }, [
         heading("For the one who is impossible to buy for", 2),
         rich([
-          "Skip the gadget. An upgraded version of something they already use daily lands better — the teapot they'd never buy themselves, the soap that isn't from the supermarket.",
+          "Skip the gadget. An upgraded version of something they already use daily lands better - the teapot they'd never buy themselves, the soap that isn't from the supermarket.",
         ]),
         image("Gift wrapping supplies"),
         productGrid({ columns: 3 }),
@@ -1621,7 +1669,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "beauty-skincare-routine",
     name: "Beauty: Skincare Routine",
-    description: "A written five-step evening routine with real photography — swap in your own products and publish.",
+    description: "A written five-step evening routine with real photography - swap in your own products and publish.",
     category: "Industry",
     badge: "New",
     style: STYLE.beauty,
@@ -1639,21 +1687,21 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Why the order matters more than the products", 2),
         rich([
-          "Thinnest to thickest. That single rule decides whether an actives serum reaches skin or sits on top of a cream doing nothing — and it's the mistake behind most \"this didn't work for me\" reviews.",
+          "Thinnest to thickest. That single rule decides whether an actives serum reaches skin or sits on top of a cream doing nothing - and it's the mistake behind most \"this didn't work for me\" reviews.",
           "Everything below takes about ten minutes, and four of the five steps take under a minute each.",
         ]),
       ]),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Step 1: Take the day off", 2),
         rich([
-          "Cleansing balm or oil on dry skin, 30 seconds of massage, then emulsify with warm water. If you wear SPF — and you should — this is the step that actually removes it.",
+          "Cleansing balm or oil on dry skin, 30 seconds of massage, then emulsify with warm water. If you wear SPF - and you should - this is the step that actually removes it.",
         ]),
         image("Applying cleanser"),
       ]),
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("Step 2: Cleanse again, gently", 2),
         rich([
-          "A low-foaming milk or gel cleanser to lift what the balm loosened. Skin should feel comfortable afterwards — if it feels tight, the cleanser is too strong for you, not your skin too sensitive.",
+          "A low-foaming milk or gel cleanser to lift what the balm loosened. Skin should feel comfortable afterwards - if it feels tight, the cleanser is too strong for you, not your skin too sensitive.",
         ]),
       ]),
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
@@ -1678,7 +1726,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("Step 5: Leave it alone", 2),
         rich([
-          "No mirror-checking, no extra layers, and give it eight weeks before you judge anything. Skin turns over roughly every 28 days — two full cycles is the honest test.",
+          "No mirror-checking, no extra layers, and give it eight weeks before you judge anything. Skin turns over roughly every 28 days - two full cycles is the honest test.",
         ]),
         image("Opening a cosmetic jar"),
       ]),
@@ -1689,7 +1737,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "24px" }, [
         faq("Common questions", [
           faqItem("Can I use vitamin C at night instead?", "You can, but it earns its keep in the morning under SPF. If you only own one active, keep it in the AM routine and use niacinamide here."),
-          faqItem("Do I need an eye cream?", "Only if the skin around your eyes feels dry — a moisturiser you already own does the same job for most people."),
+          faqItem("Do I need an eye cream?", "Only if the skin around your eyes feels dry - a moisturiser you already own does the same job for most people."),
           faqItem("How long before I see anything?", "Texture and hydration in two to three weeks. Pigmentation and fine lines take eight to twelve, with SPF every single morning."),
         ]),
       ]),
@@ -1716,21 +1764,21 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Before you start", 2),
         rich([
-          "Warm room, empty stomach, and a mat with enough grip that your hands don't slide in downward dog. Hold each pose for five slow breaths — roughly 30 seconds — and move through the list in order.",
+          "Warm room, empty stomach, and a mat with enough grip that your hands don't slide in downward dog. Hold each pose for five slow breaths - roughly 30 seconds - and move through the list in order.",
           "If something pinches rather than stretches, come out of it. Discomfort in the belly of a muscle is fine; anything sharp in a joint is not.",
         ]),
       ]),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("1. Child's pose (Balasana)", 2),
         rich([
-          "Knees wide, big toes touching, hips back to the heels and arms long. This is your reset — come back to it whenever the sequence gets away from you.",
+          "Knees wide, big toes touching, hips back to the heels and arms long. This is your reset - come back to it whenever the sequence gets away from you.",
         ]),
         image("Child's pose"),
       ]),
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("2. Downward-facing dog", 2),
         rich([
-          "Hands shoulder-width, hips high, and a generous bend in the knees. Beginners chase straight legs and round the back instead — the long spine matters far more than the heels touching.",
+          "Hands shoulder-width, hips high, and a generous bend in the knees. Beginners chase straight legs and round the back instead - the long spine matters far more than the heels touching.",
         ]),
       ]),
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
@@ -1743,26 +1791,26 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("4. Extended hand-to-toe pose", 2),
         rich([
-          "Stand tall, draw one knee in, then extend the leg only as far as you can without collapsing the standing hip. Use a strap around the foot — everyone does, including the people who look like they don't need it.",
+          "Stand tall, draw one knee in, then extend the leg only as far as you can without collapsing the standing hip. Use a strap around the foot - everyone does, including the people who look like they don't need it.",
         ]),
         image("Extended hand-to-toe pose"),
       ]),
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("5. Warrior II", 2),
         rich([
-          "Front knee over the ankle, back foot flat and turned in slightly, arms level. Five breaths each side, and keep checking that front knee — it drifts inward the moment you stop looking.",
+          "Front knee over the ankle, back foot flat and turned in slightly, arms level. Five breaths each side, and keep checking that front knee - it drifts inward the moment you stop looking.",
         ]),
       ]),
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("6. Dancer's pose (Natarajasana)", 2),
         rich([
-          "The balance pose in the list, and the one worth being patient with. Hold a wall with your free hand for the first few weeks — the shape is the same, and you'll actually breathe in it.",
+          "The balance pose in the list, and the one worth being patient with. Hold a wall with your free hand for the first few weeks - the shape is the same, and you'll actually breathe in it.",
         ]),
       ]),
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("7. Savasana", 2),
         rich([
-          "Flat on your back, arms away from the body, eyes closed, five full minutes. It's not the optional bit at the end — it's where the nervous system catches up with the rest of the practice.",
+          "Flat on your back, arms away from the body, eyes closed, five full minutes. It's not the optional bit at the end - it's where the nervous system catches up with the rest of the practice.",
         ]),
       ]),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
@@ -1830,9 +1878,9 @@ export const BLOG_TEMPLATES = [
         heading("Water and light at a glance", 2),
         table(4, 4, [
           ["Plant", "Water", "Min. light", "Pet safe"],
-          ["Snake plant", "Every 3–4 weeks", "Very low", "No"],
-          ["Pothos", "Every 1–2 weeks", "Low", "No"],
-          ["Peace lily", "Weekly", "Low–medium", "No"],
+          ["Snake plant", "Every 3-4 weeks", "Very low", "No"],
+          ["Pothos", "Every 1-2 weeks", "Low", "No"],
+          ["Peace lily", "Weekly", "Low-medium", "No"],
         ]),
       ]),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
@@ -1840,7 +1888,7 @@ export const BLOG_TEMPLATES = [
         callout({
           type: "warning",
           title: "Don't water on a schedule",
-          body: "Push a finger two inches into the soil. Damp means wait, whatever the calendar says — in a dim room that can be three weeks between drinks.",
+          body: "Push a finger two inches into the soil. Damp means wait, whatever the calendar says - in a dim room that can be three weeks between drinks.",
           emoji: "🪴",
         }),
         image("Cosy living room with a window"),
@@ -1854,7 +1902,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "food-recipe-feature",
     name: "Food: Recipe Feature",
-    description: "A magazine-style recipe feature — method, variations, and shoppable ingredients.",
+    description: "A magazine-style recipe feature - method, variations, and shoppable ingredients.",
     category: "Industry",
     badge: "New",
     style: STYLE.food,
@@ -1862,7 +1910,7 @@ export const BLOG_TEMPLATES = [
     blocks: withStyle(STYLE.food, () => [
       hero({
         heading: "Heavenly Cinnamon Rolls: One Dough, Four Ways",
-        subheading: "A tested overnight recipe — plus the three variations our bakery sells out of first.",
+        subheading: "A tested overnight recipe - plus the three variations our bakery sells out of first.",
         minHeight: "380px",
         showCta: true,
         ctaText: "Shop the baking kit",
@@ -1876,13 +1924,41 @@ export const BLOG_TEMPLATES = [
           "Active time is about 40 minutes. The rest is the fridge doing the work overnight.",
         ]),
       ]),
-      section({ paddingTop: "8px", paddingBottom: "16px" }, [
-        heading("Ingredients", 2),
-        rich([
-          "Dough: 500 g strong white flour · 300 ml whole milk · 7 g instant yeast · 60 g caster sugar · 1 egg · 60 g soft butter · 8 g salt.",
-          "Filling: 120 g soft butter · 150 g dark brown sugar · 2 tbsp ground Ceylon cinnamon · pinch of salt.",
-        ]),
-      ]),
+      // Split into the two things a baker actually measures separately, each as a scannable
+      // amount/item table rather than a run-on paragraph of dot-separated quantities.
+      section(
+        {
+          backgroundColor: cur().tint,
+          paddingTop: "28px",
+          paddingBottom: "28px",
+          paddingLeft: "28px",
+          paddingRight: "28px",
+          borderRadius: "12px",
+        },
+        [
+          heading("Ingredients", 2),
+          rich(["Makes 12 rolls in a 9x13 tin. Weigh the flour if you can - cups vary far more than they look."]),
+          heading("For the dough", 3),
+          table(8, 2, [
+            ["Amount", "Ingredient"],
+            ["500 g", "Strong white flour"],
+            ["300 ml", "Whole milk"],
+            ["7 g", "Instant yeast"],
+            ["60 g", "Caster sugar"],
+            ["1", "Egg"],
+            ["60 g", "Soft butter"],
+            ["8 g", "Salt"],
+          ]),
+          heading("For the filling", 3),
+          table(5, 2, [
+            ["Amount", "Ingredient"],
+            ["120 g", "Soft butter"],
+            ["150 g", "Dark brown sugar"],
+            ["2 tbsp", "Ground Ceylon cinnamon"],
+            ["Pinch", "Salt"],
+          ]),
+        ]
+      ),
       section({ paddingTop: "8px", paddingBottom: "16px" }, [
         heading("Step 1: Make the tangzhong", 2),
         rich([
@@ -1892,7 +1968,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("Step 2: Mix and knead", 2),
         rich([
-          "Everything except the butter into the bowl, mix to a shaggy dough, then add the butter a knob at a time. Knead 8 minutes in a mixer or 12 by hand — you want it to pull cleanly off the side and pass a windowpane test.",
+          "Everything except the butter into the bowl, mix to a shaggy dough, then add the butter a knob at a time. Knead 8 minutes in a mixer or 12 by hand - you want it to pull cleanly off the side and pass a windowpane test.",
         ]),
         image("Dough ready to roll"),
       ]),
@@ -1906,7 +1982,7 @@ export const BLOG_TEMPLATES = [
       section({ paddingTop: "0px", paddingBottom: "16px" }, [
         heading("Step 4: Bake at 180°C", 2),
         rich([
-          "Straight from the fridge to a warm spot for 45 minutes, until they're touching and puffy. Bake 22–25 minutes; pull them at 88°C in the centre roll. Glaze while warm, not hot, or it slides off.",
+          "Straight from the fridge to a warm spot for 45 minutes, until they're touching and puffy. Bake 22-25 minutes; pull them at 88°C in the centre roll. Glaze while warm, not hot, or it slides off.",
         ]),
         image("Fresh pastries"),
       ]),
@@ -1924,7 +2000,7 @@ export const BLOG_TEMPLATES = [
       ]),
       section({ paddingTop: "8px", paddingBottom: "24px" }, [
         faq("Recipe questions", [
-          faqItem("Can I make them same-day?", "Yes — prove at room temperature for 90 minutes instead of overnight. The flavour is slightly flatter but the texture holds."),
+          faqItem("Can I make them same-day?", "Yes - prove at room temperature for 90 minutes instead of overnight. The flavour is slightly flatter but the texture holds."),
           faqItem("Can I freeze them?", "Freeze after shaping, before proving. Move to the fridge the night before you want to bake."),
         ]),
       ]),
@@ -1933,7 +2009,7 @@ export const BLOG_TEMPLATES = [
   {
     key: "classic-christmas",
     name: "Classic Christmas",
-    description: "A festive, written gift guide for the holiday rush — six picks, wrapped in seasonal photography.",
+    description: "A festive, written gift guide for the holiday rush - six picks, wrapped in seasonal photography.",
     category: "Seasonal",
     badge: "New",
     style: STYLE.christmas,
@@ -1952,7 +2028,7 @@ export const BLOG_TEMPLATES = [
         heading("How we chose these six", 2),
         rich([
           "Three rules. It has to survive being unwrapped in front of an audience, it has to work for someone whose taste you only half know, and it has to cost under $50 without looking like it.",
-          "Order dates are at the bottom — the short version is that the 18th is the last safe standard shipping day.",
+          "Order dates are at the bottom - the short version is that the 18th is the last safe standard shipping day.",
         ]),
         image("Christmas gift box"),
       ]),
@@ -1979,7 +2055,7 @@ export const BLOG_TEMPLATES = [
           ["Local pickup", "Dec 23", "Same day"],
         ]),
       ]),
-      section({ backgroundColor: cur().deep, paddingTop: "32px", paddingBottom: "32px", borderRadius: "12px" }, [
+      section({ backgroundColor: cur().deep, paddingTop: "32px", paddingBottom: "32px", paddingLeft: "28px", paddingRight: "28px", borderRadius: "12px" }, [
         heading("Still stuck? Send a gift card", 2, { align: "center", color: "#ffffff" }),
         rich(["Delivered by email in minutes, which makes it the only present on this page you can buy on the 24th."], { color: "#ffffff" }),
         button("Shop gift cards", { url: "/products/gift-card" }),
@@ -2004,7 +2080,7 @@ export function getBlogTemplateSummaries() {
     accent: style?.accent || "#303030",
     style: style || {},
     preview: preview || {},
-    // Same block tree the editor applies — gallery preview compiles this AST,
+    // Same block tree the editor applies - gallery preview compiles this AST,
     // so the card matches the article the merchant gets.
     blocks: blocks || [],
     tier: FREE_TEMPLATE_KEYS.has(key) ? "free" : "paid",

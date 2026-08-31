@@ -44,7 +44,10 @@ function RenderTocList({ items, minLevel, listStyle, textColor, isRoot = true })
       {items.map((item) => {
         const isMain = item.level === minLevel;
         return (
-          <li key={item.id} style={{ fontSize: "14px", margin: "6px 0", display: "list-item" }}>
+          // The ::marker takes its colour from the <li>, not the <a> inside it - without this,
+          // panel TOC numbers/bullets kept the page's dark default while the labels went white.
+          // Matches compileBlocksToHtml.js and EditorContentCompiler.js.
+          <li key={item.id} style={{ fontSize: "14px", margin: "6px 0", display: "list-item", color: textColor }}>
             <a
               href={`#${item.id}`}
               onClick={(e) => {

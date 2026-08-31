@@ -150,7 +150,9 @@ export function getTemplateChips(blocks) {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
   if (f.steps >= 2) chips.push(`${f.steps} numbered steps`);
-  if (f.tables) chips.push(f.tables > 1 ? `${f.tables} comparison tables` : "Comparison table");
+  // Neutral wording: a table is a spec comparison in a buying guide but an ingredients list in
+  // a recipe, so the chip describes the block rather than guessing at its purpose.
+  if (f.tables) chips.push(plural(f.tables, "table", "tables"));
   if (f.faqs) chips.push(plural(f.faqs, "FAQ", "FAQs"));
   if (f.products) chips.push(f.products === 1 ? "1 product block" : `${f.products} product slots`);
   if (f.hero) chips.push("Hero banner");

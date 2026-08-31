@@ -29,12 +29,18 @@ export function ImageBuilderPreview({ block }) {
     );
   }
 
+  // compileBlocksToHtml.js and EditorContentCompiler.js both read settings.height/objectFit
+  // (default height "auto", objectFit "cover") — this canvas preview silently ignored both, so
+  // an explicit height meant to keep two side-by-side images level (e.g. a comparison template)
+  // took effect in every real render except the one the merchant actually edits against.
   const img = (
     <img
       src={s.src}
       alt={s.alt || ""}
       style={{
         width: s.width || "100%",
+        height: s.height || "auto",
+        objectFit: s.objectFit || "cover",
         borderRadius: s.borderRadius ? `${s.borderRadius}px` : "0",
         display: "block",
       }}

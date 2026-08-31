@@ -109,6 +109,16 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   const isSectionNode = type === "Section";
   const isLayoutBlock = isColumnNode || isColumnLayoutNode || isSectionNode;
 
+  // A Section's own settings.backgroundColor was never read anywhere in this component, so a
+  // template (or a merchant) that painted a Section - a tinted CTA band, a colored strip - saw
+  // it in the compiled preview/published article but a flat white box in the very canvas they
+  // were editing, and any white text set for that band (e.g. a hero-style heading) went
+  // invisible against it. Mirrors compileBlocksToHtml.js's own Section case: "#ffffff" and
+  // "transparent" both mean "no fill," everything else paints through.
+  const sectionBg = block.settings?.backgroundColor;
+  const hasSectionBg =
+    isSectionNode && sectionBg && sectionBg !== "#ffffff" && sectionBg !== "transparent";
+
   // ── Chrome Ownership Rule ──────────────────────────────────────────────────────
   // CanvasNode is the SOLE provider of block-level chrome:
   //   background-color, border, border-radius, box-shadow, outer padding/margin.
@@ -185,6 +195,8 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
       ? "var(--p-color-bg-surface-secondary)"
       : isColumnNode 
       ? "#fafbfc" 
+      : hasSectionBg
+      ? sectionBg
       : "transparent",
     padding: isColumnNode ? "8px" : "12px 16px",
     boxSizing: "border-box",
@@ -339,6 +351,29 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
           style={
             isColumnLayoutNode
               ? { display: "flex", gap: block.settings?.gap || "16px", padding: "8px 0", boxSizing: "border-box", width: "100%" }
+              : isSectionNode
+              ? // Same gap the background-color fix above closed: this div ignored a Section's
+                // own padding/maxWidth entirely, always giving it the generic 16px editor
+                // comfort padding no matter what the block was actually set to - so a
+                // deliberately spacious band (a template's 36px CTA section) always looked
+                // cramped in the canvas next to the same content in Preview. Layered on top of
+                // (not replacing) the 16px baseline, so an ordinary Section - the vast majority,
+                // still at its "0px" default - renders exactly as it did before this fix.
+                {
+                  position: "relative",
+                  minHeight: "40px",
+                  maxWidth: block.settings?.maxWidth || "100%",
+                  margin: "0 auto",
+                  boxSizing: "border-box",
+                  padding: [
+                    "paddingTop",
+                    "paddingRight",
+                    "paddingBottom",
+                    "paddingLeft",
+                  ]
+                    .map((key) => `${16 + (parseFloat(block.settings?.[key]) || 0)}px`)
+                    .join(" "),
+                }
               : { position: "relative", minHeight: "40px", padding: isColumnNode ? "4px" : "16px" }
           }
         >

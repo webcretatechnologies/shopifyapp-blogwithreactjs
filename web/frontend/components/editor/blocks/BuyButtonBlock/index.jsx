@@ -102,6 +102,11 @@ export function BuyButtonBlockPreview({ block }) {
       backgroundColor: '#ffffff',
       boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
       boxSizing: 'border-box',
+      // compileBlocksToHtml.js and EditorContentCompiler.js both cap this card at maxWidth
+      // (600px by default); the canvas ignored the setting and always ran full width, so a
+      // buy button looked one size while editing and another in the preview/published article.
+      maxWidth: block.maxWidth || '600px',
+      margin: '16px 0',
     }}>
       {imageUrl && (
         <div style={{

@@ -1500,7 +1500,7 @@ export default function PostEditor() {
       return;
     }
     if (!shopifyBlogId) {
-      setError("Select a blog before saving — Publish to Shopify needs to know which blog this article belongs to.");
+      setError("Select a blog before saving - Publish to Shopify needs to know which blog this article belongs to.");
       return;
     }
     if (source === "header") setIsSavingHeader(true);
@@ -1815,7 +1815,7 @@ export default function PostEditor() {
   };
 
   const blogOptions = [
-    { label: "— Select a blog —", value: "" },
+    { label: "- Select a blog -", value: "" },
     ...shopifyBlogs.map((b) => ({ label: b.title, value: String(b.id) })),
     { label: "+ Create a new blog", value: "CREATE_NEW" }
   ];
@@ -2110,7 +2110,7 @@ export default function PostEditor() {
                             <List type="bullet">
                               <List.Item>Bind the product and collection blocks to your own catalog</List.Item>
                               <List.Item>Replace the sample photos with your own</List.Item>
-                              <List.Item>Rewrite the sample copy in your own voice — it's a starting draft, not filler</List.Item>
+                              <List.Item>Rewrite the sample copy in your own voice - it's a starting draft, not filler</List.Item>
                             </List>
                           </BlockStack>
                         </Banner>
@@ -2268,7 +2268,7 @@ export default function PostEditor() {
                                 <UpgradePrompt
                                   onUpgrade={handleUpgradeNow}
                                   requiredPlan="Starter"
-                                  title="Rich snippets — Starter feature"
+                                  title="Rich snippets - Starter feature"
                                   description="Controls the JSON-LD schema type published with this article for Google rich results."
                                 />
                               )}
@@ -2338,7 +2338,7 @@ export default function PostEditor() {
                                 <UpgradePrompt
                                   onUpgrade={handleUpgradeNow}
                                   requiredPlan="Pro"
-                                  title="XML sitemap control — Pro feature"
+                                  title="XML sitemap control - Pro feature"
                                   description="Exclude individual posts from the app's sitemap, submitted separately to Search Console/Bing."
                                 />
                               )}
@@ -2470,7 +2470,7 @@ export default function PostEditor() {
                           />
                           <Text variant="bodySm" tone={isScheduledInPast ? "critical" : "subdued"}>
                             {isScheduledInPast
-                              ? "Pick a date and time that's still in the future — this one has already passed."
+                              ? "Pick a date and time that's still in the future - this one has already passed."
                               : scheduledAtUtc
                                 ? `Will go live ${formatInShopTz(scheduledAtUtc)} (${shopTimezone})`
                                 : "Pick a date and time above."}

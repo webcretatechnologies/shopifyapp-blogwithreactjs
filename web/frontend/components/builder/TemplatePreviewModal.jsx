@@ -224,7 +224,7 @@ export function TemplatePreviewBody({ template, locked = false }) {
               {facts.productBlocks > 0 && (
                 <List.Item>Bind the product and collection blocks to your own catalog</List.Item>
               )}
-              <List.Item>Rewrite the sample copy — it's a starting draft, not filler</List.Item>
+              <List.Item>Rewrite the sample copy - it's a starting draft, not filler</List.Item>
               {facts.images > 0 && (
                 <List.Item>
                   Swap the {facts.images} sample photo{facts.images === 1 ? "" : "s"} for your own

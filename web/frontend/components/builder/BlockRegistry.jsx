@@ -530,15 +530,26 @@ export const BlockRegistry = {
         }
       }
 
+      // Mirrors compileBlocksToHtml.js's and EditorContentCompiler.js's "Table" output exactly:
+      // both wrap in .builder-table-block with margin 16px 0, set text-align:left on the table,
+      // and give <th> font-weight 600. Without the table's text-align, <th> fell back to the
+      // browser default of centred, so header cells sat centred in the canvas and left-aligned
+      // everywhere else - the same cell, two alignments, depending on which surface you looked at.
+      //
+      // background/borderRadius aren't in either compiler's inline styles - they come from the
+      // stylesheet each real surface loads (.blogger-preview-content table in previewContentCss.js,
+      // .blogger-article-container table in EditorContentCompiler's generateStyles). The canvas
+      // loads neither, so its table was transparent and let a painted Section's background bleed
+      // through the rows. Set here so the canvas matches without touching published output.
       return (
-        <div style={{ padding: "4px 0", overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #e1e3e5" }}>
+        <div className="builder-table-block" style={{ margin: "16px 0", overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #e1e3e5", textAlign: "left", background: "#fff", borderRadius: "8px", overflow: "hidden" }}>
             {theadRows.length > 0 && (
               <thead>
                 {theadRows.map((row, rIndex) => (
                   <tr key={`th-${rIndex}`}>
                     {row.map((cell, cIndex) => (
-                      <th key={cIndex} style={{ border: "1px solid #e1e3e5", padding: "8px", background: "#f4f6f8" }}>
+                      <th key={cIndex} style={{ border: "1px solid #e1e3e5", padding: "8px", background: "#f4f6f8", fontWeight: 600 }}>
                         <div dangerouslySetInnerHTML={{ __html: cell || "Header" }} />
                       </th>
                     ))}

@@ -14,7 +14,6 @@ import {
   Spinner,
   Icon,
   Tabs,
-  Banner,
   Button,
   Toast,
   Frame,
@@ -33,10 +32,10 @@ import UpgradePrompt from "../../components/UpgradePrompt";
 const CATEGORIES = [
   { name: "All", blurb: "Every layout in the library, grouped by what it's for." },
   { name: "Commerce", blurb: "Articles that sell a product or collection inside the post." },
-  { name: "Educational", blurb: "Answer questions and teach — the posts that earn search traffic." },
+  { name: "Educational", blurb: "Answer questions and teach - the posts that earn search traffic." },
   { name: "Editorial", blurb: "Brand-led storytelling: founder stories, lookbooks, customer proof." },
-  { name: "Seasonal", blurb: "Campaign moments — holidays, gifting, end-of-season pushes." },
-  { name: "Industry", blurb: "Ready-to-publish articles for a niche — beauty, fitness, home & garden, food." },
+  { name: "Seasonal", blurb: "Campaign moments - holidays, gifting, end-of-season pushes." },
+  { name: "Industry", blurb: "Ready-to-publish articles for a niche - beauty, fitness, home & garden, food." },
 ];
 
 export default function BlogTemplatesLibrary() {
@@ -229,13 +228,28 @@ export default function BlogTemplatesLibrary() {
       fullWidth
       title="Blog templates"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
-      subtitle="Pick a layout and it opens as a new draft article — blocks, sample images and placeholder copy included. Hover a card to scroll its full design."
+      subtitle="Pick a layout and it opens as a new draft article - blocks, sample images and placeholder copy included. Hover a card to scroll its full design."
     >
       <TitleBar title="Blog templates" />
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
-            {(postsAtLimit || postsNearLimit) && (
+            {/* One plan notice at a time. Two full-width warning banners — the article limit and
+                the saved-template limit — used to stack on the same screen and push every
+                template below the fold, which made the page read as an upgrade wall rather than
+                a gallery. The saved-template one is only relevant while My templates is open, so
+                it takes the slot there and the article one takes it everywhere else. */}
+            {tab === 1 && templatesAtLimit ? (
+              <UpgradePrompt
+                requiredPlan={templateUsage.plan === "Free" ? "Starter" : "Pro"}
+                title={`You've saved ${savedCount} of ${templateLimit} templates on the ${templateUsage.plan || "current"} plan`}
+                description={
+                  templateUsage.plan === "Free"
+                    ? "Delete one to save another, or upgrade for 5 on Starter and unlimited on Pro."
+                    : "Delete one to save another, or upgrade for unlimited saved templates."
+                }
+              />
+            ) : postsAtLimit || postsNearLimit ? (
               <UpgradePrompt
                 requiredPlan={activePlan?.toLowerCase() === "free" ? "Starter" : "Pro"}
                 title={
@@ -249,7 +263,7 @@ export default function BlogTemplatesLibrary() {
                     : `${postCount} of ${postLimit} articles used.`
                 }
               />
-            )}
+            ) : null}
 
             <Card padding="0">
               <Box padding="400">
@@ -320,19 +334,7 @@ export default function BlogTemplatesLibrary() {
               </Box>
             ) : tab === 1 ? (
               <BlockStack gap="400">
-                {templatesAtLimit && (
-                  <Banner
-                    tone="warning"
-                    title={`You've saved ${savedCount} of ${templateLimit} templates on the ${templateUsage.plan || "current"} plan`}
-                    action={{ content: "View plans", onAction: () => navigate("/plans") }}
-                  >
-                    <p>
-                      Delete one to save another, or upgrade for
-                      {templateUsage.plan === "Free" ? " 5 on Starter and unlimited on Pro." : " unlimited saved templates."}
-                    </p>
-                  </Banner>
-                )}
-                {!templatesAtLimit && templateLimit != null && savedCount > 0 && (
+                {templateLimit != null && savedCount > 0 && !templatesAtLimit && (
                   <Text as="p" tone="subdued" variant="bodySm">
                     {`${savedCount} of ${templateLimit} saved on the ${templateUsage.plan || "current"} plan.`}
                   </Text>
@@ -352,7 +354,7 @@ export default function BlogTemplatesLibrary() {
                           <Text as="p" tone="subdued" alignment="center">
                             {query.trim()
                               ? "Try a different search term, or clear the search to see everything you've saved."
-                              : "Build an article the way you like it, save it as a template, and it lands here — your blocks, your layout, your copy — ready to start the next one from."}
+                              : "Build an article the way you like it, save it as a template, and it lands here - your blocks, your layout, your copy - ready to start the next one from."}
                           </Text>
                         </Box>
                       </BlockStack>
@@ -427,7 +429,7 @@ export default function BlogTemplatesLibrary() {
                     <Box maxWidth="420px">
                       <Text as="p" tone="subdued" alignment="center">
                         {category === "All"
-                          ? `Nothing in the library matches “${query.trim()}”. Try a broader term — “review”, “guide”, “gift”.`
+                          ? `Nothing in the library matches “${query.trim()}”. Try a broader term - “review”, “guide”, “gift”.`
                           : `Nothing in ${category} matches this search. It may be filed under another category.`}
                       </Text>
                     </Box>

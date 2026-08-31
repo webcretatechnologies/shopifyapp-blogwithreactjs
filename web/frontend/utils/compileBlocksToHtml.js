@@ -243,7 +243,11 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
             const childrenHtml = item.children && item.children.length > 0
               ? renderTocNodesHtml(item.children, false)
               : "";
-            return `<li style="font-size: 14px; margin: 6px 0; display: list-item;">${link}${childrenHtml}</li>`;
+            // The ::marker (number/bullet) takes its colour from the <li>, not from the <a>
+            // inside it. Only the link carried textColor, so on a panel TOC the text went white
+            // while the markers kept inheriting the page's dark default - invisible numbers on a
+            // dark panel. Colour the <li> too so marker and label always match.
+            return `<li style="font-size: 14px; margin: 6px 0; display: list-item; color: ${textColor};">${link}${childrenHtml}</li>`;
           })
           .join("\n");
 
@@ -558,9 +562,12 @@ ${listContentHtml}
     }
 
     case "HeroSection": {
-      // Mirrors EditorContentCompiler.renderHero() and HeroBlockPreview (canvas): absolute
-      // background layer + tinted overlay, same defaults and type sizes, so the gallery card,
-      // the editor and the published article show the same hero rather than three variants.
+      // Mirrors EditorContentCompiler.renderHero() and HeroBlockPreview (canvas): same defaults
+      // and type sizes, so the gallery card, the editor and the published article show the same
+      // hero rather than three variants. The photo and its scrim are painted onto the container
+      // itself rather than as absolutely-positioned child layers - see renderHero's comment: a
+      // storefront theme can neutralise those children's positioning, which left the hero blank
+      // with white-on-white text on a real published article.
       const heading = settings.heading || "";
       const subheading = settings.subheading || "";
       const bgImg = settings.backgroundImage || "";
@@ -576,13 +583,16 @@ ${listContentHtml}
       const overlay = settings.backgroundOverlay !== false;
       const overlayRgba = hexToRgba(settings.overlayColor || "#000000", parseFloat(settings.overlayOpacity ?? 0.4));
 
-      const backgroundHtml = bgImg
-        ? `<div style="position: absolute; inset: 0; background-image: url('${bgImg}'); background-size: cover; background-position: center;"></div>` +
-          (overlay ? `<div style="position: absolute; inset: 0; background: ${overlayRgba};"></div>` : '')
-        : '';
+      const bgLayers = [];
+      if (bgImg) {
+        if (overlay) bgLayers.push(`linear-gradient(${overlayRgba}, ${overlayRgba})`);
+        bgLayers.push(`url('${bgImg}')`);
+      }
+      const backgroundCss = bgLayers.length
+        ? `background-image: ${bgLayers.join(', ')} !important; background-size: cover !important; background-position: center !important; background-repeat: no-repeat !important`
+        : 'background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
 
-      return `<div class="builder-hero-section" style="position: relative; min-height: ${minH}; display: flex; align-items: center; justify-content: ${justify}; border-radius: 8px; overflow: hidden; ${bgImg ? 'background: transparent' : 'background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'}; padding: 40px 32px; box-sizing: border-box; margin: 24px 0;">
-        ${backgroundHtml}
+      return `<div class="builder-hero-section" style="position: relative; min-height: ${minH}; display: flex; align-items: center; justify-content: ${justify}; border-radius: 8px; overflow: hidden; ${backgroundCss}; padding: 40px 32px; box-sizing: border-box; margin: 24px 0;">
         <div style="position: relative; z-index: 1; text-align: ${align}; max-width: 600px; width: 100%;">
           ${heading ? `<h1 style="margin: 0 0 12px; font-size: 28px; font-weight: 700; color: ${textColor}; line-height: 1.2;">${heading}</h1>` : ''}
           ${subheading ? `<p style="margin: 0 0 24px; font-size: 16px; color: ${textColor}; opacity: 0.85; line-height: 1.6;">${subheading}</p>` : ''}

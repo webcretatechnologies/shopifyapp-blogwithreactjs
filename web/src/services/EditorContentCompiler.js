@@ -1006,7 +1006,9 @@ export class EditorContentCompiler {
           const isMain = h.level === minLevel;
           const childrenHtml = h.children && h.children.length > 0 ? renderNodes(h.children, false) : "";
           const clickHandler = `var el=document.getElementById('${h.id}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});if(history.pushState){history.pushState(null,null,'#${h.id}');}return false;}`;
-          return `<li style="font-size: 14px; margin: 6px 0; display: list-item;"><a href="#${h.id}" onclick="${clickHandler}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};" onmouseenter="this.style.textDecoration='underline'" onmouseleave="this.style.textDecoration='none'">${h.text}</a>${childrenHtml}</li>`;
+          // ::marker colour comes from the <li>, not the <a> - see compileBlocksToHtml.js's
+          // matching comment. Without it, panel TOC markers stayed dark on a dark panel.
+          return `<li style="font-size: 14px; margin: 6px 0; display: list-item; color: ${textColor};"><a href="#${h.id}" onclick="${clickHandler}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};" onmouseenter="this.style.textDecoration='underline'" onmouseleave="this.style.textDecoration='none'">${h.text}</a>${childrenHtml}</li>`;
         })
         .join("\n");
 
@@ -1155,6 +1157,23 @@ ${listHtml}
     const ctaColor = attrs.ctaColor || "#008060";
     const ctaTextColor = attrs.ctaTextColor || "#ffffff";
 
+    // The photo and its scrim are painted straight onto the container rather than as two
+    // absolutely-positioned child <div> layers. Those layers rendered correctly everywhere we
+    // control - canvas, Preview, and the exact stored HTML in isolation - but on a real
+    // storefront a theme's own generic div/rte rules can neutralise the children's positioning,
+    // collapsing both layers to nothing: no photo, no scrim, and the hero's white heading and
+    // subheading left invisible on white, with only the coloured CTA still showing. One element
+    // carrying its own background can't be broken that way. Same !important-on-layout reasoning
+    // the related-posts rules in generateStyles() already document.
+    const bgLayers = [];
+    if (backgroundImage) {
+      if (backgroundOverlay) {
+        const rgba = hexToRgba(overlayColor, overlayOpacity);
+        bgLayers.push(`linear-gradient(${rgba}, ${rgba})`);
+      }
+      bgLayers.push(`url('${backgroundImage}')`);
+    }
+
     const containerStyle = [
       "position: relative",
       `min-height: ${minHeight}`,
@@ -1163,20 +1182,15 @@ ${listHtml}
       `justify-content: ${align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center"}`,
       "border-radius: 8px",
       "overflow: hidden",
-      backgroundImage ? "background: transparent" : "background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
+      bgLayers.length
+        ? `background-image: ${bgLayers.join(", ")} !important; background-size: cover !important; background-position: center !important; background-repeat: no-repeat !important`
+        : "background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
       "padding: 40px 32px",
       "box-sizing: border-box",
       "margin: 24px 0"
     ].join("; ");
 
-    let backgroundHtml = "";
-    if (backgroundImage) {
-      backgroundHtml = `<div style="position: absolute; inset: 0; background-image: url('${backgroundImage}'); background-size: cover; background-position: center;"></div>`;
-      if (backgroundOverlay) {
-        const rgba = hexToRgba(overlayColor, overlayOpacity);
-        backgroundHtml += `<div style="position: absolute; inset: 0; background: ${rgba};"></div>`;
-      }
-    }
+    const backgroundHtml = "";
 
     let ctaHtml = "";
     if (showCta && ctaText) {

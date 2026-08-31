@@ -15,135 +15,109 @@
   {% assign listing_layout = shop.metafields.blog_app.listing_layout.value | default: shop.metafields.blog_app.listing_layout %}
   {% comment %} Free plan stores "theme" so we leave the merchant's theme listing alone. {% endcomment %}
   {% if listing_layout != blank and listing_layout != 'theme' and listing_layout != 'default' %}
+  {%- comment -%}
+    Same selector set as listingGridSelector() in EditorContentCompiler.js, which serves
+    /apps/blog-analytics/listing.css linked below. This block is the render-blocking half of
+    that pair, so a narrower list here meant a non-Dawn theme painted its own layout first and
+    only snapped to the app's once the proxy CSS arrived - the exact flash this <style> exists
+    to prevent. Worse, .blog__posts appeared only in the base rule and in none of the layout
+    rules, so those themes got display:grid with no grid-template-columns: a forced single
+    column, worse than leaving the theme alone. :is() keeps the comma list from leaking
+    properties onto the wrong node, per the theme-agnostic rule.
+
+    Grid containers and listing items are kept separate on purpose: .article is the individual
+    post wrapper on many vintage themes, not the list, so it belongs with .article-card rather
+    than with the containers.
+  {%- endcomment -%}
+  {%- assign li_grid = ":is(.blog-articles, .blog-articles.blog-articles--collage, .blog__posts, .blog-list, .blog-post-list, .main-blog .blog-articles, ul.blog-articles, #MainContent .blog-articles, #MainContent .blog__posts, #MainContent .blog-list)" -%}
+  {%- assign li_collage = ".blog-articles--collage" -%}
+  {%- assign li_item = ":is(.card.article-card, .article-card, .article)" -%}
   <style id="blogger-listing-critical">
-    .blog-articles,
-    .blog-articles,
-    .blog-articles.blog-articles--collage,
-    .blog-articles.blog-articles--collage,
-    .blog__posts,
-    ul.blog-articles,
-    ul.blog-articles {
+    {{ li_grid }} {
       display: grid !important;
       gap: 1.5rem !important;
       grid-auto-flow: row !important;
     }
-    .blog-articles--collage > *,
-    .blog-articles--collage > *,
-    .blog-articles--collage > *:nth-child(3n + 1),
-    .blog-articles--collage > *:nth-child(3n + 1),
-    .blog-articles--collage > *:nth-child(3n + 2):last-child,
-    .blog-articles--collage > *:nth-child(3n + 2):last-child {
+    {{ li_collage }} > *,
+    {{ li_collage }} > *:nth-child(3n + 1),
+    {{ li_collage }} > *:nth-child(3n + 2):last-child {
       grid-column: auto !important;
     }
-    .blog-articles--collage > *:nth-child(3n + 1) .ratio::before,
-    .blog-articles--collage > *:nth-child(3n + 2):last-child .ratio::before {
+    {{ li_collage }} > *:nth-child(3n + 1) .ratio::before,
+    {{ li_collage }} > *:nth-child(3n + 2):last-child .ratio::before {
       padding-bottom: var(--ratio-percent, 66.67%) !important;
     }
-    .blog-articles .media > img,
-    .blog-articles .card__media img {
+    {{ li_grid }} .media > img,
+    {{ li_grid }} .card__media img,
+    {{ li_grid }} .article-card__image img {
       object-fit: cover !important;
       object-position: center center !important;
     }
     {% if listing_layout == 'featured_left' %}
-    .blog-articles, .blog-articles {
+    {{ li_grid }} {
       grid-template-columns: 1.15fr minmax(0, 1fr) !important;
       grid-auto-flow: dense !important;
     }
-    .blog-articles > *:first-child,
-    .blog-articles > *:first-child,
-    .blog-articles--collage > *:first-child,
-    .blog-articles--collage > *:first-child {
+    {{ li_grid }} > *:first-child,
+    {{ li_collage }} > *:first-child {
       grid-column: 1 !important;
       grid-row: 1 / span 2 !important;
     }
     @media (max-width: 749px) {
-      .blog-articles, .blog-articles { grid-template-columns: 1fr !important; }
-      .blog-articles > *:first-child, .blog-articles > *:first-child { grid-column: auto !important; grid-row: auto !important; }
-    }
-    {% elsif listing_layout == 'featured_right' %}
-    .blog-articles, .blog-articles {
-      grid-template-columns: minmax(0, 1fr) 1.15fr !important;
-      grid-auto-flow: dense !important;
-    }
-    .blog-articles > *:first-child,
-    .blog-articles > *:first-child,
-    .blog-articles--collage > *:first-child,
-    .blog-articles--collage > *:first-child {
-      grid-column: 2 !important;
-      grid-row: 1 / span 2 !important;
-    }
-    @media (max-width: 749px) {
-      .blog-articles, .blog-articles { grid-template-columns: 1fr !important; }
-      .blog-articles > *:first-child, .blog-articles > *:first-child { grid-column: auto !important; grid-row: auto !important; }
-    }
-    {% elsif listing_layout == 'magazine' %}
-    .blog-articles, .blog-articles { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
-    .blog-articles > *:first-child,
-    .blog-articles > *:first-child,
-    .blog-articles--collage > *:first-child,
-    .blog-articles--collage > *:first-child { grid-column: 1 / span 2 !important; }
-    @media (max-width: 989px) {
-      .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-      .blog-articles > *:first-child, .blog-articles > *:first-child { grid-column: 1 / -1 !important; }
-    }
-    @media (max-width: 749px) {
-      .blog-articles, .blog-articles { grid-template-columns: 1fr !important; }
-      .blog-articles > *:first-child, .blog-articles > *:first-child { grid-column: auto !important; }
+      {{ li_grid }} { grid-template-columns: 1fr !important; }
+      {{ li_grid }} > *:first-child { grid-column: auto !important; grid-row: auto !important; }
     }
     {% elsif listing_layout == 'list' %}
-    .blog-articles, .blog-articles { grid-template-columns: minmax(0, 1fr) !important; }
-    .blog-articles .card.article-card:has(.media img),
-    .blog-articles .article-card:has(.media img) {
+    {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
+    {{ li_grid }} {{ li_item }}:has(.media img) {
       display: flex !important;
       flex-direction: row !important;
       align-items: stretch !important;
     }
-    .blog-articles .card.article-card:has(.media img) > .card__inner {
+    {{ li_grid }} {{ li_item }}:has(.media img) > .card__inner {
       flex: 0 0 32% !important;
       max-width: 280px !important;
       width: 32% !important;
     }
-    .blog-articles .card.article-card:has(.media img) > .card__content {
+    {{ li_grid }} {{ li_item }}:has(.media img) > .card__content {
       flex: 1 1 auto !important;
       min-width: 0 !important;
     }
-    .blog-articles .card.article-card:has(.media img) > .card__inner > .card__content {
+    {{ li_grid }} {{ li_item }}:has(.media img) > .card__inner > .card__content {
       display: none !important;
     }
     @media (max-width: 749px) {
-      .blog-articles .card.article-card:has(.media img) { flex-direction: column !important; }
-      .blog-articles .card.article-card:has(.media img) > .card__inner {
+      {{ li_grid }} {{ li_item }}:has(.media img) { flex-direction: column !important; }
+      {{ li_grid }} {{ li_item }}:has(.media img) > .card__inner {
         flex: 0 0 auto !important;
         width: 100% !important;
         max-width: none !important;
       }
     }
     {% elsif listing_layout == 'grid_3' %}
-    .blog-articles, .blog-articles { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+    {{ li_grid }} { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
     @media (max-width: 989px) {
-      .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+      {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     }
     @media (max-width: 749px) {
-      .blog-articles, .blog-articles { grid-template-columns: minmax(0, 1fr) !important; }
+      {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
     }
     {% elsif listing_layout == 'grid_2' %}
-    .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     @media (max-width: 749px) {
-      .blog-articles, .blog-articles { grid-template-columns: minmax(0, 1fr) !important; }
+      {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
     }
     {% elsif listing_layout == 'featured_2' %}
-    .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     @media (min-width: 750px) {
-      .blog-articles > *:first-child,
-      .blog-articles > *:first-child,
-      .blog-articles--collage > *:first-child,
-      .blog-articles--collage > *:first-child { grid-column: 1 / -1 !important; }
+      {{ li_grid }} > *:first-child,
+      {{ li_collage }} > *:first-child { grid-column: 1 / -1 !important; }
     }
     @media (max-width: 749px) {
-      .blog-articles, .blog-articles { grid-template-columns: minmax(0, 1fr) !important; }
+      {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
     }
     {% else %}
-    .blog-articles, .blog-articles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     {% endif %}
   </style>
   <link rel="stylesheet" href="/apps/blog-analytics/listing.css" fetchpriority="high">

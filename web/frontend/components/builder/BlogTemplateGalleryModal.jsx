@@ -9,10 +9,10 @@ import { TemplatePreviewBody, ensureWideModalCss } from "./TemplatePreviewModal"
 const CATEGORIES = [
   { name: "All", blurb: "Every layout in the library." },
   { name: "Commerce", blurb: "Articles that sell a product or collection inside the post." },
-  { name: "Educational", blurb: "Answer questions and teach — the posts that earn search traffic." },
+  { name: "Educational", blurb: "Answer questions and teach - the posts that earn search traffic." },
   { name: "Editorial", blurb: "Brand-led storytelling: founder stories, lookbooks, customer proof." },
-  { name: "Seasonal", blurb: "Campaign moments — holidays, gifting, end-of-season pushes." },
-  { name: "Industry", blurb: "Ready-to-publish articles for a niche — beauty, fitness, home & garden, food." },
+  { name: "Seasonal", blurb: "Campaign moments - holidays, gifting, end-of-season pushes." },
+  { name: "Industry", blurb: "Ready-to-publish articles for a niche - beauty, fitness, home & garden, food." },
 ];
 
 export default function BlogTemplateGalleryModal({ open, onClose, onApply, confirmIfDirty }) {
@@ -171,7 +171,7 @@ export default function BlogTemplateGalleryModal({ open, onClose, onApply, confi
               <Banner tone="warning" title="This replaces the article you have open">
                 <p>
                   The blocks and copy currently in the editor are swapped for this template.
-                  Ctrl + Z won't bring them back — applying a template clears the undo history —
+                  Ctrl + Z won't bring them back - applying a template clears the undo history -
                   but nothing reaches your article until you save.
                 </p>
               </Banner>
@@ -239,7 +239,7 @@ export default function BlogTemplateGalleryModal({ open, onClose, onApply, confi
               </InlineStack>
               <Text tone="subdued" variant="bodySm" as="p">
                 {CATEGORIES.find((c) => c.name === category)?.blurb}
-                {" Choosing one replaces the current content — hover a card to see the whole layout first."}
+                {" Choosing one replaces the current content - hover a card to see the whole layout first."}
               </Text>
             </BlockStack>
           )}
