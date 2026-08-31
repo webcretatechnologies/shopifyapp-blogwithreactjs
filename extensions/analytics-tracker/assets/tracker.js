@@ -22,13 +22,20 @@
 
   // ── CONFIRMED attribution — set ONLY by a genuine matched add-to-cart (see below), never by
   // merely viewing an article. This is what checkout/conversion tracking reads. ──────────────
+  // The id and its timestamp are one value in two keys — always written together by
+  // confirmSourcePostId(), so they must always be cleared together too. Clearing the id alone
+  // leaves an orphan timestamp behind for the rest of the session.
+  function clearSourcePostId() {
+    sessionStorage.removeItem('blogger_source_post_id');
+    sessionStorage.removeItem('blogger_source_post_ts');
+  }
+
   function getSourcePostId() {
     const id = sessionStorage.getItem('blogger_source_post_id');
     if (!id) return null;
     const ts = Number(sessionStorage.getItem('blogger_source_post_ts') || 0);
     if (!ts || Date.now() - ts > ATTRIBUTION_TTL_MS) {
-      sessionStorage.removeItem('blogger_source_post_id');
-      sessionStorage.removeItem('blogger_source_post_ts');
+      clearSourcePostId();
       return null;
     }
     return id;
@@ -108,11 +115,28 @@
   }
 
   // --- Bug 1: Fix Race Condition using Polling Initialization ---
+  //
+  // window.BloggerAnalytics is injected by the theme app embed's Liquid, which can run after
+  // this asset. Polling for it is right; polling forever is not. On any page where that Liquid
+  // never renders — the embed disabled while a cached asset still loads, or a template the
+  // block isn't output on — this used to re-arm itself every 50ms for the entire life of the
+  // page: one pending timer at a time rather than a growing pile of them, but 20 pointless
+  // wakeups a second, holding the closure alive, on every such page view. Ten seconds is far
+  // longer than any real Liquid-injection delay, so anything past it isn't coming.
+  const INIT_POLL_MS = 50;
+  const INIT_TIMEOUT_MS = 10000;
+  let initDeadline = null;
+
   function initTracker() {
     if (!window.BloggerAnalytics || !window.BloggerAnalytics.template) {
-      setTimeout(initTracker, 50); // Poll until Liquid injects the script
+      if (initDeadline === null) initDeadline = Date.now() + INIT_TIMEOUT_MS;
+      // Silent by design: plenty of storefront pages legitimately never inject the global, and
+      // a console warning on each of them would be noise, not a signal.
+      if (Date.now() >= initDeadline) return;
+      setTimeout(initTracker, INIT_POLL_MS); // Poll until Liquid injects the script
       return;
     }
+    initDeadline = null;
 
     // 1. Resolve the internal post ID on Article Pages (NOT a view — the article's own
     // embedded pixel/script, baked into body_html by ArticleSyncService, already counts the
@@ -475,8 +499,8 @@
 
         sendEvent(postId, 'conversion', revenue, currency);
         sessionStorage.setItem('blogger_tracked_order', 'true');
-        // Clear source post session after successful conversion
-        sessionStorage.removeItem('blogger_source_post_id');
+        // Clear source post session after successful conversion — both keys, not just the id.
+        clearSourcePostId();
       }
     }
   }

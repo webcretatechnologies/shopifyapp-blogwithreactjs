@@ -87,7 +87,13 @@ export function TableOfContentsPreview({ block }) {
   const levels = settings.levels || [2, 3];
   const listStyle = settings.listStyle || "bullet";
   const collapsible = Boolean(settings.collapsible);
-  const textColor = settings.textColor || "#202223";
+  const isPanel = settings.style === "panel";
+  const textColor = settings.textColor || (isPanel ? "#ffffff" : "#202223");
+  const titleColor = settings.titleColor || textColor;
+  const background = isPanel ? (settings.backgroundColor || "#1f6b4a") : "#f4f6f8";
+  const border = isPanel ? "none" : "1px solid #e1e3e5";
+  const padding = settings.padding || "16px 20px";
+  const borderRadius = settings.borderRadius != null ? `${settings.borderRadius}px` : "8px";
 
   const blocksById = useBuilderStore((s) => s.blocksById);
   const rootIds = useBuilderStore((s) => s.rootIds);
@@ -135,10 +141,10 @@ export function TableOfContentsPreview({ block }) {
   return (
     <div
       style={{
-        padding: "16px 20px",
-        background: "#f4f6f8",
-        border: "1px solid #e1e3e5",
-        borderRadius: "8px",
+        padding,
+        background,
+        border,
+        borderRadius,
         margin: "16px 0",
       }}
     >
@@ -149,7 +155,7 @@ export function TableOfContentsPreview({ block }) {
             userSelect: "none",
             fontWeight: 700,
             fontSize: "16px",
-            color: textColor,
+            color: titleColor,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -175,7 +181,7 @@ export function TableOfContentsPreview({ block }) {
         </details>
       ) : (
         <div>
-          <div style={{ fontWeight: 700, fontSize: "16px", color: textColor, marginBottom: "12px" }}>
+          <div style={{ fontWeight: 700, fontSize: "16px", color: titleColor, marginBottom: "12px" }}>
             {title}
           </div>
           {listContent}

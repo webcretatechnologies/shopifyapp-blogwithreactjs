@@ -22,6 +22,7 @@ import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../utils/smartBack";
 import ConfirmActionModal from "../components/ConfirmActionModal";
+import PlanUsageMeters from "../components/PlanUsageMeters";
 
 function intervalSuffix(interval) {
   return interval === "ANNUAL" ? "/year" : "/month";
@@ -47,6 +48,10 @@ export default function Plans() {
   const [activePlan, setActivePlan] = useState("");
   const [postCount, setPostCount] = useState(0);
   const [postLimit, setPostLimit] = useState(10);
+  // Saved templates are the app's second plan cap (PlanFeature "template_limit"); null =
+  // unlimited, same convention as postLimit.
+  const [templateCount, setTemplateCount] = useState(0);
+  const [templateLimit, setTemplateLimit] = useState(null);
   const [billingCycle, setBillingCycle] = useState(null);
   const [dynamicPlans, setDynamicPlans] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -99,6 +104,8 @@ export default function Plans() {
 
       setActivePlan(checkData.activePlan || "free");
       setPostCount(checkData.postCount || 0);
+      setTemplateCount(checkData.templateCount || 0);
+      setTemplateLimit("templateLimit" in checkData ? checkData.templateLimit : null);
       // checkData.postLimit is `null` on purpose for unlimited plans (Pro) — that's a meaningful
       // value, not missing data, so it must NOT be coalesced away. `?? 10` here previously treated
       // null the same as undefined/missing and silently substituted a hardcoded 10, which is
@@ -194,6 +201,8 @@ export default function Plans() {
           // of truth; use it directly instead of asking a race-prone endpoint to confirm itself.
           setActivePlan(data.activePlan || "free");
           setPostCount(data.postCount ?? 0);
+          setTemplateCount(data.templateCount ?? 0);
+          setTemplateLimit("templateLimit" in data ? data.templateLimit : null);
           setPostLimit("postLimit" in data ? data.postLimit : null);
           setBillingCycle(data.billingCycle ?? null);
           showPlanToast("You're now on the Free plan");
@@ -218,10 +227,10 @@ export default function Plans() {
   const currentPrice = Number(currentPlanDetails?.price ?? 0);
 
   const usagePct = postLimit === null ? 0 : Math.min(100, Math.round((postCount / postLimit) * 100));
+
   const postsAtLimit = postLimit !== null && postCount >= postLimit;
   const postsNearLimit = postLimit !== null && !postsAtLimit && usagePct >= 80;
 
-  const usageTone = (atLimit, nearLimit) => (atLimit ? "critical" : nearLimit ? "warning" : "success");
   const anyUsageWarning = postsAtLimit || postsNearLimit;
 
   const formatDate = (isoOrDate) => {
@@ -345,28 +354,12 @@ export default function Plans() {
                   </Banner>
                 )}
 
-                <Box padding="300" background="bg-surface-secondary" borderRadius="200">
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text as="strong" variant="bodyMd">Articles</Text>
-                      {postLimit === null ? (
-                        <Badge>Unlimited</Badge>
-                      ) : (
-                        <Text as="span" variant="bodySm" tone="subdued">{postCount} / {postLimit}</Text>
-                      )}
-                    </InlineStack>
-                    <ProgressBar progress={postLimit === null ? 0 : usagePct} tone={usageTone(postsAtLimit, postsNearLimit)} size="small" />
-                    <InlineStack align="space-between" blockAlign="baseline">
-                      <Text as="span" variant="bodySm">
-                        <Text as="span" fontWeight="semibold">{postCount}</Text>
-                        <Text as="span" tone="subdued"> {postLimit === null ? "created" : postsAtLimit ? "— limit reached" : `${usagePct}% used`}</Text>
-                      </Text>
-                      <Text as="span" variant="bodySm" tone="subdued">
-                        {postLimit === null ? "∞" : Math.max(0, postLimit - postCount)}
-                      </Text>
-                    </InlineStack>
-                  </BlockStack>
-                </Box>
+                <PlanUsageMeters
+                  meters={[
+                    { label: "Articles", used: postCount, limit: postLimit },
+                    { label: "Saved templates", used: templateCount, limit: templateLimit },
+                  ]}
+                />
               </BlockStack>
             </Card>
           </Layout.Section>

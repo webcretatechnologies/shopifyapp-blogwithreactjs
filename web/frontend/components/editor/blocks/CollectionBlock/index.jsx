@@ -19,10 +19,16 @@ import { formatPrice } from '../../../../utils/priceUtils.js';
 export function CollectionBlockPreview({ block }) {
   const handle = block.collectionHandle || '';
   const limit = parseInt(block.maxProducts || '8');
-  const { collection, products, isLoading } = useCollectionProducts(handle, limit);
+  const { collection, products: fetched, isLoading } = useCollectionProducts(handle, limit);
   const { storeCurrency } = useShopifyStoreCurrency();
 
-  if (!handle) {
+  // Blog templates ship sample products on the block so the gallery preview, the canvas and
+  // the compiled article all show the same layout before a collection is bound. Once the
+  // merchant picks a collection, the live products win.
+  const manualProducts = Array.isArray(block.manualProducts) ? block.manualProducts : [];
+  const products = handle ? fetched : manualProducts;
+
+  if (!handle && !manualProducts.length) {
     return (
       <div style={{
         padding: '24px 16px', textAlign: 'center',
@@ -34,7 +40,7 @@ export function CollectionBlockPreview({ block }) {
     );
   }
 
-  if (isLoading) {
+  if (handle && isLoading) {
     return (
       <div style={{ padding: '24px', textAlign: 'center' }}>
         <Spinner size="small" />
@@ -79,21 +85,21 @@ export function CollectionBlockPreview({ block }) {
       {/* Products */}
       {layout === 'scroll' ? (
         <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '8px' }}>
-          {products.map(p => (
-            <div key={p.shopifyProductId} style={{ minWidth: '180px', maxWidth: '200px', flexShrink: 0 }}>
+          {products.map((p, i) => (
+            <div key={p.shopifyProductId || p.handle || i} style={{ minWidth: '180px', maxWidth: '200px', flexShrink: 0 }}>
               <CollectionProductCard product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} buttonRadius={block.buttonRadius ?? 5} storeCurrency={storeCurrency} />
             </div>
           ))}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '16px' }}>
-          {products.map(p => (
-            <CollectionProductCard key={p.shopifyProductId} product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} buttonRadius={block.buttonRadius ?? 5} storeCurrency={storeCurrency} />
+          {products.map((p, i) => (
+            <CollectionProductCard key={p.shopifyProductId || p.handle || i} product={p} showPrice={showPrice} showButton={showButton} buttonColor={block.buttonColor || '#008060'} buttonText={block.buttonText || 'Shop Now'} buttonRadius={block.buttonRadius ?? 5} storeCurrency={storeCurrency} />
           ))}
         </div>
       )}
 
-      {products.length === 0 && (
+      {handle && products.length === 0 && (
         <div style={{ textAlign: 'center', padding: '24px', color: '#6d7175' }}>
           No products found in this collection.
         </div>

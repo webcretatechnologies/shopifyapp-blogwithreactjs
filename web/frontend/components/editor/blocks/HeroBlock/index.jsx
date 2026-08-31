@@ -37,7 +37,7 @@ export function HeroBlockPreview({ block }) {
       {hasImage && (
         <div style={{
           position: 'absolute', inset: 0,
-          backgroundImage: `url(${block.backgroundImage})`,
+          backgroundImage: `url("${block.backgroundImage}")`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }} />

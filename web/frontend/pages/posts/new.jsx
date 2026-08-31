@@ -35,6 +35,7 @@ import {
   Popover,
   ActionList,
   Link,
+  List,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon, CalendarIcon, DeleteIcon } from "@shopify/polaris-icons";
@@ -861,6 +862,10 @@ export default function PostEditor() {
   const [showUpgradeSaveConfirm, setShowUpgradeSaveConfirm] = useState(false);
   const [isSavingForUpgrade, setIsSavingForUpgrade] = useState(false);
   const [showTemplateGallery, setShowTemplateGallery] = useState(false);
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState("");
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [showTemplateSetup, setShowTemplateSetup] = useState(false);
   const [newPostId, setNewPostId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
@@ -1138,20 +1143,79 @@ export default function PostEditor() {
   // pre-chosen — fetch its block tree and seed the builder before the user's first save. Only
   // ever applies to a brand-new post; navigation state is consumed once so a page refresh doesn't
   // re-apply it.
+  const applyTemplateBlocks = (blocks) => {
+    const normalized = normalizeBlocksAst(blocks);
+    useBuilderStore.getState().hydrate(normalized);
+    setPost((p) => ({ ...p, contentJson: normalized }));
+    setShowTemplateSetup(true);
+  };
+
   useEffect(() => {
     const templateKey = location.state?.templateKey;
-    if (!templateKey || isEditing) return;
+    const shopTemplateId = location.state?.shopTemplateId;
+    if ((!templateKey && !shopTemplateId) || isEditing) return;
     navigate(location.pathname, { replace: true, state: {} });
-    fetch(`/api/blog-templates/${templateKey}`)
+    const url = shopTemplateId
+      ? `/api/blog-templates/mine/${shopTemplateId}`
+      : `/api/blog-templates/${templateKey}`;
+    fetch(url)
       .then((r) => r.json())
       .then((d) => {
-        if (d.template?.blocks) {
-          setPost((p) => ({ ...p, contentJson: normalizeBlocksAst(d.template.blocks) }));
-        }
+        if (d.template?.blocks) applyTemplateBlocks(d.template.blocks);
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing]);
+
+  // Saved-template allowance is plan-based (Free 2, Starter 5, Pro unlimited). Fetched when the
+  // modal opens so the merchant sees the ceiling before typing a name, not after pressing Save.
+  const [templateUsage, setTemplateUsage] = useState({ count: 0, limit: null, plan: "" });
+  const templatesAtLimit = templateUsage.limit != null && templateUsage.count >= templateUsage.limit;
+
+  const openSaveTemplateModal = () => {
+    setSaveTemplateName(post.title || "");
+    setShowSaveTemplateModal(true);
+    fetch("/api/blog-templates/mine")
+      .then((r) => r.json())
+      .then((d) =>
+        setTemplateUsage({
+          count: d.count ?? (d.templates || []).length,
+          limit: d.limit ?? null,
+          plan: d.plan || "",
+        })
+      )
+      .catch(() => {});
+  };
+
+  const handleSaveAsTemplate = async () => {
+    const name = saveTemplateName.trim() || post.title || "Untitled template";
+    const blocks = post.contentJson || [];
+    if (!hasMeaningfulBlocks(blocks)) {
+      setToast({ content: "Add some content before saving a template.", error: true });
+      return;
+    }
+    setIsSavingTemplate(true);
+    try {
+      const res = await fetch("/api/blog-templates/mine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, blocks }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ content: data.error || "Could not save template.", error: true });
+        return;
+      }
+      setShowSaveTemplateModal(false);
+      setSaveTemplateName("");
+      setTemplateUsage((u) => ({ ...u, count: data.count ?? u.count + 1 }));
+      setToast({ content: "Template saved. Find it under Blog templates → My templates." });
+    } catch {
+      setToast({ content: "Could not save template.", error: true });
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
 
   const isFieldDirty = (val1, val2) => {
     const clean1 = val1 === null || val1 === undefined ? "" : String(val1).trim();
@@ -2016,16 +2080,44 @@ export default function PostEditor() {
               <Card>
                 <Box padding="0">
                   <Box paddingBlock="300" paddingInline="400">
-                    <InlineStack align="space-between" blockAlign="center">
+                    <InlineStack align="space-between" blockAlign="center" wrap>
                       <Text variant="headingSm" as="h2">Content</Text>
-                      {!isEditing && (
+                      <ButtonGroup>
                         <Button onClick={() => setShowTemplateGallery(true)}>
                           {post.contentJson?.length ? "Browse templates" : "Start from a template"}
                         </Button>
-                      )}
+                        {hasMeaningfulBlocks(post.contentJson) && (
+                          <Button onClick={openSaveTemplateModal}>Save as template</Button>
+                        )}
+                      </ButtonGroup>
                     </InlineStack>
                   </Box>
                   <Divider />
+                  {showTemplateSetup && (
+                    <>
+                      {/* Padded on all sides and closed off with its own divider — it used to sit
+                          flush against the studio toolbar below, reading as part of the chrome. */}
+                      <Box paddingInline="400" paddingBlock="300">
+                        <Banner
+                          tone="info"
+                          title="Finish this template"
+                          onDismiss={() => setShowTemplateSetup(false)}
+                        >
+                          <BlockStack gap="100">
+                            <Text as="p" variant="bodySm">
+                              Before you publish:
+                            </Text>
+                            <List type="bullet">
+                              <List.Item>Bind the product and collection blocks to your own catalog</List.Item>
+                              <List.Item>Replace the sample photos with your own</List.Item>
+                              <List.Item>Rewrite the sample copy in your own voice — it's a starting draft, not filler</List.Item>
+                            </List>
+                          </BlockStack>
+                        </Banner>
+                      </Box>
+                      <Divider />
+                    </>
+                  )}
                   <Box padding="0">
                     <DragDropBuilderContainer
                       initialBlocksAst={post.contentJson || []}
@@ -3019,16 +3111,54 @@ export default function PostEditor() {
         loading={isSavingForUpgrade}
       />
 
-      {!isEditing && (
-        <BlogTemplateGalleryModal
-          open={showTemplateGallery}
-          onClose={() => setShowTemplateGallery(false)}
-          onApply={(blocks) => {
-            const normalized = normalizeBlocksAst(blocks);
-            setPost((p) => ({ ...p, contentJson: normalized }));
-          }}
-        />
-      )}
+      <BlogTemplateGalleryModal
+        open={showTemplateGallery}
+        onClose={() => setShowTemplateGallery(false)}
+        confirmIfDirty={hasMeaningfulBlocks(post.contentJson)}
+        onApply={(blocks) => applyTemplateBlocks(blocks)}
+      />
+
+      <Modal
+        open={showSaveTemplateModal}
+        onClose={() => setShowSaveTemplateModal(false)}
+        title="Save as template"
+        primaryAction={{
+          content: "Save template",
+          onAction: handleSaveAsTemplate,
+          loading: isSavingTemplate,
+          disabled: templatesAtLimit,
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setShowSaveTemplateModal(false) }]}
+      >
+        <Modal.Section>
+          <BlockStack gap="300">
+            {templatesAtLimit && (
+              <Banner
+                tone="warning"
+                title={`You've saved ${templateUsage.count} of ${templateUsage.limit} templates on the ${templateUsage.plan || "current"} plan`}
+                action={{ content: "View plans", onAction: () => navigate("/plans") }}
+              >
+                <p>
+                  Delete one from Blog templates → My templates to free a slot, or upgrade to save
+                  more.
+                </p>
+              </Banner>
+            )}
+            <TextField
+              label="Template name"
+              value={saveTemplateName}
+              onChange={setSaveTemplateName}
+              autoComplete="off"
+              disabled={templatesAtLimit}
+              helpText={
+                templateUsage.limit != null
+                  ? `${templateUsage.count} of ${templateUsage.limit} saved on the ${templateUsage.plan || "current"} plan. Reuse this layout from Blog templates → My templates.`
+                  : "Reuse this layout from Blog templates → My templates."
+              }
+            />
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
 
       {showPreview && (
         <ArticlePreview

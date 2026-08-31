@@ -73,7 +73,7 @@ export default function SyncFeaturesModal({ open, planKey, planTitle, features, 
       open={open}
       onClose={onClose}
       title={`Sync Features: ${planTitle}`}
-      large
+      size="large"
       primaryAction={{ content: "Sync Features", onAction: handleSync, loading: saving }}
       secondaryActions={[{ content: "Cancel", onAction: onClose, disabled: saving }]}
     >

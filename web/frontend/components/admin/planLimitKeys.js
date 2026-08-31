@@ -4,13 +4,13 @@
 // (numeric caps) — purely by partitioning on featureKey; the underlying data/API is identical
 // either way.
 //
-// article_limit is the only real, enforced numeric cap left in the app (see posts.js/import.js/
-// wizard.js). `blog` and `blog_select` were legacy PlanFeature rows with a `limit` value that was
+// article_limit and template_limit are the real, enforced numeric caps in the app — articles in
+// posts.js/import.js/wizard.js, saved templates in blogTemplates.js's POST /mine. `blog` and `blog_select` were legacy PlanFeature rows with a `limit` value that was
 // never read by any enforcement code — dead data, not real gates — and `max_blogs` (Shopify blog
 // count) was a real cap that's been intentionally removed app-wide, by request, so multi-blog
 // management is unrestricted at every plan now. None of the three show up here anymore, which
-// means Sync Limits only ever surfaces the one cap that actually does anything.
-export const PLAN_LIMIT_KEYS = ["article_limit"];
+// means Sync Limits only ever surfaces caps that actually do something.
+export const PLAN_LIMIT_KEYS = ["article_limit", "template_limit"];
 
 export function isLimitKey(featureKey) {
   return PLAN_LIMIT_KEYS.includes(featureKey);
@@ -31,7 +31,7 @@ export function isLimitKey(featureKey) {
 // plan, nothing to toggle) — rendered as a checked, disabled row so the list still visibly
 // matches the pricing page, without pretending it's editable. The "Up to N / Unlimited Articles"
 // bullet is the article_limit PlanFeature row, already numeric — it's edited from "Sync Limits",
-// not here, so it isn't repeated in this list.
+// not here, so it isn't repeated in this list. Same for the saved-template cap (template_limit).
 //
 // Keep in sync with TIER_ROWS by hand — duplicating wording deliberately rather than importing
 // across the frontend/backend boundary.

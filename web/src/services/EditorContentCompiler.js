@@ -965,7 +965,13 @@ export class EditorContentCompiler {
     const title = attrs.title || "Table of Contents";
     const levels = attrs.levels || [2, 3];
     const listStyle = attrs.listStyle || "bullet";
-    const textColor = attrs.textColor || "#202223";
+    const isPanel = attrs.style === "panel";
+    const textColor = attrs.textColor || (isPanel ? "#ffffff" : "#202223");
+    const titleColor = attrs.titleColor || textColor;
+    const background = isPanel ? (attrs.backgroundColor || "#1f6b4a") : "#f4f6f8";
+    const border = isPanel ? "none" : "1px solid #e1e3e5";
+    const padding = attrs.padding || "16px 20px";
+    const radius = attrs.borderRadius != null ? `${attrs.borderRadius}px` : "8px";
 
     const allowedLevels = new Set((Array.isArray(levels) ? levels : [levels]).map(Number));
     const matching = (allHeadings || []).filter((h) => allowedLevels.has(h.level));
@@ -1009,8 +1015,8 @@ export class EditorContentCompiler {
 
     const listHtml = renderNodes(tree, true);
 
-    return `<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
-  <div style="font-weight: 700; font-size: 16px; color: ${textColor}; margin-bottom: 12px;">${title}</div>
+    return `<div class="sp-toc-block" style="padding: ${padding}; background: ${background}; border: ${border}; border-radius: ${radius}; margin: 16px 0;">
+  <div style="font-weight: 700; font-size: 16px; color: ${titleColor}; margin-bottom: 12px;">${title}</div>
 ${listHtml}
 </div>`;
   }
@@ -1165,7 +1171,7 @@ ${listHtml}
 
     let backgroundHtml = "";
     if (backgroundImage) {
-      backgroundHtml = `<div style="position: absolute; inset: 0; background-image: url(${backgroundImage}); background-size: cover; background-position: center;"></div>`;
+      backgroundHtml = `<div style="position: absolute; inset: 0; background-image: url('${backgroundImage}'); background-size: cover; background-position: center;"></div>`;
       if (backgroundOverlay) {
         const rgba = hexToRgba(overlayColor, overlayOpacity);
         backgroundHtml += `<div style="position: absolute; inset: 0; background: ${rgba};"></div>`;
@@ -1614,7 +1620,12 @@ ${listHtml}
     const buttonColor = attrs.buttonColor || "#008060";
     const buttonRadius = attrs.buttonRadius ?? 5;
 
-    if (!collectionHandle) {
+    // Blog templates ship sample products on the block so the article renders as the merchant
+    // previewed it before a collection is bound (same fallback as the client compiler and the
+    // canvas preview). Only a block with neither a collection nor products shows the empty state.
+    const manualProducts = Array.isArray(attrs.manualProducts) ? attrs.manualProducts : [];
+
+    if (!collectionHandle && !manualProducts.length) {
       return `<div style="padding: 32px 16px; text-align: center; border: 2px dashed #e1e3e5; border-radius: 8px; color: #6d7175;">` +
         `<div style="font-size: 32px; margin-bottom: 8px;">📦</div>` +
         `<div style="font-size: 14px;">Select a collection in the settings panel</div>` +
@@ -1622,8 +1633,8 @@ ${listHtml}
     }
 
     let collectionTitle = "";
-    let list = [];
-    if (shopifySession && shopifyClient) {
+    let list = manualProducts.slice(0, parseInt(maxProducts));
+    if (collectionHandle && shopifySession && shopifyClient) {
       try {
         const result = await shopifyClient.request(`
           query GetCollectionProducts($handle: String!, $first: Int!) {
@@ -1668,7 +1679,7 @@ ${listHtml}
 
     let headerHtml = "";
     if (showTitle) {
-      const viewAllBtn = showViewAll
+      const viewAllBtn = showViewAll && collectionHandle
         ? `<a href="${viewAllLink}" style="font-size: 13px; color: #2c6ecb; font-weight: 500; text-decoration: none; padding: 6px 12px; border: 1px solid #2c6ecb; border-radius: 6px;">View All →</a>`
         : "";
       headerHtml = `

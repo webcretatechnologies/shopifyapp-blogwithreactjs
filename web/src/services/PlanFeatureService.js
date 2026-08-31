@@ -56,6 +56,7 @@ const PLAN_DEFAULTS = {
     analytics_dashboard: { enabled: true, limit: null },
     analytics_advanced: { enabled: false, limit: null },
     templates_premium: { enabled: false, limit: null },
+    template_limit: { enabled: true, limit: 2 },
     custom_code_injection: { enabled: false, limit: null },
   },
   starter: {
@@ -100,6 +101,7 @@ const PLAN_DEFAULTS = {
     analytics_dashboard: { enabled: true, limit: null },
     analytics_advanced: { enabled: false, limit: null },
     templates_premium: { enabled: true, limit: null },
+    template_limit: { enabled: true, limit: 5 },
     custom_code_injection: { enabled: false, limit: null },
   },
   pro: {
@@ -144,6 +146,7 @@ const PLAN_DEFAULTS = {
     analytics_dashboard: { enabled: true, limit: null },
     analytics_advanced: { enabled: true, limit: null },
     templates_premium: { enabled: true, limit: null },
+    template_limit: { enabled: true, limit: null },
     custom_code_injection: { enabled: true, limit: null },
   },
   business: {
@@ -188,6 +191,7 @@ const PLAN_DEFAULTS = {
     analytics_dashboard: { enabled: true, limit: null },
     analytics_advanced: { enabled: true, limit: null },
     templates_premium: { enabled: true, limit: null },
+    template_limit: { enabled: true, limit: null },
     custom_code_injection: { enabled: true, limit: null },
   },
 };
@@ -310,6 +314,15 @@ export function getArticleLimit(planKey) {
   return getFeatureLimit(planKey, "article_limit");
 }
 
+/**
+ * How many templates of their own a shop may keep. null = unlimited (Pro and above).
+ * Saving a template is not the same thing as `templates_premium`, which gates the paid
+ * half of the library — every plan can save some of its own layouts.
+ */
+export function getSavedTemplateLimit(planKey) {
+  return getFeatureLimit(planKey, "template_limit");
+}
+
 function resolvePlanBucket(planKey) {
   const plan = (planKey || "free").toLowerCase().trim();
   if (plan.includes("starter")) return "starter";
@@ -344,6 +357,13 @@ const ARTICLE_LIMIT_RENDER = {
   pro: () => "Unlimited Articles",
 };
 ARTICLE_LIMIT_RENDER.business = ARTICLE_LIMIT_RENDER.pro;
+
+// Saved templates are the app's second numeric cap, so they get the same per-tier treatment as
+// articles: always present, wording driven by the live PlanFeature limit rather than a boolean.
+const TEMPLATE_LIMIT_RENDER = (f) => {
+  const limit = f.template_limit?.limit;
+  return limit == null ? "Unlimited Saved Templates" : `Save ${limit} of Your Own Templates`;
+};
 
 const PRICE_ORDER = ["free", "starter", "pro"];
 
@@ -390,7 +410,7 @@ function getFeaturesByPriceTier() {
 function buildBulletsForBucket(bucket, featuresByPriceTier) {
   const ownFeatures = bucket === "business" ? getFeaturesForPlan("business") : featuresByPriceTier[bucket];
   const articleRender = ARTICLE_LIMIT_RENDER[bucket] || ARTICLE_LIMIT_RENDER.pro;
-  const bullets = [articleRender(ownFeatures)];
+  const bullets = [articleRender(ownFeatures), TEMPLATE_LIMIT_RENDER(ownFeatures)];
   const comparableTier = bucket === "business" ? "pro" : bucket;
   for (const bullet of MASTER_BULLETS) {
     if (bullet.keys.length === 0) {
@@ -472,9 +492,13 @@ const FEATURE_COMPARISON_ROWS = [
   },
   {
     feature: "Blog Templates",
-    cell: (f) => (f.templates_premium?.enabled
-      ? { icon: "yes", text: "Full library (18)" }
-      : { icon: "partial", text: "3 basic" }),
+    cell: (f) => {
+      const saved = f.template_limit?.limit;
+      const own = saved == null ? "save unlimited of your own" : `save ${saved} of your own`;
+      return f.templates_premium?.enabled
+        ? { icon: "yes", text: `Full library (21) + ${own}` }
+        : { icon: "partial", text: `3 basic + ${own}` };
+    },
   },
   {
     feature: "Shopify Product Blocks",

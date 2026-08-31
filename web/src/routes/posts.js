@@ -13,6 +13,7 @@ import shopify from "../../shopify.js";
 import {
   getFeaturesForPlan,
   getArticleLimit,
+  getSavedTemplateLimit,
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
@@ -954,7 +955,7 @@ router.get("/meta/dashboard-extras", async (req, res) => {
     const now = new Date();
     const WEEKS = 8;
     const cadenceStart = new Date(now.getTime() - WEEKS * 7 * 24 * 60 * 60 * 1000);
-    const [totalPosts, draftCount, scheduledCount, notSyncedCount, upcoming, syncIssues, recentlyPublished] =
+    const [totalPosts, draftCount, scheduledCount, notSyncedCount, upcoming, syncIssues, recentlyPublished, savedTemplateCount] =
       await Promise.all([
         prisma.post.count({ where: { shopId: shop.id } }),
         prisma.post.count({ where: { shopId: shop.id, status: "draft" } }),
@@ -982,6 +983,7 @@ router.get("/meta/dashboard-extras", async (req, res) => {
           where: { shopId: shop.id, status: "published", publishedAt: { gte: cadenceStart } },
           select: { publishedAt: true },
         }),
+        prisma.template.count({ where: { shopId: shop.id, source: "shop", isActive: true } }),
       ]);
 
     // Bucket into 8 week-long windows ending "now", oldest first — a fixed-width trailing window
@@ -1017,7 +1019,14 @@ router.get("/meta/dashboard-extras", async (req, res) => {
       scheduled: scheduledCount,
       notSynced: notSyncedCount,
       upcoming: upcoming.map((p) => ({ id: p.id, title: p.title, publishedAt: p.publishedAt })),
-      planUsage: { plan: shop.planKey, used: totalPosts, limit: getArticleLimit(shop.planKey) },
+      planUsage: {
+        plan: shop.planKey,
+        used: totalPosts,
+        limit: getArticleLimit(shop.planKey),
+        // Second cap on the same card — saved templates (PlanFeature "template_limit").
+        templatesUsed: savedTemplateCount,
+        templatesLimit: getSavedTemplateLimit(shop.planKey),
+      },
       syncIssues: dedupedSyncIssues.map((s) => ({ ...s, postTitle: s.postId ? postTitleById[s.postId] || null : null })),
       publishCadence,
     });

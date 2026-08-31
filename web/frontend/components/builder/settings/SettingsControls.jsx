@@ -694,6 +694,16 @@ export default function SettingsControls({ block, onChange }) {
           onChange={(val) => update("collapsible", val)}
         />
 
+        <Select
+          label="Box style"
+          options={[
+            { label: "Plain", value: "plain" },
+            { label: "Colored panel", value: "panel" },
+          ]}
+          value={settings.style || "plain"}
+          onChange={(val) => update("style", val)}
+        />
+
         <TextField
           label="Font Color"
           type="color"
@@ -701,6 +711,25 @@ export default function SettingsControls({ block, onChange }) {
           onChange={(val) => update("textColor", val)}
           autoComplete="off"
         />
+
+        {settings.style === "panel" && (
+          <>
+            <TextField
+              label="Panel background"
+              type="color"
+              value={settings.backgroundColor || "#1f6b4a"}
+              onChange={(val) => update("backgroundColor", val)}
+              autoComplete="off"
+            />
+            <TextField
+              label="Title color"
+              type="color"
+              value={settings.titleColor || settings.textColor || "#ffffff"}
+              onChange={(val) => update("titleColor", val)}
+              autoComplete="off"
+            />
+          </>
+        )}
       </div>
     );
   }

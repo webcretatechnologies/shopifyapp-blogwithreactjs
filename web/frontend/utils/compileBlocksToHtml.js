@@ -17,6 +17,13 @@ import { builderRichTextExtensions } from "../components/editor/richTextExtensio
 import { formatPrice } from "./priceUtils";
 import { extractHeadingsFromAst, injectHeadingIdsToHtml } from "./headingSlugUtils.js";
 
+// Same conversion as EditorContentCompiler.hexToRgba(), for the hero overlay tint.
+function hexToRgba(hex, opacity) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "#000000");
+  if (!result) return `rgba(0,0,0,${opacity})`;
+  return `rgba(${parseInt(result[1], 16)},${parseInt(result[2], 16)},${parseInt(result[3], 16)},${opacity})`;
+}
+
 /**
  * CSS emitted once at the top of compiled output when at least one block
  * has a visibility flag set. Breakpoints match the editor's device preview
@@ -140,13 +147,42 @@ export function compileSingleBlockToHtml(block, context = {}) {
 }
 
 function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
-  switch (type) {
+  // Keep gallery preview, editor save, and storefront compile on the same type names.
+  const compiledType =
+    {
+      Hero: "HeroSection",
+      heroSection: "HeroSection",
+      hero_section: "HeroSection",
+      productGrid: "ProductGrid",
+      product_grid: "ProductGrid",
+      buyButton: "BuyButton",
+      buy_button: "BuyButton",
+      tableOfContents: "TableOfContents",
+      table_of_contents: "TableOfContents",
+      faqBlock: "FaqBlock",
+      faq_block: "FaqBlock",
+      richText: "RichText",
+      columnLayout: "ColumnLayout",
+      column_layout: "ColumnLayout",
+      buttonBlock: "ButtonBlock",
+      collection: "Collection",
+      productSlider: "ProductSlider",
+      product_slider: "ProductSlider",
+    }[type] || type;
+
+  switch (compiledType) {
     case "TableOfContents": {
       const title = settings.title || "Table of Contents";
       const levels = settings.levels || [2, 3];
       const listStyle = settings.listStyle || "bullet";
       const collapsible = Boolean(settings.collapsible);
-      const textColor = settings.textColor || "#202223";
+      const isPanel = settings.style === "panel";
+      const textColor = settings.textColor || (isPanel ? "#ffffff" : "#202223");
+      const titleColor = settings.titleColor || textColor;
+      const background = isPanel ? (settings.backgroundColor || "#1f6b4a") : "#f4f6f8";
+      const border = isPanel ? "none" : "1px solid #e1e3e5";
+      const padding = settings.padding || "16px 20px";
+      const radius = settings.borderRadius != null ? `${settings.borderRadius}px` : "8px";
 
       const allHeadings = context.allHeadings || [];
       const allowedLevels = new Set(levels.map(Number));
@@ -222,16 +258,16 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
         // ontoggle handler directly, same reasoning as the hover fix above.
         const chevronSvg = `<svg class="toc-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; width: 20px; height: 20px; transition: transform 0.25s ease; color: ${textColor};"><polyline points="5 8 10 13 15 8"/></svg>`;
         const toggleHandler = `var c=this.querySelector('.toc-chevron');if(c){c.style.transform=this.open?'rotate(180deg)':'rotate(0deg)';}`;
-        return `<details class="sp-toc-details" open ontoggle="${toggleHandler}" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
-  <summary style="font-weight: 700; font-size: 16px; color: ${textColor}; outline: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; list-style: none; user-select: none; gap: 8px;"><span>${title}</span>${chevronSvg}</summary>
+        return `<details class="sp-toc-details" open ontoggle="${toggleHandler}" style="padding: ${padding}; background: ${background}; border: ${border}; border-radius: ${radius}; margin: 16px 0;">
+  <summary style="font-weight: 700; font-size: 16px; color: ${titleColor}; outline: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; list-style: none; user-select: none; gap: 8px;"><span>${title}</span>${chevronSvg}</summary>
   <div style="margin-top: 12px;">
 ${listContentHtml}
   </div>
 </details>`;
       }
 
-      return `<div class="sp-toc-block" style="padding: 16px 20px; background: #f4f6f8; border: 1px solid #e1e3e5; border-radius: 8px; margin: 16px 0;">
-  <div style="font-weight: 700; font-size: 16px; color: ${textColor}; margin-bottom: 12px;">${title}</div>
+      return `<div class="sp-toc-block" style="padding: ${padding}; background: ${background}; border: ${border}; border-radius: ${radius}; margin: 16px 0;">
+  <div style="font-weight: 700; font-size: 16px; color: ${titleColor}; margin-bottom: 12px;">${title}</div>
 ${listContentHtml}
 </div>`;
     }
@@ -396,20 +432,39 @@ ${listContentHtml}
     }
 
     case "Collection": {
-      const heading = settings.heading || "Featured Collection";
       const cols = settings.columns || 3;
       const products = settings.manualProducts || settings.products || [];
+      const handle = settings.collectionHandle || "";
+      // Card markup mirrors CollectionBlockPreview (canvas) and renderCollection (storefront)
+      // so the gallery preview, the editor and the published article agree — including the
+      // currency, which used to be hardcoded to ₹ here regardless of the product's own.
+      const heading = settings.heading || (handle ? "" : "Featured Collection");
+      const viewAll = settings.showViewAll !== false && handle
+        ? `<a href="/collections/${handle}" style="font-size: 13px; color: #2c6ecb; font-weight: 500; text-decoration: none; padding: 6px 12px; border: 1px solid #2c6ecb; border-radius: 6px;">View All →</a>`
+        : '';
       return `<div class="builder-collection-block" style="margin: 24px 0;">
-        ${settings.showTitle !== false && heading ? `<h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: left;">${heading}</h3>` : ''}
+        ${settings.showTitle !== false && (heading || viewAll) ? `<div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+          <h3 style="margin: 0; font-size: 20px; font-weight: 700; color: #202223;">${heading}</h3>
+          ${viewAll}
+        </div>` : ''}
         <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'};">
-          ${products.map(p => `
-            <div style="border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; text-align: center; background: #fff;">
-              ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 180px; object-fit: contain; margin-bottom: 12px;" />` : ''}
-              <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
-              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 12px;">₹${p.price}</p>` : ''}
-              ${settings.showButton !== false ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: ${settings.buttonRadius ?? 5}px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Shop Now'}</button>` : ''}
-            </div>
-          `).join('')}
+          ${products.map(p => {
+            const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
+            const currency = p.currency || 'USD';
+            const formattedPrice = p.price ? (String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, currency)) : "";
+            const pLink = p.handle ? `/products/${p.handle}` : "#";
+
+            return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; overflow: hidden; background: #fff; box-sizing: border-box;">
+              <div style="width: 100%; height: 180px; background: #f8f9fa; border-bottom: 1px solid #f1f2f3; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                ${imageUrl ? `<a href="${pLink}" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; text-decoration:none;"><img src="${imageUrl}" alt="${p.title || ''}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto;" /></a>` : '<span style="font-size: 24px;">🖼</span>'}
+              </div>
+              <div style="padding: 10px;">
+                <div style="font-size: 13px; font-weight: 600; color: #202223; margin-bottom: 4px; line-height: 1.3;"><a href="${pLink}" style="color: inherit; text-decoration: none;">${p.title || 'Product'}</a></div>
+                ${settings.showPrice !== false && formattedPrice ? `<div style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin-bottom: 6px;">${formattedPrice}</div>` : ''}
+                ${settings.showButton !== false ? `<a href="${pLink}" style="display: block; padding: 6px; background: ${settings.buttonColor || '#008060'}; color: #fff; text-decoration: none; border-radius: ${settings.buttonRadius ?? 5}px; font-size: 12px; font-weight: 600; text-align: center;">${settings.buttonText || 'Shop Now'}</a>` : ''}
+              </div>
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
     }
@@ -432,7 +487,7 @@ ${listContentHtml}
             <div style="min-width: 220px; flex-shrink: 0; ${sliderCardStyle} padding: 16px; text-align: center;">
               ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 160px; object-fit: contain; margin-bottom: 12px;" />` : ''}
               <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
-              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 12px;">₹${p.price}</p>` : ''}
+              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 12px;">${String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, p.currency || 'USD')}</p>` : ''}
               ${settings.showButton !== false ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: ${settings.buttonRadius ?? 6}px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Add to Cart'}</button>` : ''}
             </div>
           `).join('')}
@@ -503,23 +558,35 @@ ${listContentHtml}
     }
 
     case "HeroSection": {
+      // Mirrors EditorContentCompiler.renderHero() and HeroBlockPreview (canvas): absolute
+      // background layer + tinted overlay, same defaults and type sizes, so the gallery card,
+      // the editor and the published article show the same hero rather than three variants.
       const heading = settings.heading || "";
       const subheading = settings.subheading || "";
       const bgImg = settings.backgroundImage || "";
-      const minH = settings.minHeight || "360px";
+      const minH = settings.minHeight || "400px";
       const align = settings.align || "center";
+      const justify = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
       const textColor = settings.textColor || "#ffffff";
-      const showCta = settings.showCta;
-      const ctaText = settings.ctaText || "Shop Now";
-      const ctaUrl = settings.ctaUrl || "#";
+      const showCta = settings.showCta !== false;
+      const ctaText = settings.ctaText || "";
+      const ctaUrl = settings.ctaUrl || "/";
       const ctaColor = settings.ctaColor || "#008060";
       const ctaTextColor = settings.ctaTextColor || "#ffffff";
+      const overlay = settings.backgroundOverlay !== false;
+      const overlayRgba = hexToRgba(settings.overlayColor || "#000000", parseFloat(settings.overlayOpacity ?? 0.4));
 
-      return `<div class="builder-hero-section" style="position: relative; background-color: #1a1a1a; ${bgImg ? `background-image: url('${bgImg}'); background-size: cover; background-position: center;` : ''} min-height: ${minH}; display: flex; align-items: center; justify-content: ${align}; padding: 40px 24px; border-radius: 8px; color: ${textColor}; text-align: ${align}; margin: 20px 0;">
-        <div style="max-width: 600px; z-index: 2;">
-          <h1 style="font-size: 32px; font-weight: 700; margin-bottom: 12px; color: inherit;">${heading}</h1>
-          <p style="font-size: 16px; margin-bottom: 24px; opacity: 0.9; color: inherit;">${subheading}</p>
-          ${showCta ? `<a href="${ctaUrl}" style="display: inline-block; background: ${ctaColor}; color: ${ctaTextColor}; padding: 12px 24px; border-radius: 6px; font-weight: 600; text-decoration: none;">${ctaText}</a>` : ''}
+      const backgroundHtml = bgImg
+        ? `<div style="position: absolute; inset: 0; background-image: url('${bgImg}'); background-size: cover; background-position: center;"></div>` +
+          (overlay ? `<div style="position: absolute; inset: 0; background: ${overlayRgba};"></div>` : '')
+        : '';
+
+      return `<div class="builder-hero-section" style="position: relative; min-height: ${minH}; display: flex; align-items: center; justify-content: ${justify}; border-radius: 8px; overflow: hidden; ${bgImg ? 'background: transparent' : 'background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'}; padding: 40px 32px; box-sizing: border-box; margin: 24px 0;">
+        ${backgroundHtml}
+        <div style="position: relative; z-index: 1; text-align: ${align}; max-width: 600px; width: 100%;">
+          ${heading ? `<h1 style="margin: 0 0 12px; font-size: 28px; font-weight: 700; color: ${textColor}; line-height: 1.2;">${heading}</h1>` : ''}
+          ${subheading ? `<p style="margin: 0 0 24px; font-size: 16px; color: ${textColor}; opacity: 0.85; line-height: 1.6;">${subheading}</p>` : ''}
+          ${showCta && ctaText ? `<a href="${ctaUrl}" style="display: inline-block; padding: 12px 28px; background: ${ctaColor}; color: ${ctaTextColor}; border-radius: 6px; font-weight: 600; font-size: 14px; text-decoration: none; border: none;">${ctaText}</a>` : ''}
         </div>
       </div>`;
     }

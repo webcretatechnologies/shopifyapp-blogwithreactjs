@@ -6,11 +6,12 @@ import { isLimitKey } from "./planLimitKeys";
 // listed here, so a future limit key still renders (just unlabeled) instead of breaking.
 const LIMIT_KEY_LABELS = {
   article_limit: "Article Limit",
+  template_limit: "Saved Template Limit",
 };
 
 /**
- * Numeric usage caps for one plan (currently just article_limit, the only real enforced cap left
- * in the app) — the "Sync Limits" action on a plan card. Plain labeled number fields with one
+ * Numeric usage caps for one plan (article_limit and template_limit — the enforced caps in the
+ * app) — the "Sync Limits" action on a plan card. Plain labeled number fields with one
  * batch "Sync Limits" action, same posture as Sync Features. Same underlying PlanFeature rows/
  * API, just the numeric-limit partition instead of the boolean-toggle one — `enabled` isn't
  * exposed here since a limit row is always active; "unlimited" is already expressed by leaving
@@ -63,7 +64,7 @@ export default function SyncLimitsModal({ open, planKey, planTitle, features, on
         <BlockStack gap="400">
           <Text tone="subdued" variant="bodySm">
             Set numeric caps for this plan (blank = unlimited). Changes apply instantly, including
-            to the merchant's billing page article-limit display.
+            to the merchant's billing page usage card and the saved-template gate.
           </Text>
           <FormLayout>
             {rows.map((f) => (

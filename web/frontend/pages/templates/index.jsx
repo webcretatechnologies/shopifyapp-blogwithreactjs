@@ -12,173 +12,224 @@ import {
   InlineGrid,
   TextField,
   Spinner,
-  EmptyState,
   Icon,
+  Tabs,
+  Banner,
+  Button,
+  Toast,
+  Frame,
+  Divider,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { SearchIcon, PlusIcon } from "@shopify/polaris-icons";
-import TemplateThumbnail from "../../components/builder/TemplateThumbnail";
+import { SearchIcon, PageAddIcon } from "@shopify/polaris-icons";
+import TemplateGalleryCard, { BlankTemplateCard } from "../../components/builder/TemplateGalleryCard";
+import TemplatePreviewModal from "../../components/builder/TemplatePreviewModal";
+import ConfirmActionModal from "../../components/ConfirmActionModal";
 import UpgradePrompt from "../../components/UpgradePrompt";
 
-function TemplateCard({ accent, badge, name, description, preview, onUse, locked }) {
-  return (
-    <div
-      style={{
-        borderRadius: "10px",
-        overflow: "hidden",
-        border: "1px solid #e3e1de",
-        background: "#fff",
-        cursor: "pointer",
-        position: "relative",
-        transition: "box-shadow 120ms ease, transform 120ms ease",
-      }}
-      onClick={onUse}
-      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 4px 14px rgba(0,0,0,0.08)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "none"; }}
-    >
-      <div
-        style={{
-          background: accent,
-          color: "#fff",
-          padding: "10px 12px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "8px",
-        }}
-      >
-        <Text variant="headingSm" as="h3" tone="text-inverse">{name}</Text>
-        {locked ? (
-          <span
-            style={{
-              background: "rgba(255,255,255,0.92)",
-              color: accent,
-              fontSize: "11px",
-              fontWeight: 700,
-              padding: "2px 8px",
-              borderRadius: "999px",
-              flexShrink: 0,
-            }}
-          >
-            Starter+
-          </span>
-        ) : badge && (
-          <span
-            style={{
-              background: "rgba(255,255,255,0.92)",
-              color: accent,
-              fontSize: "11px",
-              fontWeight: 700,
-              padding: "2px 8px",
-              borderRadius: "999px",
-              flexShrink: 0,
-            }}
-          >
-            {badge}
-          </span>
-        )}
-      </div>
-      <Box padding="300">
-        <BlockStack gap="200">
-          <TemplateThumbnail accent={accent} preview={preview} />
-          <Text tone="subdued" variant="bodySm">{description}</Text>
-        </BlockStack>
-      </Box>
-    </div>
-  );
-}
+// A category name on its own didn't tell a merchant what the group is for, so each
+// carries the job it does. "All" groups the library by category instead of dropping
+// 16 cards in one undifferentiated grid.
+const CATEGORIES = [
+  { name: "All", blurb: "Every layout in the library, grouped by what it's for." },
+  { name: "Commerce", blurb: "Articles that sell a product or collection inside the post." },
+  { name: "Educational", blurb: "Answer questions and teach — the posts that earn search traffic." },
+  { name: "Editorial", blurb: "Brand-led storytelling: founder stories, lookbooks, customer proof." },
+  { name: "Seasonal", blurb: "Campaign moments — holidays, gifting, end-of-season pushes." },
+  { name: "Industry", blurb: "Ready-to-publish articles for a niche — beauty, fitness, home & garden, food." },
+];
 
-function BlankTemplateCard({ onUse }) {
-  return (
-    <div
-      style={{
-        borderRadius: "10px",
-        border: "1.5px dashed #c9c7c4",
-        background: "#fafaf9",
-        cursor: "pointer",
-        minHeight: "212px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-      onClick={onUse}
-    >
-      <BlockStack gap="200" inlineAlign="center">
-        <Box background="bg-fill-secondary" borderRadius="full" padding="200">
-          <Icon source={PlusIcon} tone="subdued" />
-        </Box>
-        <Text variant="headingSm" as="h3" tone="subdued">Blank template</Text>
-      </BlockStack>
-    </div>
-  );
-}
-
-/**
- * Dedicated "Blog Templates" library page (sidebar nav item) — the curated library shipped with
- * the app (GET /api/blog-templates). Selecting a card jumps into a new post pre-built from that
- * content (pages/posts/new.jsx reads location.state.templateKey on mount).
- */
 export default function BlogTemplatesLibrary() {
   const navigate = useNavigate();
   const location = useLocation();
   const [templates, setTemplates] = useState([]);
+  const [shopTemplates, setShopTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("All");
+  const [tab, setTab] = useState(0);
   const [features, setFeatures] = useState({});
-
-  // Same article_limit awareness as the Articles list page — a template/blank start doesn't
-  // create a Post row by itself (that only happens on Save inside the builder), but letting a
-  // merchant build out a whole article only to hit the cap at Save is a bad experience, so this
-  // page warns upfront and routes "at limit" clicks to /plans instead of into the builder.
   const [postCount, setPostCount] = useState(0);
   const [postLimit, setPostLimit] = useState(null);
   const [activePlan, setActivePlan] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
+  // Picking a card opens the full layout first — starting an article replaces content
+  // and costs an article against the plan limit, so it shouldn't happen on one click
+  // from a cropped thumbnail.
+  const [preview, setPreview] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
+  const [templateUsage, setTemplateUsage] = useState({ limit: null, plan: "" });
 
-  useEffect(() => {
+  // Embedded in the admin, App Bridge owns the toast; the Polaris <Toast> below is the fallback
+  // for when it isn't there (and needs the <Frame> this page is wrapped in).
+  const showToast = (content, isError = false) => {
+    if (window.shopify?.toast) {
+      window.shopify.toast.show(content, { isError });
+    } else {
+      setToastMessage({ content, error: isError });
+    }
+  };
+
+  const loadLibrary = () =>
     fetch("/api/blog-templates")
       .then((r) => r.json())
       .then((d) => setTemplates(d.templates || []))
-      .catch(() => setTemplates([]))
-      .finally(() => setLoading(false));
-    fetch("/api/posts/plan/features")
-      .then((r) => r.json())
-      .then((d) => setFeatures(d.features || {}))
-      .catch(() => {});
-    fetch("/api/billing/check")
+      .catch(() => setTemplates([]));
+
+  const loadMine = () =>
+    fetch("/api/blog-templates/mine")
       .then((r) => r.json())
       .then((d) => {
-        setPostCount(d.postCount || 0);
-        setPostLimit(d.postLimit ?? null);
-        setActivePlan(d.activePlan || "");
+        setShopTemplates(d.templates || []);
+        // null limit = unlimited (Pro and above); the route sends the plan's own number.
+        setTemplateUsage({ limit: d.limit ?? null, plan: d.plan || "" });
       })
-      .catch(() => {});
+      .catch(() => setShopTemplates([]));
+
+  useEffect(() => {
+    Promise.all([
+      loadLibrary(),
+      loadMine(),
+      fetch("/api/posts/plan/features")
+        .then((r) => r.json())
+        .then((d) => setFeatures(d.features || {}))
+        .catch(() => {}),
+      fetch("/api/billing/check")
+        .then((r) => r.json())
+        .then((d) => {
+          setPostCount(d.postCount || 0);
+          setPostLimit(d.postLimit ?? null);
+          setActivePlan(d.activePlan || "");
+        })
+        .catch(() => {}),
+    ]).finally(() => setLoading(false));
   }, []);
+
+  const savedCount = shopTemplates.length;
+  const templateLimit = templateUsage.limit;
+  const templatesAtLimit = templateLimit != null && savedCount >= templateLimit;
 
   const postsAtLimit = postLimit !== null && postCount >= postLimit;
   const postsNearLimit = postLimit !== null && !postsAtLimit && postCount / postLimit >= 0.8;
+  const premiumOn = Boolean(features.templates_premium?.enabled);
 
-  const filteredTemplates = useMemo(() => {
+  const filteredLibrary = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return templates;
-    return templates.filter((t) => t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q));
-  }, [templates, query]);
+    return templates.filter((t) => {
+      if (category !== "All" && t.category !== category) return false;
+      if (!q) return true;
+      return (
+        t.name.toLowerCase().includes(q) ||
+        (t.description || "").toLowerCase().includes(q) ||
+        (t.category || "").toLowerCase().includes(q)
+      );
+    });
+  }, [templates, query, category]);
 
-  const useTemplate = (key, locked) => {
-    if (locked) return; // upgrade banner explains why; card itself no-ops rather than erroring
-    if (postsAtLimit) { navigate("/plans"); return; }
+  const categoryCounts = useMemo(() => {
+    const counts = { All: templates.length };
+    templates.forEach((t) => {
+      counts[t.category] = (counts[t.category] || 0) + 1;
+    });
+    return counts;
+  }, [templates]);
+
+  // Grouped only when the merchant hasn't narrowed things down — once they search or
+  // pick a category the flat grid is the faster read.
+  const groupedLibrary = useMemo(() => {
+    if (category !== "All" || query.trim()) return null;
+    return CATEGORIES.slice(1)
+      .map((c) => ({ ...c, items: filteredLibrary.filter((t) => t.category === c.name) }))
+      .filter((g) => g.items.length > 0);
+  }, [filteredLibrary, category, query]);
+
+  const filteredMine = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return shopTemplates;
+    return shopTemplates.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        (t.description || "").toLowerCase().includes(q)
+    );
+  }, [shopTemplates, query]);
+
+  const useLibraryTemplate = (key, locked) => {
+    if (locked || postsAtLimit) {
+      navigate("/plans");
+      return;
+    }
     navigate("/posts/new", { state: { templateKey: key } });
   };
+
+  const useShopTemplate = (id) => {
+    if (postsAtLimit) {
+      navigate("/plans");
+      return;
+    }
+    navigate("/posts/new", { state: { shopTemplateId: id } });
+  };
+
   const useBlank = () => {
-    if (postsAtLimit) { navigate("/plans"); return; }
+    if (postsAtLimit) {
+      navigate("/plans");
+      return;
+    }
     navigate("/posts/new");
   };
 
+  const deleteShopTemplate = async () => {
+    if (!pendingDelete) return;
+    setDeletingId(pendingDelete.id);
+    setDeleteError("");
+    try {
+      const res = await fetch(`/api/blog-templates/mine/${pendingDelete.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setDeleteError(data.error || "Could not delete this template. Please try again.");
+        return;
+      }
+      const name = pendingDelete.name;
+      await loadMine();
+      setPendingDelete(null);
+      showToast(`“${name}” deleted`);
+    } catch {
+      setDeleteError("Could not delete this template. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const renderLibraryCard = (t) => {
+    const locked = t.tier === "paid" && !premiumOn;
+    return (
+      <TemplateGalleryCard
+        key={t.key}
+        template={t}
+        locked={locked}
+        showAction
+        actionLabel="Preview template"
+        onUse={() => setPreview({ template: t, locked })}
+      />
+    );
+  };
+
+  const confirmPreview = () => {
+    if (!preview) return;
+    const { template, locked } = preview;
+    setPreview(null);
+    if (template.id) useShopTemplate(template.id);
+    else useLibraryTemplate(template.key, locked);
+  };
+
   return (
+    <Frame>
     <Page
       fullWidth
       title="Blog templates"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
-      subtitle="Pre-built, professionally structured layouts for the drag & drop builder — pick one to start a new post."
+      subtitle="Pick a layout and it opens as a new draft article — blocks, sample images and placeholder copy included. Hover a card to scroll its full design."
     >
       <TitleBar title="Blog templates" />
       <Layout>
@@ -199,56 +250,277 @@ export default function BlogTemplatesLibrary() {
                 }
               />
             )}
+
             <Card padding="0">
               <Box padding="400">
-                <TextField
-                  label="Search templates"
-                  labelHidden
-                  placeholder="Search templates (e.g. review, guide, launch, recipe)"
-                  prefix={<Icon source={SearchIcon} />}
-                  value={query}
-                  onChange={setQuery}
-                  autoComplete="off"
-                  clearButton
-                  onClearButtonClick={() => setQuery("")}
-                />
+                <BlockStack gap="300">
+                  <Tabs
+                    tabs={[
+                      { id: "library", content: "Library" },
+                      {
+                        id: "mine",
+                        content:
+                          templateLimit != null
+                            ? `My templates (${savedCount}/${templateLimit})`
+                            : `My templates (${savedCount})`,
+                      },
+                    ]}
+                    selected={tab}
+                    onSelect={setTab}
+                  />
+                  <TextField
+                    label="Search templates"
+                    labelHidden
+                    placeholder="Search templates (e.g. review, guide, gift, recipe)"
+                    prefix={<Icon source={SearchIcon} />}
+                    value={query}
+                    onChange={setQuery}
+                    autoComplete="off"
+                    clearButton
+                    onClearButtonClick={() => setQuery("")}
+                  />
+                  {tab === 0 && (
+                    <BlockStack gap="150">
+                      <InlineStack gap="200" wrap>
+                        {CATEGORIES.map(({ name }) => (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => setCategory(name)}
+                            style={{
+                              border: "1px solid #d0d0d0",
+                              background: category === name ? "#303030" : "#fff",
+                              color: category === name ? "#fff" : "#303030",
+                              borderRadius: 999,
+                              padding: "4px 12px",
+                              fontSize: 13,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {name}
+                            {categoryCounts[name] ? ` (${categoryCounts[name]})` : ""}
+                          </button>
+                        ))}
+                      </InlineStack>
+                      <Text tone="subdued" variant="bodySm" as="p">
+                        {CATEGORIES.find((c) => c.name === category)?.blurb}
+                      </Text>
+                    </BlockStack>
+                  )}
+                </BlockStack>
               </Box>
             </Card>
 
             {loading ? (
               <Box padding="800">
-                <InlineStack align="center"><Spinner size="large" /></InlineStack>
+                <InlineStack align="center">
+                  <Spinner size="large" />
+                </InlineStack>
               </Box>
-            ) : filteredTemplates.length === 0 && query ? (
+            ) : tab === 1 ? (
+              <BlockStack gap="400">
+                {templatesAtLimit && (
+                  <Banner
+                    tone="warning"
+                    title={`You've saved ${savedCount} of ${templateLimit} templates on the ${templateUsage.plan || "current"} plan`}
+                    action={{ content: "View plans", onAction: () => navigate("/plans") }}
+                  >
+                    <p>
+                      Delete one to save another, or upgrade for
+                      {templateUsage.plan === "Free" ? " 5 on Starter and unlimited on Pro." : " unlimited saved templates."}
+                    </p>
+                  </Banner>
+                )}
+                {!templatesAtLimit && templateLimit != null && savedCount > 0 && (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    {`${savedCount} of ${templateLimit} saved on the ${templateUsage.plan || "current"} plan.`}
+                  </Text>
+                )}
+                {filteredMine.length === 0 ? (
+                <Card>
+                  <Box padding="800">
+                    <BlockStack gap="400" inlineAlign="center">
+                      <Box background="bg-surface-secondary" borderRadius="full" padding="400">
+                        <Icon source={PageAddIcon} tone="subdued" />
+                      </Box>
+                      <BlockStack gap="200" inlineAlign="center">
+                        <Text as="h2" variant="headingMd">
+                          {query.trim() ? "No saved templates match your search" : "You haven't saved a template yet"}
+                        </Text>
+                        <Box maxWidth="460px">
+                          <Text as="p" tone="subdued" alignment="center">
+                            {query.trim()
+                              ? "Try a different search term, or clear the search to see everything you've saved."
+                              : "Build an article the way you like it, save it as a template, and it lands here — your blocks, your layout, your copy — ready to start the next one from."}
+                          </Text>
+                        </Box>
+                      </BlockStack>
+                      {query.trim() ? (
+                        <Button onClick={() => setQuery("")}>Clear search</Button>
+                      ) : (
+                        <>
+                          <InlineStack gap="200">
+                            <Button variant="primary" onClick={() => setTab(0)}>
+                              Browse the library
+                            </Button>
+                            <Button onClick={useBlank}>Start a blank article</Button>
+                          </InlineStack>
+                          <Box maxWidth="460px" paddingBlockStart="200">
+                            <Divider />
+                            <Box paddingBlockStart="300">
+                              <Text as="p" variant="bodySm" tone="subdued" alignment="center">
+                                To save one: open any article, then choose <b>Save as template</b> from
+                                the editor's more-actions menu.
+                              </Text>
+                            </Box>
+                          </Box>
+                        </>
+                      )}
+                    </BlockStack>
+                  </Box>
+                </Card>
+              ) : (
+                <InlineGrid columns={{ xs: 1, sm: 2, md: 3, lg: 4 }} gap="400">
+                  {filteredMine.map((t) => (
+                    <div key={t.id} style={{ position: "relative" }}>
+                      <TemplateGalleryCard
+                        template={{
+                          ...t,
+                          style: t.style || { accent: t.accent || "#303030", tocBg: t.accent || "#303030", tocFg: "#fff" },
+                          preview: t.preview || { hero: "gradient", toc: true },
+                        }}
+                        showAction
+                        actionLabel="Preview template"
+                        onUse={() =>
+                          setPreview({
+                            template: { ...t, category: t.category || "My template" },
+                            locked: false,
+                          })
+                        }
+                      />
+                      <div style={{ position: "absolute", top: 8, right: 8 }}>
+                        <Button
+                          size="micro"
+                          tone="critical"
+                          loading={deletingId === t.id}
+                          onClick={() => {
+                            setDeleteError("");
+                            setPendingDelete(t);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                      </div>
+                    ))}
+                  </InlineGrid>
+                )}
+              </BlockStack>
+            ) : filteredLibrary.length === 0 ? (
               <Card>
-                <EmptyState heading="No templates match your search" image="">
-                  <p>Try a different search term.</p>
-                </EmptyState>
+                <Box padding="800">
+                  <BlockStack gap="300" inlineAlign="center">
+                    <Text as="h2" variant="headingMd">
+                      No templates match your search
+                    </Text>
+                    <Box maxWidth="420px">
+                      <Text as="p" tone="subdued" alignment="center">
+                        {category === "All"
+                          ? `Nothing in the library matches “${query.trim()}”. Try a broader term — “review”, “guide”, “gift”.`
+                          : `Nothing in ${category} matches this search. It may be filed under another category.`}
+                      </Text>
+                    </Box>
+                    <InlineStack gap="200">
+                      {query.trim() && (
+                        <Button variant="primary" onClick={() => setQuery("")}>
+                          Clear search
+                        </Button>
+                      )}
+                      {category !== "All" && (
+                        <Button onClick={() => setCategory("All")}>Search all categories</Button>
+                      )}
+                    </InlineStack>
+                  </BlockStack>
+                </Box>
               </Card>
+            ) : groupedLibrary ? (
+              <BlockStack gap="600">
+                <InlineGrid columns={{ xs: 1, sm: 2, md: 3, lg: 4 }} gap="400">
+                  <BlankTemplateCard onUse={useBlank} />
+                </InlineGrid>
+                {groupedLibrary.map((group) => (
+                  <BlockStack gap="300" key={group.name}>
+                    <BlockStack gap="050">
+                      <Text variant="headingMd" as="h2">
+                        {group.name}
+                        <Text as="span" tone="subdued" variant="headingMd">
+                          {` (${group.items.length})`}
+                        </Text>
+                      </Text>
+                      <Text tone="subdued" variant="bodySm" as="p">
+                        {group.blurb}
+                      </Text>
+                    </BlockStack>
+                    <InlineGrid columns={{ xs: 1, sm: 2, md: 3, lg: 4 }} gap="400">
+                      {group.items.map((t) => renderLibraryCard(t))}
+                    </InlineGrid>
+                  </BlockStack>
+                ))}
+              </BlockStack>
             ) : (
-              <InlineGrid columns={{ xs: 1, sm: 2, md: 3, lg: 4 }} gap="400">
-                <BlankTemplateCard onUse={useBlank} />
-                {filteredTemplates.map((t) => {
-                  const locked = t.tier === "paid" && !features.templates_premium?.enabled;
-                  return (
-                    <TemplateCard
-                      key={t.key}
-                      accent={t.accent}
-                      badge={t.badge}
-                      name={t.name}
-                      description={t.description}
-                      preview={t.preview}
-                      locked={locked}
-                      onUse={() => useTemplate(t.key, locked)}
-                    />
-                  );
-                })}
-              </InlineGrid>
+              <BlockStack gap="300">
+                <Text tone="subdued" variant="bodySm" as="p">
+                  {`${filteredLibrary.length} template${filteredLibrary.length === 1 ? "" : "s"}`}
+                  {query.trim() ? ` matching “${query.trim()}”` : ` in ${category}`}
+                </Text>
+                <InlineGrid columns={{ xs: 1, sm: 2, md: 3, lg: 4 }} gap="400">
+                  <BlankTemplateCard onUse={useBlank} />
+                  {filteredLibrary.map((t) => renderLibraryCard(t))}
+                </InlineGrid>
+              </BlockStack>
             )}
           </BlockStack>
         </Layout.Section>
       </Layout>
       <Box paddingBlockEnd="800" />
+
+      <ConfirmActionModal
+        open={Boolean(pendingDelete)}
+        title="Delete this template?"
+        body={
+          pendingDelete
+            ? `“${pendingDelete.name}” will be removed from My templates. Articles you already created from it are not affected.`
+            : ""
+        }
+        confirmText="Delete template"
+        confirmTone="critical"
+        loading={Boolean(deletingId)}
+        error={deleteError}
+        onConfirm={deleteShopTemplate}
+        onCancel={() => {
+          setPendingDelete(null);
+          setDeleteError("");
+        }}
+      />
+
+      <TemplatePreviewModal
+        open={Boolean(preview)}
+        template={preview?.template}
+        locked={Boolean(preview?.locked)}
+        actionLabel={postsAtLimit ? "View plans" : "Use this template"}
+        onUse={confirmPreview}
+        onClose={() => setPreview(null)}
+      />
+
+      {toastMessage && (
+        <Toast
+          content={toastMessage.content}
+          error={toastMessage.error}
+          onDismiss={() => setToastMessage(null)}
+        />
+      )}
     </Page>
+    </Frame>
   );
 }

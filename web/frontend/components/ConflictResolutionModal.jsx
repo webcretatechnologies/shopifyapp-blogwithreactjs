@@ -299,7 +299,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
         </InlineStack>
       }
       titleHidden={false}
-      large
+      size="large"
       primaryAction={{
         content: `Apply Selected (${conflictFields.filter((f) => resolutions[f] === "local").length} local, ${conflictFields.filter((f) => resolutions[f] === "remote").length} remote)`,
         onAction: handleResolveSelected,

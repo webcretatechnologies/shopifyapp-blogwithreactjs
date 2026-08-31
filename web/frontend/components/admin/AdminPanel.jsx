@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, BlockStack, InlineStack, Text, Badge, Banner, Toast, Frame } from "@shopify/polaris";
 import AdminLoginScreen from "./AdminLoginScreen";
 import AdminSidebar from "./AdminSidebar";
@@ -48,17 +48,47 @@ export default function AdminPanel({ activeSection, onNavigate }) {
   const [loginEmail, setLoginEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setErrorMessage] = useState(null);
   const [successToast, setSuccessToast] = useState("");
   const [loading, setLoading] = useState(false);
+  // Bumped on every notification, even when the text repeats — two identical failures in a row
+  // are two events, and the second one has to restart the timer rather than ride out the first's.
+  const [notificationNonce, setNotificationNonce] = useState(0);
+
+  const setError = (message) => {
+    setErrorMessage(message);
+    setNotificationNonce((n) => n + 1);
+  };
+
+  // Error banners used to sit there until someone clicked the ✕ — a failed save from twenty
+  // minutes ago still on screen reads as a live failure. Both notifications now clear
+  // themselves: errors after 8s (long enough to read a sentence), success toasts on Polaris's
+  // own 5s timer. Manual dismiss still works, and a new message restarts the clock rather than
+  // inheriting the previous one's remaining time.
+  useEffect(() => {
+    if (!error) return undefined;
+    const t = setTimeout(() => setErrorMessage(null), 8000);
+    return () => clearTimeout(t);
+  }, [error, notificationNonce]);
+
+  useEffect(() => {
+    if (!successToast) return undefined;
+    // Belt and braces: if this Toast ever renders outside the Frame that drives its timer, the
+    // message would otherwise stay up forever.
+    const t = setTimeout(() => setSuccessToast(""), 6000);
+    return () => clearTimeout(t);
+  }, [successToast, notificationNonce]);
 
   const handleLogout = () => {
     localStorage.removeItem("super_admin_token");
     setToken("");
-    setError(null);
+    setErrorMessage(null);
   };
 
-  const showToast = (message) => setSuccessToast(message);
+  const showToast = (message) => {
+    setSuccessToast(message);
+    setNotificationNonce((n) => n + 1);
+  };
 
   const adminFetch = createAdminFetch(token, handleLogout);
 
@@ -104,8 +134,9 @@ export default function AdminPanel({ activeSection, onNavigate }) {
     );
   }
 
+  // key remounts the Toast on a repeat message so Polaris restarts its own 5s countdown.
   const toastMarkup = successToast ? (
-    <Toast content={successToast} onDismiss={() => setSuccessToast("")} />
+    <Toast key={notificationNonce} content={successToast} onDismiss={() => setSuccessToast("")} />
   ) : null;
 
   return (

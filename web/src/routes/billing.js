@@ -1,6 +1,7 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
-import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled } from "../services/PlanFeatureService.js";
+import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled, getSavedTemplateLimit
+} from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 import { listingLayoutForPlan, writeListingLayoutMetafield, THEME_LISTING_LAYOUT } from "../services/ListingLayoutMetafield.js";
 
@@ -197,6 +198,13 @@ router.get("/check", async (req, res) => {
     // the merchant billing page could show a stale limit.
     const postLimit = getArticleLimit(activePlan);
 
+    // Saved templates are the app's second plan cap (PlanFeature "template_limit"), so the usage
+    // card can show both without a second round trip.
+    const templateLimit = getSavedTemplateLimit(activePlan);
+    const templateCount = shop
+      ? await prisma.template.count({ where: { shopId: shop.id, source: "shop", isActive: true } })
+      : 0;
+
     try {
       if (!isFeatureEnabled(activePlan, "listing_layout")) {
         await writeListingLayoutMetafield(session, THEME_LISTING_LAYOUT);
@@ -229,6 +237,7 @@ router.get("/check", async (req, res) => {
 
     res.status(200).json({
       activePlan, postCount, postLimit,
+      templateCount, templateLimit,
       billingCycle,
     });
   } catch (error) {
@@ -296,13 +305,24 @@ router.post("/request", async (req, res) => {
       // (only a hard refresh, some time later once Shopify caught up, showed it correctly). We
       // just cancelled it ourselves and confirmed no userErrors, so this response IS the source
       // of truth — no need to ask Shopify again immediately.
-      const postCount = shop ? await prisma.post.count({ where: { shopId: shop.id } }) : 0;
+      // Every usage figure the plans page shows has to come back here, not just the article one:
+      // this response is what the page renders after a downgrade (see the note above on why it
+      // deliberately doesn't re-fetch /check), so anything missing keeps its pre-downgrade value
+      // until a manual refresh — a Free shop was still being shown "Unlimited" saved templates.
+      const [postCount, templateCount] = shop
+        ? await Promise.all([
+            prisma.post.count({ where: { shopId: shop.id } }),
+            prisma.template.count({ where: { shopId: shop.id, source: "shop", isActive: true } }),
+          ])
+        : [0, 0];
       return res.status(200).json({
         confirmationUrl: null,
         isFree: true,
         activePlan: "free",
         postCount,
         postLimit: getArticleLimit("free"),
+        templateCount,
+        templateLimit: getSavedTemplateLimit("free"),
         billingCycle: null,
       });
     }

@@ -99,6 +99,11 @@ export const BlockRegistry = {
       listStyle: "bullet",
       collapsible: false,
       textColor: "#202223",
+      style: "plain",
+      backgroundColor: "#f4f6f8",
+      titleColor: "",
+      padding: "16px 20px",
+      borderRadius: 8,
     },
     PreviewComponent: TableOfContentsPreview,
   },
@@ -868,6 +873,11 @@ export function normalizeBlock(rawBlock) {
     if (rawBlock.levels) settings.levels = rawBlock.levels;
     if (rawBlock.listStyle) settings.listStyle = rawBlock.listStyle;
     if (rawBlock.collapsible !== undefined) settings.collapsible = rawBlock.collapsible;
+    if (rawBlock.style) settings.style = rawBlock.style;
+    if (rawBlock.backgroundColor) settings.backgroundColor = rawBlock.backgroundColor;
+    if (rawBlock.titleColor) settings.titleColor = rawBlock.titleColor;
+    if (rawBlock.padding) settings.padding = rawBlock.padding;
+    if (rawBlock.borderRadius !== undefined) settings.borderRadius = rawBlock.borderRadius;
   }
 
   const children = Array.isArray(rawBlock.children)

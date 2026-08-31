@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import PlanUsageMeters from "../components/PlanUsageMeters";
 import { useTranslation } from "react-i18next";
 import {
   Page,
@@ -294,6 +295,9 @@ export default function Dashboard() {
   const usagePct = planUsage?.limit ? Math.min(100, Math.round((planUsage.used / planUsage.limit) * 100)) : 0;
   const atLimit = planUsage?.limit != null && planUsage.used >= planUsage.limit;
   const nearLimit = planUsage?.limit != null && !atLimit && usagePct >= 80;
+  // Second plan cap on the same card: templates the merchant has saved of their own.
+  const templatesUsed = planUsage?.templatesUsed ?? 0;
+  const templatesLimit = planUsage?.templatesLimit ?? null;
   // Same decoupling as SetupGuide below: post count is available from dashboard-extras
   // (extrasLoading) without waiting on the separately-fetched, slower analytics summary.
   const isNewShop = !setupLoading && !extrasLoading && (extras?.planUsage?.used ?? 0) === 0;
@@ -467,36 +471,12 @@ export default function Dashboard() {
                       </InlineStack>
                     </InlineStack>
 
-                    <Box
-                      padding="300"
-                      background="bg-surface-secondary"
-                      borderRadius="200"
-                    >
-                      <BlockStack gap="200">
-                        <InlineStack align="space-between" blockAlign="center">
-                          <Text variant="bodyMd" fontWeight="semibold">Articles</Text>
-                          {planUsage?.limit == null ? (
-                            <Badge>Unlimited</Badge>
-                          ) : (
-                            <Text variant="bodySm" tone="subdued">{planUsage.used ?? 0} / {planUsage.limit}</Text>
-                          )}
-                        </InlineStack>
-                        <ProgressBar
-                          progress={planUsage?.limit == null ? 0 : usagePct}
-                          size="small"
-                          tone={atLimit ? "critical" : nearLimit ? "warning" : "primary"}
-                        />
-                        <InlineStack align="space-between" blockAlign="center">
-                          <Text variant="bodySm">
-                            <Text as="span" fontWeight="semibold">{planUsage?.used ?? 0}</Text>
-                            <Text as="span" tone="subdued"> {planUsage?.limit == null ? "used" : `${usagePct}% used`}</Text>
-                          </Text>
-                          <Text variant="bodySm" tone="subdued">
-                            {planUsage?.limit == null ? "∞" : Math.max(0, planUsage.limit - (planUsage.used ?? 0))}
-                          </Text>
-                        </InlineStack>
-                      </BlockStack>
-                    </Box>
+                    <PlanUsageMeters
+                      meters={[
+                        { label: "Articles", used: planUsage?.used ?? 0, limit: planUsage?.limit ?? null },
+                        { label: "Saved templates", used: templatesUsed, limit: templatesLimit },
+                      ]}
+                    />
                   </BlockStack>
                 )}
               </Box>

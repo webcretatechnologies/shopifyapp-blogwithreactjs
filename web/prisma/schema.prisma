@@ -314,9 +314,12 @@ model Template {
   description String?
   thumbnail   String?
   blocks      Json
-  source      String   @default("template") // "template" | "pattern"
+  source      String   @default("template") // "template" | "pattern" | "shop"
   shopId      Int?
   isActive    Boolean  @default(true)
+  accent      String?
+  category    String?
+  preview     Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   shop        Shop?    @relation(fields: [shopId], references: [id], onDelete: Cascade)

@@ -117,7 +117,7 @@ export default function ShopifyFilePicker({ open, onClose, onSelect }) {
       open={open}
       onClose={onClose}
       title="Select an image from Shopify"
-      large
+      size="large"
       secondaryActions={[
         {
           content: "Close",
