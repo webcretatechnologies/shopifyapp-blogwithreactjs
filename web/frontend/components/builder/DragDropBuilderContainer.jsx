@@ -299,10 +299,22 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
 
   useEffect(() => {
     const handleKeyDown = async (e) => {
-      const isInput = e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable;
+      const target = e.target;
+      const isInput =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable ||
+        Boolean(target.closest?.('input, textarea, select, [contenteditable="true"], .tiptap, .ProseMirror, .Polaris-TextField'));
+
+      const isInsideModal = Boolean(target.closest?.('.Polaris-Modal-Dialog, .Polaris-Modal-Dialog__Modal, [role="dialog"], .Polaris-Modal-Section, .blogger-preview-content'));
+      const isAnyModalOpen = Boolean(document.querySelector('.Polaris-Modal-Dialog, .Polaris-Modal-Dialog__Modal, [role="dialog"]'));
+
+      const hasTextSelection = Boolean(window.getSelection?.()?.toString()?.trim()?.length > 0);
       const cmdOrCtrl = e.metaKey || e.ctrlKey;
 
       if (e.key === "Escape") {
+        if (isAnyModalOpen) return; // Let modal handle its own Escape
         if (mobileLeftDrawerOpen) {
           setMobileLeftDrawerOpen(false);
           return;
@@ -317,12 +329,14 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
       }
 
       if (cmdOrCtrl && e.key.toLowerCase() === "s") {
+        if (isInsideModal) return;
         e.preventDefault();
         onSaveRef.current?.();
         return;
       }
 
-      if (isInput) return;
+      // If user is interacting with an input/editor or a modal is open, do not handle canvas builder shortcuts
+      if (isInput || isInsideModal || isAnyModalOpen) return;
 
       if (cmdOrCtrl && e.key.toLowerCase() === "z") {
         e.preventDefault();
@@ -336,6 +350,7 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
 
       if (selectedBlockId || selectedBlockIds.length > 0) {
         if (e.key === "Delete" || e.key === "Backspace") {
+          if (hasTextSelection) return;
           e.preventDefault();
           requestDeleteSelectedBlocks();
           return;
@@ -348,6 +363,9 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
         }
         
         if (cmdOrCtrl && e.key.toLowerCase() === "c") {
+          // If the user has highlighted any text, do NOT intercept copy! Let the browser natively copy the text.
+          if (hasTextSelection) return;
+
           e.preventDefault();
           const ast = getBlocksAst();
           const findInAst = (nodes, id) => {
@@ -378,7 +396,7 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
           const text = await navigator.clipboard.readText();
           if (!text) return;
           const parsed = JSON.parse(text);
-          if (parsed.__builderBlock && parsed.data && parsed.data.type) {
+          if (parsed && parsed.__builderBlock && parsed.data && parsed.data.type) {
             e.preventDefault();
             // We use addBlock which will create a new ID and append to root or selected parent
             const state = useBuilderStore.getState();
@@ -392,7 +410,7 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullscreen, selectedBlockId, selectedBlockIds, clearSelection, deleteBlock, deleteSelectedBlocks, duplicateBlock, undo, redo, getBlocksAst, addBlock]);
+  }, [isFullscreen, mobileLeftDrawerOpen, mobileRightDrawerOpen, selectedBlockId, selectedBlockIds, clearSelection, deleteBlock, deleteSelectedBlocks, duplicateBlock, undo, redo, getBlocksAst, addBlock]);
 
   // Hydrate store whenever initialBlocksAst changes from parent, but guard against echo updates
   const lastInitialBlocksRef = useRef(null);
