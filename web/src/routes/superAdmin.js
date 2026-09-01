@@ -721,25 +721,34 @@ router.get("/pricing/plans", validateSuperAdmin, async (req, res) => {
 // ─── POST /admin-api/pricing/plans — Create a new dynamic subscription plan ──
 router.post("/pricing/plans", validateSuperAdmin, async (req, res) => {
   try {
-    const { name, title, price, currency, interval, trialDays, description, features, isActive, sortOrder } = req.body;
+    const { name, title, price, currency, interval, trialDays, description, features, isActive, isRecommended, sortOrder } = req.body;
 
     if (!name || !title) return res.status(400).json({ error: "Name and Title are required." });
     const validationError = validatePlanFields({ price, trialDays });
     if (validationError) return res.status(400).json({ error: validationError });
 
-    const newPlan = await prisma.subscriptionPlan.create({
-      data: {
-        name,
-        title,
-        price,
-        currency,
-        interval,
-        trialDays: trialDays !== undefined ? parseInt(trialDays, 10) || 0 : 0,
-        description,
-        features: Array.isArray(features) ? features : [],
-        isActive: isActive !== undefined ? isActive : true,
-        sortOrder: sortOrder || 0,
-      },
+    // At most one plan is ever "Recommended" (matches the single badge the merchant billing page
+    // shows) — clearing every other plan's flag first, in the same transaction as the create,
+    // means a newly-recommended plan can never end up sharing the badge with a stale one.
+    const newPlan = await prisma.$transaction(async (tx) => {
+      if (isRecommended) {
+        await tx.subscriptionPlan.updateMany({ data: { isRecommended: false } });
+      }
+      return tx.subscriptionPlan.create({
+        data: {
+          name,
+          title,
+          price,
+          currency,
+          interval,
+          trialDays: trialDays !== undefined ? parseInt(trialDays, 10) || 0 : 0,
+          description,
+          features: Array.isArray(features) ? features : [],
+          isActive: isActive !== undefined ? isActive : true,
+          isRecommended: isRecommended !== undefined ? isRecommended : false,
+          sortOrder: sortOrder || 0,
+        },
+      });
     });
     res.json({ success: true, plan: newPlan });
   } catch (err) {
@@ -754,25 +763,32 @@ router.post("/pricing/plans", validateSuperAdmin, async (req, res) => {
 router.put("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { name, title, price, currency, interval, trialDays, description, features, isActive, sortOrder } = req.body;
+    const { name, title, price, currency, interval, trialDays, description, features, isActive, isRecommended, sortOrder } = req.body;
 
     const validationError = validatePlanFields({ price, trialDays });
     if (validationError) return res.status(400).json({ error: validationError });
 
-    const updatedPlan = await prisma.subscriptionPlan.update({
-      where: { id },
-      data: {
-        ...(name && { name }),
-        ...(title && { title }),
-        ...(price !== undefined && { price }),
-        ...(currency && { currency }),
-        ...(interval && { interval }),
-        ...(trialDays !== undefined && { trialDays: parseInt(trialDays, 10) || 0 }),
-        ...(description !== undefined && { description }),
-        ...(features && { features: Array.isArray(features) ? features : [] }),
-        ...(isActive !== undefined && { isActive }),
-        ...(sortOrder !== undefined && { sortOrder }),
-      },
+    // Same single-badge guarantee as the create route above.
+    const updatedPlan = await prisma.$transaction(async (tx) => {
+      if (isRecommended) {
+        await tx.subscriptionPlan.updateMany({ where: { id: { not: id } }, data: { isRecommended: false } });
+      }
+      return tx.subscriptionPlan.update({
+        where: { id },
+        data: {
+          ...(name && { name }),
+          ...(title && { title }),
+          ...(price !== undefined && { price }),
+          ...(currency && { currency }),
+          ...(interval && { interval }),
+          ...(trialDays !== undefined && { trialDays: parseInt(trialDays, 10) || 0 }),
+          ...(description !== undefined && { description }),
+          ...(features && { features: Array.isArray(features) ? features : [] }),
+          ...(isActive !== undefined && { isActive }),
+          ...(isRecommended !== undefined && { isRecommended }),
+          ...(sortOrder !== undefined && { sortOrder }),
+        },
+      });
     });
     res.json({ success: true, plan: updatedPlan });
   } catch (err) {
@@ -788,6 +804,123 @@ router.delete("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     await prisma.subscriptionPlan.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Shared by the create/update AI credit pack routes below — same reasoning as
+// validatePlanFields: an emptied price/credits field must not reach a non-nullable Decimal/Int
+// column as raw NaN/null, and neither should ever go negative or (for credits) zero.
+function validateCreditPackFields({ price, credits }) {
+  if (price !== undefined) {
+    const n = Number(price);
+    if (!Number.isFinite(n) || n <= 0) return "Price must be a number greater than 0.";
+  }
+  if (credits !== undefined) {
+    const n = parseInt(credits, 10);
+    if (!Number.isFinite(n) || n <= 0) return "Credits must be a whole number greater than 0.";
+  }
+  return null;
+}
+
+// ─── GET /admin-api/ai-credit-packs — every pack, active or not ───────────────
+router.get("/ai-credit-packs", validateSuperAdmin, async (req, res) => {
+  try {
+    const packs = await prisma.aiCreditPack.findMany({ orderBy: { sortOrder: "asc" } });
+
+    // Purchase count per pack (all statuses, not just APPROVED) — same "surface real usage
+    // before letting an admin delete something" purpose as pricing/plans' subscriberCount.
+    const grouped = await prisma.aiCreditPurchase.groupBy({ by: ["packKey"], _count: true });
+    const packsWithCounts = packs.map((pack) => ({
+      ...pack,
+      price: Number(pack.price),
+      purchaseCount: grouped.find((g) => g.packKey === pack.key)?._count || 0,
+    }));
+
+    res.json({ packs: packsWithCounts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /admin-api/ai-credit-packs — Create a new AI credit pack ────────────
+router.post("/ai-credit-packs", validateSuperAdmin, async (req, res) => {
+  try {
+    const { key, credits, price, currency, isActive, isRecommended, sortOrder } = req.body;
+
+    if (!key || !String(key).trim()) return res.status(400).json({ error: "Key is required." });
+    const validationError = validateCreditPackFields({ price, credits });
+    if (validationError) return res.status(400).json({ error: validationError });
+
+    // At most one pack is ever "Best value" (matches the single badge the merchant billing page
+    // shows) — same single-badge guarantee as pricing/plans' isRecommended.
+    const newPack = await prisma.$transaction(async (tx) => {
+      if (isRecommended) {
+        await tx.aiCreditPack.updateMany({ data: { isRecommended: false } });
+      }
+      return tx.aiCreditPack.create({
+        data: {
+          key: String(key).trim(),
+          credits: parseInt(credits, 10),
+          price,
+          currency: currency || "USD",
+          isActive: isActive !== undefined ? isActive : true,
+          isRecommended: isRecommended !== undefined ? isRecommended : false,
+          sortOrder: sortOrder || 0,
+        },
+      });
+    });
+    res.json({ success: true, pack: { ...newPack, price: Number(newPack.price) } });
+  } catch (err) {
+    if (err.code === "P2002") {
+      return res.status(409).json({ error: `A credit pack with the key "${req.body.key}" already exists.` });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PUT /admin-api/ai-credit-packs/:id — Edit an AI credit pack ──────────────
+router.put("/ai-credit-packs/:id", validateSuperAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { credits, price, currency, isActive, isRecommended, sortOrder } = req.body;
+
+    const validationError = validateCreditPackFields({ price, credits });
+    if (validationError) return res.status(400).json({ error: validationError });
+
+    // `key` is deliberately not editable here — it's a purchase's permanent snapshot join key
+    // (AiCreditPurchase.packKey), and renaming it out from under existing purchase history would
+    // orphan their label. Price/credits/currency/active/sortOrder only affect future purchases.
+    // Same single-badge guarantee as the create route above.
+    const updatedPack = await prisma.$transaction(async (tx) => {
+      if (isRecommended) {
+        await tx.aiCreditPack.updateMany({ where: { id: { not: id } }, data: { isRecommended: false } });
+      }
+      return tx.aiCreditPack.update({
+        where: { id },
+        data: {
+          ...(credits !== undefined && { credits: parseInt(credits, 10) }),
+          ...(price !== undefined && { price }),
+          ...(currency && { currency }),
+          ...(isActive !== undefined && { isActive }),
+          ...(isRecommended !== undefined && { isRecommended }),
+          ...(sortOrder !== undefined && { sortOrder }),
+        },
+      });
+    });
+    res.json({ success: true, pack: { ...updatedPack, price: Number(updatedPack.price) } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── DELETE /admin-api/ai-credit-packs/:id — Delete an AI credit pack ─────────
+router.delete("/ai-credit-packs/:id", validateSuperAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    await prisma.aiCreditPack.delete({ where: { id } });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

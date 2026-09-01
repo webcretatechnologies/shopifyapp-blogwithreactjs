@@ -55,6 +55,10 @@ export default function Plans() {
   // Lifetime AI allowance (PlanFeature "ai_credits"); null = unlimited.
   const [aiUsed, setAiUsed] = useState(0);
   const [aiLimit, setAiLimit] = useState(null);
+  // Extra generations bought via one-time AiCreditPurchase packs, on top of aiLimit.
+  const [aiPurchased, setAiPurchased] = useState(0);
+  const [creditPacks, setCreditPacks] = useState([]);
+  const [purchasingPack, setPurchasingPack] = useState(null);
   const [billingCycle, setBillingCycle] = useState(null);
   const [dynamicPlans, setDynamicPlans] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -91,9 +95,58 @@ export default function Plans() {
         next.delete("subscribed");
         setSearchParams(next, { replace: true });
       }
+      // aiCreditPacks.js's returnUrl appends ?credits_purchased=1 the same way — but unlike a
+      // subscription (confirmed synchronously in the redirect response), a one-time purchase is
+      // only actually credited once Shopify's app_purchases_one_time/update webhook lands, which
+      // can arrive a moment after this redirect. Acknowledge the purchase now, then re-fetch once
+      // shortly after to pick up the credited balance without the merchant needing a manual
+      // refresh.
+      if (searchParams.get("credits_purchased") === "1") {
+        showPlanToast("Thanks! Your AI credits will appear shortly.");
+        const next = new URLSearchParams(searchParams);
+        next.delete("credits_purchased");
+        setSearchParams(next, { replace: true });
+        setTimeout(() => fetchBillingData(), 3000);
+      }
+      fetchCreditPacks();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const fetchCreditPacks = async () => {
+    try {
+      const res = await fetch("/api/ai/credit-packs");
+      const data = await res.json();
+      setCreditPacks(data.packs || []);
+      if ("aiCreditsPurchased" in data) setAiPurchased(data.aiCreditsPurchased || 0);
+    } catch (err) {
+      console.error("Failed to load AI credit packs:", err);
+    }
+  };
+
+  const buyCreditPack = async (packKey) => {
+    setPurchasingPack(packKey);
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const host = urlParams.get("host");
+      const res = await fetch("/api/ai/credit-packs/purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packKey, host }),
+      });
+      const data = await res.json();
+      if (res.ok && data.confirmationUrl) {
+        window.open(data.confirmationUrl, "_top");
+      } else {
+        setError(data.error || "Failed to start purchase.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Failed to start purchase.");
+    } finally {
+      setPurchasingPack(null);
+    }
+  };
 
   const fetchBillingData = async () => {
     setIsLoading(true);
@@ -111,6 +164,7 @@ export default function Plans() {
       setTemplateLimit("templateLimit" in checkData ? checkData.templateLimit : null);
       setAiUsed(checkData.aiCreditsUsed || 0);
       setAiLimit("aiCreditLimit" in checkData ? checkData.aiCreditLimit : null);
+      setAiPurchased(checkData.aiCreditsPurchased || 0);
       // checkData.postLimit is `null` on purpose for unlimited plans (Pro) — that's a meaningful
       // value, not missing data, so it must NOT be coalesced away. `?? 10` here previously treated
       // null the same as undefined/missing and silently substituted a hardcoded 10, which is
@@ -210,6 +264,7 @@ export default function Plans() {
           setTemplateLimit("templateLimit" in data ? data.templateLimit : null);
           setAiUsed(data.aiCreditsUsed || 0);
           setAiLimit("aiCreditLimit" in data ? data.aiCreditLimit : null);
+          setAiPurchased(data.aiCreditsPurchased || 0);
           setPostLimit("postLimit" in data ? data.postLimit : null);
           setBillingCycle(data.billingCycle ?? null);
           showPlanToast("You're now on the Free plan");
@@ -247,12 +302,13 @@ export default function Plans() {
 
   // Card display order follows the admin's own Sort Order (dynamicPlans already arrives in that
   // order from /api/billing/plans) — previously this page re-sorted by price itself, silently
-  // overriding whatever order was set in Super Admin. "Next plan to upgrade to" and "Recommended"
-  // still need a true price ordering regardless of display order, so that's computed separately.
+  // overriding whatever order was set in Super Admin. "Next plan to upgrade to" still needs a
+  // true price ordering regardless of display order, so that's computed separately. Which plan
+  // shows the "Recommended" badge is a Super Admin-set flag (plan.isRecommended, edited via
+  // EditPlanCoreModal's "Recommend / Highlight Plan in UI" checkbox) — not derived here at all.
   const displayPlans = dynamicPlans;
   const byPriceAsc = [...dynamicPlans].sort((a, b) => Number(a.price) - Number(b.price));
   const nextPlan = byPriceAsc.find((p) => Number(p.price) > currentPrice);
-  const highestPrice = byPriceAsc.length ? Number(byPriceAsc[byPriceAsc.length - 1].price) : 0;
 
   return (
     <>
@@ -365,10 +421,104 @@ export default function Plans() {
                   meters={[
                     { label: "Articles", used: postCount, limit: postLimit },
                     { label: "Saved templates", used: templateCount, limit: templateLimit },
-                    { label: "AI generations", used: aiUsed, limit: aiLimit },
+                    {
+                      label: aiPurchased > 0 ? `AI credits (+${aiPurchased} purchased)` : "AI credits",
+                      used: aiUsed,
+                      // aiUsed/aiLimit already come from the server as a downgrade-safe, meter-
+                      // ready pair (GET /api/billing/check's meterUsed/meterLimit — see its own
+                      // comment) — no client-side math needed, and adding aiPurchased again here
+                      // would double-count it now that the server already folds purchased credits
+                      // into aiLimit.
+                      limit: aiLimit,
+                    },
                   ]}
                 />
               </BlockStack>
+            </Card>
+          </Layout.Section>
+        )}
+
+        {!isLoading && aiLimit != null && creditPacks.length > 0 && (
+          <Layout.Section>
+            <Card>
+              <Box padding="500">
+                <BlockStack gap="400">
+                  <div>
+                    <Text as="h3" variant="headingMd">Need more AI credits right now?</Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      Buy a one-time credit pack instead of changing plans — credits never expire and stack with your plan's own allowance.
+                    </Text>
+                  </div>
+                  <InlineGrid columns={{ xs: 1, sm: Math.min(creditPacks.length, 3) }} gap="300">
+                    {(() => {
+                      // The smallest pack (by credit count) is the undiscounted anchor rate —
+                      // every other pack's "Save X%" badge is how much cheaper its own
+                      // price-per-credit is against that baseline, the same framing Bloggle's
+                      // "Save 10%" preset labels use relative to their smallest tier.
+                      const smallestPack = creditPacks.reduce(
+                        (min, p) => (p.credits < min.credits ? p : min),
+                        creditPacks[0]
+                      );
+                      const baselinePerCredit = smallestPack.price / smallestPack.credits;
+                      return creditPacks.map((pack) => {
+                        // Super Admin-set flag (pack.isRecommended, edited via
+                        // EditCreditPackModal's "Best Value / Highlight Pack in UI" checkbox) —
+                        // not auto-computed here.
+                        const isBestValue = !!pack.isRecommended;
+                        const perCredit = pack.price / pack.credits;
+                        const savePct = Math.round((1 - perCredit / baselinePerCredit) * 100);
+                        const showSavings = pack !== smallestPack && savePct > 0;
+                        return (
+                          // No reserved top space — every card's border starts at the same
+                          // height, and the "Best value" ribbon is meant to sit right ON that
+                          // border (roughly half above it, half overlapping the card), pinned at
+                          // the corner, rather than floating fully clear of it.
+                          <div key={pack.key} style={{ position: "relative", height: "100%" }}>
+                            {isBestValue && (
+                              <div style={{ position: "absolute", top: -12, right: 16, zIndex: 1 }}>
+                                <Badge tone="success">Best value</Badge>
+                              </div>
+                            )}
+                            <div
+                              style={{
+                                height: "100%",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                border: `1px solid ${isBestValue ? "var(--p-color-border-emphasis)" : "var(--p-color-border)"}`,
+                                borderRadius: "var(--p-border-radius-300)",
+                                background: "var(--p-color-bg-surface-secondary)",
+                                padding: "20px 16px 16px",
+                                boxSizing: "border-box",
+                              }}
+                            >
+                              <Text as="span" variant="heading2xl">{pack.credits}</Text>
+                              <Text as="span" variant="bodySm" tone="subdued">AI credits</Text>
+                              {/* Fixed-height slot, rendered on every card whether or not it has a
+                                  discount, so the Buy button lines up at the same height across
+                                  the whole row instead of drifting up on cards with no badge. */}
+                              <div style={{ height: 24, marginTop: 8, visibility: showSavings ? "visible" : "hidden" }}>
+                                <Badge tone="success">{`Save ${savePct}%`}</Badge>
+                              </div>
+                              <div style={{ width: "100%", marginTop: "auto", paddingTop: 12 }}>
+                                <Button
+                                  fullWidth
+                                  variant="primary"
+                                  onClick={() => buyCreditPack(pack.key)}
+                                  loading={purchasingPack === pack.key}
+                                  disabled={purchasingPack != null}
+                                >
+                                  {`Buy for $${pack.price.toFixed(2)}`}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </InlineGrid>
+                </BlockStack>
+              </Box>
             </Card>
           </Layout.Section>
         )}
@@ -442,7 +592,7 @@ export default function Plans() {
           <InlineGrid columns={{ xs: 1, md: displayPlans.length || 1 }} gap="400">
             {displayPlans.map((plan) => {
               const isCurrent = activePlan === plan.name;
-              const isRecommended = Number(plan.price) > 0 && Number(plan.price) === highestPrice;
+              const isRecommended = !!plan.isRecommended;
               const price = Number(plan.price);
 
               const couponAppliesHere = Boolean(

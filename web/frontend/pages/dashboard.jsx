@@ -475,7 +475,7 @@ export default function Dashboard() {
                       meters={[
                         { label: "Articles", used: planUsage?.used ?? 0, limit: planUsage?.limit ?? null },
                         { label: "Saved templates", used: templatesUsed, limit: templatesLimit },
-                        { label: "AI generations", used: planUsage?.aiUsed ?? 0, limit: planUsage?.aiLimit ?? null },
+                        { label: "AI credits", used: planUsage?.aiUsed ?? 0, limit: planUsage?.aiLimit ?? null },
                       ]}
                     />
                   </BlockStack>

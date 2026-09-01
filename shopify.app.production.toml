@@ -32,6 +32,7 @@ subscription = []
   topics = [
     "app/uninstalled",
     "app_subscriptions/update",
+    "app_purchases_one_time/update",
     "orders/create",
     "checkouts/create"
   ]

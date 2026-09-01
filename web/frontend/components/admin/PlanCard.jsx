@@ -19,10 +19,13 @@ export default function PlanCard({ plan, features, onEditCore, onSyncFeatures, o
   return (
     <Card>
       <BlockStack gap="400">
-        <BlockStack gap="050">
-          <Text as="h3" variant="headingMd">{plan.title}</Text>
-          <Text tone="subdued" variant="bodySm">slug: {plan.name}</Text>
-        </BlockStack>
+        <InlineStack align="space-between" blockAlign="start">
+          <BlockStack gap="050">
+            <Text as="h3" variant="headingMd">{plan.title}</Text>
+            <Text tone="subdued" variant="bodySm">slug: {plan.name}</Text>
+          </BlockStack>
+          {plan.isRecommended && <Badge tone="info">Recommended</Badge>}
+        </InlineStack>
 
         {plan.description && (
           <Text tone="subdued" variant="bodySm">{plan.description}</Text>

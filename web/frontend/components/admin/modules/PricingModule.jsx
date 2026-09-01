@@ -5,11 +5,12 @@ import PlanCard from "../PlanCard";
 import EditPlanCoreModal from "../EditPlanCoreModal";
 import SyncFeaturesModal from "../SyncFeaturesModal";
 import SyncLimitsModal from "../SyncLimitsModal";
+import AiCreditPacksSection from "./AiCreditPacksSection";
 import { planFeatureBucket } from "../planLimitKeys";
 
 const BLANK_PLAN = {
   name: "", title: "", price: "0.00", currency: "USD", interval: "EVERY_30_DAYS",
-  trialDays: 0, description: "", isActive: true, sortOrder: 0,
+  trialDays: 0, description: "", isActive: true, isRecommended: false, sortOrder: 0,
 };
 
 /** Pricing & Billing — the card-per-plan Plans & Billing grid. */
@@ -181,6 +182,8 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
           </BlockStack>
         </Box>
       </Card>
+
+      <AiCreditPacksSection adminFetch={adminFetch} showToast={showToast} setError={setError} />
 
       {showPlanModal && editingPlan && (
         <EditPlanCoreModal

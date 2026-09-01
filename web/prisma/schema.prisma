@@ -36,6 +36,19 @@ model Shop {
   /** Lifetime AI generations consumed. Deliberately never reset: the plan's ai_credits is a
       one-off allowance, not a monthly quota, so this only ever counts up. */
   aiCreditsUsed Int           @default(0)
+  /** Lifetime total AI generations bought via one-time AppPurchaseOneTime credit packs. Only ever
+      incremented by the app_purchases_one_time/update webhook once Shopify confirms the charge
+      is ACTIVE, never optimistically on checkout redirect. Never decremented - it's a purchase
+      record, not a live balance (aiCreditsPurchasedUsed tracks how much of it has been spent). */
+  aiCreditsPurchased Int      @default(0)
+  /** How many of aiCreditsPurchased have actually been spent, tracked separately from
+      aiCreditsUsed (which counts EVERY generation, plan-funded or purchased-funded) so that
+      purchased credits stay usable on their own after a plan downgrade shrinks the plan's own
+      ai_credits allowance below the shop's lifetime usage - see getAiCreditStatus. A generation
+      only draws from the purchased pool (incrementing this) once the plan's own allowance for the
+      CURRENT plan is exhausted; see AiGenerationJob.creditSource for which pool paid for a given
+      job, so a refund reverses the correct one. */
+  aiCreditsPurchasedUsed Int @default(0)
   installedAt   DateTime      @default(now())
   uninstalledAt DateTime?
   createdAt     DateTime      @default(now())
@@ -52,6 +65,7 @@ model Shop {
   webhookLogs   WebhookLog[]
   processedOrderWebhooks ProcessedOrderWebhook[]
   aiJobs        AiGenerationJob[]
+  aiCreditPurchases AiCreditPurchase[]
 }
 
 model AppPlan {
@@ -492,6 +506,11 @@ model SubscriptionPlan {
   description String?  @db.Text
   features    Json?
   isActive    Boolean  @default(true)
+  /// Shows the "Recommended" badge on the merchant billing page (frontend/pages/plans.jsx).
+  /// Super Admin-controlled (EditPlanCoreModal's "Recommend / Highlight Plan in UI" checkbox) -
+  /// previously this was hardcoded client-side to whichever plan had the highest price, which
+  /// wasn't actually configurable from the admin panel.
+  isRecommended Boolean @default(false)
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -595,6 +614,12 @@ model AiGenerationJob {
   progress    Int       @default(0)
   /// The wizard's brief: template key, topic text, linked products, colour overrides.
   params      Json?
+  /// Which pool this job's 1 credit was spent from at creation time - "plan" (the shop's own
+  /// ai_credits allowance) or "purchased" (a one-time AiCreditPurchase pack), decided by
+  /// getAiCreditStatus's nextCreditSource. A refund (runJob's refundAiCredit) reads this back to
+  /// decrement the SAME counter that was incremented, so a downgrade that shrinks the plan's own
+  /// allowance can never misattribute a refund to the wrong pool.
+  creditSource String   @default("plan")
   error       String?   @db.Text
   /// Set when the job finished "done" but degraded to filler text (Groq unavailable/failed) -
   /// the draft still needs a human pass before publishing, unlike a normal successful run.
@@ -608,4 +633,53 @@ model AiGenerationJob {
   @@index([shopId])
   @@index([shopId, status])
   @@index([postId])
+}
+
+/// A sellable AI-credit top-up pack (Super Admin's Pricing module manages these, mirroring
+/// SubscriptionPlan). `key` is the stable identifier AiCreditPurchase.packKey snapshots at
+/// purchase time and Shopify's appPurchaseOneTimeCreate `name` is derived from - renaming `key`
+/// after purchases exist would orphan their historical label, so the admin UI should treat it as
+/// effectively immutable once anything has been sold under it (price/credits/active are safe to
+/// edit any time; only future purchases see the new values).
+model AiCreditPack {
+  id         Int      @id @default(autoincrement())
+  key        String   @unique
+  credits    Int
+  price      Decimal  @db.Decimal(10, 2)
+  currency   String   @default("USD")
+  isActive   Boolean  @default(true)
+  /// Shows the "Best value" badge on the merchant billing page's credit-pack tiles
+  /// (frontend/pages/plans.jsx). Super Admin-controlled, same pattern as SubscriptionPlan's
+  /// isRecommended - previously this was auto-computed client-side (lowest price-per-credit),
+  /// which wasn't configurable from the admin panel.
+  isRecommended Boolean @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+/// One AI-credit top-up purchase - a Shopify AppPurchaseOneTime charge (not a recurring
+/// subscription), bought when a shop wants more generations than their plan's ai_credits
+/// allowance without changing plans. Created PENDING the moment appPurchaseOneTimeCreate returns
+/// a confirmationUrl; only flips to APPROVED - and only then credits Shop.aiCreditsPurchased -
+/// once the app_purchases_one_time/update webhook confirms Shopify's own ACTIVE status. Never
+/// credited optimistically on the merchant's redirect back into the app, since that fires
+/// whether they approved or declined Shopify's own confirmation screen.
+model AiCreditPurchase {
+  id                Int      @id @default(autoincrement())
+  shopId            Int
+  /// Key into AI_CREDIT_PACKS (src/services/AiCreditPackService.js), e.g. "small"/"medium"/"large".
+  packKey           String
+  credits           Int
+  price             Decimal  @db.Decimal(10, 2)
+  currencyCode      String   @db.VarChar(10)
+  status            String   @default("PENDING") @db.VarChar(20) // PENDING | APPROVED | DECLINED | CANCELLED | EXPIRED
+  shopifyPurchaseId String   @unique
+  test              Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  shop              Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([shopId, status])
 }

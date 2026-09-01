@@ -338,6 +338,66 @@ export function getAiCreditLimit(planKey) {
   return getFeatureLimit(planKey, "ai_credits");
 }
 
+/**
+ * The real, downgrade-proof answer to "can this shop generate right now, and from which pool":
+ * two independent buckets — the plan's own ai_credits allowance, and whatever's been topped up
+ * via one-time AiCreditPurchase packs (Shop.aiCreditsPurchased) — rather than one flat
+ * "planLimit + purchased" ceiling compared against one flat lifetime-used counter.
+ *
+ * That flat approach breaks the moment a plan downgrade shrinks the plan's own limit below what
+ * the shop already used: e.g. Pro (100 credits) used 63, buys a 10-pack, downgrades to Free
+ * (3 credits) — a flat check sees `used(63) >= planLimit(3) + purchased(10) = 13` and blocks
+ * generation entirely, silently stranding the 10 credits they just paid for. Tracking
+ * aiCreditsPurchasedUsed separately from aiCreditsUsed means the purchased pool's own remaining
+ * balance (10 - 0 = 10) is checked independently of the plan's — so those 10 stay spendable on
+ * Free, and only once BOTH pools are exhausted does generation actually block.
+ *
+ * meterUsed/meterLimit are a display-safe used/limit pair for progress-bar UIs: in the downgrade
+ * scenario above, a raw `aiCreditsUsed(63) of effectiveLimit(13)` pair would render as a broken
+ * >100% bar with "0 left" while generation is actually still allowed - meterUsed is derived from
+ * `effectiveLimit - remaining` instead, so it's always <= effectiveLimit and matches what's
+ * actually true (a normal shop with no downgrade quirk sees meterUsed === aiCreditsUsed exactly).
+ */
+export function getAiCreditStatus(planKey, aiCreditsUsed = 0, aiCreditsPurchased = 0, aiCreditsPurchasedUsed = 0) {
+  const planLimit = getAiCreditLimit(planKey);
+  const purchased = Math.max(0, aiCreditsPurchased || 0);
+  const purchasedUsed = Math.max(0, aiCreditsPurchasedUsed || 0);
+  const purchasedRemaining = Math.max(0, purchased - purchasedUsed);
+
+  if (planLimit == null) {
+    // Plan itself is already unlimited - nothing ever needs to draw from the purchased pool.
+    return {
+      planLimit: null,
+      effectiveLimit: null,
+      remaining: null,
+      purchasedRemaining,
+      meterUsed: Math.max(0, aiCreditsUsed || 0),
+      meterLimit: null,
+      canGenerate: true,
+      nextCreditSource: "plan",
+    };
+  }
+
+  const planCreditsUsed = Math.max(0, (aiCreditsUsed || 0) - purchasedUsed);
+  const planRemaining = Math.max(0, planLimit - planCreditsUsed);
+  const remaining = planRemaining + purchasedRemaining;
+  const effectiveLimit = planLimit + purchased;
+
+  return {
+    planLimit,
+    effectiveLimit,
+    remaining,
+    purchasedRemaining,
+    meterUsed: Math.max(0, effectiveLimit - remaining),
+    meterLimit: effectiveLimit,
+    canGenerate: remaining > 0,
+    // Which pool the NEXT generation should draw from - the plan's own allowance first, the
+    // purchased pool only once that's exhausted for the CURRENT plan (so a downgrade that shrinks
+    // the plan's allowance correctly routes new generations to the purchased pool immediately).
+    nextCreditSource: planRemaining > 0 ? "plan" : "purchased",
+  };
+}
+
 function resolvePlanBucket(planKey) {
   const plan = (planKey || "free").toLowerCase().trim();
   if (plan.includes("starter")) return "starter";
@@ -378,7 +438,7 @@ ARTICLE_LIMIT_RENDER.business = ARTICLE_LIMIT_RENDER.pro;
 const AI_CREDIT_RENDER = (f) => {
   const limit = f.ai_credits?.limit;
   if (limit === 0) return null;
-  return limit == null ? "Unlimited AI Article Generations" : `${limit} AI Article Generations`;
+  return limit == null ? "Unlimited AI Credits" : `${limit} AI Credits`;
 };
 
 const TEMPLATE_LIMIT_RENDER = (f) => {
@@ -524,13 +584,13 @@ const FEATURE_COMPARISON_ROWS = [
     },
   },
   {
-    feature: "AI Article Generation",
+    feature: "AI Credits",
     cell: (f) => {
       const limit = f.ai_credits?.limit;
       if (limit === 0) return { icon: "no", text: "" };
       return limit == null
         ? { icon: "yes", text: "Unlimited" }
-        : { icon: "partial", text: `${limit} generations (one-off allowance)` };
+        : { icon: "partial", text: `${limit} credits (one-off allowance)` };
     },
   },
   {

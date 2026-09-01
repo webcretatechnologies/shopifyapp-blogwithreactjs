@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { NavMenu } from "@shopify/app-bridge-react";
 import Routes from "./Routes";
 import { QueryProvider, PolarisProvider } from "./components";
+import AiCreditsBadge from "./components/AiCreditsBadge";
 import { Box } from "@shopify/polaris";
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
             <Routes pages={pages} />
           ) : (
             <Box paddingBlockEnd="400">
+              <AiCreditsBadge />
               <Routes pages={pages} />
             </Box>
           )}

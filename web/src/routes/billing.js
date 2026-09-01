@@ -1,6 +1,6 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
-import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled, getSavedTemplateLimit, getAiCreditLimit
+import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled, getSavedTemplateLimit, getAiCreditStatus
 } from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 import { listingLayoutForPlan, writeListingLayoutMetafield, THEME_LISTING_LAYOUT } from "../services/ListingLayoutMetafield.js";
@@ -201,8 +201,16 @@ router.get("/check", async (req, res) => {
     // Saved templates are the app's second plan cap (PlanFeature "template_limit"), so the usage
     // card can show both without a second round trip.
     const templateLimit = getSavedTemplateLimit(activePlan);
-    const aiCreditLimit = getAiCreditLimit(activePlan);
-    const aiCreditsUsed = shop?.aiCreditsUsed || 0;
+    const aiCreditsPurchased = shop?.aiCreditsPurchased || 0;
+    // aiCreditsUsed/aiCreditLimit are the METER-SAFE pair (getAiCreditStatus's meterUsed/
+    // meterLimit), not raw shop.aiCreditsUsed vs the bare plan limit — a raw pair can invert
+    // (used > limit) right after a downgrade shrinks the plan's own allowance below lifetime
+    // usage even though unspent purchased credits still cover it, which would render as a broken
+    // >100% progress bar on the plans page. aiCreditsPurchased stays the raw lifetime-purchased
+    // count (unrelated to the meter) so the page can still show "+10 purchased" as its own label.
+    const aiCreditStatus = getAiCreditStatus(activePlan, shop?.aiCreditsUsed || 0, aiCreditsPurchased, shop?.aiCreditsPurchasedUsed || 0);
+    const aiCreditLimit = aiCreditStatus.meterLimit;
+    const aiCreditsUsed = aiCreditStatus.meterUsed;
     const templateCount = shop
       ? await prisma.template.count({ where: { shopId: shop.id, source: "shop", isActive: true } })
       : 0;
@@ -240,7 +248,7 @@ router.get("/check", async (req, res) => {
     res.status(200).json({
       activePlan, postCount, postLimit,
       templateCount, templateLimit,
-      aiCreditsUsed, aiCreditLimit,
+      aiCreditsUsed, aiCreditLimit, aiCreditsPurchased,
       billingCycle,
     });
   } catch (error) {
@@ -318,6 +326,11 @@ router.post("/request", async (req, res) => {
             prisma.template.count({ where: { shopId: shop.id, source: "shop", isActive: true } }),
           ])
         : [0, 0];
+      // Same meter-safe pair /check returns (see its own comment) — this is the exact moment it
+      // matters most: a shop that just downgraded off a plan with unused purchased credits must
+      // still see those credits reflected here, not a broken "63 of 3" pair from the old plan's
+      // now-irrelevant raw usage vs Free's tiny limit.
+      const downgradeAiStatus = getAiCreditStatus("free", shop?.aiCreditsUsed || 0, shop?.aiCreditsPurchased || 0, shop?.aiCreditsPurchasedUsed || 0);
       return res.status(200).json({
         confirmationUrl: null,
         isFree: true,
@@ -326,8 +339,9 @@ router.post("/request", async (req, res) => {
         postLimit: getArticleLimit("free"),
         templateCount,
         templateLimit: getSavedTemplateLimit("free"),
-        aiCreditsUsed: shop?.aiCreditsUsed || 0,
-        aiCreditLimit: getAiCreditLimit("free"),
+        aiCreditsUsed: downgradeAiStatus.meterUsed,
+        aiCreditLimit: downgradeAiStatus.meterLimit,
+        aiCreditsPurchased: shop?.aiCreditsPurchased || 0,
         billingCycle: null,
       });
     }

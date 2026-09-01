@@ -1,6 +1,6 @@
 import express from "express";
 import { prisma } from "../../shopify.js";
-import { getAiCreditLimit } from "../services/PlanFeatureService.js";
+import { getAiCreditLimit, getAiCreditStatus } from "../services/PlanFeatureService.js";
 import { generateArticleBlocks, AI_STAGES } from "../services/AiArticleService.js";
 
 const router = express.Router();
@@ -16,16 +16,29 @@ async function getShopFromSession(res) {
  * filler (Groq unavailable/rate-limited/erroring) or failed outright, the merchant didn't get
  * that - so the credit spent up front (POST /generate, before generation even runs, so a
  * half-finished run never leaves a charged credit with no draft to show for it) gets handed back
- * here instead. `updateMany` with the `gt: 0` guard makes this a safe no-op rather than going
+ * here instead. `updateMany` with the `gt: 0` guards makes this a safe no-op rather than going
  * negative if it's ever somehow called twice for the same job.
+ *
+ * `creditSource` (from the job's own AiGenerationJob.creditSource, set at spend time) decides
+ * which counter actually decrements — a credit spent from the purchased pool must refund back
+ * into aiCreditsPurchasedUsed, never aiCreditsUsed alone, or the purchased pool's own remaining
+ * balance would silently overstate what's actually left.
  */
-async function refundAiCredit(shopId, jobId, reason) {
+async function refundAiCredit(shopId, jobId, reason, creditSource) {
   try {
+    const fromPurchased = creditSource === "purchased";
     const { count } = await prisma.shop.updateMany({
-      where: { id: shopId, aiCreditsUsed: { gt: 0 } },
-      data: { aiCreditsUsed: { decrement: 1 } },
+      where: {
+        id: shopId,
+        aiCreditsUsed: { gt: 0 },
+        ...(fromPurchased ? { aiCreditsPurchasedUsed: { gt: 0 } } : {}),
+      },
+      data: {
+        aiCreditsUsed: { decrement: 1 },
+        ...(fromPurchased ? { aiCreditsPurchasedUsed: { decrement: 1 } } : {}),
+      },
     });
-    if (count > 0) console.error(`[AI] job ${jobId} refunded a credit to shop ${shopId} (${reason})`);
+    if (count > 0) console.error(`[AI] job ${jobId} refunded a ${creditSource} credit to shop ${shopId} (${reason})`);
   } catch (err) {
     console.error(`[AI] job ${jobId} failed to refund credit to shop ${shopId}:`, err.message);
   }
@@ -140,7 +153,7 @@ export async function runJob(jobId) {
     });
     if (usedFallback) {
       console.error(`[AI] job ${jobId} degraded to fallback content:`, fallbackReason);
-      await refundAiCredit(job.shopId, jobId, fallbackReason);
+      await refundAiCredit(job.shopId, jobId, fallbackReason, job.creditSource);
     }
   } catch (err) {
     console.error("[AI] job", jobId, "failed:", err);
@@ -157,8 +170,8 @@ export async function runJob(jobId) {
       .catch(() => {});
     // `job` (fetched at the top of the try block) is out of scope here - a genuinely failed run
     // still needs its credit back, so re-read just enough to refund it.
-    const failedJob = await prisma.aiGenerationJob.findUnique({ where: { id: jobId }, select: { shopId: true } }).catch(() => null);
-    if (failedJob) await refundAiCredit(failedJob.shopId, jobId, err?.message);
+    const failedJob = await prisma.aiGenerationJob.findUnique({ where: { id: jobId }, select: { shopId: true, creditSource: true } }).catch(() => null);
+    if (failedJob) await refundAiCredit(failedJob.shopId, jobId, err?.message, failedJob.creditSource);
   }
 }
 
@@ -167,12 +180,14 @@ router.get("/credits", async (req, res) => {
   try {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
-    const limit = getAiCreditLimit(shop.planKey);
-    const used = shop.aiCreditsUsed || 0;
+    const status = getAiCreditStatus(shop.planKey, shop.aiCreditsUsed || 0, shop.aiCreditsPurchased || 0, shop.aiCreditsPurchasedUsed || 0);
     res.json({
-      used,
-      limit: limit ?? null,
-      remaining: limit == null ? null : Math.max(0, limit - used),
+      used: shop.aiCreditsUsed || 0,
+      // The wizard's "X of Y left" / "used all Y" copy reads this as the real ceiling — the
+      // plan's own allowance plus whatever's been purchased, not the bare plan limit, so a shop
+      // with unused purchased credits never shows a false "you're out" state.
+      limit: status.effectiveLimit,
+      remaining: status.remaining,
       plan: planLabel(shop.planKey),
     });
   } catch (err) {
@@ -200,16 +215,26 @@ router.post("/generate", async (req, res) => {
     // its own starting layout for that case (buildBlankScaffold), so this is no longer a reason
     // to reject the request.
 
-    const limit = getAiCreditLimit(shop.planKey);
-    const used = shop.aiCreditsUsed || 0;
-    if (limit != null && used >= limit) {
+    // Two independent pools, not one flat ceiling — see getAiCreditStatus's docblock for why: a
+    // plan downgrade that shrinks the plan's own allowance below lifetime usage must never strand
+    // unspent purchased credits behind it.
+    const creditStatus = getAiCreditStatus(shop.planKey, shop.aiCreditsUsed || 0, shop.aiCreditsPurchased || 0, shop.aiCreditsPurchasedUsed || 0);
+    if (!creditStatus.canGenerate) {
+      const planLimit = getAiCreditLimit(shop.planKey);
+      const purchased = shop.aiCreditsPurchased || 0;
+      const allowanceDescription = purchased > 0
+        ? `${planLimit} on your ${planLabel(shop.planKey)} plan plus ${purchased} purchased`
+        : `${planLimit} on your ${planLabel(shop.planKey)} plan`;
       return res.status(403).json({
-        error: `Your ${planLabel(shop.planKey)} plan includes ${limit} AI generation${limit === 1 ? "" : "s"}, and you've used ${used}. Upgrade for more.`,
+        error: `You've used all ${allowanceDescription} AI credit${creditStatus.effectiveLimit === 1 ? "" : "s"}. Buy more credits or upgrade your plan for more.`,
         code: "ai_credit_limit_reached",
-        used,
-        limit,
+        used: shop.aiCreditsUsed || 0,
+        limit: creditStatus.effectiveLimit,
       });
     }
+    // Which pool this generation actually draws from — the plan's own allowance first, the
+    // purchased pool only once that's exhausted (see nextCreditSource's docblock).
+    const creditSource = creditStatus.nextCreditSource;
 
     const postTitle = String(title || "").trim() || "Untitled article";
 
@@ -235,6 +260,7 @@ router.post("/generate", async (req, res) => {
           status: "queued",
           stage: AI_STAGES[0].label,
           progress: 2,
+          creditSource,
           params: {
             brief,
             templateKey: templateKey || null,
@@ -256,7 +282,13 @@ router.post("/generate", async (req, res) => {
           },
         },
       });
-      await tx.shop.update({ where: { id: shop.id }, data: { aiCreditsUsed: { increment: 1 } } });
+      await tx.shop.update({
+        where: { id: shop.id },
+        data: {
+          aiCreditsUsed: { increment: 1 },
+          ...(creditSource === "purchased" ? { aiCreditsPurchasedUsed: { increment: 1 } } : {}),
+        },
+      });
       return { post: created, job: createdJob };
     });
 
@@ -266,7 +298,7 @@ router.post("/generate", async (req, res) => {
     res.json({
       job: { id: job.id, postId: post.id, status: job.status, stage: job.stage, progress: job.progress },
       postId: post.id,
-      creditsRemaining: limit == null ? null : Math.max(0, limit - (used + 1)),
+      creditsRemaining: creditStatus.remaining == null ? null : Math.max(0, creditStatus.remaining - 1),
     });
   } catch (err) {
     console.error("POST /api/ai/generate", err);

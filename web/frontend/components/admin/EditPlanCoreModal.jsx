@@ -110,7 +110,15 @@ export default function EditPlanCoreModal({ open, plan, onChange, onSave, onClos
             multiline={2}
             autoComplete="off"
           />
-          <Checkbox label="Active (visible to merchants)" checked={plan.isActive} onChange={set("isActive")} />
+          <FormLayout.Group>
+            <Checkbox
+              label="Recommend / Highlight Plan in UI"
+              checked={!!plan.isRecommended}
+              onChange={set("isRecommended")}
+              helpText="Shows the “Recommended” badge on the merchant billing page. Only one plan can be recommended at a time — checking this un-checks it on every other plan."
+            />
+            <Checkbox label="Active (visible to merchants)" checked={plan.isActive} onChange={set("isActive")} />
+          </FormLayout.Group>
         </FormLayout>
       </Modal.Section>
     </Modal>

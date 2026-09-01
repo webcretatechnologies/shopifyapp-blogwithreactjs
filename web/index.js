@@ -115,6 +115,7 @@ import relatedPostsRoutes from "./src/routes/relatedPosts.js";
 import sidebarRoutes from "./src/routes/sidebar.js";
 import blogTemplateRoutes from "./src/routes/blogTemplates.js";
 import aiArticleRoutes from "./src/routes/aiArticles.js";
+import aiCreditPackRoutes from "./src/routes/aiCreditPacks.js";
 
 // Process-level event handlers to prevent crashes from unhandled network errors
 process.on("unhandledRejection", (reason, promise) => {
@@ -364,6 +365,52 @@ app.post(
             }
           } catch (err) {
             console.error("APP_SUBSCRIPTIONS_UPDATE error:", err);
+          }
+        },
+      },
+      // One-time AI-credit pack purchases (src/routes/aiCreditPacks.js). Unlike subscriptions,
+      // Shopify has no separate "cancel" event for these — a purchase only ever moves PENDING ->
+      // ACTIVE (credit it) or PENDING -> DECLINED (merchant backed out on Shopify's own screen,
+      // nothing to credit). The `count > 0` guard on each updateMany makes both branches
+      // idempotent against Shopify's at-least-once webhook redelivery, matching the same pattern
+      // ORDERS_CREATE/CHECKOUTS_CREATE use below via ProcessedOrderWebhook.
+      APP_PURCHASES_ONE_TIME_UPDATE: {
+        deliveryMethod: "http",
+        callbackUrl: "/api/webhooks",
+        callback: async (topic, shop, body) => {
+          try {
+            const payload = JSON.parse(body);
+            const purchase = payload?.app_purchase_one_time;
+            const shopifyPurchaseId = purchase?.admin_graphql_api_id;
+            const status = purchase?.status;
+            if (!shopifyPurchaseId || !status) return;
+
+            const record = await prisma.aiCreditPurchase.findUnique({ where: { shopifyPurchaseId } });
+            if (!record || record.status !== "PENDING") return; // Already resolved, or not ours.
+
+            if (status === "ACTIVE") {
+              // Credit the shop and flip the row to APPROVED in one go, gated on it still being
+              // PENDING — the same "only the first webhook to see PENDING gets to act" guard
+              // reconcilePendingCouponClaims/APP_SUBSCRIPTIONS_UPDATE rely on elsewhere in this
+              // file, so a duplicate delivery can never double-credit.
+              const { count } = await prisma.aiCreditPurchase.updateMany({
+                where: { shopifyPurchaseId, status: "PENDING" },
+                data: { status: "APPROVED" },
+              });
+              if (count > 0) {
+                await prisma.shop.update({
+                  where: { id: record.shopId },
+                  data: { aiCreditsPurchased: { increment: record.credits } },
+                });
+              }
+            } else if (["DECLINED", "CANCELLED", "EXPIRED"].includes(status)) {
+              await prisma.aiCreditPurchase.updateMany({
+                where: { shopifyPurchaseId, status: "PENDING" },
+                data: { status },
+              });
+            }
+          } catch (err) {
+            console.error("APP_PURCHASES_ONE_TIME_UPDATE error:", err);
           }
         },
       },
@@ -635,6 +682,7 @@ app.use("/api/support", supportRoutes);
 app.use("/api/blog-templates", blogTemplateRoutes);
 
 app.use("/api/ai", aiArticleRoutes);
+app.use("/api/ai/credit-packs", aiCreditPackRoutes);
 
 // Super Admin API
 app.use("/admin-api", superAdminRoutes);

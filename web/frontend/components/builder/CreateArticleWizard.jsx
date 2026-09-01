@@ -685,9 +685,9 @@ function StepMethod({ method, setMethod, isBlank, credits, outOfCredits }) {
           art={<AiArt />}
           note={
             outOfCredits
-              ? `You've used all ${credits?.limit} AI generations on the ${credits?.plan} plan.`
+              ? `You've used all ${credits?.limit} AI credits on the ${credits?.plan} plan.`
               : credits?.limit != null
-                ? `${credits.remaining} of ${credits.limit} generations left`
+                ? `${credits.remaining} of ${credits.limit} AI credits left`
                 : null
           }
         />
@@ -936,13 +936,13 @@ function StepBrief({
       />
 
       {outOfCredits ? (
-        <Banner tone="warning" title={`You've used all ${credits?.limit} AI generations`}>
-          <p>Upgrade your plan for more, or write this one yourself in the editor.</p>
+        <Banner tone="warning" title={`You've used all ${credits?.limit} AI credits`}>
+          <p>Buy more credits, upgrade your plan, or write this one yourself in the editor.</p>
         </Banner>
       ) : (
         credits?.limit != null && (
           <Text as="p" variant="bodySm" tone="subdued">
-            {`This uses 1 of your ${credits?.remaining ?? 0} remaining generations on the ${credits?.plan || ""} plan.`}
+            {`This uses 1 of your ${credits?.remaining ?? 0} remaining AI credits on the ${credits?.plan || ""} plan.`}
           </Text>
         )
       )}

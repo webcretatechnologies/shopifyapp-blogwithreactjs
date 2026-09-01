@@ -14,7 +14,7 @@ import {
   getFeaturesForPlan,
   getArticleLimit,
   getSavedTemplateLimit,
-  getAiCreditLimit,
+  getAiCreditStatus,
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
@@ -1036,6 +1036,8 @@ router.get("/meta/dashboard-extras", async (req, res) => {
       : [];
     const postTitleById = Object.fromEntries(relatedPosts.map((p) => [p.id, p.title]));
 
+    const aiCreditStatus = getAiCreditStatus(shop.planKey, shop.aiCreditsUsed || 0, shop.aiCreditsPurchased || 0, shop.aiCreditsPurchasedUsed || 0);
+
     res.json({
       drafts: draftCount,
       scheduled: scheduledCount,
@@ -1048,8 +1050,13 @@ router.get("/meta/dashboard-extras", async (req, res) => {
         // Second cap on the same card — saved templates (PlanFeature "template_limit").
         templatesUsed: savedTemplateCount,
         templatesLimit: getSavedTemplateLimit(shop.planKey),
-        aiUsed: shop.aiCreditsUsed || 0,
-        aiLimit: getAiCreditLimit(shop.planKey),
+        // meterUsed/meterLimit (not the raw aiCreditsUsed/plan-limit) — the dashboard's compact
+        // meter has no room to break out plan-vs-purchased separately (see plans.jsx for that),
+        // and a raw used/limit pair can invert (used > limit) right after a downgrade shrinks the
+        // plan's own allowance below lifetime usage even though purchased credits still cover it;
+        // meterUsed/meterLimit stay a sane, always-consistent pair — see getAiCreditStatus.
+        aiUsed: aiCreditStatus.meterUsed,
+        aiLimit: aiCreditStatus.meterLimit,
       },
       syncIssues: dedupedSyncIssues.map((s) => ({ ...s, postTitle: s.postId ? postTitleById[s.postId] || null : null })),
       publishCadence,
