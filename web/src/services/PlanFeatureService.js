@@ -57,6 +57,7 @@ const PLAN_DEFAULTS = {
     analytics_advanced: { enabled: false, limit: null },
     templates_premium: { enabled: false, limit: null },
     template_limit: { enabled: true, limit: 2 },
+    ai_credits: { enabled: true, limit: 3 },
     custom_code_injection: { enabled: false, limit: null },
   },
   starter: {
@@ -102,6 +103,7 @@ const PLAN_DEFAULTS = {
     analytics_advanced: { enabled: false, limit: null },
     templates_premium: { enabled: true, limit: null },
     template_limit: { enabled: true, limit: 5 },
+    ai_credits: { enabled: true, limit: 25 },
     custom_code_injection: { enabled: false, limit: null },
   },
   pro: {
@@ -147,6 +149,7 @@ const PLAN_DEFAULTS = {
     analytics_advanced: { enabled: true, limit: null },
     templates_premium: { enabled: true, limit: null },
     template_limit: { enabled: true, limit: null },
+    ai_credits: { enabled: true, limit: 100 },
     custom_code_injection: { enabled: true, limit: null },
   },
   business: {
@@ -192,6 +195,7 @@ const PLAN_DEFAULTS = {
     analytics_advanced: { enabled: true, limit: null },
     templates_premium: { enabled: true, limit: null },
     template_limit: { enabled: true, limit: null },
+    ai_credits: { enabled: true, limit: 100 },
     custom_code_injection: { enabled: true, limit: null },
   },
 };
@@ -323,6 +327,17 @@ export function getSavedTemplateLimit(planKey) {
   return getFeatureLimit(planKey, "template_limit");
 }
 
+/**
+ * How many AI article generations a shop gets in total. null = unlimited.
+ *
+ * Deliberately a lifetime allowance, not a monthly quota: Shop.aiCreditsUsed only ever counts
+ * up, so raising a plan's number here grants the difference to every shop on it immediately,
+ * and nothing silently refills at a month boundary.
+ */
+export function getAiCreditLimit(planKey) {
+  return getFeatureLimit(planKey, "ai_credits");
+}
+
 function resolvePlanBucket(planKey) {
   const plan = (planKey || "free").toLowerCase().trim();
   if (plan.includes("starter")) return "starter";
@@ -360,6 +375,12 @@ ARTICLE_LIMIT_RENDER.business = ARTICLE_LIMIT_RENDER.pro;
 
 // Saved templates are the app's second numeric cap, so they get the same per-tier treatment as
 // articles: always present, wording driven by the live PlanFeature limit rather than a boolean.
+const AI_CREDIT_RENDER = (f) => {
+  const limit = f.ai_credits?.limit;
+  if (limit === 0) return null;
+  return limit == null ? "Unlimited AI Article Generations" : `${limit} AI Article Generations`;
+};
+
 const TEMPLATE_LIMIT_RENDER = (f) => {
   const limit = f.template_limit?.limit;
   return limit == null ? "Unlimited Saved Templates" : `Save ${limit} of Your Own Templates`;
@@ -411,6 +432,8 @@ function buildBulletsForBucket(bucket, featuresByPriceTier) {
   const ownFeatures = bucket === "business" ? getFeaturesForPlan("business") : featuresByPriceTier[bucket];
   const articleRender = ARTICLE_LIMIT_RENDER[bucket] || ARTICLE_LIMIT_RENDER.pro;
   const bullets = [articleRender(ownFeatures), TEMPLATE_LIMIT_RENDER(ownFeatures)];
+  const aiBullet = AI_CREDIT_RENDER(ownFeatures);
+  if (aiBullet) bullets.push(aiBullet);
   const comparableTier = bucket === "business" ? "pro" : bucket;
   for (const bullet of MASTER_BULLETS) {
     if (bullet.keys.length === 0) {
@@ -498,6 +521,16 @@ const FEATURE_COMPARISON_ROWS = [
       return f.templates_premium?.enabled
         ? { icon: "yes", text: `Full library (21) + ${own}` }
         : { icon: "partial", text: `3 basic + ${own}` };
+    },
+  },
+  {
+    feature: "AI Article Generation",
+    cell: (f) => {
+      const limit = f.ai_credits?.limit;
+      if (limit === 0) return { icon: "no", text: "" };
+      return limit == null
+        ? { icon: "yes", text: "Unlimited" }
+        : { icon: "partial", text: `${limit} generations (one-off allowance)` };
     },
   },
   {

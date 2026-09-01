@@ -1,0 +1,1 @@
+ALTER TABLE `Post` ADD COLUMN `aiWarning` VARCHAR(500) NULL;

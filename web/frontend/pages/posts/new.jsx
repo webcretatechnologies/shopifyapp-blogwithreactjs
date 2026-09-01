@@ -817,6 +817,10 @@ export default function PostEditor() {
     categoryId: null,
   });
   const [originalPost, setOriginalPost] = useState(null);
+  // Guards the AI-post auto-save (below) to at most once per page load - originalPost.needsAutoSave
+  // stays true client-side after that save (the payload never sends it back), so without this the
+  // effect watching originalPost would fire again on any later, unrelated originalPost update.
+  const autoSaveFiredRef = useRef(false);
 
   // contentHtml is now purely for backend sync and legacy loads.
   const [contentHtml, setContentHtml] = useState("");
@@ -1059,6 +1063,8 @@ export default function PostEditor() {
         relatedPostsSourceMode: data.post.relatedPostsSourceMode || "inherit",
         blogSidebarOverride: data.post.blogSidebarOverride || "inherit",
         categoryId: data.post.categoryId || null,
+        aiWarning: data.post.aiWarning || null,
+        needsAutoSave: Boolean(data.post.needsAutoSave),
       };
 
       const loadedTags = parseTags(data.post.tags);
@@ -1153,8 +1159,22 @@ export default function PostEditor() {
   useEffect(() => {
     const templateKey = location.state?.templateKey;
     const shopTemplateId = location.state?.shopTemplateId;
-    if ((!templateKey && !shopTemplateId) || isEditing) return;
+    // CreateArticleWizard collects the title/blog/author/handle before the editor opens, so a
+    // merchant arriving from it shouldn't be asked for them a second time.
+    const prefill = location.state?.prefill;
+    if ((!templateKey && !shopTemplateId && !prefill) || isEditing) return;
     navigate(location.pathname, { replace: true, state: {} });
+
+    if (prefill) {
+      setPost((p) => ({
+        ...p,
+        title: prefill.title || p.title,
+        slug: prefill.slug || p.slug,
+        author: prefill.author ?? p.author,
+      }));
+      if (prefill.blogId) setShopifyBlogId(prefill.blogId);
+    }
+    if (!templateKey && !shopTemplateId) return;
     const url = shopTemplateId
       ? `/api/blog-templates/mine/${shopTemplateId}`
       : `/api/blog-templates/${templateKey}`;
@@ -1511,7 +1531,8 @@ export default function PostEditor() {
     setIsSaving(true);
     setError(null);
     try {
-      const payload = { ...buildPayload(), status: status || post.status };
+      const isSilent = source === "ai-autosave";
+      const payload = { ...buildPayload(), status: status || post.status, ...(isSilent ? { silentAutoSave: true } : {}) };
       const url = isEditing ? `/api/posts/${id}` : "/api/posts";
       const method = isEditing ? "PUT" : "POST";
 
@@ -1523,7 +1544,10 @@ export default function PostEditor() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
 
-      setToast({ content: "Article saved successfully" });
+      // A save the merchant never asked for and never saw shouldn't announce itself - it's meant
+      // to be invisible, just the client's normalized content becoming the stored version before
+      // they ever look at the page.
+      if (!isSilent) setToast({ content: "Article saved successfully" });
       if (!isEditing && data.post?.id) {
         if (data.isFirstPost) {
           setNewPostId(data.post.id);
@@ -1592,6 +1616,27 @@ export default function PostEditor() {
       setIsSavingBanner(false);
     }
   };
+
+  // Opening a post an AI job just finished writing showed an unsaved-changes save bar the
+  // merchant never earned - the stored JSON was never normalized (block ids assigned, defaults
+  // merged) the way a real Save round-trip does, so the canvas's live state and the loaded
+  // snapshot could disagree on things that look identical but aren't byte-for-byte equal. Rather
+  // than chase every way that can happen, this saves once, silently, the moment the post is open
+  // and settled - after that, `post` and `originalPost` are both exactly what a real save just
+  // wrote, so there is nothing left to disagree about.
+  useEffect(() => {
+    if (isLoading || !isEditing || autoSaveFiredRef.current) return;
+    if (!originalPost?.needsAutoSave) return;
+    // A post created from the Blog Templates library (unlike the wizard) doesn't collect a blog
+    // first - handleSave would otherwise surface "Select a blog before saving" as a visible error
+    // for a silent, unrequested save the merchant hasn't even seen yet. Leave needsAutoSave set
+    // and just wait; the merchant's own first real save (once they've picked a blog) clears it
+    // the normal way, same as it always has.
+    if (!shopifyBlogId) return;
+    autoSaveFiredRef.current = true;
+    handleSave(post.status, "ai-autosave");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, isEditing, originalPost, shopifyBlogId]);
 
   const handleDiscard = () => {
     if (isEditing && originalPost) {
@@ -2020,6 +2065,17 @@ export default function PostEditor() {
             <Layout.Section>
               <Banner tone="critical" onDismiss={() => setError(null)}>
                 {error}
+              </Banner>
+            </Layout.Section>
+          )}
+
+          {/* Set by AiArticleService when Groq was unavailable/failed mid-generation - the
+              draft still applied the template with generic filler text instead of real content.
+              Cleared automatically the next time this post is saved. */}
+          {post.aiWarning && (
+            <Layout.Section>
+              <Banner tone="warning" title="This draft needs a review pass">
+                <p>{post.aiWarning}</p>
               </Banner>
             </Layout.Section>
           )}

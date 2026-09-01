@@ -218,7 +218,7 @@ export default function ConflictResolutionModal({ open, postId, postTitle, onClo
       setResolving(false);
       setResolutions({});
     }
-  }, [open, postId, fetchConflictData]);
+  }, [open, postId]);
 
   const handleFieldResolution = useCallback((field, choice) => {
     setActionError(null);

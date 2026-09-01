@@ -7,6 +7,7 @@ import { isLimitKey } from "./planLimitKeys";
 const LIMIT_KEY_LABELS = {
   article_limit: "Article Limit",
   template_limit: "Saved Template Limit",
+  ai_credits: "AI Generations (lifetime)",
 };
 
 /**

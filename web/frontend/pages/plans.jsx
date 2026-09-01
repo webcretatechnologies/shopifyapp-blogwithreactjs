@@ -52,6 +52,9 @@ export default function Plans() {
   // unlimited, same convention as postLimit.
   const [templateCount, setTemplateCount] = useState(0);
   const [templateLimit, setTemplateLimit] = useState(null);
+  // Lifetime AI allowance (PlanFeature "ai_credits"); null = unlimited.
+  const [aiUsed, setAiUsed] = useState(0);
+  const [aiLimit, setAiLimit] = useState(null);
   const [billingCycle, setBillingCycle] = useState(null);
   const [dynamicPlans, setDynamicPlans] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -106,6 +109,8 @@ export default function Plans() {
       setPostCount(checkData.postCount || 0);
       setTemplateCount(checkData.templateCount || 0);
       setTemplateLimit("templateLimit" in checkData ? checkData.templateLimit : null);
+      setAiUsed(checkData.aiCreditsUsed || 0);
+      setAiLimit("aiCreditLimit" in checkData ? checkData.aiCreditLimit : null);
       // checkData.postLimit is `null` on purpose for unlimited plans (Pro) — that's a meaningful
       // value, not missing data, so it must NOT be coalesced away. `?? 10` here previously treated
       // null the same as undefined/missing and silently substituted a hardcoded 10, which is
@@ -203,6 +208,8 @@ export default function Plans() {
           setPostCount(data.postCount ?? 0);
           setTemplateCount(data.templateCount ?? 0);
           setTemplateLimit("templateLimit" in data ? data.templateLimit : null);
+          setAiUsed(data.aiCreditsUsed || 0);
+          setAiLimit("aiCreditLimit" in data ? data.aiCreditLimit : null);
           setPostLimit("postLimit" in data ? data.postLimit : null);
           setBillingCycle(data.billingCycle ?? null);
           showPlanToast("You're now on the Free plan");
@@ -358,6 +365,7 @@ export default function Plans() {
                   meters={[
                     { label: "Articles", used: postCount, limit: postLimit },
                     { label: "Saved templates", used: templateCount, limit: templateLimit },
+                    { label: "AI generations", used: aiUsed, limit: aiLimit },
                   ]}
                 />
               </BlockStack>

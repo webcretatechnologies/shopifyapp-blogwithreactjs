@@ -8,7 +8,6 @@ export function ProductsCard() {
   const shopify = useAppBridge();
   const { t } = useTranslation();
   const [isPopulating, setIsPopulating] = useState(false);
-  const productsCount = 5;
 
   const {
     data,
@@ -23,6 +22,8 @@ export function ProductsCard() {
     refetchOnWindowFocus: false,
   });
 
+  const productsCount = data?.count ?? 0;
+
   const setPopulating = (flag) => {
     shopify.loading(flag);
     setIsPopulating(flag);
@@ -33,10 +34,10 @@ export function ProductsCard() {
     const response = await fetch("/api/products", { method: "POST" });
 
     if (response.ok) {
-      await refetchProductCount();
+      const { data: updatedData } = await refetchProductCount();
 
       shopify.toast.show(
-        t("ProductsCard.productsCreatedToast", { count: productsCount }),
+        t("ProductsCard.productsCreatedToast", { count: updatedData?.count ?? productsCount }),
       );
     } else {
       shopify.toast.show(t("ProductsCard.errorCreatingProductsToast"), {

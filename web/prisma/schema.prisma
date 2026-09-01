@@ -33,6 +33,9 @@ model Shop {
   accessToken   String        @db.Text
   planKey       String        @default("free")
   timezone      String?
+  /** Lifetime AI generations consumed. Deliberately never reset: the plan's ai_credits is a
+      one-off allowance, not a monthly quota, so this only ever counts up. */
+  aiCreditsUsed Int           @default(0)
   installedAt   DateTime      @default(now())
   uninstalledAt DateTime?
   createdAt     DateTime      @default(now())
@@ -48,6 +51,7 @@ model Shop {
   templates     Template[]
   webhookLogs   WebhookLog[]
   processedOrderWebhooks ProcessedOrderWebhook[]
+  aiJobs        AiGenerationJob[]
 }
 
 model AppPlan {
@@ -120,6 +124,16 @@ model Post {
   id                    Int               @id @default(autoincrement())
   shopId                Int
   categoryId            Int?
+  /** Shopify blog selected before publish (ShopifyArticle doesn't exist yet); publish reads this if the merchant didn't change it. */
+  blogId                String?
+  /** Set when an AI generation for this post degraded to filler text (Groq unavailable/failed).
+      Cleared on the post's next manual save, since that's the merchant reviewing it. */
+  aiWarning             String?           @db.VarChar(500)
+  /** Set true when an AI generation finishes writing this post's content. The editor uses it to
+      silently re-save once on first open (so the client's own normalization - block ids, merged
+      defaults - becomes the stored version before the merchant ever sees an unsaved-changes bar
+      on a post they never touched) and clears it on that save, same as any other save would. */
+  needsAutoSave         Boolean           @default(false)
   title                 String
   slug                  String
   status                String            @default("draft")
@@ -565,4 +579,33 @@ model SuperAdmin {
   name      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// One AI article generation. The post row is created up-front as a draft so the list page has
+/// something to show a progress bar against, and the job carries the stage/percent the poller
+/// renders. Kept separate from Post so a failed or abandoned generation never leaves stage text
+/// stranded on a real article.
+model AiGenerationJob {
+  id          Int       @id @default(autoincrement())
+  shopId      Int
+  postId      Int?
+  status      String    @default("queued")
+  /// Merchant-facing stage label, e.g. "Reading your brief".
+  stage       String    @default("Queued")
+  progress    Int       @default(0)
+  /// The wizard's brief: template key, topic text, linked products, colour overrides.
+  params      Json?
+  error       String?   @db.Text
+  /// Set when the job finished "done" but degraded to filler text (Groq unavailable/failed) -
+  /// the draft still needs a human pass before publishing, unlike a normal successful run.
+  warning     String?   @db.VarChar(500)
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  shop        Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([shopId, status])
+  @@index([postId])
 }

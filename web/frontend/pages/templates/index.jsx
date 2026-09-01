@@ -22,6 +22,7 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { SearchIcon, PageAddIcon } from "@shopify/polaris-icons";
 import TemplateGalleryCard, { BlankTemplateCard } from "../../components/builder/TemplateGalleryCard";
+import CreateArticleWizard from "../../components/builder/CreateArticleWizard";
 import TemplatePreviewModal from "../../components/builder/TemplatePreviewModal";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 import UpgradePrompt from "../../components/UpgradePrompt";
@@ -56,6 +57,8 @@ export default function BlogTemplatesLibrary() {
   // and costs an article against the plan limit, so it shouldn't happen on one click
   // from a cropped thumbnail.
   const [preview, setPreview] = useState(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardInitialSelected, setWizardInitialSelected] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleteError, setDeleteError] = useState("");
   const [toastMessage, setToastMessage] = useState(null);
@@ -154,29 +157,44 @@ export default function BlogTemplatesLibrary() {
     );
   }, [shopTemplates, query]);
 
-  const useLibraryTemplate = (key, locked) => {
-    if (locked || postsAtLimit) {
-      navigate("/plans");
-      return;
-    }
-    navigate("/posts/new", { state: { templateKey: key } });
-  };
-
-  const useShopTemplate = (id) => {
+  // Picking a template here used to skip straight to the editor - no blog, no author, no choice
+  // between writing it yourself or letting AI adapt it, none of the steps the "+ New article"
+  // wizard walks through elsewhere in the app. This now opens that exact same wizard with the
+  // template already selected (so step 0, picking a layout, is skipped since it's already been
+  // done here) rather than reimplementing a second, shorter version of it.
+  const openWizardWith = (initialSelected) => {
     if (postsAtLimit) {
       navigate("/plans");
       return;
     }
-    navigate("/posts/new", { state: { shopTemplateId: id } });
+    setWizardInitialSelected(initialSelected);
+    setWizardOpen(true);
   };
 
-  const useBlank = () => {
-    if (postsAtLimit) {
+  const useLibraryTemplate = (template, locked) => {
+    if (locked) {
       navigate("/plans");
       return;
     }
-    navigate("/posts/new");
+    // The library's own summary list already carries each template's full block tree (it's
+    // static in-memory data, not a DB blob worth trimming) - no extra fetch needed here.
+    openWizardWith({ kind: "library", template });
   };
+
+  const useShopTemplate = async (template) => {
+    // Unlike the library, a saved template's list/preview summary deliberately omits its blocks
+    // (real DB rows, trimmed for the list response) - fetch the real ones so AI generation (which
+    // reads selected.template.blocks directly) has an actual tree to adapt, not an empty one.
+    try {
+      const res = await fetch(`/api/blog-templates/mine/${template.id}`);
+      const data = await res.json();
+      openWizardWith({ kind: "shop", template: data.template || template });
+    } catch {
+      openWizardWith({ kind: "shop", template });
+    }
+  };
+
+  const useBlank = () => openWizardWith({ kind: "blank", template: null });
 
   const deleteShopTemplate = async () => {
     if (!pendingDelete) return;
@@ -218,8 +236,8 @@ export default function BlogTemplatesLibrary() {
     if (!preview) return;
     const { template, locked } = preview;
     setPreview(null);
-    if (template.id) useShopTemplate(template.id);
-    else useLibraryTemplate(template.key, locked);
+    if (template.id) useShopTemplate(template);
+    else useLibraryTemplate(template, locked);
   };
 
   return (
@@ -513,6 +531,21 @@ export default function BlogTemplatesLibrary() {
         actionLabel={postsAtLimit ? "View plans" : "Use this template"}
         onUse={confirmPreview}
         onClose={() => setPreview(null)}
+      />
+
+      <CreateArticleWizard
+        open={wizardOpen}
+        initialSelected={wizardInitialSelected}
+        onClose={() => {
+          setWizardOpen(false);
+          setWizardInitialSelected(null);
+        }}
+        onGenerated={() => {
+          // This page has no job-progress row of its own - the list page already polls
+          // /api/ai/jobs on its own mount, so handing off there is what actually shows the
+          // merchant their generation running, the same progress bar "+ New article" gives.
+          navigate("/posts?generating=1");
+        }}
       />
 
       {toastMessage && (

@@ -9,7 +9,7 @@
  * Leaving the selection empty falls back to the automatic same-category/shared-tag algorithm
  * (see RelatedPostsService.js) — this component only manages the manual override.
  */
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Autocomplete, Icon, InlineStack, Tag, Text, Thumbnail, BlockStack } from "@shopify/polaris";
 import { SearchIcon } from "@shopify/polaris-icons";
 
@@ -18,6 +18,12 @@ export default function RelatedPostsPicker({ value = [], onChange, excludePostId
   const [options, setOptions] = useState([]);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   const selectedIds = useMemo(() => new Set(value.map((p) => p.id)), [value]);
 

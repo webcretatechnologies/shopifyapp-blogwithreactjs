@@ -1,0 +1,1 @@
+ALTER TABLE `AiGenerationJob` ADD COLUMN `warning` VARCHAR(500) NULL;

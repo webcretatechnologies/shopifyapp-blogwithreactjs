@@ -14,6 +14,7 @@ import {
   getFeaturesForPlan,
   getArticleLimit,
   getSavedTemplateLimit,
+  getAiCreditLimit,
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
@@ -263,6 +264,12 @@ router.post("/", async (req, res) => {
       relatedPostIds = [],
       relatedPostsSourceMode,
       blogSidebarOverride,
+      // Sent by the "write it yourself" wizard flow, which creates the post immediately (with
+      // the template already applied) instead of leaving it for the merchant's first manual
+      // Save - the editor's existing auto-save-once effect (built for AI-generated posts) picks
+      // this up and silently normalizes+saves it the moment the editor opens, so there's nothing
+      // for the merchant to do beyond what they already told the wizard.
+      needsAutoSave,
     } = req.body;
 
     if (!title) return res.status(422).json({ error: "Title is required" });
@@ -324,11 +331,13 @@ router.post("/", async (req, res) => {
         productSliderSource,
         productSliderConfig: productSliderConfig || null,
         categoryId: categoryId ? parseInt(categoryId) : null,
+        blogId: blogId || null,
         relatedPostsSourceMode: modeVal,
         blogSidebarOverride: sidebarOv,
         editorMode: "builder",
         metaTitle: metaTitle || null,
         metaDescription: metaDescription || null,
+        needsAutoSave: Boolean(needsAutoSave),
         ...sanitizeSeoFields(shop, req.body),
       },
     });
@@ -418,6 +427,11 @@ router.put("/:id", async (req, res) => {
       relatedPostIds,
       relatedPostsSourceMode,
       blogSidebarOverride,
+      // Sent only by the editor's one-time silent re-save right after opening a freshly
+      // AI-generated post (see needsAutoSave). It's a real save - the client's normalized
+      // blocks genuinely become the stored version - but not a merchant reviewing the post, so
+      // it shouldn't clear the "needs review" banner the way an actual save does.
+      silentAutoSave,
     } = req.body;
 
     if (Array.isArray(relatedPostIds) && relatedPostIds.length > 0 && !isFeatureEnabled(shop.planKey, "related_posts_manual")) {
@@ -484,6 +498,13 @@ router.put("/:id", async (req, res) => {
         ...(productSliderSource && { productSliderSource }),
         ...(productSliderConfig && { productSliderConfig }),
         ...(categoryId !== undefined && { categoryId: categoryId ? parseInt(categoryId) : null }),
+        ...(blogId !== undefined && { blogId: blogId || null }),
+        // A manual save is the merchant reviewing the post, whether or not this specific save
+        // touched the flagged content - the "needs review" banner has done its job once it's
+        // been seen and acted on once. The silent auto-save isn't that - it fires before the
+        // merchant has seen anything, so it must not clear a warning they haven't read yet.
+        ...(silentAutoSave ? {} : { aiWarning: null }),
+        needsAutoSave: false,
         ...relatedModeUpdate,
         ...sidebarOverrideUpdate,
         ...(publishedAt && { publishedAt: new Date(publishedAt) }),
@@ -704,6 +725,7 @@ router.post("/:id/clone", async (req, res) => {
         productSliderSource: sourcePost.productSliderSource,
         productSliderConfig: sourcePost.productSliderConfig,
         categoryId: sourcePost.categoryId,
+        blogId: sourcePost.blogId,
         relatedPostsSourceMode: sourcePost.relatedPostsSourceMode,
         blogSidebarOverride: sourcePost.blogSidebarOverride,
         editorMode: sourcePost.editorMode,
@@ -1026,6 +1048,8 @@ router.get("/meta/dashboard-extras", async (req, res) => {
         // Second cap on the same card — saved templates (PlanFeature "template_limit").
         templatesUsed: savedTemplateCount,
         templatesLimit: getSavedTemplateLimit(shop.planKey),
+        aiUsed: shop.aiCreditsUsed || 0,
+        aiLimit: getAiCreditLimit(shop.planKey),
       },
       syncIssues: dedupedSyncIssues.map((s) => ({ ...s, postTitle: s.postId ? postTitleById[s.postId] || null : null })),
       publishCadence,
@@ -1818,6 +1842,9 @@ function serializePost(post) {
     productSliderSource: post.productSliderSource,
     categoryId: post.categoryId,
     category: post.category || null,
+    blogId: post.blogId,
+    aiWarning: post.aiWarning || null,
+    needsAutoSave: Boolean(post.needsAutoSave),
     relatedPostsSourceMode: post.relatedPostsSourceMode || null,
     blogSidebarOverride: post.blogSidebarOverride || null,
     tags: post.tags ? post.tags.map((pt) => pt.tag?.name || pt) : [],

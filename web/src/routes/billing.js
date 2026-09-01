@@ -1,6 +1,6 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
-import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled, getSavedTemplateLimit
+import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled, getSavedTemplateLimit, getAiCreditLimit
 } from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 import { listingLayoutForPlan, writeListingLayoutMetafield, THEME_LISTING_LAYOUT } from "../services/ListingLayoutMetafield.js";
@@ -201,6 +201,8 @@ router.get("/check", async (req, res) => {
     // Saved templates are the app's second plan cap (PlanFeature "template_limit"), so the usage
     // card can show both without a second round trip.
     const templateLimit = getSavedTemplateLimit(activePlan);
+    const aiCreditLimit = getAiCreditLimit(activePlan);
+    const aiCreditsUsed = shop?.aiCreditsUsed || 0;
     const templateCount = shop
       ? await prisma.template.count({ where: { shopId: shop.id, source: "shop", isActive: true } })
       : 0;
@@ -238,6 +240,7 @@ router.get("/check", async (req, res) => {
     res.status(200).json({
       activePlan, postCount, postLimit,
       templateCount, templateLimit,
+      aiCreditsUsed, aiCreditLimit,
       billingCycle,
     });
   } catch (error) {
@@ -323,6 +326,8 @@ router.post("/request", async (req, res) => {
         postLimit: getArticleLimit("free"),
         templateCount,
         templateLimit: getSavedTemplateLimit("free"),
+        aiCreditsUsed: shop?.aiCreditsUsed || 0,
+        aiCreditLimit: getAiCreditLimit("free"),
         billingCycle: null,
       });
     }

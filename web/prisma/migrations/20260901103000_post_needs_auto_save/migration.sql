@@ -1,0 +1,1 @@
+ALTER TABLE `Post` ADD COLUMN `needsAutoSave` BOOLEAN NOT NULL DEFAULT false;

@@ -69,7 +69,12 @@ export default function PlanUsageMeters({ meters = [] }) {
   if (shown.length === 0) return null;
 
   return (
-    <InlineGrid columns={{ xs: 1, sm: shown.length > 1 ? 2 : 1 }} gap="500">
+    // Three meters sit in one row on a wide card; two columns on tablet would strand the third
+    // on a row of its own, so the count drives the breakpoints rather than a fixed 2.
+    <InlineGrid
+      columns={{ xs: 1, sm: Math.min(shown.length, 2), md: Math.min(shown.length, 3) }}
+      gap="500"
+    >
       {shown.map((meter, i) => (
         <UsageMeter key={meter.label} {...meter} withDivider={i > 0} />
       ))}

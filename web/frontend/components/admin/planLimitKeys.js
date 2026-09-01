@@ -10,7 +10,7 @@
 // count) was a real cap that's been intentionally removed app-wide, by request, so multi-blog
 // management is unrestricted at every plan now. None of the three show up here anymore, which
 // means Sync Limits only ever surfaces caps that actually do something.
-export const PLAN_LIMIT_KEYS = ["article_limit", "template_limit"];
+export const PLAN_LIMIT_KEYS = ["article_limit", "template_limit", "ai_credits"];
 
 export function isLimitKey(featureKey) {
   return PLAN_LIMIT_KEYS.includes(featureKey);

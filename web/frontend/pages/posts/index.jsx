@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../utils/smartBack";
+import CreateArticleWizard from "../../components/builder/CreateArticleWizard";
 import { DateTime } from "luxon";
 import {
   Page,
@@ -25,6 +26,8 @@ import {
   ActionList,
   TextField,
   Modal,
+  ProgressBar,
+  Tooltip,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import {
@@ -203,6 +206,11 @@ export default function Articles() {
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // AI generations in flight. Polled rather than pushed: a generation outlives the wizard, so
+  // the list is where its progress lives, and the merchant may well arrive here after a reload.
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [aiJobs, setAiJobs] = useState([]);
   const [shopInfo, setShopInfo] = useState(null);
   const [shopifyBlogsMap, setShopifyBlogsMap] = useState({});
 
@@ -262,8 +270,10 @@ export default function Articles() {
       const data = await res.json();
       setPosts(data.posts || []);
       setTotal(data.total || 0);
+      return data.posts || [];
     } catch {
       setToastMessage({ content: "Failed to load posts", error: true });
+      return [];
     } finally {
       setIsLoading(false);
     }
@@ -463,14 +473,69 @@ export default function Articles() {
     });
   }
 
+  // Poll only while something is actually running, and stop as soon as the last job settles -
+  // an idle list page shouldn't sit there hitting the API every two seconds forever.
+  const activeJobCount = aiJobs.filter((j) => j.status === "queued" || j.status === "running").length;
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/ai/jobs")
+        .then((r) => r.json())
+        .then((d) => {
+          if (cancelled) return;
+          const jobs = d.jobs || [];
+          // A job that just finished means the post row itself now has content - refetch so the
+          // row stops showing a progress bar and starts showing the real article. Same list tells
+          // us which jobs just crossed into "done" so we can surface a one-time success toast for
+          // each (there's no more "notify me" email step, so this is the only in-app confirmation
+          // a generation actually finished).
+          const newlyFinished = jobs.filter(
+            (j) => j.status === "done" && !aiJobs.find((p) => p.id === j.id && p.status === "done")
+          );
+          setAiJobs(jobs);
+          if (newlyFinished.length > 0) {
+            fetchPosts().then((freshPosts) => {
+              newlyFinished.forEach((j) => {
+                const post = (freshPosts || []).find((p) => p.id === j.postId);
+                setToastMessage({ content: `"${post?.title || "Your article"}" is ready to edit` });
+              });
+            });
+          }
+        })
+        .catch(() => {});
+    load();
+    if (activeJobCount === 0) return () => { cancelled = true; };
+    const t = setInterval(load, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeJobCount]);
+
+  const jobForPost = (postId) => aiJobs.find((j) => j.postId === postId);
+
   // ─── Table Rows ────────────────────────────────────────────────────────
 
-  const rowMarkup = posts.map((post, index) => (
+  const rowMarkup = posts.map((post, index) => {
+    const job = jobForPost(post.id);
+    const isGenerating = Boolean(job && (job.status === "queued" || job.status === "running"));
+    return (
     <IndexTable.Row
       id={String(post.id)}
       key={post.id}
       position={index}
-      onClick={() => navigate(`/posts/${post.id}/edit`)}
+      onClick={() => {
+        // The post row already exists mid-generation (so progress has something to attach to),
+        // but its content is a half-written placeholder the AI job is still actively writing to -
+        // opening the editor here would let a merchant's own edits race the job's own save and
+        // have either one silently clobber the other.
+        if (isGenerating) {
+          setToastMessage({ content: "This article is still being generated - it'll be editable once it's ready." });
+          return;
+        }
+        navigate(`/posts/${post.id}/edit`);
+      }}
     >
       <IndexTable.Cell>
         <InlineStack gap="300" align="start" blockAlign="center" wrap={false}>
@@ -510,19 +575,53 @@ export default function Articles() {
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Text variant="bodySm" tone="subdued">
-          {post.shopifyArticle?.shopifyBlogId ? (shopifyBlogsMap[post.shopifyArticle.shopifyBlogId.replace("gid://shopify/Blog/", "")] || "—") : "—"}
+          {(() => {
+            // shopifyArticle only exists once the post has actually synced to Shopify - before
+            // that (every draft, including every AI-generated one), the blog it's assigned to
+            // lives on the post itself (blogId), set at creation and shown here the same way.
+            const blogId = post.shopifyArticle?.shopifyBlogId || post.blogId;
+            if (!blogId) return "—";
+            return shopifyBlogsMap[String(blogId).replace("gid://shopify/Blog/", "")] || "—";
+          })()}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
         <BlockStack gap="050">
-          <Badge tone={STATUS_BADGE_MAP[post.status] || "info"}>
-            {STATUS_LABEL_MAP[post.status] || "Draft"}
-          </Badge>
-          {post.status === "scheduled" && post.publishedAt && (
-            <Text variant="bodySm" tone="subdued">
-              {DateTime.fromJSDate(new Date(post.publishedAt)).toFormat("MMM d, yyyy 'at' h:mm a")}
-            </Text>
-          )}
+          {(() => {
+            if (isGenerating) {
+              // While generation is in flight the post row is really a placeholder - it isn't
+              // "Draft" in any meaningful sense yet (there's nothing to read or edit), so showing
+              // that status next to a progress bar just adds a second, misleading signal.
+              return (
+                <div style={{ minWidth: 220 }}>
+                  <BlockStack gap="100">
+                    <Text variant="bodySm" tone="subdued">{job.stage}</Text>
+                    <ProgressBar progress={job.progress || 0} size="small" tone="primary" />
+                  </BlockStack>
+                </div>
+              );
+            }
+            if (job && job.status === "failed") {
+              return <Badge tone="critical">Generation failed</Badge>;
+            }
+            return (
+              <>
+                {post.aiWarning && (
+                  <Tooltip content={post.aiWarning}>
+                    <Badge tone="warning">Needs review</Badge>
+                  </Tooltip>
+                )}
+                <Badge tone={STATUS_BADGE_MAP[post.status] || "info"}>
+                  {STATUS_LABEL_MAP[post.status] || "Draft"}
+                </Badge>
+                {post.status === "scheduled" && post.publishedAt && (
+                  <Text variant="bodySm" tone="subdued">
+                    {DateTime.fromJSDate(new Date(post.publishedAt)).toFormat("MMM d, yyyy 'at' h:mm a")}
+                  </Text>
+                )}
+              </>
+            );
+          })()}
         </BlockStack>
       </IndexTable.Cell>
       <IndexTable.Cell>
@@ -559,7 +658,8 @@ export default function Articles() {
         </div>
       </IndexTable.Cell>
     </IndexTable.Row>
-  ));
+    );
+  });
 
   return (
     <Frame>
@@ -583,7 +683,7 @@ export default function Articles() {
           content: "New article",
           icon: PlusIcon,
           disabled: postsAtLimit,
-          onAction: () => navigate("/posts/new"),
+          onAction: () => setWizardOpen(true),
         }}
         secondaryActions={[
           {
@@ -749,6 +849,20 @@ export default function Articles() {
               }
             : undefined
         }
+      />
+
+      <CreateArticleWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onGenerated={(data) => {
+          // Seed the job immediately rather than waiting for the next poll tick - a generation
+          // that finishes in a couple of seconds would otherwise complete before this page's own
+          // polling ever caught it as "active" (see CreateArticleWizard's startGeneration).
+          if (data?.job) {
+            setAiJobs((prev) => [data.job, ...prev.filter((j) => j.id !== data.job.id)]);
+          }
+          fetchPosts();
+        }}
       />
     </Frame>
   );

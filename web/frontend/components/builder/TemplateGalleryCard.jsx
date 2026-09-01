@@ -234,14 +234,14 @@ export default function TemplateGalleryCard({
   );
 }
 
-export function BlankTemplateCard({ onUse }) {
+export function BlankTemplateCard({ onUse, applying = false }) {
   return (
     <div
       role="button"
-      tabIndex={0}
-      onClick={onUse}
+      tabIndex={applying ? -1 : 0}
+      onClick={() => !applying && onUse?.()}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (!applying && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault();
           onUse?.();
         }
@@ -250,7 +250,8 @@ export function BlankTemplateCard({ onUse }) {
         borderRadius: "12px",
         border: "1.5px dashed #c9c7c4",
         background: "#fafaf9",
-        cursor: "pointer",
+        cursor: applying ? "default" : "pointer",
+        opacity: applying ? 0.7 : 1,
         minHeight: 250,
         display: "flex",
         alignItems: "center",
@@ -274,7 +275,7 @@ export function BlankTemplateCard({ onUse }) {
           +
         </div>
         <Text variant="headingSm" as="h3" tone="subdued">
-          Start from scratch
+          {applying ? "Creating…" : "Start from scratch"}
         </Text>
       </BlockStack>
     </div>

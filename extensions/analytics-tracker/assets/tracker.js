@@ -483,10 +483,12 @@
         let currency = 'USD';
 
         if (window.Shopify && window.Shopify.checkout) {
-          const priceStr = String(window.Shopify.checkout.total_price || '0');
-          const parsedPrice = parseFloat(priceStr);
-          // If it contains a dot, it's already a decimal (e.g. 10.00), otherwise it's cents (e.g. 1000)
-          revenue = priceStr.includes('.') ? parsedPrice : parsedPrice / 100;
+          const rawPrice = window.Shopify.checkout.total_price != null
+            ? window.Shopify.checkout.total_price
+            : window.Shopify.checkout.payment_due;
+          const parsedPrice = parseFloat(String(rawPrice || '0')) || 0;
+          // Shopify.checkout.total_price and payment_due are always in minor units (cents)
+          revenue = parsedPrice / 100;
           currency = window.Shopify.checkout.currency || 'USD';
         } else {
           // Fallback: try to read from DOM for newer checkouts if theme embed runs there

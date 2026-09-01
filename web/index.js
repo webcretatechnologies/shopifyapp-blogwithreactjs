@@ -114,6 +114,7 @@ import sitemapIndexRoutes from "./src/routes/sitemapIndex.js";
 import relatedPostsRoutes from "./src/routes/relatedPosts.js";
 import sidebarRoutes from "./src/routes/sidebar.js";
 import blogTemplateRoutes from "./src/routes/blogTemplates.js";
+import aiArticleRoutes from "./src/routes/aiArticles.js";
 
 // Process-level event handlers to prevent crashes from unhandled network errors
 process.on("unhandledRejection", (reason, promise) => {
@@ -632,6 +633,8 @@ app.use("/api/support", supportRoutes);
 
 // Blog Templates library (full-page starter templates for the drag & drop Builder)
 app.use("/api/blog-templates", blogTemplateRoutes);
+
+app.use("/api/ai", aiArticleRoutes);
 
 // Super Admin API
 app.use("/admin-api", superAdminRoutes);

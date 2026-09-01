@@ -26,7 +26,7 @@ import { TextAlign } from "@tiptap/extension-text-align";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import { Image } from "@tiptap/extension-image";
-import { Icon } from "@shopify/polaris";
+import { Icon, Popover, TextField, Button, InlineStack, BlockStack } from "@shopify/polaris";
 import {
   TextBoldIcon,
   TextItalicIcon,
@@ -69,6 +69,10 @@ export default function ShopifyRichTextEditor({
 }) {
   const [isHtmlMode, setIsHtmlMode] = useState(false);
   const [htmlCode, setHtmlCode] = useState(value || "");
+  const [linkPopoverActive, setLinkPopoverActive] = useState(false);
+  const [linkUrlDraft, setLinkUrlDraft] = useState("");
+  const [imagePopoverActive, setImagePopoverActive] = useState(false);
+  const [imageUrlDraft, setImageUrlDraft] = useState("");
   const onChangeRef = useRef(onChange);
 
   useEffect(() => {
@@ -148,22 +152,33 @@ export default function ShopifyRichTextEditor({
     else if (fmt === "blockquote") editor.chain().focus().toggleBlockquote().run();
   };
 
-  const handleAddLink = () => {
-    const previousUrl = editor.getAttributes("link").href || "";
-    const url = window.prompt("URL", previousUrl);
-    if (url === null) return;
-    if (url === "") {
-      editor.chain().focus().extendMarkRange("link").unsetLink().run();
-      return;
-    }
-    editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+  const openLinkPopover = () => {
+    setLinkUrlDraft(editor.getAttributes("link").href || "");
+    setLinkPopoverActive(true);
   };
 
-  const handleAddImage = () => {
-    const url = window.prompt("Image URL");
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
-    }
+  const applyLink = () => {
+    const url = linkUrlDraft.trim();
+    if (url) editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+    else editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    setLinkPopoverActive(false);
+  };
+
+  const removeLink = () => {
+    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    setLinkUrlDraft("");
+    setLinkPopoverActive(false);
+  };
+
+  const openImagePopover = () => {
+    setImageUrlDraft("");
+    setImagePopoverActive(true);
+  };
+
+  const applyImage = () => {
+    const url = imageUrlDraft.trim();
+    if (url) editor.chain().focus().setImage({ src: url }).run();
+    setImagePopoverActive(false);
   };
 
   return (
@@ -283,22 +298,85 @@ export default function ShopifyRichTextEditor({
         <ToolbarSep />
 
         {/* Media & Link */}
-        <ToolbarBtn
-          onClick={handleAddLink}
-          active={editor.isActive("link")}
-          disabled={isHtmlMode}
-          title="Insert link"
+        <Popover
+          active={linkPopoverActive}
+          onClose={() => setLinkPopoverActive(false)}
+          activator={
+            <ToolbarBtn
+              onClick={openLinkPopover}
+              active={editor.isActive("link")}
+              disabled={isHtmlMode}
+              title="Insert link"
+            >
+              <Icon source={LinkIcon} />
+            </ToolbarBtn>
+          }
         >
-          <Icon source={LinkIcon} />
-        </ToolbarBtn>
+          <div style={{ padding: 12, width: 280 }}>
+            <BlockStack gap="200">
+              <TextField
+                label="Link URL"
+                labelHidden
+                autoFocus
+                value={linkUrlDraft}
+                onChange={setLinkUrlDraft}
+                placeholder="https://example.com"
+                autoComplete="off"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyLink();
+                  }
+                }}
+              />
+              <InlineStack gap="200" align="end">
+                {editor.isActive("link") && (
+                  <Button onClick={removeLink} tone="critical" variant="plain">
+                    Remove link
+                  </Button>
+                )}
+                <Button onClick={applyLink} variant="primary" size="slim">
+                  Apply
+                </Button>
+              </InlineStack>
+            </BlockStack>
+          </div>
+        </Popover>
 
-        <ToolbarBtn
-          onClick={handleAddImage}
-          disabled={isHtmlMode}
-          title="Insert image"
+        <Popover
+          active={imagePopoverActive}
+          onClose={() => setImagePopoverActive(false)}
+          activator={
+            <ToolbarBtn onClick={openImagePopover} disabled={isHtmlMode} title="Insert image">
+              <Icon source={ImageIcon} />
+            </ToolbarBtn>
+          }
         >
-          <Icon source={ImageIcon} />
-        </ToolbarBtn>
+          <div style={{ padding: 12, width: 280 }}>
+            <BlockStack gap="200">
+              <TextField
+                label="Image URL"
+                labelHidden
+                autoFocus
+                value={imageUrlDraft}
+                onChange={setImageUrlDraft}
+                placeholder="https://example.com/image.jpg"
+                autoComplete="off"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyImage();
+                  }
+                }}
+              />
+              <InlineStack align="end">
+                <Button onClick={applyImage} variant="primary" size="slim" disabled={!imageUrlDraft.trim()}>
+                  Insert
+                </Button>
+              </InlineStack>
+            </BlockStack>
+          </div>
+        </Popover>
 
         {/* HTML View Toggle */}
         <div style={{ marginLeft: "auto" }}>
