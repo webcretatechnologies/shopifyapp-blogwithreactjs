@@ -6,14 +6,14 @@
 # client_id here if you deliberately created a separate app entry in the Partner Dashboard for
 # production (e.g. to keep a "-Local" dev app and a real public app distinct) — in that case,
 # replace it with that app's own client_id.
-client_id = "946c7f95fc6780b88559e90d45ad7f96"
+client_id = "2f304a64fd4f9d37a21953327552fa17"
 name = "Blogger"
-application_url = "https://REPLACE_WITH_YOUR_PRODUCTION_DOMAIN"
+application_url = "https://blogapp-dev.boxtasks.com"
 embedded = true
 
 [auth]
 redirect_urls = [
-  "https://REPLACE_WITH_YOUR_PRODUCTION_DOMAIN/api/auth/callback",
+  "https://blogapp-dev.boxtasks.com/api/auth/callback",
 ]
 
 [access_scopes]
@@ -51,6 +51,6 @@ embedded = false
 # Production URLs are set explicitly above and should not be silently rewritten by `dev`.
 
 [app_proxy]
-url = "https://REPLACE_WITH_YOUR_PRODUCTION_DOMAIN/api/proxy"
+url = "https://blogapp-dev.boxtasks.com/api/proxy"
 subpath = "blog-analytics"
 prefix = "apps"
