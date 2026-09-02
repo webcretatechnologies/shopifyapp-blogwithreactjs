@@ -1,26 +1,84 @@
 services:
+
   mysql:
     image: mysql:8.0
+    container_name: blog-react-db
+    restart: always
+
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: shopify_blog_react
+
     ports:
-      - '3306:3306'
+      - "33062:3306"
+
     volumes:
       - mysql_data:/var/lib/mysql
+
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"
+        ]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 12
 
-  adminer:
-    image: adminer:latest
+    networks:
+      - blog-react-network
+
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SHOPIFY_API_KEY: ${SHOPIFY_API_KEY}
+
+    container_name: blog-react-app
+    restart: always
+    init: true
+
+    env_file:
+      - .env
+
+    environment:
+      NODE_ENV: production
+      PORT: "8081"
+      DATABASE_URL: mysql://root:root@mysql:3306/shopify_blog_react
+
     ports:
-      - '8080:8080'
+      - "3001:3000"
+
     depends_on:
       mysql:
         condition: service_healthy
 
+    networks:
+      - blog-react-network
+
+
+  adminer:
+    image: adminer:latest
+    container_name: blog-react-adminer
+    restart: always
+
+    ports:
+      - "8088:8080"
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    networks:
+      - blog-react-network
+
+
 volumes:
   mysql_data:
+
+
+networks:
+  blog-react-network:
+    driver: bridge

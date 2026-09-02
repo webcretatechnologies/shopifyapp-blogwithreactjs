@@ -717,17 +717,7 @@ app.get("/privacy-policy", (_req, res) => {
 app.use(shopify.cspHeaders());
 app.use(serveStatic(STATIC_PATH, { index: false }));
 
-// Super Admin routes bypass Shopify shop validation and use JWT auth instead
-app.use((req, res, next) => {
-  // Skip Shopify validation for Super Admin console (/admin) and API routes (/admin-api)
-  if (req.path.startsWith("/admin")) {
-    return next();
-  }
-  // Apply Shopify validation for merchant app routes
-  shopify.ensureInstalledOnShop()(req, res, next);
-});
-
-app.use(async (_req, res, _next) => {
+app.use(shopify.ensureInstalledOnShop(), async (_req, res, _next) => {
   return res
     .status(200)
     .set("Content-Type", "text/html")
