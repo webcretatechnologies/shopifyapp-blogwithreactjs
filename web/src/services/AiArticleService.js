@@ -8,6 +8,7 @@ import {
   applyBlockPatches,
   mergeBlockPatch,
 } from "./AiBlockSpec.js";
+import { callAiProviderForJson, isAiProviderConfigured } from "./ai/AiProviderClient.js";
 
 /**
  * AiArticleService — turns a merchant's brief into a Builder block tree.
@@ -69,6 +70,33 @@ const stripMarkdown = (str) =>
     .replace(/(?<!_)_([^_\n]+)_(?!_)/g, "$1")
     .replace(/`{1,3}([^`]*)`{1,3}/g, "$1")
     .trim();
+
+/**
+ * Applied to the brief right before it's sent to the real model (never to the deterministic
+ * fallback's own text, which already goes through stripMarkdown per-line). A merchant writing a
+ * detailed, chat-style prompt - headings, bold emphasis, bullet lists - produces a LOT of markdown
+ * punctuation that costs real input tokens without carrying meaning the model needs preserved
+ * verbatim: "**Movie title**" and "Movie title" convey the same instruction, but the asterisks eat
+ * ~4 tokens for nothing. On Groq's free-tier 8000 TPM cap (see estimateGroqMaxTokens in
+ * AiProviderClient.js), input and completion budget are a direct trade-off - every token spent on
+ * "**" or "### " here is a token NOT available for the model to write actual content, which is
+ * exactly what caused a real, reproduced case: a long, heavily-formatted brief left so little
+ * completion budget that the model returned a syntactically valid but noticeably thin article
+ * (missing sections, no metaTitle/metaDescription) rather than an error - nothing to retry against,
+ * since nothing failed. This can meaningfully claw back that budget without losing any instruction.
+ */
+const compactBriefForPrompt = (text) =>
+  String(text || "")
+    .split("\n")
+    .map((line) =>
+      stripMarkdown(line)
+        .replace(/^#{1,6}\s*/, "") // "### Heading" -> "Heading"
+        .replace(/^[*\-•]\s+/, "") // "* item" / "- item" -> "item"
+        .replace(/^\d+[.)]\s+/, "") // "1. item" -> "item" (numbered sub-bullets, not the article's own numbered list)
+    )
+    .filter(Boolean)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
 
 // A line written as an instruction to a model, not as article content: markdown bullets/numbered
 // lists, or directive openers like "Include:" / "Also provide:". These are what a merchant
@@ -614,62 +642,6 @@ function collectContentRequirements(blocks) {
   return req;
 }
 
-/** Groq's 429 body names the wait itself, e.g. "...try again in 11.9775s". Falls back to 2s. */
-function parseRetryAfterSeconds(body) {
-  const m = String(body || "").match(/try again in\s+([\d.]+)s/i);
-  const s = m ? parseFloat(m[1]) : NaN;
-  return Number.isFinite(s) && s > 0 ? Math.min(s, 15) : 2;
-}
-
-// Groq's free tier caps both "tokens per minute" (TPM) and "tokens per day" (TPD) - the message
-// names which one. A TPM limit clears in seconds, worth the one retry below. A TPD limit clears
-// in however many minutes are left until Groq's daily reset - no amount of waiting inside one
-// request gets there, so retrying it would just make the merchant wait ~15s for a call that was
-// always going to fail, then fall back anyway. This tells them apart so only the first gets retried.
-const isDailyLimit = (body) => /tokens per day|\(TPD\)/i.test(String(body || ""));
-
-/**
- * POSTs one chat-completion request to Groq's OpenAI-compatible API and returns the raw JSON
- * string. Retries once on a per-minute 429: free-tier Groq's per-minute token budget is tight
- * enough that this is routine, not exceptional (it fired repeatedly just testing this file), and
- * it always names its own cooldown - waiting that out once turns a fully working generation that
- * happened to land badly into a fallback-to-filler for a merchant, which was previously the only
- * outcome. A daily-limit 429, or anything other than a 429, still fails immediately - retrying
- * either won't fix it within this request.
- */
-async function callGroq(messages, attempt = 0) {
-  const apiKey = process.env.GROQ_API_KEY;
-  const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
-
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.7,
-      max_tokens: 4500,
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    if (res.status === 429 && attempt === 0 && !isDailyLimit(body)) {
-      const waitSeconds = parseRetryAfterSeconds(body);
-      await new Promise((r) => setTimeout(r, waitSeconds * 1000));
-      return callGroq(messages, attempt + 1);
-    }
-    const reason = res.status === 429 && isDailyLimit(body) ? "AI service's daily generation limit" : `AI service error (${res.status})`;
-    throw new Error(`${reason}: ${body.slice(0, 300) || res.statusText}`);
-  }
-
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("AI service returned an empty response. Please try again.");
-  return content;
-}
-
 /**
  * Real generation: one Groq call with a COMPACT template manifest (content/media/commerce
  * blocks + slim settings). The full BLOCK_VOCABULARY blew Groq's free-tier 8k TPM limit
@@ -686,7 +658,7 @@ function blockUpdatesToMap(updates) {
 
 async function generateWithGroq({ topic, detail, text }, explicitTitle, requirements, productNames = []) {
   const subject = String(explicitTitle || "").trim() || topic || "your topic";
-  const briefText = String(text || "").slice(0, 3500);
+  const briefText = compactBriefForPrompt(text).slice(0, 3500);
   // Compact the already-built full manifest (same b_N ids as adaptTreeToTopic walk).
   let promptManifest = requirements.manifest || [];
   if (promptManifest.length) {
@@ -748,17 +720,10 @@ async function generateWithGroq({ topic, detail, text }, explicitTitle, requirem
     }),
   ].join("\n");
 
-  const raw = await callGroq([
+  const response = await callAiProviderForJson([
     { role: "system", content: system },
     { role: "user", content: user },
   ]);
-
-  let response;
-  try {
-    response = JSON.parse(raw);
-  } catch {
-    throw new Error("AI service returned output that wasn't valid JSON. Please try again.");
-  }
 
   const blockUpdates = blockUpdatesToMap(response.block_updates);
   const subtitle =
@@ -1078,6 +1043,84 @@ function tintOf(hex, amount = 0.92) {
 
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
 
+// Matches a numbered-list item heading like "1. Se7en" or "3) Prisoners" - real facts (a proper
+// noun, a title) after the number, not a generic "Step 1" style label.
+const NUMBERED_LIST_HEADING_RE = /^\s*\d+[.)]\s+\S/;
+
+/**
+ * Unit types this can safely auto-insert to fix a "some numbered items got it, others didn't"
+ * inconsistency, without inventing any content. Checked against every type in unit_shapes above:
+ *
+ * - image: the ONLY type that's both meant to repeat per list item AND safe to duplicate blind -
+ *   it's always a bare placeholder ({ type: "image" }, no fields), never real content.
+ * - callout/table/button/columns/video all need genuine per-item text (or, for video, a real
+ *   URL) that can't be fabricated without inventing content - exactly what this file's prompts
+ *   elsewhere go out of their way to forbid (no invented prices, claims, specifics). Blindly
+ *   copying a callout onto items the model skipped would mean showing the merchant AI-invented
+ *   text dressed up as real advice.
+ * - callout/table/faq/button/columns are also explicitly capped at whole-article level in the
+ *   prompt ("at most one", "use 0-2", "most articles use zero") - a callout on some numbered
+ *   items and not others isn't actually a bug for these, it's the model correctly using a
+ *   scarce, whole-article element sparingly.
+ *
+ * If the block vocabulary ever grows a new type that's ALSO a bare, contentless placeholder
+ * (nothing to invent), add its type string here and enforceConsistentListPlaceholders will cover
+ * it the same way it covers image today - no other changes needed.
+ */
+const LIST_PLACEHOLDER_TYPES = new Set(["image"]);
+
+/**
+ * The prompt tells the model every numbered-list item needs an image, consistently - but a
+ * prompt instruction is a request, not a guarantee, and a real generation for "Top 5 Thriller
+ * Movies to Watch" came back with images after items 1-3 and silently none for items 4-5 (the
+ * model choosing not to, not a token-budget cutoff - the response was well under the 8-18 unit
+ * cap and every item's heading/paragraph were present). A reader scanning a countdown reads a
+ * partial set of photos as broken, not as a style choice, so this is enforced here rather than
+ * left to prompt compliance alone: for each placeholder-safe type in LIST_PLACEHOLDER_TYPES, if
+ * ANY numbered-list item ended up with one, every other numbered-list item gets one added too -
+ * never a partial set.
+ */
+function enforceConsistentListPlaceholders(units) {
+  let result = units;
+  for (const placeholderType of LIST_PLACEHOLDER_TYPES) {
+    result = fillMissingListPlaceholder(result, placeholderType);
+  }
+  return result;
+}
+
+function fillMissingListPlaceholder(units, placeholderType) {
+  const items = [];
+  units.forEach((u, i) => {
+    if (u.type !== "heading" || !NUMBERED_LIST_HEADING_RE.test(u.text || "")) return;
+    let hasPlaceholder = false;
+    let insertAt = i + 1;
+    // Only paragraph units immediately following the heading count as this item's own content -
+    // the first unit that's neither a paragraph nor the placeholder type (a heading, or any
+    // other unit type like faq/button/divider appended straight after with no heading of its
+    // own) ends the scan right there, so a missing placeholder is inserted directly after the
+    // item's last paragraph, never pushed past unrelated trailing content that follows it.
+    for (let j = i + 1; j < units.length; j++) {
+      const t = units[j].type;
+      if (t === placeholderType) { hasPlaceholder = true; insertAt = j + 1; break; }
+      if (t !== "paragraph") break;
+      insertAt = j + 1;
+    }
+    items.push({ hasPlaceholder, insertAt });
+  });
+
+  // Nothing to reconcile: fewer than two numbered items, or none/all already have one.
+  if (items.length < 2) return units;
+  const missing = items.filter((it) => !it.hasPlaceholder);
+  if (missing.length === 0 || missing.length === items.length) return units;
+
+  // Insert from the end so earlier items' insertion indices stay valid as the array grows.
+  const next = [...units];
+  for (const it of [...missing].sort((a, b) => b.insertAt - a.insertAt)) {
+    next.splice(it.insertAt, 0, { type: placeholderType });
+  }
+  return next;
+}
+
 /**
  * The blank-template path when a real model is available. Earlier versions of this still forced
  * every article through a fixed Hero -> intro -> two body sections -> FAQ -> CTA skeleton and
@@ -1097,7 +1140,7 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
   // for a genuinely long brief (it allows up to ~30k chars) could blow the request past Groq's
   // TPM ceiling and silently degrade to the filler fallback for a reason that had nothing to do
   // with content quality.
-  const briefText = String(text || "").slice(0, 3500);
+  const briefText = compactBriefForPrompt(text).slice(0, 3500);
 
   const system =
     "You are laying out, writing and styling a Shopify blog article from scratch - there is no " +
@@ -1114,8 +1157,11 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
     "its own heading using that item's real name (not 3-4 broad category headings each covering " +
     "several items lumped into one paragraph) so a reader can find item #4 by scanning headings or " +
     "the table of contents, and the list of headings should visibly account for the full count named " +
-    "in the title. A visual list like this - poses, recipes, products, outfits, tools - should have " +
-    "an image after most items, not just one for the whole article. Aim for roughly 700-1200 words " +
+    "in the title. A visual list like this - movies, poses, recipes, products, outfits, tools - " +
+    "needs an image after EVERY item, not most of them - a reader scanning a countdown where only " +
+    "the first few items have a photo and the rest suddenly don't will read it as broken, not as a " +
+    "stylistic choice. If item 1 gets an image, every other numbered item must too - all or none, " +
+    "never a partial set. Aim for roughly 700-1200 words " +
     "of body copy across the whole article, unless this specific topic genuinely needs more or less - " +
     "a short topic should stay short, don't pad it to hit a number. Use only facts, products and " +
     "claims the merchant actually gave you in their brief - never invent prices, ingredients, " +
@@ -1129,6 +1175,18 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
         "naturally (an intro, a closing line, a callout) - never invent a price, size or spec for them " +
         "beyond the name. "
       : "No products are linked to this article - don't invent a product to reference. ") +
+    "The 'use 0-2', 'at most one', 'most articles use zero of these' guidance under each block type " +
+    "below is a DEFAULT for briefs that don't specify structure - it is NOT a ceiling. If the " +
+    "merchant's brief explicitly names a block by function (a comparison table, a highlighted tip/ " +
+    "callout box, a section divider, a closing call-to-action button) or lays out an explicit outline " +
+    "of sections, that's a real spec to follow, not topic inspiration to loosely reinterpret - use " +
+    "that block type for real, don't substitute a plain paragraph instead and don't silently drop it " +
+    "because the default guidance below says most articles skip it. Always include metaTitle and " +
+    "metaDescription - never omit them or leave either blank, even on a long or detailed brief. If " +
+    "you're ever short on room to write everything requested, shrink individual paragraphs first - " +
+    "write 2-3 tight sentences instead of 5-6 - rather than dropping a whole requested section, a " +
+    "named item, the FAQ, or the meta fields; every distinct thing the brief or title asks for should " +
+    "still be present, even if each one gets less space than it would in a shorter article. " +
     "Respond with ONLY a single JSON object, no commentary before or after it.\n\n" +
     BLOCK_VOCABULARY_COMPACT;
 
@@ -1147,7 +1205,7 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
       heading: '{ "type": "heading", "text": "string" } - starts a new visual section; use 3-7 of these to break the article up',
       paragraph:
         '{ "type": "paragraph", "text": "3-6 sentences, substantive and specific" } - body copy; use two of these back-to-back under a heading when the topic needs more depth, one when it doesn\'t - consecutive paragraphs render as one flowing block',
-      image: '{ "type": "image" } - marks a spot for a photo; you never provide a URL, just where one would genuinely help - don\'t put one after every heading',
+      image: '{ "type": "image" } - marks a spot for a photo; you never provide a URL, just where one would genuinely help - not after every heading in a normal article, EXCEPT a numbered list (see above): there, every item gets one, consistently',
       callout: '{ "type": "callout", "title": "short label like \'Tip\'", "body": "1-2 sentences", "emoji": "one emoji that fits, e.g. 💡 or ✨ or 🌿" } - a highlighted aside; use 0-2, only where a callout genuinely adds something',
       table: '{ "type": "table", "headers": ["col", "col"], "rows": [["cell", "cell"], ...] } - only when the content is genuinely tabular (ingredients, specs, a comparison) - most articles use zero of these',
       faq: '{ "type": "faq", "items": [{ "question": "real, topic-specific question", "answer": "1-3 sentences" }] } - at most one of these in the whole article, 2-4 items, only if genuinely useful for this topic',
@@ -1164,9 +1222,13 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
   const user = [
     `Article title: "${subject}"`,
     "",
-    "Merchant's brief, in their own words. It may itself be written as instructions to an AI - treat",
-    "any such instructions as instructions, not literal text to reproduce; extract only the real facts",
-    "and intent from it:",
+    "Merchant's brief, in their own words. It may itself be written as instructions to an AI, not as",
+    "article content - two different kinds of instruction in it need different handling. An",
+    "instruction about a FACT or CLAIM (a specific price, spec, policy) never gets pasted into the",
+    "article as literal text - extract only the real fact and write it as normal prose. An instruction",
+    "about STRUCTURE (a comparison table, a specific block, a section outline, an FAQ count) is a real",
+    "spec to actually follow, not something to loosely reinterpret or drop - honor it the same way you'd",
+    "honor an explicit field in the schema below:",
     '"""',
     briefText || "(no additional detail given - write generically about the title above)",
     '"""',
@@ -1180,24 +1242,18 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
     "designing this specific article by hand would.",
   ].join("\n");
 
-  const raw = await callGroq([
+  const response = await callAiProviderForJson([
     { role: "system", content: system },
     { role: "user", content: user },
   ]);
 
-  let response;
-  try {
-    response = JSON.parse(raw);
-  } catch {
-    throw new Error("AI service returned output that wasn't valid JSON. Please try again.");
-  }
-
-  const units = Array.isArray(response.blocks)
+  let units = Array.isArray(response.blocks)
     ? response.blocks.filter((u) => u && CONTENT_UNIT_TYPES.includes(u.type))
     : [];
   if (units.length === 0) {
     throw new Error("AI service didn't return any article content. Please try again.");
   }
+  units = enforceConsistentListPlaceholders(units);
 
   // Falls back to the old neutral gray only if the model's response is missing or malformed -
   // every valid response gets a topic-chosen color carried through Hero, TOC, callouts, FAQ and
@@ -1476,7 +1532,7 @@ export async function generateArticleBlocks({ brief, title, templateKey, templat
   let resultMetaTitle = null;
   let resultMetaDescription = null;
 
-  if (!hasRealTemplate && process.env.GROQ_API_KEY) {
+  if (!hasRealTemplate && isAiProviderConfigured()) {
     // Blank template with a real model available: let it plan its own outline (see
     // generateBlankArticleWithGroq) rather than filling buildBlankScaffold's fixed one - two
     // different topics should come out with genuinely different structure, not just different
@@ -1489,7 +1545,7 @@ export async function generateArticleBlocks({ brief, title, templateKey, templat
       resultMetaTitle = generated.metaTitle;
       resultMetaDescription = generated.metaDescription;
     } catch (err) {
-      console.error("[AI] Groq blank-article generation failed, using fallback generator:", err.message);
+      console.error("[AI] AI provider blank-article generation failed, using fallback generator:", err.message);
       usedFallback = true;
       fallbackReason = err.message;
     }
@@ -1511,11 +1567,11 @@ export async function generateArticleBlocks({ brief, title, templateKey, templat
 
     const requirements = collectContentRequirements(baseBlocks);
     let ctx;
-    if (!usedFallback && process.env.GROQ_API_KEY) {
+    if (!usedFallback && isAiProviderConfigured()) {
       try {
         ctx = await generateWithGroq(parsed, title, requirements, productNames);
       } catch (err) {
-        console.error("[AI] Groq generation failed, using fallback generator:", err.message);
+        console.error("[AI] AI provider generation failed, using fallback generator:", err.message);
         ctx = localGenerator(parsed, title, requirements);
         usedFallback = true;
         fallbackReason = err.message;

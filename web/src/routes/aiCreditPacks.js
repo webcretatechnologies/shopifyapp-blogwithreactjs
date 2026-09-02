@@ -37,6 +37,37 @@ router.get("/", async (req, res) => {
   }
 });
 
+// ─── GET /api/ai/credit-packs/latest-purchase — status of the shop's most recent purchase ──
+// Polled by plans.jsx right after the merchant is redirected back from Shopify's own approval
+// screen (?credits_purchased=1), so the success/error toast reflects what Shopify's
+// app_purchases_one_time/update webhook actually confirmed (PENDING -> APPROVED, or -> DECLINED/
+// CANCELLED/EXPIRED if the merchant backed out) instead of a static "thanks" shown regardless of
+// outcome, or shown before the webhook has even landed.
+router.get("/latest-purchase", async (req, res) => {
+  try {
+    const shop = await getShopFromSession(res);
+    if (!shop) return res.status(401).json({ error: "Unauthorized" });
+
+    const purchase = await prisma.aiCreditPurchase.findFirst({
+      where: { shopId: shop.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!purchase) return res.json({ purchase: null });
+
+    res.json({
+      purchase: {
+        status: purchase.status,
+        credits: purchase.credits,
+        price: Number(purchase.price),
+        createdAt: purchase.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("GET /api/ai/credit-packs/latest-purchase", error);
+    res.status(500).json({ error: "Failed to load purchase status" });
+  }
+});
+
 // ─── POST /api/ai/credit-packs/purchase — start a one-time AppPurchaseOneTime charge ──
 router.post("/purchase", async (req, res) => {
   try {

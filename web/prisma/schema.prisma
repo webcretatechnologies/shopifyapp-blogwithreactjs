@@ -624,6 +624,12 @@ model AiGenerationJob {
   /// Set when the job finished "done" but degraded to filler text (Groq unavailable/failed) -
   /// the draft still needs a human pass before publishing, unlike a normal successful run.
   warning     String?   @db.VarChar(500)
+  /// True once refundAiCredit actually decremented the shop's usage back down for this job (a
+  /// degraded/fallback "done" result, or a genuine "failed" one) - read by GET /api/ai/jobs so
+  /// the list page can tell the merchant their credit was given back, not just that something
+  /// went wrong. Stays false for a normal successful run, and for the (should-never-happen) case
+  /// where the refund query's own gt:0 guard found nothing left to refund.
+  creditRefunded Boolean @default(false)
   startedAt   DateTime?
   finishedAt  DateTime?
   createdAt   DateTime  @default(now())

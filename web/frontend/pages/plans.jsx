@@ -97,16 +97,16 @@ export default function Plans() {
       }
       // aiCreditPacks.js's returnUrl appends ?credits_purchased=1 the same way — but unlike a
       // subscription (confirmed synchronously in the redirect response), a one-time purchase is
-      // only actually credited once Shopify's app_purchases_one_time/update webhook lands, which
-      // can arrive a moment after this redirect. Acknowledge the purchase now, then re-fetch once
-      // shortly after to pick up the credited balance without the merchant needing a manual
-      // refresh.
+      // only actually resolved once Shopify's app_purchases_one_time/update webhook lands, which
+      // can arrive a moment after this redirect — and it can resolve to APPROVED just as easily
+      // as DECLINED/CANCELLED if the merchant backed out on Shopify's own screen. Poll the real
+      // purchase status instead of showing one static "thanks" toast regardless of what actually
+      // happened.
       if (searchParams.get("credits_purchased") === "1") {
-        showPlanToast("Thanks! Your AI credits will appear shortly.");
         const next = new URLSearchParams(searchParams);
         next.delete("credits_purchased");
         setSearchParams(next, { replace: true });
-        setTimeout(() => fetchBillingData(), 3000);
+        pollLatestPurchaseOutcome();
       }
       fetchCreditPacks();
     })();
@@ -121,6 +121,41 @@ export default function Plans() {
       if ("aiCreditsPurchased" in data) setAiPurchased(data.aiCreditsPurchased || 0);
     } catch (err) {
       console.error("Failed to load AI credit packs:", err);
+    }
+  };
+
+  // Polls GET /api/ai/credit-packs/latest-purchase after a ?credits_purchased=1 redirect, since
+  // the real outcome (APPROVED vs the merchant declining on Shopify's own screen) only exists
+  // once the app_purchases_one_time/update webhook lands - which can take a few seconds. Every
+  // 3s for up to ~24s (8 attempts), generous for normal webhook delivery latency without leaving
+  // the merchant waiting indefinitely on a page that never resolves either way.
+  const pollLatestPurchaseOutcome = async (attempt = 0) => {
+    const MAX_ATTEMPTS = 8;
+    try {
+      const res = await fetch("/api/ai/credit-packs/latest-purchase");
+      const data = await res.json();
+      const status = data.purchase?.status;
+
+      if (status === "APPROVED") {
+        showPlanToast(`🎉 ${data.purchase.credits} AI credits added to your account`);
+        fetchBillingData();
+        fetchCreditPacks();
+        return;
+      }
+      if (status === "DECLINED" || status === "CANCELLED" || status === "EXPIRED") {
+        setError("Your AI credit purchase wasn't completed — no charge was made. You can try again anytime.");
+        return;
+      }
+      // Still PENDING - the webhook hasn't landed yet, keep waiting.
+      if (attempt < MAX_ATTEMPTS) {
+        setTimeout(() => pollLatestPurchaseOutcome(attempt + 1), 3000);
+      } else {
+        // Genuinely don't know the outcome yet after ~24s - say so rather than claiming success.
+        showPlanToast("Your purchase is still processing — credits will appear once it's confirmed.");
+        fetchBillingData();
+      }
+    } catch (err) {
+      console.error("Failed to check credit purchase status:", err);
     }
   };
 

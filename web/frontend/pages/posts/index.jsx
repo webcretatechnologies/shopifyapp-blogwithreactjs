@@ -488,17 +488,40 @@ export default function Articles() {
           // row stops showing a progress bar and starts showing the real article. Same list tells
           // us which jobs just crossed into "done" so we can surface a one-time success toast for
           // each (there's no more "notify me" email step, so this is the only in-app confirmation
-          // a generation actually finished).
+          // a generation actually finished). j.creditRefunded (set by runJob's refundAiCredit,
+          // src/routes/aiArticles.js) means the credit spent up front was handed back because the
+          // run degraded to filler content - previously that only ever showed up as a server
+          // console log, with nothing telling the merchant their credit came back at all.
           const newlyFinished = jobs.filter(
             (j) => j.status === "done" && !aiJobs.find((p) => p.id === j.id && p.status === "done")
+          );
+          // A genuinely failed job (not just a degraded-but-done one) previously got no toast at
+          // all - only the static "Generation failed" badge in the row, easy to miss if the
+          // merchant isn't looking at that exact row when it happens.
+          const newlyFailed = jobs.filter(
+            (j) => j.status === "failed" && !aiJobs.find((p) => p.id === j.id && p.status === "failed")
           );
           setAiJobs(jobs);
           if (newlyFinished.length > 0) {
             fetchPosts().then((freshPosts) => {
               newlyFinished.forEach((j) => {
                 const post = (freshPosts || []).find((p) => p.id === j.postId);
-                setToastMessage({ content: `"${post?.title || "Your article"}" is ready to edit` });
+                const title = post?.title || "Your article";
+                setToastMessage(
+                  j.creditRefunded
+                    ? { content: `"${title}" needed a review pass, so we've refunded your AI credit. It's still ready to edit.` }
+                    : { content: `"${title}" is ready to edit` }
+                );
               });
+            });
+          }
+          if (newlyFailed.length > 0) {
+            newlyFailed.forEach((j) => {
+              setToastMessage(
+                j.creditRefunded
+                  ? { content: "AI generation failed, so we've refunded your credit. Try again, or write this one yourself.", error: true }
+                  : { content: "AI generation failed. Please try again.", error: true }
+              );
             });
           }
         })

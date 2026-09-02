@@ -23,6 +23,10 @@ async function getShopFromSession(res) {
  * which counter actually decrements — a credit spent from the purchased pool must refund back
  * into aiCreditsPurchasedUsed, never aiCreditsUsed alone, or the purchased pool's own remaining
  * balance would silently overstate what's actually left.
+ *
+ * Returns whether a refund actually happened, so the caller can stamp AiGenerationJob.
+ * creditRefunded - previously this only ever logged to the server console, with nothing
+ * merchant-facing anywhere telling them their credit was given back at all.
  */
 async function refundAiCredit(shopId, jobId, reason, creditSource) {
   try {
@@ -39,8 +43,10 @@ async function refundAiCredit(shopId, jobId, reason, creditSource) {
       },
     });
     if (count > 0) console.error(`[AI] job ${jobId} refunded a ${creditSource} credit to shop ${shopId} (${reason})`);
+    return count > 0;
   } catch (err) {
     console.error(`[AI] job ${jobId} failed to refund credit to shop ${shopId}:`, err.message);
+    return false;
   }
 }
 
@@ -110,10 +116,14 @@ export async function runJob(jobId) {
     // on its own) doesn't clear for minutes-to-hours - telling the merchant that plainly is more
     // useful than the generic "unavailable" wording, which reads like something to retry right away.
     const isDailyLimit = /daily generation limit/i.test(String(fallbackReason || ""));
+    // Lives on the post (see aiWarning below) so it's still visible whenever the merchant opens
+    // this draft, not just in the one-time list-page toast (newlyFinished/newlyFailed in
+    // posts/index.jsx) - a merchant who wasn't watching the list at that exact moment would
+    // otherwise never see any mention that a credit was actually given back.
     const fallbackWarning = usedFallback
       ? isDailyLimit
-        ? "AI's daily generation limit was reached, so this draft was written with generic placeholder text instead. Try generating again in a little while, or rewrite this one now."
-        : "AI service was unavailable, so this draft uses generic placeholder text instead of generated content. Review and rewrite before publishing."
+        ? "AI's daily generation limit was reached, so this draft was written with generic placeholder text instead - your AI credit was refunded. Try generating again in a little while, or rewrite this one now."
+        : "AI service was unavailable, so this draft uses generic placeholder text instead of generated content - your AI credit was refunded. Review and rewrite before publishing."
       : null;
 
     // contentHtml is left for the editor to compile on first open: compileBlocksToHtml is a
@@ -141,6 +151,15 @@ export async function runJob(jobId) {
       },
     });
 
+    // Refund (if this run degraded) BEFORE the job row is marked "done", so creditRefunded lands
+    // in the same write the list page's poller sees - previously the refund only ever showed up
+    // as a server console log, with nothing merchant-facing anywhere confirming it happened.
+    let creditRefunded = false;
+    if (usedFallback) {
+      console.error(`[AI] job ${jobId} degraded to fallback content:`, fallbackReason);
+      creditRefunded = await refundAiCredit(job.shopId, jobId, fallbackReason, job.creditSource);
+    }
+
     await prisma.aiGenerationJob.update({
       where: { id: jobId },
       data: {
@@ -149,12 +168,9 @@ export async function runJob(jobId) {
         progress: 100,
         finishedAt: new Date(),
         warning: fallbackWarning,
+        creditRefunded,
       },
     });
-    if (usedFallback) {
-      console.error(`[AI] job ${jobId} degraded to fallback content:`, fallbackReason);
-      await refundAiCredit(job.shopId, jobId, fallbackReason, job.creditSource);
-    }
   } catch (err) {
     console.error("[AI] job", jobId, "failed:", err);
     await prisma.aiGenerationJob
@@ -171,7 +187,12 @@ export async function runJob(jobId) {
     // `job` (fetched at the top of the try block) is out of scope here - a genuinely failed run
     // still needs its credit back, so re-read just enough to refund it.
     const failedJob = await prisma.aiGenerationJob.findUnique({ where: { id: jobId }, select: { shopId: true, creditSource: true } }).catch(() => null);
-    if (failedJob) await refundAiCredit(failedJob.shopId, jobId, err?.message, failedJob.creditSource);
+    if (failedJob) {
+      const creditRefunded = await refundAiCredit(failedJob.shopId, jobId, err?.message, failedJob.creditSource);
+      if (creditRefunded) {
+        await prisma.aiGenerationJob.update({ where: { id: jobId }, data: { creditRefunded } }).catch(() => {});
+      }
+    }
   }
 }
 
@@ -330,6 +351,8 @@ router.get("/jobs", async (req, res) => {
         stage: true,
         progress: true,
         error: true,
+        warning: true,
+        creditRefunded: true,
       },
     });
     res.json({ jobs });
