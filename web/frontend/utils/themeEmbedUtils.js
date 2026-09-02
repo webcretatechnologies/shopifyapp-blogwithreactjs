@@ -1,5 +1,11 @@
-// Matches client_id in shopify.app.toml — not a secret, safe to reference client-side for deep links.
-const APP_CLIENT_ID = "946c7f95fc6780b88559e90d45ad7f96";
+// The app's client_id — not a secret, safe to reference client-side for deep links. Read from the
+// same build-time variable App Bridge itself uses (vite.config.js sets VITE_SHOPIFY_API_KEY from
+// SHOPIFY_API_KEY), because hardcoding it meant a production build kept pointing these theme-editor
+// deep links at the dev app record, where the embed blocks don't exist.
+const APP_CLIENT_ID =
+  import.meta.env.VITE_SHOPIFY_API_KEY ||
+  document.querySelector('meta[name="shopify-api-key"]')?.content ||
+  "";
 
 /**
  * Deep link into the theme editor with the given app embed block pre-activated,

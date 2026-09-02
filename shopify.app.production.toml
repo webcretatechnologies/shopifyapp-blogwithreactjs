@@ -7,7 +7,7 @@
 # production (e.g. to keep a "-Local" dev app and a real public app distinct) — in that case,
 # replace it with that app's own client_id.
 client_id = "2f304a64fd4f9d37a21953327552fa17"
-name = "Blogger"
+name = "Blogger React - Dev"
 application_url = "https://blogapp-dev.boxtasks.com"
 embedded = true
 
