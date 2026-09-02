@@ -20,4 +20,7 @@ RUN cd frontend \
 
 EXPOSE 3000
 
-CMD ["npm", "run", "serve"]
+# `start` runs `prisma migrate deploy` + `prisma/seed.js` before booting, so a fresh deploy
+# comes up with billing plans, plan features, AI credit packs and the Super Admin already in
+# place. Both steps are idempotent, so this is safe on every container restart.
+CMD ["npm", "run", "start"]

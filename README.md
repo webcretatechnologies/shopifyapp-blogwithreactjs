@@ -101,6 +101,45 @@ Open the URL generated in your console. Once you grant permission to the app, yo
 
 ## Deployment
 
+### Database migrations and seed data
+
+A deployment must always run **migrations + seed** before the server boots. `npm run setup` (from
+`web/`) does both, and `npm run start` — which is what the Docker image's `CMD` runs — is
+`setup && serve`:
+
+```shell
+npm run setup   # prisma migrate deploy && prisma generate && node prisma/seed.js
+npm run start   # setup, then boot the server
+```
+
+`prisma/seed.js` is the single source of truth for the default rows a fresh install needs:
+subscription plans, plan feature gating, AI credit packs and the Super Admin account. **Any change
+to default pricing or packaging belongs in that file**, otherwise a freshly deployed server comes
+up with an empty Plans & Billing page in the Super Admin panel.
+
+It is idempotent and non-destructive: rows that already exist are left untouched, so redeploying
+never overwrites pricing an admin edited in the live panel. To push the file's defaults back over
+existing rows, run it explicitly with `--force`:
+
+```shell
+node prisma/seed.js --force
+```
+
+The Super Admin credentials default to the ones in `prisma/seed.js`; override them per environment
+with `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD`.
+
+#### Baselining a database that was created with `prisma db push`
+
+Databases built with `prisma db push` have no migration history, so `prisma migrate deploy` would
+try to re-run `0_init` and fail. Mark the existing migrations as already applied once, then deploy
+normally from then on:
+
+```shell
+for m in $(ls prisma/migrations | grep -v migration_lock); do
+  npx prisma migrate resolve --applied "$m"
+done
+```
+
 ### Application Storage
 
 This template uses [SQLite](https://www.sqlite.org/index.html) to store session data. The database is a file called `database.sqlite` which is automatically created in the root. This use of SQLite works in production if your app runs as a single instance.
