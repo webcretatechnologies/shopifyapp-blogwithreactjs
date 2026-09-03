@@ -2,50 +2,38 @@
 
 client_id = "946c7f95fc6780b88559e90d45ad7f96"
 name = "Blogger React - Local"
-application_url = "https://example.com"
+application_url = "https://layout-implied-charlie-mon.trycloudflare.com"
 embedded = true
-
-[auth]
-redirect_urls = [
-  "https://example.com/api/auth/callback",
-]
-
-[access_scopes]
-scopes = "read_content,write_content,read_products,write_products,read_customers,read_orders,read_themes,write_themes,read_script_tags,write_script_tags,write_files,read_locales,read_translations,write_translations"
-
-[webhooks]
-api_version = "2025-10"
-
-# Required by current Shopify app config schema. Empty subscription list keeps
-# the app on [webhooks] for live event delivery.
-[events]
-api_version = "unstable"
-subscription = []
-
-  [[webhooks.subscriptions]]
-  topics = [
-    "app/uninstalled",
-    "app_subscriptions/update",
-    "app_purchases_one_time/update",
-    "orders/create",
-    "checkouts/create"
-  ]
-  uri = "/api/webhooks"
-
-  # Mandatory compliance (GDPR) webhooks — required for App Store distribution. Handlers already
-  # exist and are wired up in privacy.js (imported into index.js's webhookHandlers) — this block
-  # is what tells Shopify's CLI to actually create the subscriptions on `shopify app deploy`.
-  [[webhooks.subscriptions]]
-  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-  uri = "/api/webhooks"
-
-[pos]
-embedded = false
 
 [build]
 automatically_update_urls_on_dev = true
 
+[events]
+api_version = "unstable"
+subscription = [ ]
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/api/webhooks"
+  topics = [
+  "orders/create",
+  "app_subscriptions/update",
+  "app/uninstalled"
+]
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_content,read_customers,read_locales,read_orders,read_products,read_script_tags,read_themes,read_translations,write_content,write_files,write_products,write_script_tags,write_themes,write_translations"
+
+[auth]
+redirect_urls = [ "https://layout-implied-charlie-mon.trycloudflare.com/api/auth/callback" ]
+
 [app_proxy]
-url = "https://example.com/api/proxy"
+url = "https://layout-implied-charlie-mon.trycloudflare.com/api/proxy"
 subpath = "blog-analytics"
 prefix = "apps"
+
+[pos]
+embedded = false

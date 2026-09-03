@@ -37,6 +37,7 @@ import KpiRow from "../components/common/KpiRow";
 import AnalyticsChart from "../components/analytics/AnalyticsChart";
 import TopPerformingPostsList from "../components/analytics/TopPerformingPostsList";
 import SetupGuide from "../components/SetupGuide";
+import CreateArticleWizard from "../components/builder/CreateArticleWizard";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
 import { analyticsTrackerActivateUrl } from "../utils/themeEmbedUtils";
 import { toISODateString } from "../components/analytics/DateRangePicker";
@@ -169,6 +170,7 @@ export default function Dashboard() {
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [showRefreshBadge, setShowRefreshBadge] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
   // Mirrors SetupGuide's dismissal flag: while the guide is visible it already
   // contains the enable-tracking step, so the banner would be a duplicate prompt. Uses
@@ -314,7 +316,7 @@ export default function Dashboard() {
         }
         primaryAction={{
           content: "Write new article",
-          onAction: () => navigate("/posts/new"),
+          onAction: () => setWizardOpen(true),
           disabled: atLimit,
         }}
         secondaryActions={[
@@ -357,6 +359,7 @@ export default function Dashboard() {
                 isMetaRobotsActive={setupStatus?.metaRobots?.active}
                 themeSupportsAppEmbeds={setupStatus?.themeSupportsAppEmbeds}
                 hasPosts={(extras?.planUsage?.used ?? 0) > 0}
+                onCreatePost={() => setWizardOpen(true)}
               />
             </Layout.Section>
           )}
@@ -403,7 +406,7 @@ export default function Dashboard() {
                   <QuickAction
                     icon={PlusIcon}
                     label="New article"
-                    onClick={() => navigate("/posts/new")}
+                    onClick={() => setWizardOpen(true)}
                     disabled={atLimit}
                     disabledTooltip={`You've reached your ${planUsage?.limit ?? ""}-article limit. Upgrade your plan to add more.`}
                   />
@@ -634,6 +637,20 @@ export default function Dashboard() {
           </Layout.Section>
         </Layout>
       </Page>
+
+      <CreateArticleWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onGenerated={(data) => {
+          // The dashboard has no AI-generation progress row of its own (that lives on the
+          // Articles list), so hand isFirstPost/postId along via navigation state the same way
+          // templates/index.jsx does - the list page's own effect picks this up and shows the
+          // congrats modal once the merchant lands there.
+          navigate("/posts", {
+            state: { isFirstPost: Boolean(data?.isFirstPost), firstPostId: data?.postId || null },
+          });
+        }}
+      />
     </>
   );
 }

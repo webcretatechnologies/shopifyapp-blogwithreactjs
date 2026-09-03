@@ -21,6 +21,7 @@ import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
 import { ArticleSyncService } from "../services/ArticleSyncService.js";
 import { ShopifyArticleParser } from "../services/ShopifyArticleParser.js";
 import { getShopAnalytics, getPostAnalytics } from "../services/AnalyticsTrackingService.js";
+import { isShopFirstPost } from "../utils/firstPost.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
@@ -371,8 +372,7 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const postCount = await prisma.post.count({ where: { shopId: shop.id } });
-    const isFirstPost = postCount === 1;
+    const isFirstPost = await isShopFirstPost(prisma, shop.id);
 
     res.status(201).json({ post: { id: post.id }, success: true, isFirstPost });
   } catch (err) {

@@ -9,7 +9,7 @@ import { APP_NAME } from "../utils/appName";
 // same x-position, regardless of whether that row shows a numbered circle or a checkmark icon.
 const LEAD_COLUMN_WIDTH = "28px";
 
-export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive, themeSupportsAppEmbeds, hasPosts }) {
+export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive, themeSupportsAppEmbeds, hasPosts, onCreatePost }) {
   const navigate = useNavigate();
   const [isDismissed, setIsDismissed] = useState(true); // default true to prevent flicker before useEffect runs
   const [expandedId, setExpandedId] = useState(null);
@@ -70,7 +70,8 @@ export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive
       description: "Write and publish your first article to start engaging with your customers.",
       actionLabel: "Create post",
       action: () => {
-        navigate("/posts/new");
+        if (onCreatePost) onCreatePost();
+        else navigate("/posts/new");
       },
       isCompleted: hasPosts
     }

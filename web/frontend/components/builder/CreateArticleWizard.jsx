@@ -76,6 +76,7 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
   const [category, setCategory] = useState("All");
   const [selected, setSelected] = useState(null); // { kind: 'library'|'shop'|'blank', template }
   const [previewing, setPreviewing] = useState(null);
+  const [features, setFeatures] = useState({});
 
   // step 2
   const [title, setTitle] = useState("");
@@ -159,6 +160,14 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
         .catch(() => setShopifyBlogs([]))
         .finally(() => setBlogsLoading(false)),
       fetch("/api/ai/credits").then((r) => r.json()).then(setCredits).catch(() => setCredits(null)),
+      // Library templates marked "paid" (t.tier) are gated the same way the standalone Blog
+      // Templates library page gates them - without this the wizard let a Free-plan shop pick
+      // and use any premium template, since only the server's GET /:key rejected it (silently,
+      // after the fact, leaving the merchant with an empty article instead of a clear block).
+      fetch("/api/posts/plan/features")
+        .then((r) => r.json())
+        .then((d) => setFeatures(d.features || {}))
+        .catch(() => setFeatures({})),
       // Same "Settings → Content & display → Default author name" prefill the editor itself
       // applies for brand-new posts - the wizard shouldn't ask twice for what Settings already knows.
       // Guarded so a resumed session with an already-typed author is never overwritten.
@@ -201,6 +210,8 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
 
   const isBlank = selected?.kind === "blank";
   const outOfCredits = Boolean(credits && credits.limit != null && (credits.remaining ?? 0) <= 0);
+  const premiumOn = Boolean(features.templates_premium?.enabled);
+  const isLocked = (kind, template) => kind === "library" && template?.tier === "paid" && !premiumOn;
 
   // "Write it yourself" used to just navigate to /posts/new with the template/prefill in router
   // state and leave the actual post creation for whenever the merchant got around to clicking
@@ -211,12 +222,22 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
   // first-open save the AI-generation path already relies on, so contentHtml gets compiled and
   // the save bar never appears for something the merchant just finished configuring.
   const goToEditor = useCallback(async () => {
+    if (isLocked(selected?.kind, selected?.template)) {
+      setError("This template is available on Starter and above. Please upgrade to use it.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
       let blocks = [];
       if (selected?.kind === "library") {
         const res = await fetch(`/api/blog-templates/${selected.template.key}`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setError(data.error || "Could not create the article.");
+          setSubmitting(false);
+          return;
+        }
         const data = await res.json();
         blocks = data.template?.blocks || [];
       } else if (selected?.kind === "shop") {
@@ -246,15 +267,19 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
       }
       resetWizard();
       onClose();
-      navigate(`/posts/${data.post.id}/edit`);
+      navigate(`/posts/${data.post.id}/edit`, { state: { isFirstPost: Boolean(data.isFirstPost) } });
     } catch {
       setError("Could not create the article.");
     } finally {
       setSubmitting(false);
     }
-  }, [selected, title, shopifyBlogId, author, handle, navigate, onClose, resetWizard]);
+  }, [selected, title, shopifyBlogId, author, handle, navigate, onClose, resetWizard, premiumOn]);
 
   const startGeneration = useCallback(async () => {
+    if (isLocked(selected?.kind, selected?.template)) {
+      setError("This template is available on Starter and above. Please upgrade to use it.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -291,7 +316,7 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
     } finally {
       setSubmitting(false);
     }
-  }, [brief, title, shopifyBlogId, author, handle, selected, linkedProducts, colorsOn, primaryColor, backgroundColor, onGenerated, onClose, resetWizard]);
+  }, [brief, title, shopifyBlogId, author, handle, selected, linkedProducts, colorsOn, primaryColor, backgroundColor, onGenerated, onClose, resetWizard, premiumOn]);
 
   // ── Footer actions per step ────────────────────────────────────────────────
   const primary = (() => {
@@ -392,6 +417,12 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
                   selected,
                   setSelected,
                   setPreviewing,
+                  isLocked,
+                  onLockedClick: () => {
+                    resetWizard();
+                    onClose();
+                    navigate("/plans");
+                  },
                 }}
               />
             ) : step === 1 ? (
@@ -434,8 +465,15 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
 function StepTemplate({
   tab, setTab, query, setQuery, category, setCategory,
   filtered, filteredShopTemplates, shopTemplates, selected, setSelected, setPreviewing,
+  isLocked, onLockedClick,
 }) {
-  const pick = (kind, template) => setSelected({ kind, template });
+  const pick = (kind, template) => {
+    if (isLocked(kind, template)) {
+      onLockedClick?.();
+      return;
+    }
+    setSelected({ kind, template });
+  };
   // Library templates are keyed by `key` and shop templates by `id`, and neither carries the
   // other field. Comparing both with an OR made every library card match on
   // `undefined === undefined`, so picking one template marked them all selected.
@@ -524,6 +562,7 @@ function StepTemplate({
               >
                 <TemplateGalleryCard
                   template={t}
+                  locked={isLocked(kind, t)}
                   showAction
                   actionLabel={isSelected(kind, t) ? "Selected" : "Select"}
                   onUse={() => pick(kind, t)}
@@ -536,7 +575,10 @@ function StepTemplate({
                   setPreviewing({ kind, template: t });
                 }}
                 style={{
-                  position: "absolute", top: 10, right: 10, zIndex: 3,
+                  // Locked cards already show a "🔒 Starter+" badge in this same top-right
+                  // corner (TemplateGalleryCard) - stacking this button on top of it hid the
+                  // lock badge entirely, so a premium template looked identical to a free one.
+                  position: "absolute", top: isLocked(kind, t) ? 44 : 10, right: 10, zIndex: 3,
                   background: "rgba(255,255,255,0.94)", border: "1px solid #e3e1de",
                   borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 600,
                   cursor: "pointer",

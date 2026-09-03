@@ -1,7 +1,9 @@
 import express from "express";
 import { prisma } from "../../shopify.js";
-import { getAiCreditLimit, getAiCreditStatus } from "../services/PlanFeatureService.js";
+import { getAiCreditLimit, getAiCreditStatus, isFeatureEnabled } from "../services/PlanFeatureService.js";
 import { generateArticleBlocks, AI_STAGES } from "../services/AiArticleService.js";
+import { isShopFirstPost } from "../utils/firstPost.js";
+import { isTemplateFree } from "../data/blogTemplates.js";
 
 const router = express.Router();
 
@@ -236,6 +238,13 @@ router.post("/generate", async (req, res) => {
     // its own starting layout for that case (buildBlankScaffold), so this is no longer a reason
     // to reject the request.
 
+    // Same premium-template gate as GET /api/blog-templates/:key - without it a Free-plan shop
+    // could reach a "Starter and above" template by having the AI adapt it instead of writing it
+    // themselves manually.
+    if (templateKey && !isTemplateFree(templateKey) && !isFeatureEnabled(shop.planKey, "templates_premium")) {
+      return res.status(403).json({ error: "This template is available on Starter and above. Please upgrade to use it." });
+    }
+
     // Two independent pools, not one flat ceiling — see getAiCreditStatus's docblock for why: a
     // plan downgrade that shrinks the plan's own allowance below lifetime usage must never strand
     // unspent purchased credits behind it.
@@ -316,10 +325,13 @@ router.post("/generate", async (req, res) => {
     // Not awaited: the merchant goes straight to the list and watches the progress row.
     runJob(job.id).catch((err) => console.error("[AI] unhandled runJob rejection:", err));
 
+    const isFirstPost = await isShopFirstPost(prisma, shop.id);
+
     res.json({
       job: { id: job.id, postId: post.id, status: job.status, stage: job.stage, progress: job.progress },
       postId: post.id,
       creditsRemaining: creditStatus.remaining == null ? null : Math.max(0, creditStatus.remaining - 1),
+      isFirstPost,
     });
   } catch (err) {
     console.error("POST /api/ai/generate", err);

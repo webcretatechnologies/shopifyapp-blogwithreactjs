@@ -4,6 +4,7 @@ import shopify from "../../shopify.js";
 import { getArticleLimit } from "../services/PlanFeatureService.js";
 import { ArticleSyncService } from "../services/ArticleSyncService.js";
 import { ShopifyArticleParser } from "../services/ShopifyArticleParser.js";
+import { isShopFirstPost } from "../utils/firstPost.js";
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -287,7 +288,9 @@ router.post("/execute", async (req, res) => {
       message: `Imported article "${shopifyArticle.title}" from Shopify blog ${blog_id} (${contentJson.length} blocks parsed, structureDegraded=${parsed.structureDegraded})`,
     });
 
-    res.json({ success: true, post_id: post.id });
+    const isFirstPost = await isShopFirstPost(prisma, shop.id);
+
+    res.json({ success: true, post_id: post.id, isFirstPost });
   } catch (err) {
     console.error("POST /api/import/execute error:", err);
     res.status(500).json({ error: err.message });

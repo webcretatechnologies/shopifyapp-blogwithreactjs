@@ -540,11 +540,15 @@ export default function BlogTemplatesLibrary() {
           setWizardOpen(false);
           setWizardInitialSelected(null);
         }}
-        onGenerated={() => {
+        onGenerated={(data) => {
           // This page has no job-progress row of its own - the list page already polls
           // /api/ai/jobs on its own mount, so handing off there is what actually shows the
           // merchant their generation running, the same progress bar "+ New article" gives.
-          navigate("/posts?generating=1");
+          // isFirstPost/postId ride along in navigation state so the list page can still show
+          // the congrats modal even though the generation response itself was received here.
+          navigate("/posts?generating=1", {
+            state: { isFirstPost: Boolean(data?.isFirstPost), firstPostId: data?.postId || null },
+          });
         }}
       />
 

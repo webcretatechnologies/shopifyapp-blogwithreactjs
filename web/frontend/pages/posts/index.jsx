@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../utils/smartBack";
 import CreateArticleWizard from "../../components/builder/CreateArticleWizard";
+import FirstPostCongratsModal from "../../components/FirstPostCongratsModal";
 import { DateTime } from "luxon";
 import {
   Page,
@@ -211,6 +212,18 @@ export default function Articles() {
   // the list is where its progress lives, and the merchant may well arrive here after a reload.
   const [wizardOpen, setWizardOpen] = useState(false);
   const [aiJobs, setAiJobs] = useState([]);
+  const [congratsPostId, setCongratsPostId] = useState(null);
+
+  // Arrived from the Blog Templates page's own AI-generation wizard (templates/index.jsx) —
+  // that page has no progress row of its own, so it hands isFirstPost/postId along via
+  // navigation state instead of showing the modal itself. Consumed once so a refresh doesn't
+  // re-show it.
+  useEffect(() => {
+    if (!location.state?.isFirstPost || !location.state?.firstPostId) return;
+    setCongratsPostId(location.state.firstPostId);
+    navigate(location.pathname + location.search, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [shopInfo, setShopInfo] = useState(null);
   const [shopifyBlogsMap, setShopifyBlogsMap] = useState({});
 
@@ -897,8 +910,17 @@ export default function Articles() {
           if (data?.job) {
             setAiJobs((prev) => [data.job, ...prev.filter((j) => j.id !== data.job.id)]);
           }
+          if (data?.isFirstPost && data?.postId) {
+            setCongratsPostId(data.postId);
+          }
           fetchPosts();
         }}
+      />
+
+      <FirstPostCongratsModal
+        open={Boolean(congratsPostId)}
+        postId={congratsPostId}
+        onClose={() => setCongratsPostId(null)}
       />
     </Frame>
   );

@@ -40,7 +40,7 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon, CalendarIcon, DeleteIcon } from "@shopify/polaris-icons";
 import { DateTime } from "luxon";
-import confetti from "canvas-confetti";
+import FirstPostCongratsModal from "../../components/FirstPostCongratsModal";
 import DragDropBuilderContainer from "../../components/builder/DragDropBuilderContainer";
 import UpgradePrompt from "../../components/UpgradePrompt";
 import BlogTemplateGalleryModal from "../../components/builder/BlogTemplateGalleryModal";
@@ -1187,6 +1187,18 @@ export default function PostEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing]);
 
+  // CreateArticleWizard's "write it yourself" flow creates the post itself and navigates straight
+  // here in edit mode, so the ordinary create-then-isFirstPost branch in handleSave (below) never
+  // runs for it — it hands the flag along via navigation state instead, consumed once so a refresh
+  // doesn't re-show the modal.
+  useEffect(() => {
+    if (!isEditing || !location.state?.isFirstPost) return;
+    setNewPostId(id);
+    setShowCongratsModal(true);
+    navigate(location.pathname, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing]);
+
   // Saved-template allowance is plan-based (Free 2, Starter 5, Pro unlimited). Fetched when the
   // modal opens so the merchant sees the ceiling before typing a name, not after pressing Save.
   const [templateUsage, setTemplateUsage] = useState({ count: 0, limit: null, plan: "" });
@@ -1552,27 +1564,6 @@ export default function PostEditor() {
         if (data.isFirstPost) {
           setNewPostId(data.post.id);
           setShowCongratsModal(true);
-          // 🎉 Fire confetti!
-          const duration = 3000;
-          const end = Date.now() + duration;
-          const frame = () => {
-            confetti({
-              particleCount: 5,
-              angle: 60,
-              spread: 55,
-              origin: { x: 0 },
-              colors: ["#008060", "#00a97c", "#005bd3", "#f5a623", "#e44d26"],
-            });
-            confetti({
-              particleCount: 5,
-              angle: 120,
-              spread: 55,
-              origin: { x: 1 },
-              colors: ["#008060", "#00a97c", "#005bd3", "#f5a623", "#e44d26"],
-            });
-            if (Date.now() < end) requestAnimationFrame(frame);
-          };
-          frame();
         } else {
           navigate(`/posts/${data.post.id}/edit`);
         }
@@ -3227,39 +3218,11 @@ export default function PostEditor() {
         />
       )}
 
-      <Modal
+      <FirstPostCongratsModal
         open={showCongratsModal}
-        onClose={() => {
-          setShowCongratsModal(false);
-          if (newPostId) {
-            navigate(`/posts/${newPostId}/edit`);
-          }
-        }}
-        title="🎉 Congratulations!"
-        primaryAction={{
-          content: "Start Editing",
-          onAction: () => {
-            setShowCongratsModal(false);
-            if (newPostId) {
-              navigate(`/posts/${newPostId}/edit`);
-            }
-          },
-        }}
-      >
-        <Modal.Section>
-          <BlockStack gap="400" align="center">
-            <div style={{ fontSize: "50px", textAlign: "center", marginTop: "12px" }}>🏆</div>
-            <Text variant="headingLg" as="h2" alignment="center">
-              You've created your first blog post!
-            </Text>
-            <Text variant="bodyMd" as="p" alignment="center" tone="subdued">
-              Amazing job! Your first blog post has been successfully created.
-              You can now publish it to your store, add products to it, or keep
-              editing the content.
-            </Text>
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
+        postId={newPostId}
+        onClose={() => setShowCongratsModal(false)}
+      />
     </Frame>
   );
 }

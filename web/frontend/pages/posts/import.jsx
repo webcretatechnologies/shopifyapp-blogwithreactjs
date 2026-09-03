@@ -26,6 +26,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../utils/smartBack";
 import { ImportIcon, ArrowLeftIcon } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
+import FirstPostCongratsModal from "../../components/FirstPostCongratsModal";
 import UpgradePrompt from "../../components/UpgradePrompt";
 
 const PER_PAGE = 20;
@@ -60,6 +61,7 @@ export default function ArticleImporter() {
   const [error, setError] = useState(null);
   const [confirmArticle, setConfirmArticle] = useState(null); // article pending import confirmation
   const [confirmError, setConfirmError] = useState(null);
+  const [congratsPostId, setCongratsPostId] = useState(null);
 
   // Same article_limit awareness as the Articles list/Templates pages — the backend
   // (/api/import/execute) already rejects an import once the plan cap is hit, but previously
@@ -169,10 +171,14 @@ export default function ArticleImporter() {
       }
       const data = await res.json();
       setConfirmArticle(null);
-      setToastMessage({
-        content: "Article imported successfully!",
-        action: { content: "Edit article", onAction: () => navigate(`/posts/${data.post_id}/edit`) },
-      });
+      if (data.isFirstPost) {
+        setCongratsPostId(data.post_id);
+      } else {
+        setToastMessage({
+          content: "Article imported successfully!",
+          action: { content: "Edit article", onAction: () => navigate(`/posts/${data.post_id}/edit`) },
+        });
+      }
       // Mark the article as imported in local state
       setAllArticles((prev) =>
         prev.map((a) => (String(a.id) === String(articleId) ? { ...a, is_imported: true } : a))
@@ -452,6 +458,12 @@ export default function ArticleImporter() {
         onCancel={cancelImport}
         loading={importingId !== null}
         error={confirmError}
+      />
+
+      <FirstPostCongratsModal
+        open={Boolean(congratsPostId)}
+        postId={congratsPostId}
+        onClose={() => setCongratsPostId(null)}
       />
 
       <Page
