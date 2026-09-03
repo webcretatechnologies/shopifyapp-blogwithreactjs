@@ -372,15 +372,28 @@ export default function Articles() {
     if (!deleteTargetPost) return;
     setIsDeleteConfirming(true);
     try {
-      await fetch(
+      const res = await fetch(
         `/api/posts/${deleteTargetPost.id}?deleteFromShopify=${deleteFromShopifyChoice}`,
         { method: "DELETE" },
       );
-      setToastMessage({ content: "Article deleted" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Delete failed");
+      }
+      const data = await res.json().catch(() => ({}));
+
+      if (data.shopifyDeleteAttempted && !data.shopifyDeleted) {
+        setToastMessage({
+          content: `Article removed from app, but couldn't be deleted from Shopify${data.shopifyDeleteError ? `: ${data.shopifyDeleteError}` : ""}. Please remove it manually in Shopify.`,
+          error: true,
+        });
+      } else {
+        setToastMessage({ content: "Article deleted" });
+      }
       setDeleteTargetPost(null);
       fetchPosts();
-    } catch {
-      setToastMessage({ content: "Delete failed", error: true });
+    } catch (err) {
+      setToastMessage({ content: err.message || "Delete failed", error: true });
     } finally {
       setIsDeleteConfirming(false);
     }

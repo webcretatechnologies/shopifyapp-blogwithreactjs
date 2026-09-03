@@ -62,6 +62,7 @@ async function handleViewTracking(req, res) {
   const ua = req.headers["user-agent"] || "";
   const ip = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
   const acceptLang = req.headers["accept-language"] || "";
+  const cfCountry = req.headers["cf-ipcountry"] || "";
 
   // Bot detection — don't count
   if (isBot(ua)) {
@@ -84,6 +85,7 @@ async function handleViewTracking(req, res) {
         userAgent: ua,
         referer: ref,
         acceptLang,
+        cfCountry,
         ip,
         visitorHash,
       });

@@ -128,6 +128,9 @@ router.post("/view", express.json(), verifyProxySignature, async (req, res) => {
       userAgent: ua,
       referer,
       acceptLang,
+      // No cfCountry here: this route is hit via Shopify's App Proxy, so Cloudflare only sees
+      // Shopify's server IP, not the storefront visitor's. Country is geolocated from `ip`
+      // instead (see detectCountry in AnalyticsTrackingService.js).
       ip,
       visitorHash
     });

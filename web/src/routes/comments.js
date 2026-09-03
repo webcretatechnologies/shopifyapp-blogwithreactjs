@@ -1,7 +1,33 @@
 import express from "express";
+import { PrismaClient } from "@prisma/client";
 import shopify from "../../shopify.js";
 
+const prisma = new PrismaClient();
 const router = express.Router();
+
+/**
+ * Shopify article GIDs are stored bare (numeric string) in ShopifyArticle.shopifyArticleId, so
+ * normalize both sides to the bare id before comparing against GraphQL's `gid://shopify/Article/…`.
+ */
+function bareArticleId(gid) {
+  return String(gid || "").split("/").pop();
+}
+
+/**
+ * The set of Shopify article ids this app actually manages for the shop (i.e. created/synced via
+ * this app), used to filter out native store comments on articles this app never touched.
+ */
+async function getManagedArticleIds(shopDomain) {
+  const shop = await prisma.shop.findUnique({ where: { domain: shopDomain } });
+  if (!shop) return new Set();
+
+  const articles = await prisma.shopifyArticle.findMany({
+    where: { post: { shopId: shop.id }, shopifyArticleId: { not: null } },
+    select: { shopifyArticleId: true },
+  });
+
+  return new Set(articles.map((a) => a.shopifyArticleId));
+}
 
 /**
  * GET /api/comments
@@ -15,9 +41,21 @@ router.get("/", async (req, res) => {
     const client = new shopify.api.clients.Graphql({ session });
     const { status, search, article_id } = req.query;
 
+    const managedArticleIds = await getManagedArticleIds(session.shop);
+    // Fresh installs / shops with nothing synced yet manage zero articles — short-circuit rather
+    // than querying Shopify at all, since every native-store comment would otherwise leak through.
+    if (managedArticleIds.size === 0) {
+      return res.json({ comments: [], total: 0, protectedDataRequired: false });
+    }
+
     let formattedArticleId = article_id;
     if (formattedArticleId && !formattedArticleId.startsWith("gid://")) {
       formattedArticleId = `gid://shopify/Article/${formattedArticleId}`;
+    }
+
+    if (formattedArticleId && !managedArticleIds.has(bareArticleId(formattedArticleId))) {
+      // Requested article isn't one this app manages — nothing to return.
+      return res.json({ comments: [], total: 0, protectedDataRequired: false });
     }
 
     let allComments = [];
@@ -101,6 +139,7 @@ router.get("/", async (req, res) => {
 
       articles.forEach(articleEdge => {
         const article = articleEdge.node;
+        if (!managedArticleIds.has(bareArticleId(article.id))) return;
         const commentEdges = article.comments?.edges || [];
         commentEdges.forEach(commentEdge => {
           allComments.push({

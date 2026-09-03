@@ -141,6 +141,9 @@ const STATIC_PATH =
     : `${process.cwd()}/frontend/`;
 
 const app = express();
+// Trust the first hop in front of the app (Cloudflare / hosting load balancer) so
+// X-Forwarded-For and req.ip resolve to the real client IP instead of the proxy's.
+app.set("trust proxy", 1);
 const httpServer = createServer(app);
 
 import proxyRoutes from "./src/routes/proxy.js";

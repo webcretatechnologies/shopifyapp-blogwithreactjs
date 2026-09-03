@@ -639,7 +639,11 @@ router.delete("/:id", async (req, res) => {
 
     const { deleteFromShopify } = req.query;
 
+    let shopifyDeleteAttempted = false;
+    let shopifyDeleteError = null;
+
     if (deleteFromShopify === "true" && post.shopifyArticle?.shopifyArticleId && post.shopifyArticle?.shopifyBlogId) {
+      shopifyDeleteAttempted = true;
       try {
         const client = new shopify.api.clients.Graphql({ session });
         const result = await client.request(`
@@ -654,14 +658,26 @@ router.delete("/:id", async (req, res) => {
         const errors = result.data?.articleDelete?.userErrors;
         if (errors?.length > 0) {
           console.error("Failed to delete from Shopify:", errors);
+          shopifyDeleteError = errors.map((e) => e.message).join("; ");
         }
       } catch (shopifyErr) {
         console.error("Failed to delete from Shopify:", shopifyErr);
+        shopifyDeleteError = shopifyErr.message || "Unknown error deleting from Shopify";
       }
     }
 
+    // The app-side delete always proceeds regardless of the Shopify-side outcome — the merchant's
+    // own data in this app is independent of whether the live Shopify article could be removed,
+    // and leaving a dangling local Post around just because Shopify's API call failed would strand
+    // the merchant with no way to finish the app-only deletion they asked for.
     await prisma.post.delete({ where: { id: post.id } });
-    res.status(204).send();
+
+    res.status(200).json({
+      success: true,
+      shopifyDeleteAttempted,
+      shopifyDeleted: shopifyDeleteAttempted && !shopifyDeleteError,
+      shopifyDeleteError,
+    });
   } catch (err) {
     console.error("DELETE /api/posts/:id error:", err);
     res.status(500).json({ error: err.message });

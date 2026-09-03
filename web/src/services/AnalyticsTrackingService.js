@@ -5,6 +5,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
+import geoip from "geoip-lite";
 import { convertToUsd } from "./ExchangeRateService.js";
 
 const prisma = new PrismaClient();
@@ -91,9 +92,28 @@ export function detectSource(referer, shopDomain = "") {
 }
 
 /**
- * Extract country code from Accept-Language header (rough estimation).
+ * Resolve the visitor's country, in order of accuracy:
+ *  1. Cloudflare's `CF-IPCountry` header — only trustworthy for requests that hit our domain
+ *     directly (the tracking pixel), since Cloudflare derives it from the TCP connection's real
+ *     source IP. Must NOT be used for Shopify App Proxy requests: those arrive from Shopify's
+ *     servers, so Cloudflare would report Shopify's data-center location instead of the visitor's.
+ *  2. Offline GeoIP lookup (geoip-lite) on the real client IP — used for App Proxy traffic, and
+ *     as a fallback everywhere else (e.g. local dev without Cloudflare in front).
+ *  3. Accept-Language header guess — last resort when the IP isn't geolocatable (private/local IP).
  */
-export function detectCountry(acceptLang) {
+export function detectCountry(acceptLang, cfCountry = "", ip = "") {
+  const cf = (cfCountry || "").toUpperCase();
+  if (cf && cf !== "XX" && cf !== "T1") return cf;
+
+  if (ip) {
+    try {
+      const geo = geoip.lookup(ip);
+      if (geo?.country) return geo.country;
+    } catch {
+      // ignore malformed/unlookupable IPs, fall through to Accept-Language
+    }
+  }
+
   if (!acceptLang) return "";
   const match = acceptLang.match(/^[a-z]{2}[-_]([a-z]{2})\b/i);
   return match ? match[1].toUpperCase() : "";
@@ -205,6 +225,7 @@ export async function trackView({
   userAgent = "",
   referer = "",
   acceptLang = "",
+  cfCountry = "",
   ip = "",
   visitorHash = "",
 }) {
@@ -212,7 +233,7 @@ export async function trackView({
 
   const device = detectDevice(userAgent);
   const source = detectSource(referer, shopDomain);
-  const country = detectCountry(acceptLang);
+  const country = detectCountry(acceptLang, cfCountry, ip);
 
   // Deduplicate unique visitors via a persistent table (AnalyticsVisitor), not an in-process
   // Map — a Map resets on every restart/deploy and isn't shared across horizontally-scaled
