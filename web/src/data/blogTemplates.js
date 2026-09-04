@@ -2064,10 +2064,8 @@ export const BLOG_TEMPLATES = [
   },
 ];
 
-const FREE_TEMPLATE_KEYS = new Set(["how-to-guide", "faq-support-article", "buying-guide"]);
-
-export function isTemplateFree(key) {
-  return FREE_TEMPLATE_KEYS.has(key);
+export function isTemplateFree() {
+  return true;
 }
 
 export function getBlogTemplateSummaries() {
@@ -2083,7 +2081,7 @@ export function getBlogTemplateSummaries() {
     // Same block tree the editor applies - gallery preview compiles this AST,
     // so the card matches the article the merchant gets.
     blocks: blocks || [],
-    tier: FREE_TEMPLATE_KEYS.has(key) ? "free" : "paid",
+    tier: "free",
   }));
 }
 

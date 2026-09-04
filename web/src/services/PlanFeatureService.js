@@ -55,7 +55,7 @@ const PLAN_DEFAULTS = {
     remove_branding: { enabled: false, limit: null },
     analytics_dashboard: { enabled: true, limit: null },
     analytics_advanced: { enabled: false, limit: null },
-    templates_premium: { enabled: false, limit: null },
+    templates_premium: { enabled: true, limit: null },
     template_limit: { enabled: true, limit: 2 },
     ai_credits: { enabled: true, limit: 3 },
     custom_code_injection: { enabled: false, limit: null },
@@ -320,8 +320,6 @@ export function getArticleLimit(planKey) {
 
 /**
  * How many templates of their own a shop may keep. null = unlimited (Pro and above).
- * Saving a template is not the same thing as `templates_premium`, which gates the paid
- * half of the library — every plan can save some of its own layouts.
  */
 export function getSavedTemplateLimit(planKey) {
   return getFeatureLimit(planKey, "template_limit");
@@ -578,9 +576,7 @@ const FEATURE_COMPARISON_ROWS = [
     cell: (f) => {
       const saved = f.template_limit?.limit;
       const own = saved == null ? "save unlimited of your own" : `save ${saved} of your own`;
-      return f.templates_premium?.enabled
-        ? { icon: "yes", text: `Full library (21) + ${own}` }
-        : { icon: "partial", text: `3 basic + ${own}` };
+      return { icon: "yes", text: `Full library (21) + ${own}` };
     },
   },
   {

@@ -1,6 +1,6 @@
 import express from "express";
 import crypto from "crypto";
-import { getBlogTemplateSummaries, getBlogTemplateByKey, isTemplateFree } from "../data/blogTemplates.js";
+import { getBlogTemplateSummaries, getBlogTemplateByKey } from "../data/blogTemplates.js";
 import { isFeatureEnabled, getSavedTemplateLimit } from "../services/PlanFeatureService.js";
 import { prisma } from "../../shopify.js";
 
@@ -153,13 +153,6 @@ router.delete("/mine/:id", async (req, res) => {
 router.get("/:key", async (req, res) => {
   const template = getBlogTemplateByKey(req.params.key);
   if (!template) return res.status(404).json({ error: "Template not found" });
-
-  if (!isTemplateFree(req.params.key)) {
-    const shop = await getShopFromSession(res);
-    if (!isFeatureEnabled(shop?.planKey, "templates_premium")) {
-      return res.status(403).json({ error: "This template is available on Starter and above. Please upgrade to use it." });
-    }
-  }
 
   res.json({ template });
 });

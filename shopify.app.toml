@@ -2,7 +2,7 @@
 
 client_id = "946c7f95fc6780b88559e90d45ad7f96"
 name = "Blogger React - Local"
-application_url = "https://layout-implied-charlie-mon.trycloudflare.com"
+application_url = "https://screensavers-roman-der-measured.trycloudflare.com"
 embedded = true
 
 [build]
@@ -28,10 +28,10 @@ api_version = "2025-10"
 scopes = "read_content,read_customers,read_locales,read_orders,read_products,read_script_tags,read_themes,read_translations,write_content,write_files,write_products,write_script_tags,write_themes,write_translations"
 
 [auth]
-redirect_urls = [ "https://layout-implied-charlie-mon.trycloudflare.com/api/auth/callback" ]
+redirect_urls = [ "https://screensavers-roman-der-measured.trycloudflare.com/api/auth/callback" ]
 
 [app_proxy]
-url = "https://layout-implied-charlie-mon.trycloudflare.com/api/proxy"
+url = "https://screensavers-roman-der-measured.trycloudflare.com/api/proxy"
 subpath = "blog-analytics"
 prefix = "apps"
 
