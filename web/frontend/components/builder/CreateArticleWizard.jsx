@@ -40,13 +40,23 @@ import ShopifyRichTextEditor from "../editor/ShopifyRichTextEditor";
 
 const CATEGORIES = ["All", "Commerce", "Educational", "Editorial", "Seasonal", "Industry"];
 
-const slugify = (s) =>
-  String(s || "")
+// Strip-then-truncate (the old order) leaves a dangling trailing hyphen whenever the 80-char cut
+// happens to land right after one - confirmed live: a long title produced a handle that failed
+// Shopify's "no trailing hyphen" validation even though this function was supposed to prevent
+// exactly that. Truncating first, then cutting back to the last complete word (never splitting one
+// in half) and stripping hyphens LAST closes both problems at once.
+const slugify = (s) => {
+  const full = String(s || "")
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "untitled";
+    .replace(/^-+|-+$/g, "");
+  if (full.length <= 80) return full || "untitled";
+  const truncated = full.slice(0, 80);
+  const lastHyphen = truncated.lastIndexOf("-");
+  const whole = lastHyphen > 0 ? truncated.slice(0, lastHyphen) : truncated;
+  return whole.replace(/^-+|-+$/g, "") || "untitled";
+};
 
 const STEPS = ["Select a template", "Add post settings", "Choose your method", "Describe your article"];
 
