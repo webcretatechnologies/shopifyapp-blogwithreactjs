@@ -1158,20 +1158,39 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     remoteUpdatedAt = result.data?.articleUpdate?.article?.updatedAt || null;
     resultingImageUrl = result.data?.articleUpdate?.article?.image?.url;
   } else {
-    const result = await graphqlClient.request(`
-      mutation CreateArticle($article: ArticleCreateInput!) {
-        articleCreate(article: $article) {
-          article { id updatedAt image { url } }
-          userErrors { field message }
+    // Handle collisions are real, not theoretical: generateSlug() only de-dupes against Date.now()
+    // at creation time (two requests in the same millisecond can still tie), a merchant can type
+    // a custom slug with no uniqueness check at all, and Shopify's own handle uniqueness can also
+    // collide with an article this app never created (imported, or from before this app was
+    // installed). Previously this just threw "articleCreate failed: Handle has already been
+    // taken" and left the merchant with no working way to publish that post at all. Retrying with
+    // an incrementing suffix is the same recovery a merchant hitting this in Shopify's own admin
+    // would do by hand.
+    const baseHandle = articleInput.handle;
+    let attemptHandle = baseHandle;
+    let result;
+    let errors;
+    const MAX_HANDLE_ATTEMPTS = 5;
+    for (let attempt = 0; attempt < MAX_HANDLE_ATTEMPTS; attempt++) {
+      result = await graphqlClient.request(`
+        mutation CreateArticle($article: ArticleCreateInput!) {
+          articleCreate(article: $article) {
+            article { id updatedAt image { url } handle }
+            userErrors { field message }
+          }
         }
-      }
-    `, {
-      variables: {
-        article: { ...articleInput, blogId: toBlogGid(shopifyLink.shopifyBlogId) },
-      },
-    });
+      `, {
+        variables: {
+          article: { ...articleInput, handle: attemptHandle, blogId: toBlogGid(shopifyLink.shopifyBlogId) },
+        },
+      });
 
-    const errors = result.data?.articleCreate?.userErrors;
+      errors = result.data?.articleCreate?.userErrors;
+      const handleTaken = errors?.some((e) => /handle/i.test(e.field?.join?.(".") || e.field || "") || /already been taken/i.test(e.message || ""));
+      if (!errors?.length || !handleTaken) break;
+      attemptHandle = `${baseHandle}-${attempt + 2}`; // base, base-2, base-3, ...
+    }
+
     if (errors?.length > 0) {
       throw new Error(`articleCreate failed: ${errors.map(e => e.message).join("; ")}`);
     }
@@ -1179,6 +1198,15 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     remoteUpdatedAt = result.data?.articleCreate?.article?.updatedAt || null;
     resultingImageUrl = result.data?.articleCreate?.article?.image?.url;
     if (!articleId) throw new Error("Shopify did not return an article ID");
+
+    // Persist whatever handle Shopify actually stored - if a collision forced a suffixed one,
+    // our own post.slug (and anything derived from it: sitemap entries, canonical URLs) must
+    // match the live article, not the handle we originally asked for and didn't get.
+    const finalHandle = result.data?.articleCreate?.article?.handle;
+    if (finalHandle && finalHandle !== post.slug) {
+      await prisma.post.update({ where: { id: post.id }, data: { slug: finalHandle } });
+      post.slug = finalHandle;
+    }
   }
 
   // Keep our own record pointed at whatever Shopify actually ended up serving, whether or not we

@@ -48,13 +48,12 @@ export const WRITABLE_SETTINGS = {
     "subheading",
     "showCta",
     "ctaText",
-    "ctaUrl",
     "align",
     "minHeight",
     "overlayOpacity",
     "textColor",
   ],
-  ButtonBlock: ["text", "url", "alignment"],
+  ButtonBlock: ["text", "alignment"],
   BuyButton: ["buttonText", "layout", "showPrice", "showDescription", "showBadge", "badge"],
   ProductGrid: ["title", "titleAlign", "columns", "buttonText", "showPrice", "showButton", "cardStyle", "gap"],
   ProductSlider: ["title", "titleAlign", "buttonText", "showPrice", "showButton", "cardStyle", "gap"],
@@ -78,8 +77,15 @@ export const LOCKED_SETTINGS = {
   Image: ["src", "linkTarget"],
   VideoEmbed: [],
   Html: ["code"],
-  HeroSection: ["backgroundImage", "overlayColor", "ctaColor", "ctaTextColor", "backgroundOverlay"],
-  ButtonBlock: ["backgroundColor", "textColor", "borderRadius"],
+  // ctaUrl is locked for the same reason ProductCard's productId/imageUrl are: the model has no
+  // legitimate destination to send a reader to and, unlike a photo it can just leave alone, an
+  // empty text field practically begs it to invent one - the prompt used to explicitly say
+  // `ctaUrl ("#" ok)`, so the model reliably did. Confirmed live: a real generation overwrote a
+  // template's already-correct ctaUrl: "/" with "#", turning a working button into a dead one.
+  // applyProducts() in AiArticleService.js is the only thing allowed to set this now - it upgrades
+  // to a real linked product's URL when one exists, "/" otherwise.
+  HeroSection: ["backgroundImage", "overlayColor", "ctaColor", "ctaTextColor", "backgroundOverlay", "ctaUrl"],
+  ButtonBlock: ["backgroundColor", "textColor", "borderRadius", "url"],
   BuyButton: ["product", "buttonColor", "imageSize", "maxWidth"],
   ProductGrid: ["manualProducts", "searchQuery", "maxProducts", "buttonColor", "buttonRadius"],
   ProductSlider: ["manualProducts", "searchQuery", "buttonColor", "buttonRadius"],
@@ -179,12 +185,14 @@ Single column inside ColumnLayout. Settings:
 
 ### HeroSection
 - heading (use article title), subheading (article hook)
-- showCta, ctaText, ctaUrl ("#" ok)
+- showCta, ctaText
 - align, minHeight, overlayOpacity, textColor
 - NEVER output backgroundImage — template hero photo stays
+- ctaUrl is locked — filled from a linked product (or "/") after generation; never output it
 
 ### ButtonBlock
-- text (CTA label), url, alignment
+- text (CTA label), alignment
+- url is locked — filled from a linked product (or "/") after generation; never output it
 
 ### BuyButton
 - buttonText, layout (horizontal|vertical), showPrice, showDescription, showBadge, badge
@@ -235,8 +243,8 @@ rule exists to prevent.
 - FaqBlock: title, items[{question,answer}] — write NEW questions (never reuse/reword the template's); item_count_in_template is not a target, use 2-6 based on what this topic needs
 - TableOfContents: title, listStyle, style | Divider/Spacer: thickness/margins/height
 - Image: alt, caption, alignment (never src) | VideoEmbed: caption, url only if brief has one
-- HeroSection: heading, subheading, showCta, ctaText, ctaUrl, minHeight
-- ButtonBlock: text, url | BuyButton: buttonText, showPrice, badge
+- HeroSection: heading, subheading, showCta, ctaText, minHeight (never ctaUrl - locked, filled post-generation)
+- ButtonBlock: text (never url - locked, filled post-generation) | BuyButton: buttonText, showPrice, badge
 - ProductGrid/Slider: title, columns, buttonText | Collection: heading, columns | ProductCard: title, buttonText
 Rules: no invented photos/products/prices/health claims; no markdown; rewrite ALL sample copy.
 `.trim();
@@ -455,6 +463,61 @@ export function buildTemplateManifest(blocks) {
   return manifest;
 }
 
+/**
+ * The system prompt tells the model not to use markdown, but that's an instruction, not a
+ * guarantee — a model asked to echo a heavily-formatted brief (headers, **bold** labels,
+ * bullets) routinely ignores it and returns literal "**Birthdays**" as prose. Without this,
+ * those asterisks rendered verbatim on the storefront. StarterKit (builderRichTextExtensions)
+ * already registers bold/italic/code marks, so this only needs to map the syntax onto them —
+ * no new editor capability, just not losing the one the model already reached for.
+ */
+function parseInlineMarkdownToTextNodes(raw) {
+  const text = String(raw || "");
+  const nodes = [];
+  let buf = "";
+  let i = 0;
+
+  const flushPlain = () => {
+    if (buf) nodes.push({ type: "text", text: buf });
+    buf = "";
+  };
+  const pushMarked = (content, markType) => {
+    if (content) nodes.push({ type: "text", text: content, marks: [{ type: markType }] });
+  };
+
+  while (i < text.length) {
+    const two = text.slice(i, i + 2);
+    if ((two === "**" || two === "__") && text.indexOf(two, i + 2) !== -1) {
+      const end = text.indexOf(two, i + 2);
+      flushPlain();
+      pushMarked(text.slice(i + 2, end), "bold");
+      i = end + 2;
+      continue;
+    }
+    const ch = text[i];
+    if (ch === "`" && text.indexOf("`", i + 1) !== -1) {
+      const end = text.indexOf("`", i + 1);
+      flushPlain();
+      pushMarked(text.slice(i + 1, end), "code");
+      i = end + 1;
+      continue;
+    }
+    if ((ch === "*" || ch === "_") && text[i + 1] !== ch) {
+      const end = text.indexOf(ch, i + 1);
+      if (end !== -1 && end > i + 1) {
+        flushPlain();
+        pushMarked(text.slice(i + 1, end), "italic");
+        i = end + 1;
+        continue;
+      }
+    }
+    buf += ch;
+    i += 1;
+  }
+  flushPlain();
+  return nodes.length ? nodes : [{ type: "text", text }];
+}
+
 export function paragraphsToRichDoc(paragraphs) {
   const list = Array.isArray(paragraphs) ? paragraphs : [paragraphs];
   return {
@@ -464,7 +527,7 @@ export function paragraphsToRichDoc(paragraphs) {
       .filter(Boolean)
       .map((text) => ({
         type: "paragraph",
-        content: [{ type: "text", text }],
+        content: parseInlineMarkdownToTextNodes(text),
       })),
   };
 }

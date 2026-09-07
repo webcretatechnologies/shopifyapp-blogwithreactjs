@@ -157,6 +157,34 @@ function parseBrief(brief) {
 }
 
 /**
+ * A patch object being PRESENT doesn't mean it carries anything to show — under token pressure
+ * the model returns syntactically valid stubs like `{paragraphs: []}` for sections it ran out of
+ * budget to write (confirmed: a long, heavily-structured brief produced exactly this for the
+ * FAQ/Top-10/conclusion blocks). Treating that stub as "patched" skipped the deterministic
+ * fallback below and left the block empty on the page instead of falling back to filler content.
+ */
+function patchHasContent(type, patchSettings) {
+  if (!patchSettings || typeof patchSettings !== "object") return false;
+  if (type === "RichText") {
+    return Array.isArray(patchSettings.paragraphs) && patchSettings.paragraphs.some((p) => String(p || "").trim());
+  }
+  if (type === "FaqBlock") {
+    return (
+      Array.isArray(patchSettings.items) &&
+      patchSettings.items.some((it) => it && String(it.question || "").trim() && String(it.answer || "").trim())
+    );
+  }
+  if (type === "Table") {
+    if (Array.isArray(patchSettings.tableData)) return patchSettings.tableData.length > 0;
+    if (Array.isArray(patchSettings.headers) || Array.isArray(patchSettings.rows)) {
+      return (patchSettings.headers?.length || 0) > 0 || (patchSettings.rows?.length || 0) > 0;
+    }
+    return false;
+  }
+  return Object.values(patchSettings).some((v) => v !== undefined && v !== null && String(v).trim() !== "");
+}
+
+/**
  * Walks a template's tree and applies AI block_updates where provided, then fills any remaining
  * content slots via ctx (deterministic fallback for truncated model output).
  */
@@ -171,9 +199,9 @@ function adaptTreeToTopic(blocks, ctx, blockUpdatesMap = null) {
     const blockId = `b_${blockIndex}`;
     const patch = blockUpdatesMap?.[blockId];
     let settings = { ...(block.settings || {}) };
-    const patched = Boolean(patch?.settings);
+    const patched = patchHasContent(block.type, patch?.settings);
 
-    if (patched) {
+    if (patch?.settings) {
       settings = mergeBlockPatch(block.type, settings, patch.settings);
     }
 
@@ -811,6 +839,32 @@ function applyProducts(blocks, products) {
     } else if (block.type === "Collection") {
       const count = Math.max(1, (settings.manualProducts || []).length || 3);
       settings.manualProducts = take(count);
+    } else if (block.type === "ProductCard") {
+      // Flat fields, not manualProducts/product - a genuinely different settings shape from
+      // every other commerce block above, matching BlockRegistry.jsx's ProductCard defaults.
+      // handle is what compileBlocksToHtml.js's "Shop now" button actually links on - without
+      // it the button falls back to href="#", which does nothing but scroll to the top of the
+      // page (confirmed live: exactly the bug this was).
+      const p = take(1)[0];
+      settings.productId = p.shopifyProductId || settings.productId;
+      settings.handle = p.handle || settings.handle;
+      settings.title = p.title || settings.title;
+      settings.price = p.price || settings.price;
+      settings.imageUrl = p.image || p.featuredImage?.url || settings.imageUrl;
+    } else if (block.type === "HeroSection" && settings.showCta) {
+      // normalized[0] directly, not take(1) - this is a reference, not a slot to consume, so it
+      // doesn't advance the shared cursor other commerce blocks are cycling through. Only
+      // upgrades the "/" placeholder set above; never overwrites a real merchant-set URL from a
+      // template.
+      if (!settings.ctaUrl || settings.ctaUrl === "/") {
+        const first = normalized[0];
+        if (first?.handle) settings.ctaUrl = `/products/${first.handle}`;
+      }
+    } else if (block.type === "ButtonBlock") {
+      if (!settings.url || settings.url === "/") {
+        const first = normalized[0];
+        if (first?.handle) settings.url = `/products/${first.handle}`;
+      }
     }
 
     return {
@@ -1021,7 +1075,7 @@ function buildBlankScaffold({ withProducts } = {}) {
 // runs of units into Sections (a new Section starts at each heading), merges consecutive
 // paragraphs into one RichText, and applies the same "never invent an image/product" rules as
 // everywhere else in this file regardless of what the model asked for.
-const CONTENT_UNIT_TYPES = ["heading", "paragraph", "image", "callout", "table", "faq", "divider", "button", "columns", "video"];
+const CONTENT_UNIT_TYPES = ["heading", "paragraph", "image", "callout", "table", "faq", "divider", "button", "columns", "video", "productCard", "productGrid"];
 
 /** Only a real YouTube/Vimeo link is trusted - the model is told never to invent one, but this
  *  is the actual enforcement, same as every other "never invent" rule in this file. */
@@ -1073,7 +1127,7 @@ const LIST_PLACEHOLDER_TYPES = new Set(["image"]);
  * The prompt tells the model every numbered-list item needs an image, consistently - but a
  * prompt instruction is a request, not a guarantee, and a real generation for "Top 5 Thriller
  * Movies to Watch" came back with images after items 1-3 and silently none for items 4-5 (the
- * model choosing not to, not a token-budget cutoff - the response was well under the 8-18 unit
+ * model choosing not to, not a token-budget cutoff - the response was well under the unit-count
  * cap and every item's heading/paragraph were present). A reader scanning a countdown reads a
  * partial set of photos as broken, not as a style choice, so this is enforced here rather than
  * left to prompt compliance alone: for each placeholder-safe type in LIST_PLACEHOLDER_TYPES, if
@@ -1172,9 +1226,13 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
     "output is inserted directly into already-styled blocks. " +
     (productNames.length
       ? `Products linked to this article: ${productNames.join(", ")}. Mention them by name where it reads ` +
-        "naturally (an intro, a closing line, a callout) - never invent a price, size or spec for them " +
-        "beyond the name. "
-      : "No products are linked to this article - don't invent a product to reference. ") +
+        "naturally (an intro, a closing line, a callout), AND decide where a productCard or " +
+        "productGrid unit genuinely earns its place - right after the paragraph that talks about a " +
+        "product it's showcasing reads far better than one dumped at the very end regardless of " +
+        "context. Never invent a price, size or spec for them beyond the name; the real product " +
+        "data is bound in for you afterward. "
+      : "No products are linked to this article - don't invent a product to reference, and never " +
+        "include a productCard or productGrid unit (there's nothing real to put in one). ") +
     "The 'use 0-2', 'at most one', 'most articles use zero of these' guidance under each block type " +
     "below is a DEFAULT for briefs that don't specify structure - it is NOT a ceiling. If the " +
     "merchant's brief explicitly names a block by function (a comparison table, a highlighted tip/ " +
@@ -1187,8 +1245,18 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
     "write 2-3 tight sentences instead of 5-6 - rather than dropping a whole requested section, a " +
     "named item, the FAQ, or the meta fields; every distinct thing the brief or title asks for should " +
     "still be present, even if each one gets less space than it would in a shorter article. " +
-    "Respond with ONLY a single JSON object, no commentary before or after it.\n\n" +
-    BLOCK_VOCABULARY_COMPACT;
+    "Genre gives you a real starting point for which units to reach for, not a rule to follow " +
+    "rigidly: a recipe or spec sheet wants a table; a listicle wants one heading+paragraph(+image) " +
+    "unit PER item, never batched; a how-to wants short, sequential sections and maybe one callout " +
+    "for a warning or shortcut; a buying guide or 'X vs Y' wants a columns unit laying the options " +
+    "side by side, not a table AND columns both making the same comparison twice; a roundup of " +
+    "products or ideas wants an image on every entry. A columns unit compares exactly two or three " +
+    "named things against each other - never use it to just split one topic's paragraphs into " +
+    "side-by-side halves with no real comparison between them, that reads as a layout accident, not " +
+    "a design choice. Most articles should leave at least one of table/columns/callout/faq at zero - " +
+    "reaching for all of them regardless of topic is what makes AI output look templated; the goal " +
+    "is that a reader could tell which specific unit choices this exact topic earned. " +
+    "Respond with ONLY a single JSON object, no commentary before or after it.";
 
   const paletteDoc = {
     accentColor:
@@ -1200,7 +1268,9 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
       "only if this topic genuinely doesn't want one. showCta/ctaText are optional - include a short " +
       "call-to-action button in the hero when it fits, omit it when it doesn't",
     blocks:
-      "an array of 8-18 content units, each one of the shapes below, in the order they should appear",
+      "an array of 10-24 content units, each one of the shapes below, in the order they should appear - " +
+      "let the topic set the real count within that range (a short answer-style topic can sit near 10, " +
+      "a genuinely broad guide or a list with many named items can use the high end), don't pad to hit a number",
     unit_shapes: {
       heading: '{ "type": "heading", "text": "string" } - starts a new visual section; use 3-7 of these to break the article up',
       paragraph:
@@ -1208,11 +1278,19 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
       image: '{ "type": "image" } - marks a spot for a photo; you never provide a URL, just where one would genuinely help - not after every heading in a normal article, EXCEPT a numbered list (see above): there, every item gets one, consistently',
       callout: '{ "type": "callout", "title": "short label like \'Tip\'", "body": "1-2 sentences", "emoji": "one emoji that fits, e.g. 💡 or ✨ or 🌿" } - a highlighted aside; use 0-2, only where a callout genuinely adds something',
       table: '{ "type": "table", "headers": ["col", "col"], "rows": [["cell", "cell"], ...] } - only when the content is genuinely tabular (ingredients, specs, a comparison) - most articles use zero of these',
-      faq: '{ "type": "faq", "items": [{ "question": "real, topic-specific question", "answer": "1-3 sentences" }] } - at most one of these in the whole article, 2-4 items, only if genuinely useful for this topic',
+      faq: '{ "type": "faq", "items": [{ "question": "real, topic-specific question", "answer": "1-3 sentences" }] } - at most one of these in the whole article, only if genuinely useful for this topic. Item count is NOT fixed - 2 is a floor, not a target: brainstorm every question a real reader would actually have about THIS topic (price, sizing, durability, which option to pick, care instructions, shipping, compatibility, when it applies, etc.) and include all the ones that are genuinely distinct and useful, typically 3-7. A comparison or buying-guide topic almost always has more real questions than a simple how-to - let the topic set the count, don\'t default to the smallest number that technically satisfies the instruction',
       divider: '{ "type": "divider" } - a plain visual break between unrelated parts of the article',
       button: '{ "type": "button", "text": "2-4 words" } - a call-to-action button; at most one, usually near the end',
       columns: '{ "type": "columns", "items": [{ "heading": "string", "text": "2-4 sentences" }, { "heading": "string", "text": "2-4 sentences" }] } - two or three items laid out side by side; use ONLY for genuine side-by-side content (comparing two options, before/after, two variants) - most articles use zero of these',
       video: '{ "type": "video", "url": "https://youtube.com/... or https://vimeo.com/...", "caption": "string" } - ONLY if the merchant\'s brief itself contains a real YouTube or Vimeo URL to embed; never invent or guess a video URL - omit this unit entirely if the brief has none',
+      ...(productNames.length
+        ? {
+            productCard:
+              '{ "type": "productCard" } - spotlights ONE linked product right where it\'s most relevant (e.g. right after a paragraph that discusses it); the real product\'s name/price/image are bound in for you, you never provide them',
+            productGrid:
+              '{ "type": "productGrid", "count": 2 } - showcases several linked products together (count: 2-6); use this instead of repeating productCard several times in a row when multiple products genuinely belong together in one spot',
+          }
+        : {}),
     },
     subtitle: "one sentence, max 22 words, used under the hero heading (or as the article excerpt if hero is null)",
     metaTitle: "SEO title tag for this article, max 60 characters",
@@ -1277,7 +1355,12 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
         // same accent color instead of always being the same flat dark navy.
         subheading: String(response.hero.subheading || subtitle).trim(),
         showCta,
-        ...(showCta ? { ctaText: String(response.hero.ctaText).trim(), ctaUrl: "#" } : {}),
+        // "#" here was the exact same dead-link bug as ProductCard's missing handle: the
+        // renderer's own fallback (settings.ctaUrl || "/") never gets a chance to fire because
+        // "#" is truthy. "/" (storefront home) is a real, safe default; applyProducts() below
+        // upgrades this to the actual first linked product's URL when one exists, the same way
+        // it fills in every other commerce block.
+        ...(showCta ? { ctaText: String(response.hero.ctaText).trim(), ctaUrl: "/" } : {}),
         ctaColor: accent,
         overlayColor: accent,
         overlayOpacity: 0.55,
@@ -1323,8 +1406,13 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
  * heading); everything else in a run becomes that Section's children, with consecutive paragraph
  * units merged into a single RichText. This is also where the placeholder/no-invented-content
  * rules are actually enforced, not just requested in the prompt: image src is always the drawn
- * placeholder, a table with no usable rows is dropped, and a product block only ever appears (and
- * only ever with real linked products, filled in later by applyProducts) when `withProducts`.
+ * placeholder, a table with no usable rows is dropped, and a productCard/productGrid unit only
+ * ever becomes a real block when `withProducts` - its actual product data is bound in afterward,
+ * generically, by applyProducts(). The model is told where a product unit fits best (see the
+ * system prompt's productCard/productGrid entries) and normally places one itself; the
+ * `productBlockPlaced` fallback at the end of this function only fires if products are linked but
+ * the model's response didn't include either unit, so a merchant who linked products never ends
+ * up with an article that never actually shows them.
  */
 function buildTreeFromUnits(units, { withProducts, accent, tint }) {
   const richDoc = (paragraphs) => ({
@@ -1336,6 +1424,7 @@ function buildTreeFromUnits(units, { withProducts, accent, tint }) {
   let current = { settings: { paddingTop: "8px", paddingBottom: "16px" }, children: [] };
   let pendingParagraphs = [];
   let faqUsed = false;
+  let productBlockPlaced = false;
 
   const flushParagraphs = () => {
     if (pendingParagraphs.length === 0) return;
@@ -1433,8 +1522,11 @@ function buildTreeFromUnits(units, { withProducts, accent, tint }) {
       case "button": {
         flushParagraphs();
         current.children.push({
+          // Same dead-link bug as Hero's CTA: "#" here instead of the renderer's own real
+          // fallback ("/") meant this button never went anywhere. applyProducts() upgrades this
+          // to the first linked product's URL when one exists.
           type: "ButtonBlock",
-          settings: { text: text(u.text) || "Learn more", backgroundColor: accent, url: "#" },
+          settings: { text: text(u.text) || "Learn more", backgroundColor: accent, url: "/" },
           children: [],
         });
         break;
@@ -1473,13 +1565,50 @@ function buildTreeFromUnits(units, { withProducts, accent, tint }) {
         });
         break;
       }
+      case "productCard": {
+        // Placeholder settings only - applyProducts() (called once, generically, after this
+        // whole tree is built) fills in the real linked product. Guarded by withProducts the
+        // same way "video" is guarded by having a real URL: a model that ignores "only if
+        // products are linked" and includes this anyway must not create a card with nothing to
+        // ever bind to it.
+        if (!withProducts) break;
+        flushParagraphs();
+        productBlockPlaced = true;
+        current.children.push({
+          type: "ProductCard",
+          settings: {
+            layout: "vertical", showImage: true, showPrice: true, showButton: true,
+            buttonText: "Shop now", buttonColor: accent, borderColor: tint,
+          },
+          children: [],
+        });
+        break;
+      }
+      case "productGrid": {
+        if (!withProducts) break;
+        flushParagraphs();
+        productBlockPlaced = true;
+        const count = Math.max(2, Math.min(6, Number(u.count) || 3));
+        current.children.push({
+          type: "ProductGrid",
+          settings: { columns: Math.min(count, 3), showPrice: true, showButton: true, buttonColor: accent, manualProducts: Array.from({ length: count }) },
+          children: [],
+        });
+        break;
+      }
       default:
         break;
     }
   }
   flushSection();
 
-  if (withProducts) {
+  // Safety net, not the primary path: the model is told above when a productCard/productGrid
+  // unit fits and where, so in the normal case it already placed one wherever it made sense in
+  // the article (right after a relevant paragraph, near the end, etc.). This only fires if
+  // products are linked but the model's own response didn't include either - a merchant who
+  // linked products should never end up with an article that mentions them by name in prose but
+  // never actually shows them, just because the model chose not to use the unit this time.
+  if (withProducts && !productBlockPlaced) {
     sections.push({
       settings: { paddingTop: "8px", paddingBottom: "16px" },
       children: [

@@ -6,9 +6,10 @@
  * a rewrite of the prompts, JSON parsing, retry/fallback logic, or credit-refund wiring that
  * already lives in AiArticleService.js.
  *
- * Providers wired up: "groq" (default), "openai", "claude" (Anthropic). Add a new one by writing
- * one more callXxx(messages) function below with the same (messages) -> Promise<string> shape,
- * and adding one case to both getProvider()'s switches (isAiProviderConfigured + callAiProvider).
+ * Providers wired up: "groq" (default), "openai", "claude" (Anthropic), "gemini" (Google, via its
+ * OpenAI-compatible endpoint). Add a new one by writing one more callXxx(messages) function below
+ * with the same (messages) -> Promise<string> shape, and adding one case to both getProvider()'s
+ * switches (isAiProviderConfigured + callAiProvider).
  */
 
 function getProvider() {
@@ -27,6 +28,8 @@ export function isAiProviderConfigured() {
       return !!process.env.OPENAI_API_KEY;
     case "claude":
       return !!process.env.ANTHROPIC_API_KEY;
+    case "gemini":
+      return !!process.env.GEMINI_API_KEY;
     case "groq":
     default:
       return !!process.env.GROQ_API_KEY;
@@ -39,6 +42,8 @@ export async function callAiProvider(messages) {
       return callOpenAi(messages);
     case "claude":
       return callClaude(messages);
+    case "gemini":
+      return callGemini(messages);
     case "groq":
     default:
       return callGroq(messages);
@@ -88,7 +93,7 @@ function parseGroqRetryAfterSeconds(body) {
 // always going to fail, then fall back anyway. This tells them apart so only the first gets retried.
 const isGroqDailyLimit = (body) => /tokens per day|\(TPD\)/i.test(String(body || ""));
 
-// Groq's free-tier TPM cap (8000) counts input AND max_tokens together, not just what the model
+// Groq's free-tier TPM cap counts input AND max_tokens together, not just what the model
 // actually ends up writing - Groq reserves the whole max_tokens figure against the limit up
 // front. A static max_tokens is a real trade-off, proven live: 4500 left enough input headroom
 // for a detailed brief but truncated the completion mid-JSON on a genuinely long article
@@ -98,6 +103,24 @@ const isGroqDailyLimit = (body) => /tokens per day|\(TPD\)/i.test(String(body ||
 // risking a 413 is to size it to what THIS request's own input actually costs: the shorter the
 // brief, the more room there is to raise it; the longer the brief, the more that headroom has to
 // go to output that would otherwise truncate rather than to input that's already spent.
+//
+// GROQ_TPM_LIMIT must match whatever GROQ_MODEL is actually set to - verified live against
+// Groq's own /v1/models and the x-ratelimit-limit-tokens response header (not blog posts, which
+// were stale - llama-4-scout/maverick have been removed from Groq's catalog entirely, a live
+// call to either now 404s). Every plain chat model on this account's current catalog sits at the
+// same 8000 TPM (gpt-oss-120b, gpt-oss-20b, qwen3.6-27b, qwen3.8-27b).
+//
+// Tried groq/compound-mini (its own advertised limit: 70000 TPM) as a higher-throughput
+// alternative and reverted it - confirmed live it is NOT a usable substitute for this pipeline:
+// (1) it's an agentic system that silently delegates each turn to a mix of underlying models
+// (one call's own usage_breakdown showed BOTH llama-3.3-70b-versatile and gpt-oss-120b used for a
+// single response) rather than answering as one fixed model, and its strict-JSON output was
+// unreliable in testing (got "empty response" and "invalid JSON" failures that fell all the way
+// through to generic filler content - worse than gpt-oss-120b ever produced); (2) its 70000 TPM
+// figure is the ORCHESTRATOR's limit, not the underlying model actually doing the writing - a 429
+// from a compound-mini call came back naming "model `openai/gpt-oss-120b`" and its own 8000 TPM
+// limit, meaning there is no extra real budget for content generation to spend regardless of what
+// compound-mini itself advertises.
 const GROQ_TPM_LIMIT = 8000;
 const GROQ_TPM_SAFETY_MARGIN = 300; // char->token estimate is approximate; leaves slack either way
 function estimateGroqMaxTokens(messages) {
@@ -187,6 +210,63 @@ async function callOpenAi(messages, attempt = 0) {
     if (res.status === 429 && attempt === 0) {
       await new Promise((r) => setTimeout(r, 2000));
       return callOpenAi(messages, attempt + 1);
+    }
+    throw new Error(`AI service error (${res.status}): ${body.slice(0, 300) || res.statusText}`);
+  }
+
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error("AI service returned an empty response. Please try again.");
+  return content;
+}
+
+/**
+ * Google's Gemini API also exposes an OpenAI-Chat-Completions-compatible endpoint
+ * (generativelanguage.googleapis.com/v1beta/openai/...) - same messages/response_format/
+ * choices[0].message.content shape as callOpenAi, so this is close to a copy of it. Two things
+ * that are NOT optional here, both confirmed by direct testing against a real key (Google's own
+ * docs for this model generation were already stale once, so this was verified live, not assumed):
+ *
+ *  1. Newer Gemini models (3.x "flash", non-"lite") have an extended-thinking mode ON by default
+ *     that burns completion budget on a hidden `thoughtsTokenCount` before ever writing the real
+ *     answer - one plain test prompt spent 371 of 398 total tokens thinking and left only 19 for
+ *     the actual reply. This is the exact failure shape that made groq/compound-mini unusable.
+ *     GEMINI_MODEL therefore defaults to "gemini-3.5-flash-lite",
+ *     which does NOT think by default (confirmed: no thoughtsTokenCount field in its usage at
+ *     all) - if this ever moves to a non-"lite" model, thinking must be disabled explicitly
+ *     (`extra_body: { google: { thinking_config: { thinking_budget: 0 } } }` on this compat
+ *     endpoint) or every request risks silently returning near-empty content again.
+ *  2. This free tier's real constraint is RPM (10/min on some models), not tokens-per-minute -
+ *     confirmed live end-to-end: a full multi-section, 7-FAQ structured article generated
+ *     correctly, with zero truncation, in ~5.7s. That's the reason to prefer this provider over
+ *     Groq for this workload at all.
+ */
+async function callGemini(messages, attempt = 0) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+
+  // "lite" models have no thinking mode at all and REJECT this field outright (confirmed live:
+  // 400 INVALID_ARGUMENT) - only non-lite models both think by default and accept turning it off.
+  const body = {
+    model,
+    messages,
+    temperature: 0.7,
+    max_tokens: 8000,
+    response_format: { type: "json_object" },
+  };
+  if (!model.includes("lite")) body.reasoning_effort = "none";
+
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    if (res.status === 429 && attempt === 0) {
+      await new Promise((r) => setTimeout(r, 2000));
+      return callGemini(messages, attempt + 1);
     }
     throw new Error(`AI service error (${res.status}): ${body.slice(0, 300) || res.statusText}`);
   }
