@@ -45,7 +45,10 @@ function ProductCardBlockSettings({ block, onUpdate }) {
         imageUrl: p.images?.[0]?.originalSrc || p.images?.[0]?.src || '',
         price: variant?.price || '',
         compareAtPrice: variant?.compareAtPrice || '',
-        currency: storeCurrency || 'USD',
+        // See the ProductGrid/Slider/BuyButton pickers: never persist a guessed 'USD' - an
+        // omitted currency resolves to the shop's real one at render time, a wrong stored one
+        // does not.
+        ...(storeCurrency ? { currency: storeCurrency } : {}),
       });
     }
   };

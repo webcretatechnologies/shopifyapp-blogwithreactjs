@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { compileBlocksToHtml } from "../../utils/compileBlocksToHtml";
 import { ensurePreviewContentCss } from "../editor/previewContentCss";
 import { normalizeBlocksAst } from "./BlockRegistry";
+import { fetchStoreCurrency } from "../../hooks/useShopifyProducts.js";
 
 /**
  * TemplateLivePreview
@@ -36,6 +37,8 @@ export default function TemplateLivePreview({
   height = 250,
 }) {
   const [shopColor, setShopColor] = useState(null);
+  // Product blocks in the preview show the shop's real currency, not a hard-coded "$".
+  const [storeCurrency, setStoreCurrency] = useState(null);
   const accent = shopColor || style.accent || "#1f6b4a";
 
   const frameRef = useRef(null);
@@ -49,6 +52,9 @@ export default function TemplateLivePreview({
     fetchShopPrimaryColor().then((c) => {
       if (alive && c) setShopColor(c);
     });
+    fetchStoreCurrency().then((c) => {
+      if (alive && c) setStoreCurrency(c);
+    });
     return () => {
       alive = false;
     };
@@ -57,11 +63,11 @@ export default function TemplateLivePreview({
   const html = useMemo(() => {
     try {
       const ast = normalizeBlocksAst(Array.isArray(blocks) ? blocks : []);
-      return compileBlocksToHtml(ast);
+      return compileBlocksToHtml(ast, { storeCurrency });
     } catch {
       return "";
     }
-  }, [blocks]);
+  }, [blocks, storeCurrency]);
 
   const measure = useCallback(() => {
     const frame = frameRef.current;

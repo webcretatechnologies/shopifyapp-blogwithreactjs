@@ -153,7 +153,13 @@ export function ProductGridBlockSettings({ block, onUpdate }) {
           image: real?.image || p.images?.[0]?.originalSrc || p.featuredImage?.url || null,
           price: real?.price ?? p.variants?.[0]?.price ?? null,
           variantId: real?.variantId ?? p.variants?.[0]?.id ?? null,
-          currency: storeCurrency || 'USD',
+          // Never a literal 'USD' fallback here: this value is PERSISTED into the block, and every
+          // renderer resolves `product.currency || storeCurrency`, so a guessed "USD" written while
+          // the async currency hook was still resolving permanently outranks the shop's real
+          // currency at render time - confirmed live: an INR store had "currency":"USD" baked into
+          // a saved ProductSlider and published dollar prices. Omitting it instead lets each
+          // renderer fall back to the real store currency it already knows.
+          ...(storeCurrency ? { currency: storeCurrency } : {}),
         };
       });
       onUpdate({ manualProducts: picked });

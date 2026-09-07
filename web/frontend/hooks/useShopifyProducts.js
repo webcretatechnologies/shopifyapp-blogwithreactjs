@@ -15,7 +15,27 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 // Simple in-memory cache — cleared on full page reload
 const _cache = new Map();
-const _storeCurrencyCache = null; // Will be a promise
+// Deduped at module level: a template gallery mounts 16+ preview cards at once and every one of
+// them wants the same value, and the currency can't change mid-session. Shared by the hook below
+// and by fetchStoreCurrency() for non-component callers.
+let _storeCurrencyPromise = null;
+
+/**
+ * Non-hook access to the shop's currency code, for code that needs it outside a component's
+ * render (compileBlocksToHtml callers, preview cards). Resolves to a code like "EUR"/"INR",
+ * or "USD" if the request fails - never rejects, so a caller can always await it inline.
+ *
+ * @returns {Promise<string>}
+ */
+export function fetchStoreCurrency() {
+  if (!_storeCurrencyPromise) {
+    _storeCurrencyPromise = fetch('/api/posts/shopify/store')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.currencyCode || 'USD')
+      .catch(() => 'USD');
+  }
+  return _storeCurrencyPromise;
+}
 
 /**
  * Fetch the store's default currency code.
@@ -30,23 +50,15 @@ export function useShopifyStoreCurrency() {
 
   useEffect(() => {
     let cancelled = false;
-    const fetchCurrency = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const res = await fetch('/api/posts/shopify/store');
-        if (!res.ok) throw new Error('Failed to fetch store currency');
-        const data = await res.json();
-        if (!cancelled) {
-          setStoreCurrency(data.currencyCode || 'USD');
-        }
-      } catch (err) {
-        if (!cancelled) setError(err.message);
-      } finally {
+    setIsLoading(true);
+    setError(null);
+    fetchStoreCurrency()
+      .then((code) => {
+        if (!cancelled) setStoreCurrency(code);
+      })
+      .finally(() => {
         if (!cancelled) setIsLoading(false);
-      }
-    };
-    fetchCurrency();
+      });
     return () => { cancelled = true; };
   }, []);
 

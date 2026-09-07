@@ -12,6 +12,7 @@ import {
   Banner,
 } from "@shopify/polaris";
 import { compileBlocksToHtml } from "../../utils/compileBlocksToHtml";
+import { fetchStoreCurrency } from "../../hooks/useShopifyProducts.js";
 import { ensurePreviewContentCss } from "../editor/previewContentCss";
 import { normalizeBlocksAst } from "./BlockRegistry";
 import { getTemplateChips, getTemplateScale, getTemplateFacts } from "../../utils/templateFacts";
@@ -65,17 +66,25 @@ function ScaledArticle({ blocks, accent }) {
   const [scale, setScale] = useState(1);
   const [height, setHeight] = useState(0);
 
+  // Product blocks in the preview show the shop's real currency, not a hard-coded "$".
+  const [storeCurrency, setStoreCurrency] = useState(null);
+
   useEffect(() => {
     ensurePreviewContentCss();
+    let alive = true;
+    fetchStoreCurrency().then((c) => {
+      if (alive && c) setStoreCurrency(c);
+    });
+    return () => { alive = false; };
   }, []);
 
   const html = useMemo(() => {
     try {
-      return compileBlocksToHtml(normalizeBlocksAst(Array.isArray(blocks) ? blocks : []));
+      return compileBlocksToHtml(normalizeBlocksAst(Array.isArray(blocks) ? blocks : []), { storeCurrency });
     } catch {
       return "";
     }
-  }, [blocks]);
+  }, [blocks, storeCurrency]);
 
   const measure = useCallback(() => {
     const frame = frameRef.current;

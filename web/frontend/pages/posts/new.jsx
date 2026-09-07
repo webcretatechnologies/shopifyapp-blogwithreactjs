@@ -45,6 +45,7 @@ import DragDropBuilderContainer from "../../components/builder/DragDropBuilderCo
 import UpgradePrompt from "../../components/UpgradePrompt";
 import BlogTemplateGalleryModal from "../../components/builder/BlogTemplateGalleryModal";
 import { compileBlocksToHtml } from "../../utils/compileBlocksToHtml";
+import { useShopifyStoreCurrency } from "../../hooks/useShopifyProducts.js";
 import ShopifyFilePicker from "../../components/ShopifyFilePicker";
 import ArticlePreview from "../../components/editor/ArticlePreview";
 import SyncStatusIndicator from "../../components/SyncStatusIndicator.jsx";
@@ -802,6 +803,12 @@ export default function PostEditor() {
   const location = useLocation();
   const isEditing = Boolean(id);
 
+  // Product blocks format prices with the shop's real currency, not a hard-coded "$" - passed
+  // into every compileBlocksToHtml() call below so the saved HTML and the preview agree with
+  // what the storefront (EditorContentCompiler/BlockRenderer, which fetch the same currencyCode
+  // server-side) will publish.
+  const { storeCurrency } = useShopifyStoreCurrency();
+
   const [post, setPost] = useState({
     title: "",
     slug: "",
@@ -1504,7 +1511,7 @@ export default function PostEditor() {
     const builderBlocks = useBuilderStore.getState().getBlocksAst();
     const finalAst = builderBlocks && builderBlocks.length > 0 ? builderBlocks : post.contentJson || [];
 
-    const finalContentHtml = compileBlocksToHtml(finalAst);
+    const finalContentHtml = compileBlocksToHtml(finalAst, { storeCurrency });
 
     // publishedAt must never ride along on an ordinary save — it's only ever written by the
     // dedicated /publish endpoint (immediate publish or schedule), never as a side effect here.
@@ -1697,7 +1704,7 @@ export default function PostEditor() {
     try {
       const finalAst = post.contentJson || [];
 
-      const htmlToPreview = compileBlocksToHtml(finalAst);
+      const htmlToPreview = compileBlocksToHtml(finalAst, { storeCurrency });
 
       const res = await fetch("/api/posts/preview", {
         method: "POST",

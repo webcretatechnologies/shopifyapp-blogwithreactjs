@@ -146,6 +146,30 @@ export function compileSingleBlockToHtml(block, context = {}) {
   return applyVisibilityWrapper(identifiedHtml, settings);
 }
 
+/**
+ * A product's own currency wins (it came back with the product from Shopify), then the shop's
+ * real currency, and only then USD — reached now just when a caller compiled without passing
+ * storeCurrency at all, not on every store that isn't American.
+ *
+ * Mirrors BlockRenderer.resolveCurrency() on the server so the editor preview, the saved HTML
+ * and the published storefront all format the same price the same way.
+ */
+function resolveCurrency(productOrSettings, context = {}) {
+  return productOrSettings?.currency || context.storeCurrency || "USD";
+}
+
+/**
+ * Prices can arrive already formatted (a merchant typed "$19.99" or "₹1,499" straight into a
+ * ProductCard field) - reformatting those would double the symbol, so an already-symbolled
+ * string passes through untouched and only a bare number gets currency-formatted.
+ */
+function renderPrice(amount, productOrSettings, context = {}) {
+  if (amount == null || amount === "") return "";
+  const raw = String(amount);
+  if (/^\s*[^\d\s.,-]/.test(raw)) return raw;
+  return formatPrice(amount, resolveCurrency(productOrSettings, context));
+}
+
 function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
   // Keep gallery preview, editor save, and storefront compile on the same type names.
   const compiledType =
@@ -454,8 +478,7 @@ ${listContentHtml}
         <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'};">
           ${products.map(p => {
             const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
-            const currency = p.currency || 'USD';
-            const formattedPrice = p.price ? (String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, currency)) : "";
+            const formattedPrice = renderPrice(p.price, p, context);
             const pLink = p.handle ? `/products/${p.handle}` : "#";
 
             return `<div style="border: 1px solid #e1e3e5; border-radius: 8px; overflow: hidden; background: #fff; box-sizing: border-box;">
@@ -491,7 +514,7 @@ ${listContentHtml}
             <div style="min-width: 220px; flex-shrink: 0; ${sliderCardStyle} padding: 16px; text-align: center;">
               ${p.featuredImage?.url || p.image ? `<img src="${p.featuredImage?.url || p.image}" alt="${p.title}" style="max-width: 100%; height: 160px; object-fit: contain; margin-bottom: 12px;" />` : ''}
               <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 8px;">${p.title || 'Product'}</h4>
-              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 12px;">${String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, p.currency || 'USD')}</p>` : ''}
+              ${settings.showPrice !== false && p.price ? `<p style="font-size: 14px; font-weight: 700; color: var(--blogger-primary-color, #008060); margin: 0 0 12px;">${renderPrice(p.price, p, context)}</p>` : ''}
               ${settings.showButton !== false ? `<button style="background: ${settings.buttonColor || '#008060'}; color: #fff; border: none; padding: 8px 16px; border-radius: ${settings.buttonRadius ?? 6}px; font-weight: 600; width: 100%; cursor: pointer;">${settings.buttonText || 'Add to Cart'}</button>` : ''}
             </div>
           `).join('')}
@@ -618,8 +641,7 @@ ${listContentHtml}
         <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: ${settings.gap || '16px'}; align-items: stretch;">
           ${products.map(p => {
             const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
-            const currency = p.currency || 'USD';
-            const formattedPrice = p.price ? (String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, currency)) : "";
+            const formattedPrice = renderPrice(p.price, p, context);
             const pLink = p.handle ? `/products/${p.handle}` : "#";
 
             return `<div style="${gridCardStyle} display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box;">
@@ -641,7 +663,10 @@ ${listContentHtml}
 
     case "ProductCard": {
       const title = settings.title || "Sample Product";
-      const price = settings.price ? (String(settings.price).startsWith('$') || String(settings.price).startsWith('₹') ? settings.price : `$${settings.price}`) : "";
+      // ProductCard stores price as a flat setting rather than a product object, and used to
+      // hard-code a "$" prefix here - the only price site in this file that never went through
+      // formatPrice at all, so a €/₹/£ store's product cards published dollar signs.
+      const price = renderPrice(settings.price, settings, context);
       const imageUrl = settings.imageUrl || settings.imageurl || settings.image || (typeof settings.featuredImage === 'string' ? settings.featuredImage : settings.featuredImage?.url) || settings.product?.image || settings.product?.featuredImage?.url || settings.product?.images?.[0]?.originalSrc || settings.product?.images?.[0]?.src || "";
       const showImage = settings.showImage !== false;
       const showPrice = settings.showPrice !== false;
@@ -685,8 +710,7 @@ ${listContentHtml}
     case "BuyButton": {
       const p = settings.product;
       if (!p) return "";
-      const currency = p.currency || "USD";
-      const formattedPrice = p.price ? (String(p.price).startsWith('$') || String(p.price).startsWith('₹') ? p.price : formatPrice(p.price, currency)) : "";
+      const formattedPrice = renderPrice(p.price, p, context);
       const imageUrl = typeof p.image === 'string' ? p.image : (p.image?.url || p.featuredImage?.url || p.images?.[0]?.originalSrc || p.images?.[0]?.src || "");
       const isVertical = settings.layout === "vertical";
       const pLink = p.handle ? `/products/${p.handle}` : "#";
@@ -821,7 +845,16 @@ ${listContentHtml}
   }
 }
 
-export function compileBlocksToHtml(blocks) {
+/**
+ * @param {Array}  blocks
+ * @param {Object} [options]
+ * @param {string} [options.storeCurrency] - The shop's real currency code (from
+ *   useShopifyStoreCurrency / GET /api/posts/shopify/store). Product blocks fall back to this
+ *   whenever an individual product carries no currency of its own; without it every store's
+ *   prices render as USD "$", which is simply wrong for any shop that doesn't sell in dollars.
+ *   Matches BlockRenderer.js's `options.storeCurrency` on the server side.
+ */
+export function compileBlocksToHtml(blocks, { storeCurrency } = {}) {
   if (!Array.isArray(blocks) || blocks.length === 0) return "";
 
   const allHeadings = extractHeadingsFromAst(blocks);
@@ -831,7 +864,7 @@ export function compileBlocksToHtml(blocks) {
     headingsByBlockId[h.blockId].push(h);
   });
 
-  const context = { allHeadings, headingsByBlockId };
+  const context = { allHeadings, headingsByBlockId, storeCurrency };
 
   const compiled = blocks.map((b) => compileSingleBlockToHtml(b, context)).join("\n");
   // Prepend the responsive visibility CSS once if any block has a hide flag.

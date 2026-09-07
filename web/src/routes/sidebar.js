@@ -78,6 +78,31 @@ async function resolveBlogHandle(session, blogId, shopifyArticleId) {
  * so they aren't in the local Product cache. Fetch from Shopify and upsert so the
  * storefront gets title/image/price instead of a bare handle.
  */
+/**
+ * The sidebar's "Products" widget formatted prices with formatPrice(p.price) - no currency
+ * argument at all - which falls into priceUtils' `if (!currency)` branch and hard-codes "$" for
+ * every shop. Confirmed live on an INR store. Cached per shop for the process lifetime, the same
+ * way EditorContentCompiler caches it, since a shop's currency can't change mid-request.
+ */
+const _sidebarCurrencyByShop = new Map();
+async function fetchStoreCurrency(session) {
+  if (!session?.shop) return null;
+  if (_sidebarCurrencyByShop.has(session.shop)) return _sidebarCurrencyByShop.get(session.shop);
+  try {
+    const client = new shopify.api.clients.Graphql({
+      session: { shop: session.shop, accessToken: session.accessToken, isOnline: false },
+    });
+    const result = await client.request(`query GetShopCurrency { shop { currencyCode } }`);
+    const code = result.data?.shop?.currencyCode || null;
+    _sidebarCurrencyByShop.set(session.shop, code);
+    return code;
+  } catch {
+    // Null, not "USD": formatPrice's own no-currency branch is the single place that decides the
+    // last-resort format, rather than this guessing a wrong one and making it look deliberate.
+    return null;
+  }
+}
+
 async function fetchAndCacheProductsByHandles(session, shopId, handles) {
   const out = new Map();
   if (!session?.accessToken || !handles?.length) return out;
@@ -256,6 +281,7 @@ router.get("/sidebar.json", async (req, res) => {
     const widgetsConfig = parseWidgets(settings.blogSidebarWidgets).filter((w) => w && w.enabled);
 
     const session = await prisma.session.findFirst({ where: { shop: shopDomain, isOnline: false } });
+    const storeCurrency = await fetchStoreCurrency(session);
     let blogHandle = null;
     const blogId = post.shopifyArticle?.shopifyBlogId;
     const shopifyArticleId = post.shopifyArticle?.shopifyArticleId;
@@ -449,7 +475,7 @@ router.get("/sidebar.json", async (req, res) => {
                 ? `https://${shopDomain}/products/${encodeURIComponent(handle)}`
                 : `https://${shopDomain}/products`,
               image: showImage && p.image ? p.image : null,
-              price: showPrice && p.price != null && p.price !== "" ? formatPrice(p.price) : null,
+              price: showPrice && p.price != null && p.price !== "" ? formatPrice(p.price, storeCurrency) : null,
               ctaLabel: ctaLabel || null,
             };
           };
