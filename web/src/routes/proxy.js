@@ -187,6 +187,46 @@ router.post("/event", express.json(), verifyProxySignature, async (req, res) => 
   }
 });
 
+// ─── POST /api/proxy/listing-diagnostic — Storefront selector self-check ──────────────
+// The blog listing layout CSS (app-embed.liquid's critical <style> + this same shop's
+// listing.css) only ever targets a fixed, hand-maintained list of container/card class
+// names (Dawn, its collage variant, and the newer block-based "Horizon"-family theme).
+// Any OTHER theme markup silently no-ops the whole feature — every layout choice looks
+// identical to the theme's own default — with nothing in any log to say why. This lets
+// the storefront report, once per session per layout, whether ITS OWN known selector list
+// actually matched an element on the page, so "layout doesn't apply" reports are
+// diagnosable from the stored value below instead of walking a merchant through
+// view-source each time. Best-effort only: never blocks or fails the storefront render.
+router.post("/listing-diagnostic", express.json(), verifyProxySignature, async (req, res) => {
+  try {
+    const { layout, matched, matchedSelector } = req.body || {};
+    if (typeof matched !== "boolean" || !layout) {
+      return res.status(400).json({ error: "Missing or invalid fields" });
+    }
+
+    const shop = await prisma.shop.findUnique({ where: { domain: req.shopDomain }, select: { id: true } });
+    if (!shop) return res.status(404).json({ error: "Shop not found" });
+
+    const value = JSON.stringify({
+      matched,
+      layout: String(layout).slice(0, 40),
+      matchedSelector: matchedSelector ? String(matchedSelector).slice(0, 200) : null,
+      checkedAt: new Date().toISOString(),
+    });
+
+    await prisma.shopSetting.upsert({
+      where: { shopId_key: { shopId: shop.id, key: "blogListingSelectorDiagnostic" } },
+      update: { value },
+      create: { shopId: shop.id, key: "blogListingSelectorDiagnostic", value },
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[Proxy] listing-diagnostic error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GET /api/proxy/listing.css — live listing + layout CSS on the storefront blog INDEX.
 // Shopify rewrites /apps/blog-analytics/listing.css here (with signature). Article pages already
 // link /styles.css from compiled HTML; the listing page does not, so this is required for

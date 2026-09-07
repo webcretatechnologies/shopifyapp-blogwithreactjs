@@ -92,6 +92,7 @@ const SIDEBAR_WIDTH_OPTIONS = [
 ];
 
 const BLOG_LISTING_LAYOUTS = [
+  { value: "theme", label: "Theme default", hint: "Use your theme's native blog listing, unchanged" },
   { value: "featured_2", label: "Featured + 2 columns", hint: "First post full width, rest in two columns" },
   { value: "featured_left", label: "Featured left", hint: "Large post on the left, two stacked on the right" },
   { value: "featured_right", label: "Featured right", hint: "Two stacked on the left, large post on the right" },
@@ -158,6 +159,24 @@ function ListingLayoutMock({ layout }) {
   }
   if (layout === "grid_3") return wrap(3, [box(), box(), box(), box(), box(), box()]);
   if (layout === "grid_2") return wrap(2, [box(), box(), box(), box()]);
+  if (layout === "theme") {
+    return (
+      <div
+        style={{
+          height: 40,
+          borderRadius: 4,
+          border: "1px dashed #c9cccf",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text as="span" variant="bodySm" tone="subdued">
+          Theme
+        </Text>
+      </div>
+    );
+  }
   return wrap(2, [box(2, true), box(), box()]);
 }
 
@@ -2133,6 +2152,20 @@ export default function Settings() {
                       features.listing_layout?.enabled ? null : <Badge>Starter+</Badge>
                     }
                   >
+                    {(() => {
+                      if (settings.blogListingLayout === "theme" || !settings.blogListingSelectorDiagnostic) return null;
+                      let diag = null;
+                      try { diag = JSON.parse(settings.blogListingSelectorDiagnostic); } catch (e) { return null; }
+                      if (!diag || diag.matched) return null;
+                      return (
+                        <Banner tone="warning">
+                          We couldn't find a matching blog listing container on your theme, so this
+                          layout isn't showing up on your storefront yet. This usually means your
+                          theme uses different markup than we expect — contact support and we'll add
+                          it.
+                        </Banner>
+                      );
+                    })()}
                     <Text as="p" variant="bodySm" tone="subdued">
                       Controls the News / blog index (the page that lists all posts), not the
                       individual article. Save settings, then refresh the listing on your store.

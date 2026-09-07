@@ -43,7 +43,14 @@ function resolveBlogLayoutWidth(settings = {}) {
  * Target both so Settings layouts actually hit the live listing.
  */
 function listingGridSelector() {
-  return ":is(.blog-articles, .blog-articles, .blog-articles.blog-articles--collage, .blog-articles.blog-articles--collage, .blog__posts, .blog-list, .blog-post-list, .main-blog .blog-articles, .main-blog .blog-articles, ul.blog-articles, ul.blog-articles, #MainContent .blog-articles, #MainContent .blog-articles)";
+  return ":is(.blog-articles, .blog-articles, .blog-articles.blog-articles--collage, .blog-articles.blog-articles--collage, .blog__posts, .blog-list, .blog-post-list, .main-blog .blog-articles, .main-blog .blog-articles, ul.blog-articles, ul.blog-articles, #MainContent .blog-articles, #MainContent .blog-articles, .blog-posts-container)";
+}
+
+/** Item wrapper for the newer block-based ("Horizon"-family) theme, which spans
+ *  columns via a --col-span custom property on .blog-post-item rather than
+ *  grid-template-columns math. Must be reset to auto alongside everything else. */
+function listingItemSelector() {
+  return ".blog-post-item";
 }
 
 function listingCollageSelector() {
@@ -100,8 +107,63 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
   // the list container itself (comma lists only append the suffix to the last item).
   const list = listingGridSelector();
   const collage = listingCollageSelector();
-  const first = `${list} > *:first-child`;
-  const resetSpan = `${list} > *, ${collage} > *, ${collage} > *:nth-child(3n + 1), ${collage} > *:nth-child(3n + 2):last-child { grid-column: auto${bang}; grid-row: auto${bang}; width: 100%; max-width: 100%; text-align: left${bang}; }`;
+  // Never a bare :first-child — themes may interleave non-rendered nodes (Shopify's own
+  // per-block <style data-shopify> tags, <script>, <template>) among the cards, and
+  // :first-child then matches a display:none node, so the featured span silently applies
+  // to nothing. The theme app embed stamps [data-blogger-listing-first] on the real first
+  // rendered item; :first-child stays for themes with no interleaved nodes (no flash).
+  const firstChild = ":is(*:first-child, [data-blogger-listing-first])";
+  const first = `${list} > ${firstChild}`;
+  // first is safe ONLY for properties harmless on a hidden node (grid-column/grid-row).
+  // *:first-child in that :is() list can match a theme's actual hidden interleaved node
+  // (e.g. a <style data-shopify> tag), not just the JS-verified real item — confirmed live,
+  // giving it `display: flex` turned one theme's hidden style tag into an empty ~980px
+  // flex box in the featured slot. Anything that can make a hidden node visible (display,
+  // height) must use firstStrict instead, which only ever matches the JS-set attribute.
+  const firstStrict = `${list} > [data-blogger-listing-first]`;
+  const item = listingItemSelector();
+  const resetSpan = `${list} > *, ${collage} > *, ${collage} > *:nth-child(3n + 1), ${collage} > *:nth-child(3n + 2):last-child, ${item} { grid-column: auto${bang}; grid-row: auto${bang}; width: 100%; max-width: 100%; text-align: left${bang}; }`;
+
+  // featured_left/right span the featured post across 2 rows on a container we force to
+  // align-items: start (so the two SIDE posts don't stretch taller than their content).
+  // Without this, the featured item sizes to its own content height and just sits at the
+  // top of the 2-row span, leaving the rest of the span blank. This stretches the item and
+  // its card back out, and lets the image (not the text) absorb the extra height.
+  const card = ":is(.blog-post-card, .card.article-card, .article-card, .article)";
+  const media = ":is(.blog-post-card__image-container, .media, .card__media, .article-card__image)";
+  const fillSpan = `
+  ${firstStrict} {
+    align-self: stretch${bang};
+    display: flex${bang};
+    flex-direction: column${bang};
+  }
+  ${firstStrict} > * {
+    flex: 1 1 auto${bang};
+    min-height: 0${bang};
+    height: 100%${bang};
+  }
+  ${firstStrict} ${card} {
+    height: 100%${bang};
+    display: flex${bang};
+    flex-direction: column${bang};
+  }
+  ${firstStrict} ${card} > *:has(${media}) {
+    display: contents${bang};
+  }
+  ${firstStrict} ${media} {
+    flex: 1 1 auto${bang};
+    min-height: 0${bang};
+    height: auto${bang};
+  }
+  ${firstStrict} ${media} img {
+    height: 100%${bang};
+    width: 100%${bang};
+    object-fit: cover${bang};
+  }`;
+  const fillSpanReset = `
+    ${firstStrict} { align-self: auto${bang}; }
+    ${firstStrict} ${card} { height: auto${bang}; }
+    ${firstStrict} ${media} { flex: none${bang}; }`;
 
   let layoutRules = "";
   if (layout === "grid_2") {
@@ -112,7 +174,7 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
     gap: 1.5rem${bang};
   }
   ${first},
-  ${collage} > *:first-child {
+  ${collage} > ${firstChild} {
     grid-column: auto${bang};
   }
   @media (max-width: 749px) {
@@ -126,7 +188,7 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
     gap: 1.5rem${bang};
   }
   ${first},
-  ${collage} > *:first-child {
+  ${collage} > ${firstChild} {
     grid-column: auto${bang};
   }
   @media (max-width: 989px) {
@@ -145,13 +207,15 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
     align-items: start${bang};
   }
   ${first},
-  ${collage} > *:first-child {
+  ${collage} > ${firstChild} {
     grid-column: 1${bang};
     grid-row: 1 / span 2${bang};
   }
+  ${fillSpan}
   @media (max-width: 749px) {
     ${list} { grid-template-columns: 1fr${bang}; }
     ${first} { grid-column: auto${bang}; grid-row: auto${bang}; }
+    ${fillSpanReset}
   }`;
   } else if (layout === "featured_right") {
     layoutRules = `
@@ -163,13 +227,15 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
     align-items: start${bang};
   }
   ${first},
-  ${collage} > *:first-child {
+  ${collage} > ${firstChild} {
     grid-column: 2${bang};
     grid-row: 1 / span 2${bang};
   }
+  ${fillSpan}
   @media (max-width: 749px) {
     ${list} { grid-template-columns: 1fr${bang}; }
     ${first} { grid-column: auto${bang}; grid-row: auto${bang}; }
+    ${fillSpanReset}
   }`;
   } else if (layout === "magazine") {
     layoutRules = `
@@ -179,7 +245,7 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
     gap: 1.5rem${bang};
   }
   ${first},
-  ${collage} > *:first-child {
+  ${collage} > ${firstChild} {
     grid-column: 1 / span 2${bang};
   }
   @media (max-width: 989px) {
@@ -204,7 +270,7 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
   ${list} > *,
   ${first},
   ${collage} > *,
-  ${collage} > *:first-child,
+  ${collage} > ${firstChild},
   ${collage} > *:nth-child(3n + 1),
   ${collage} > *:nth-child(3n + 2):last-child {
     grid-column: 1 / -1${bang};
@@ -240,13 +306,29 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
   ${list} .card.article-card:has(.card__media img) > .card__inner > .card__content {
     display: none${bang};
   }
+  ${list} .blog-post-card:has(.blog-post-card__image-container) {
+    display: flex${bang};
+    flex-direction: row${bang};
+    align-items: stretch${bang};
+  }
+  ${list} .blog-post-card:has(.blog-post-card__image-container) > .blog-post-card__image-container {
+    flex: 0 0 32%${bang};
+    max-width: 280px${bang};
+    width: 32%${bang};
+  }
+  ${list} .blog-post-card:has(.blog-post-card__image-container) > .blog-post-card__content {
+    flex: 1 1 auto${bang};
+    min-width: 0${bang};
+  }
   @media (max-width: 749px) {
     ${list} .card.article-card:has(.media img),
-    ${list} .article-card:has(.media img) {
+    ${list} .article-card:has(.media img),
+    ${list} .blog-post-card:has(.blog-post-card__image-container) {
       flex-direction: column${bang};
     }
     ${list} .card.article-card:has(.media img) > .card__inner,
-    ${list} .article-card:has(.media img) > .card__inner {
+    ${list} .article-card:has(.media img) > .card__inner,
+    ${list} .blog-post-card:has(.blog-post-card__image-container) > .blog-post-card__image-container {
       flex: 0 0 auto${bang};
       width: 100%${bang};
       max-width: none${bang};
@@ -261,7 +343,7 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
   }
   @media (min-width: 750px) {
     ${first},
-    ${collage} > *:first-child {
+    ${collage} > ${firstChild} {
       grid-column: 1 / -1${bang};
     }
   }

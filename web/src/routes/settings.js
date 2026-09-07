@@ -167,6 +167,7 @@ router.post("/", async (req, res) => {
     const RELATED_MODES = new Set(["smart", "category", "random", "manual"]);
     const SIDEBAR_POSITIONS = new Set(["right", "left"]);
     const LISTING_LAYOUTS = new Set([
+      "theme",
       "featured_2",
       "featured_left",
       "featured_right",
@@ -238,7 +239,7 @@ router.post("/", async (req, res) => {
     if (req.body.blogListingLayout !== undefined) {
       const layout = String(req.body.blogListingLayout).toLowerCase();
       if (!LISTING_LAYOUTS.has(layout)) {
-        return res.status(422).json({ error: "Blog listing layout must be featured_2, featured_left, featured_right, magazine, grid_2, grid_3, or list." });
+        return res.status(422).json({ error: "Blog listing layout must be theme, featured_2, featured_left, featured_right, magazine, grid_2, grid_3, or list." });
       }
       req.body.blogListingLayout = layout;
     }

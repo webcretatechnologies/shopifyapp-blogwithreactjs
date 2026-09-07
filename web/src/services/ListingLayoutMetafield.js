@@ -16,6 +16,7 @@ const PAID_LISTING_LAYOUTS = new Set([
 export function listingLayoutForPlan(planKey, savedLayout) {
   if (!isFeatureEnabled(planKey, "listing_layout")) return THEME_LISTING_LAYOUT;
   const layout = String(savedLayout || "featured_2").toLowerCase();
+  if (layout === THEME_LISTING_LAYOUT) return THEME_LISTING_LAYOUT;
   return PAID_LISTING_LAYOUTS.has(layout) ? layout : "featured_2";
 }
 

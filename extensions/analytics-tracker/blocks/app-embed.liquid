@@ -29,14 +29,104 @@
     post wrapper on many vintage themes, not the list, so it belongs with .article-card rather
     than with the containers.
   {%- endcomment -%}
-  {%- assign li_grid = ":is(.blog-articles, .blog-articles.blog-articles--collage, .blog__posts, .blog-list, .blog-post-list, .main-blog .blog-articles, ul.blog-articles, #MainContent .blog-articles, #MainContent .blog__posts, #MainContent .blog-list)" -%}
+  {%- comment -%}
+    .blog-posts-container / .blog-post-item / .blog-post-card cover Shopify's newer
+    block-based ("Horizon"-family) theme, which spans columns via a --col-span custom
+    property on .blog-post-item rather than grid-template-columns math. Its own inline
+    per-item <style> only ever sets --col-span (never grid-column directly), so our
+    !important grid-column reset below still wins regardless of that variable's value.
+  {%- endcomment -%}
+  {%- assign li_grid = ":is(.blog-articles, .blog-articles.blog-articles--collage, .blog__posts, .blog-list, .blog-post-list, .main-blog .blog-articles, ul.blog-articles, #MainContent .blog-articles, #MainContent .blog__posts, #MainContent .blog-list, .blog-posts-container)" -%}
   {%- assign li_collage = ".blog-articles--collage" -%}
   {%- assign li_item = ":is(.card.article-card, .article-card, .article)" -%}
+  {%- comment -%}
+    NEVER target the featured post with a bare :first-child. Themes are free to put
+    non-rendered nodes (Shopify's own per-block <style data-shopify> tags, <script>,
+    <template>) inside the grid container, and :first-child then matches one of THOSE —
+    a display:none node — so the featured span silently lands on nothing and the layout
+    looks identical to the theme's default. CSS has no portable "first rendered child"
+    selector, so the script below stamps [data-blogger-listing-first] on the real first
+    item and every featured rule matches either that or :first-child (which still gives
+    themes with no interleaved nodes a correct first paint, with no flash).
+  {%- endcomment -%}
+  {%- assign li_first = ":is(*:first-child, [data-blogger-listing-first])" -%}
+  {%- comment -%}
+    li_first above is safe ONLY for properties that are harmless on a hidden node
+    (grid-column/grid-row: positioning something invisible does nothing visible). On a
+    theme with interleaved non-rendered nodes, *:first-child in that :is() list matches
+    the ACTUAL hidden node (e.g. Shopify's own per-block <style data-shopify> tag), not
+    just the JS-verified real item — so anything that can make a hidden node visible
+    (display, height) must use li_first_strict instead, which drops the :first-child
+    fallback and only ever matches the JS-verified [data-blogger-listing-first] node.
+    Confirmed live: using li_first for `display: flex` here turned a theme's hidden
+    <style> tag into an empty ~980px flex box sitting in the featured slot.
+  {%- endcomment -%}
+  {%- assign li_first_strict = "[data-blogger-listing-first]" -%}
+  {%- comment -%}
+    featured_left/right span the featured post across 2 grid ROWS. Themes are free to set
+    align-items: start on the grid container (this one does, for its own unrelated masonry
+    layout) — without an explicit stretch, a row-spanning item sizes to its own natural
+    content height and just sits at the top of the span, leaving the rest of the spanned
+    area blank. li_fill forces the item AND its card wrapper to actually fill that span, and
+    lets the image (not the text) absorb the extra height so it reads as an intentional
+    large hero photo rather than a stretched card with dead space.
+  {%- endcomment -%}
+  {%- assign li_card = ":is(.blog-post-card, .card.article-card, .article-card, .article)" -%}
+  {%- assign li_media = ":is(.blog-post-card__image-container, .media, .card__media, .article-card__image)" -%}
+  {%- capture li_fill -%}
+    {{ li_grid }} > {{ li_first_strict }} {
+      align-self: stretch !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+    {%- comment -%}
+      Themes commonly wrap the actual card one level deeper (e.g. a bare "shopify-block"
+      div) than li_first itself. A percentage height on li_card can't see past that
+      wrapper unless it's ALSO stretched, so flex the item's immediate child (whichever it
+      is) before separately flexing the card that's found somewhere inside it.
+    {%- endcomment -%}
+    {{ li_grid }} > {{ li_first_strict }} > * {
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      height: 100% !important;
+    }
+    {{ li_grid }} > {{ li_first_strict }} {{ li_card }} {
+      height: 100% !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+    {%- comment -%}
+      flex-grow on li_media only takes effect if it's a DIRECT flex child of li_card. This
+      theme wraps the image one level deeper in its own generic "shopify-block" div, which
+      would otherwise sit there as an un-flexed block box, ignoring li_media's flex-grow
+      entirely. display:contents collapses any such wrapper (identified generically by
+      "contains li_media", not by a theme-specific class name) so li_media becomes a real
+      flex item of li_card.
+    {%- endcomment -%}
+    {{ li_grid }} > {{ li_first_strict }} {{ li_card }} > *:has({{ li_media }}) {
+      display: contents !important;
+    }
+    {{ li_grid }} > {{ li_first_strict }} {{ li_media }} {
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      height: auto !important;
+    }
+    {{ li_grid }} > {{ li_first_strict }} {{ li_media }} img {
+      height: 100% !important;
+      width: 100% !important;
+      object-fit: cover !important;
+    }
+  {%- endcapture -%}
   <style id="blogger-listing-critical">
     {{ li_grid }} {
       display: grid !important;
       gap: 1.5rem !important;
       grid-auto-flow: row !important;
+    }
+    {{ li_grid }} > *,
+    .blog-post-item {
+      grid-column: auto !important;
+      grid-row: auto !important;
     }
     {{ li_collage }} > *,
     {{ li_collage }} > *:nth-child(3n + 1),
@@ -58,14 +148,17 @@
       grid-template-columns: 1.15fr minmax(0, 1fr) !important;
       grid-auto-flow: dense !important;
     }
-    {{ li_grid }} > *:first-child,
-    {{ li_collage }} > *:first-child {
+    {{ li_grid }} > {{ li_first }},
+    {{ li_collage }} > {{ li_first }} {
       grid-column: 1 !important;
       grid-row: 1 / span 2 !important;
     }
+    {{ li_fill }}
     @media (max-width: 749px) {
       {{ li_grid }} { grid-template-columns: 1fr !important; }
-      {{ li_grid }} > *:first-child { grid-column: auto !important; grid-row: auto !important; }
+      {{ li_grid }} > {{ li_first }} { grid-column: auto !important; grid-row: auto !important; align-self: auto !important; }
+      {{ li_grid }} > {{ li_first_strict }} {{ li_card }} { height: auto !important; }
+      {{ li_grid }} > {{ li_first_strict }} {{ li_media }} { flex: none !important; }
     }
     {% elsif listing_layout == 'list' %}
     {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
@@ -86,9 +179,29 @@
     {{ li_grid }} {{ li_item }}:has(.media img) > .card__inner > .card__content {
       display: none !important;
     }
+    {{ li_grid }} .blog-post-card:has(.blog-post-card__image-container) {
+      display: flex !important;
+      flex-direction: row !important;
+      align-items: stretch !important;
+    }
+    {{ li_grid }} .blog-post-card:has(.blog-post-card__image-container) > .blog-post-card__image-container {
+      flex: 0 0 32% !important;
+      max-width: 280px !important;
+      width: 32% !important;
+    }
+    {{ li_grid }} .blog-post-card:has(.blog-post-card__image-container) > .blog-post-card__content {
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+    }
     @media (max-width: 749px) {
       {{ li_grid }} {{ li_item }}:has(.media img) { flex-direction: column !important; }
       {{ li_grid }} {{ li_item }}:has(.media img) > .card__inner {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        max-width: none !important;
+      }
+      {{ li_grid }} .blog-post-card:has(.blog-post-card__image-container) { flex-direction: column !important; }
+      {{ li_grid }} .blog-post-card:has(.blog-post-card__image-container) > .blog-post-card__image-container {
         flex: 0 0 auto !important;
         width: 100% !important;
         max-width: none !important;
@@ -110,17 +223,247 @@
     {% elsif listing_layout == 'featured_2' %}
     {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     @media (min-width: 750px) {
-      {{ li_grid }} > *:first-child,
-      {{ li_collage }} > *:first-child { grid-column: 1 / -1 !important; }
+      {{ li_grid }} > {{ li_first }},
+      {{ li_collage }} > {{ li_first }} { grid-column: 1 / -1 !important; }
     }
     @media (max-width: 749px) {
       {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
+    }
+    {% elsif listing_layout == 'featured_right' %}
+    {{ li_grid }} {
+      grid-template-columns: minmax(0, 1fr) 1.15fr !important;
+      grid-auto-flow: dense !important;
+    }
+    {{ li_grid }} > {{ li_first }},
+    {{ li_collage }} > {{ li_first }} {
+      grid-column: 2 !important;
+      grid-row: 1 / span 2 !important;
+    }
+    {{ li_fill }}
+    @media (max-width: 749px) {
+      {{ li_grid }} { grid-template-columns: 1fr !important; }
+      {{ li_grid }} > {{ li_first }} { grid-column: auto !important; grid-row: auto !important; align-self: auto !important; }
+      {{ li_grid }} > {{ li_first_strict }} {{ li_card }} { height: auto !important; }
+      {{ li_grid }} > {{ li_first_strict }} {{ li_media }} { flex: none !important; }
+    }
+    {% elsif listing_layout == 'magazine' %}
+    {{ li_grid }} { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+    {{ li_grid }} > {{ li_first }},
+    {{ li_collage }} > {{ li_first }} {
+      grid-column: 1 / span 2 !important;
+    }
+    @media (max-width: 989px) {
+      {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+      {{ li_grid }} > {{ li_first }} { grid-column: 1 / -1 !important; }
+    }
+    @media (max-width: 749px) {
+      {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
+      {{ li_grid }} > {{ li_first }} { grid-column: auto !important; }
     }
     {% else %}
     {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     {% endif %}
   </style>
-  <link rel="stylesheet" href="/apps/blog-analytics/listing.css" fetchpriority="high">
+  {%- comment -%}
+    ?layout=<value> is pure cache-busting, never read by the server. listing.css is served
+    with Cache-Control: max-age=30, stale-while-revalidate=60 — a merchant who saves a new
+    layout and reloads within that window (very likely right after clicking Save) got the
+    PREVIOUS layout's cached response with the old URL, looking identical to before the
+    change. Keying the URL on the layout value gives each distinct layout its own cache
+    entry, so switching layouts always fetches fresh while re-visiting an unchanged layout
+    still hits cache.
+  {%- endcomment -%}
+  <link rel="stylesheet" href="/apps/blog-analytics/listing.css?layout={{ listing_layout | url_param_escape }}" fetchpriority="high">
+  <script>
+    (function () {
+      // The critical <style> above (and listing.css) only ever target a hand-maintained list
+      // of known theme class names — that list can NEVER cover every theme this app will be
+      // installed on (App Store distribution, not one sandbox store). Per the theme-agnostic
+      // rule, this block is the real fix, not another class name appended to the list above:
+      // it finds the repeating post grid GENERICALLY, using the one thing every Shopify blog
+      // theme is guaranteed to share — article links matching /blogs/<handle>/<article>/ —
+      // rather than any theme's own class names. The static <style> above stays only as a
+      // zero-flash fast path for the two theme families already confirmed against real
+      // stores; every other theme is handled here, so a brand-new theme this app has never
+      // seen still gets a working layout instead of silently doing nothing.
+      var layout = {{ listing_layout | json }};
+      var ARTICLE_PATH_RE = /^\/blogs\/[^\/]+\/[^\/]+\/?$/;
+      var KNOWN_SELECTORS = [
+        '.blog-articles', '.blog__posts', '.blog-list', '.blog-post-list',
+        '.main-blog .blog-articles', 'ul.blog-articles',
+        '#MainContent .blog-articles', '#MainContent .blog__posts', '#MainContent .blog-list',
+        '.blog-posts-container'
+      ];
+
+      function articlePath(a) {
+        try {
+          var u = new URL(a.getAttribute('href'), window.location.href);
+          if (!ARTICLE_PATH_RE.test(u.pathname)) return null;
+          return u.pathname.replace(/\/$/, '');
+        } catch (e) { return null; }
+      }
+
+      // Finds the repeating card grid from Shopify's own guaranteed article URL shape alone —
+      // no theme class names required. Requires 2-60 cards sharing one direct parent, and that
+      // parent's children to BE (mostly) those cards, so it can't latch onto an unrelated
+      // "related posts" widget or a footer link list a few levels away.
+      function detectListingContainer() {
+        var root = document.querySelector('#MainContent') || document.querySelector('main') || document.body;
+        var byPath = {};
+        var anchors = root.querySelectorAll('a[href]');
+        for (var i = 0; i < anchors.length; i++) {
+          var a = anchors[i];
+          var p = articlePath(a);
+          if (!p) continue;
+          // Prefer the outer-most link for a given article (a card's title link usually wraps
+          // more of the card than a nested "Read more" link to the same article).
+          var cur = byPath[p];
+          if (!cur || (cur.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_CONTAINS)) {
+            byPath[p] = a;
+          }
+        }
+        var paths = Object.keys(byPath);
+        if (paths.length < 2 || paths.length > 60) return null;
+        var links = paths.map(function (p) { return byPath[p]; });
+
+        function cardRoot(link) {
+          var el = link;
+          for (var depth = 0; depth < 8; depth++) {
+            var parent = el.parentElement;
+            if (!parent || parent === root) break;
+            var innerAnchors = parent.querySelectorAll('a[href]');
+            var articleLinkCount = 0;
+            for (var j = 0; j < innerAnchors.length; j++) {
+              if (articlePath(innerAnchors[j])) articleLinkCount++;
+            }
+            if (articleLinkCount > 1) break; // parent already spans more than one card - stop here
+            el = parent;
+          }
+          return el;
+        }
+
+        var cards = links.map(cardRoot);
+        var container = cards[0] && cards[0].parentElement;
+        if (!container) return null;
+        var allSameParent = cards.every(function (c) { return c.parentElement === container; });
+        if (!allSameParent) return null;
+
+        var directChildren = Array.prototype.slice.call(container.children);
+        var matchedChildren = directChildren.filter(function (c) { return cards.indexOf(c) !== -1; });
+        if (matchedChildren.length < 2 || matchedChildren.length < directChildren.length * 0.6) return null;
+
+        return { container: container, items: matchedChildren };
+      }
+
+      function important(el, prop, val) { el.style.setProperty(prop, val, 'important'); }
+
+      // Layout-only, same rules as the known-theme CSS above: grid columns + featured-item
+      // span. No restyling of theme chrome (colors/fonts/card skins untouched).
+      function applyGenericLayout(detected, layoutValue) {
+        var container = detected.container;
+        var items = detected.items;
+        important(container, 'display', 'grid');
+        important(container, 'gap', '1.5rem');
+        items.forEach(function (it) {
+          important(it, 'grid-column', 'auto');
+          important(it, 'grid-row', 'auto');
+        });
+        var first = items[0];
+        var wide = window.innerWidth >= 750;
+
+        function cols(n) { important(container, 'grid-template-columns', 'repeat(' + n + ', minmax(0, 1fr))'); }
+
+        if (!wide) {
+          cols(1);
+          return;
+        }
+        if (layoutValue === 'grid_3') cols(3);
+        else if (layoutValue === 'list') cols(1);
+        else if (layoutValue === 'featured_left') {
+          important(container, 'grid-template-columns', '1.15fr minmax(0, 1fr)');
+          important(first, 'grid-column', '1');
+          important(first, 'grid-row', '1 / span 2');
+        } else if (layoutValue === 'featured_right') {
+          important(container, 'grid-template-columns', 'minmax(0, 1fr) 1.15fr');
+          important(first, 'grid-column', '2');
+          important(first, 'grid-row', '1 / span 2');
+        } else if (layoutValue === 'magazine') {
+          cols(3);
+          important(first, 'grid-column', '1 / span 2');
+        } else {
+          // grid_2 and featured_2 share the same base grid; featured_2 additionally spans post 1.
+          cols(2);
+          if (layoutValue === 'featured_2') important(first, 'grid-column', '1 / -1');
+        }
+      }
+
+      function report(matched, matchedSelector) {
+        var sessionKey = 'blogger_listing_diag_sent:' + layout;
+        try {
+          if (sessionStorage.getItem(sessionKey)) return;
+          sessionStorage.setItem(sessionKey, '1');
+        } catch (e) {}
+        fetch('/apps/blog-analytics/listing-diagnostic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ layout: layout, matched: matched, matchedSelector: matchedSelector }),
+          keepalive: true
+        }).catch(function () {});
+      }
+
+      // Stamps the first RENDERED child of each known grid container, so the featured-post
+      // rules can't land on an interleaved <style>/<script> node (see the li_first comment).
+      function markFirstRendered() {
+        var containers = document.querySelectorAll(KNOWN_SELECTORS.join(','));
+        Array.prototype.forEach.call(containers, function (container) {
+          var marked = false;
+          Array.prototype.forEach.call(container.children, function (child) {
+            if (marked) { child.removeAttribute('data-blogger-listing-first'); return; }
+            if (getComputedStyle(child).display === 'none') return;
+            child.setAttribute('data-blogger-listing-first', '');
+            marked = true;
+          });
+        });
+      }
+
+      function run() {
+        var knownMatch = null;
+        for (var i = 0; i < KNOWN_SELECTORS.length; i++) {
+          try {
+            if (document.querySelector(KNOWN_SELECTORS[i])) { knownMatch = KNOWN_SELECTORS[i]; break; }
+          } catch (e) {}
+        }
+        // A known selector matched: the static <style> above already applied the right CSS,
+        // but it still needs the real first item stamped for the featured layouts.
+        if (knownMatch) {
+          try { markFirstRendered(); } catch (e) {}
+          report(true, knownMatch);
+          return;
+        }
+
+        var detected = null;
+        try { detected = detectListingContainer(); } catch (e) { detected = null; }
+        if (detected) {
+          try { applyGenericLayout(detected, layout); } catch (e) {}
+          window.addEventListener('resize', function () {
+            try { applyGenericLayout(detected, layout); } catch (e) {}
+          });
+          report(true, '(generic-detected)');
+          return;
+        }
+
+        // Neither path found anything to style. Leave the theme's own listing exactly as-is
+        // and report the miss so it surfaces as a warning in Settings for follow-up.
+        report(false, null);
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', run);
+      } else {
+        run();
+      }
+    })();
+  </script>
   {% endif %}
 {% endif %}
 
