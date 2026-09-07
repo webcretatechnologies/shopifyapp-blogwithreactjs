@@ -16,7 +16,8 @@ const walk = (blocks, visit) => {
   });
 };
 
-const richTextWords = (content) => {
+/** Counts words in TipTap JSON, plain text, or HTML strings. */
+export const richTextWords = (content) => {
   let words = 0;
   const visit = (node) => {
     if (!node || typeof node !== "object") return;
@@ -32,6 +33,14 @@ const richTextWords = (content) => {
   }
   return words;
 };
+
+/**
+ * Total editable words across a post/template block tree.
+ * Used live in the article editor and by getTemplateFacts.
+ */
+export function countContentWords(blocks) {
+  return getTemplateFacts(blocks).words;
+}
 
 const isStepHeading = (text) => /^(step\s*\d|\d+[.)]\s)/i.test(String(text || "").trim());
 
@@ -66,7 +75,10 @@ export function getTemplateFacts(blocks) {
     switch (block.type) {
       case "HeroSection":
         facts.hero = true;
-        facts.words += richTextWords(s.heading) + richTextWords(s.subheading);
+        facts.words +=
+          richTextWords(s.heading) +
+          richTextWords(s.subheading) +
+          richTextWords(s.ctaText);
         break;
       case "TableOfContents":
         facts.toc = true;
@@ -88,6 +100,7 @@ export function getTemplateFacts(blocks) {
         break;
       case "Image":
         facts.images += 1;
+        facts.words += richTextWords(s.caption);
         break;
       // An empty product list means two different things, so it can't take one fallback:
       // a hand-picked block with nothing in it renders nothing (0 slots), while a block
@@ -115,6 +128,7 @@ export function getTemplateFacts(blocks) {
         break;
       case "ButtonBlock":
         facts.buttons += 1;
+        facts.words += richTextWords(s.text);
         break;
       case "VideoEmbed":
         facts.videos += 1;
@@ -124,13 +138,22 @@ export function getTemplateFacts(blocks) {
         break;
       case "FaqBlock":
         facts.faqs += (s.items || []).length;
+        facts.words += richTextWords(s.title);
+        (s.items || []).forEach((item) => {
+          facts.words += richTextWords(item?.question) + richTextWords(item?.answer);
+        });
         break;
       case "Table":
         facts.tables += 1;
+        (s.tableData || []).forEach((row) => {
+          (Array.isArray(row) ? row : []).forEach((cell) => {
+            facts.words += richTextWords(cell);
+          });
+        });
         break;
       case "Callout":
         facts.callouts += 1;
-        facts.words += richTextWords(s.body);
+        facts.words += richTextWords(s.title) + richTextWords(s.body);
         break;
       default:
         break;

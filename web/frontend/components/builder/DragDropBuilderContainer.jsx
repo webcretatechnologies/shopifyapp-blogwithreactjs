@@ -7,7 +7,7 @@
  * Also provides the top bar with Undo/Redo controls.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Box, Button, ButtonGroup, InlineStack, TextField, Text, Tooltip, Icon, useBreakpoints } from "@shopify/polaris";
 import { 
@@ -23,7 +23,7 @@ import {
   ViewIcon, 
   SaveIcon, 
   PlusIcon, 
-  MinusCircleIcon,
+  MinusIcon,
   XIcon
 } from "@shopify/polaris-icons";
 
@@ -49,6 +49,9 @@ import BreadcrumbBar from "./canvas/BreadcrumbBar";
 import CanvasNode from "./canvas/CanvasNode";
 import { resolveDropTarget, getActiveCenterY } from "./utils/treeUtils";
 import { BlockRegistry } from "./BlockRegistry";
+import { countContentWords } from "../../utils/templateFacts";
+import { compileBlocksToHtml } from "../../utils/compileBlocksToHtml";
+import { countReadableWordsFromHtml, estimateReadingMinutes } from "../../utils/readingTime";
 
 export default function DragDropBuilderContainer({
   initialBlocksAst,
@@ -91,6 +94,20 @@ export default function DragDropBuilderContainer({
   const setDeviceMode = useBuilderStore((s) => s.setDeviceMode);
   const zoomLevel = useBuilderStore((s) => s.zoomLevel);
   const setZoomLevel = useBuilderStore((s) => s.setZoomLevel);
+
+  // Live stats: typed block words + reading time from the same prose rules as the
+  // storefront byline (excludes TOC / product chrome so editor and live match).
+  const { wordCount, readMinutes } = useMemo(() => {
+    const typedWords = countContentWords(getBlocksAst());
+    let minutes = 0;
+    try {
+      const html = compileBlocksToHtml(getBlocksAst()) || "";
+      minutes = estimateReadingMinutes(countReadableWordsFromHtml(html));
+    } catch {
+      minutes = estimateReadingMinutes(typedWords);
+    }
+    return { wordCount: typedWords, readMinutes: minutes };
+  }, [blocksById, rootIds, getBlocksAst]);
 
   const [activeId, setActiveId] = useState(null);
   const activeBlock = useBuilderStore((s) => activeId && !String(activeId).startsWith("new-block-") ? s.blocksById[activeId] : null);
@@ -577,7 +594,7 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
             )}
           </InlineStack>
 
-          {/* Center Controls: Device Switcher + Zoom */}
+          {/* Center Controls: Device Switcher */}
           <InlineStack gap="300" blockAlign="center" wrap={false}>
             <ButtonGroup variant="segmented">
               <Button
@@ -601,27 +618,6 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
               >
                 Mobile
               </Button>
-            </ButtonGroup>
-
-            {/* Zoom Controls */}
-            <ButtonGroup variant="segmented">
-              <Button
-                icon={MinusCircleIcon}
-                onClick={() => setZoomLevel(zoomLevel - 0.25)}
-                disabled={zoomLevel <= 0.5}
-                accessibilityLabel="Zoom out"
-              />
-              <Button disabled>
-                <span style={{ minWidth: "40px", display: "inline-block", textAlign: "center" }}>
-                  {Math.round(zoomLevel * 100)}%
-                </span>
-              </Button>
-              <Button
-                icon={PlusIcon}
-                onClick={() => setZoomLevel(zoomLevel + 0.25)}
-                disabled={zoomLevel >= 1.5}
-                accessibilityLabel="Zoom in"
-              />
             </ButtonGroup>
           </InlineStack>
           
@@ -715,7 +711,7 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
         {/* Center Pane: Breadcrumb + Canvas */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column", background: "var(--p-color-bg-surface-tertiary)" }}>
           <BreadcrumbBar />
-          <div style={{ flex: 1, width: "100%", height: "100%", overflow: "auto", position: "relative" }}>
+          <div style={{ flex: 1, width: "100%", height: "100%", overflow: "auto", position: "relative", paddingBottom: "72px" }}>
             <div
               style={{
                 transform: `scale(${zoomLevel})`,
@@ -729,6 +725,97 @@ if (typeof window !== "undefined" && !window.__lastPointerTracker) {
               }}
             >
               <BuilderCanvas deviceMode={deviceMode} />
+            </div>
+          </div>
+
+          {/* Floating canvas utility bar — words + zoom (Bloggle-style) */}
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              bottom: isNarrow ? "72px" : "20px",
+              transform: "translateX(-50%)",
+              zIndex: 40,
+              pointerEvents: "none",
+            }}
+          >
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                pointerEvents: "auto",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                padding: "6px 8px 6px 14px",
+                background: "var(--p-color-bg-surface)",
+                border: "1px solid var(--p-color-border-secondary)",
+                borderRadius: "999px",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.06)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span style={{ display: "inline-flex", alignItems: "baseline", gap: "4px", paddingRight: "10px" }}>
+                <Text as="span" variant="bodySm" fontWeight="semibold">
+                  Words:
+                </Text>
+                <Text as="span" variant="bodySm">
+                  {wordCount.toLocaleString()}
+                </Text>
+                {readMinutes > 0 && (
+                  <Text as="span" variant="bodySm" tone="subdued">
+                    · ~{readMinutes} min
+                  </Text>
+                )}
+              </span>
+
+              <span
+                aria-hidden="true"
+                style={{
+                  width: "1px",
+                  height: "18px",
+                  background: "var(--p-color-border-secondary)",
+                  flexShrink: 0,
+                }}
+              />
+
+              <Button
+                variant="tertiary"
+                icon={MinusIcon}
+                onClick={() => setZoomLevel(zoomLevel - 0.25)}
+                disabled={zoomLevel <= 0.5}
+                accessibilityLabel="Zoom out"
+              />
+              <Text as="span" variant="bodySm" fontWeight="medium">
+                <span style={{ minWidth: "36px", display: "inline-block", textAlign: "center" }}>
+                  {Math.round(zoomLevel * 100)}%
+                </span>
+              </Text>
+              <Button
+                variant="tertiary"
+                icon={PlusIcon}
+                onClick={() => setZoomLevel(zoomLevel + 0.25)}
+                disabled={zoomLevel >= 1.5}
+                accessibilityLabel="Zoom in"
+              />
+
+              <span
+                aria-hidden="true"
+                style={{
+                  width: "1px",
+                  height: "18px",
+                  background: "var(--p-color-border-secondary)",
+                  flexShrink: 0,
+                }}
+              />
+
+              <Button
+                variant="plain"
+                onClick={() => setZoomLevel(1)}
+                disabled={zoomLevel === 1}
+              >
+                Reset
+              </Button>
             </div>
           </div>
 

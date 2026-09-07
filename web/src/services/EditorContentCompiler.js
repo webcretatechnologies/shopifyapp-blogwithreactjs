@@ -3,6 +3,7 @@ import shopify, { prisma } from "../../shopify.js";
 import { formatPrice } from "../utils/priceUtils.js";
 import ThemeStyleService from "./ThemeStyleService.js";
 import { isFeatureEnabled } from "./PlanFeatureService.js";
+import { estimateReadingMinutesFromHtml } from "../utils/readingTime.js";
 
 // The app's own public base URL — HOST already includes the protocol (e.g.
 // "https://xxx.trycloudflare.com" in dev, the real production domain in prod). This is the
@@ -3155,9 +3156,10 @@ ${this.generateGlobalCss(settings)}
         bylineParts.push(`<span class="blogger-published-date">${escapeHtml(formatted)}</span>`);
       }
     }
-    const plainText = compiled.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-    if (plainText) {
-      const minutes = Math.max(1, Math.round(plainText.split(" ").length / 200));
+    // Count prose only — same exclusions as the editor status strip (TOC / product chrome
+    // / script bodies used to inflate this vs the in-app word count).
+    const minutes = estimateReadingMinutesFromHtml(compiled);
+    if (minutes > 0) {
       bylineParts.push(`<span class="blogger-reading-time">${minutes} min read</span>`);
     }
     // No explicit "·" separator elements between parts — each part's visibility is controlled
