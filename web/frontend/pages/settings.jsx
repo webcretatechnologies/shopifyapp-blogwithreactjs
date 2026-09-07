@@ -2999,9 +2999,11 @@ export default function Settings() {
                             Widget content updates after you save. Use this only if published posts
                             still show one column (the empty sidebar placeholder is missing).
                           </Text>
-                          <Button onClick={() => setShowApplyLayoutConfirm(true)}>
-                            Apply layout to published posts
-                          </Button>
+                          <InlineStack>
+                            <Button onClick={() => setShowApplyLayoutConfirm(true)}>
+                              Apply layout to published posts
+                            </Button>
+                          </InlineStack>
                         </BlockStack>
                       )}
                   </SectionCard>
