@@ -160,7 +160,15 @@ router.post("/", async (req, res) => {
       "defaultAuthor",
       "customHeaderCode",
       "customFooterCode",
-      "showPoweredByBadge"
+      "showPoweredByBadge",
+      // "Customize colors" in the AI article wizard. Deliberately NOT the primaryColor/
+      // secondaryColor keys above: those paint every published article's storefront palette,
+      // while these are only the per-generation override the wizard offers, remembered so a
+      // merchant who picked their brand colors once doesn't re-pick them on every article.
+      // Only the colours are remembered - whether to apply them at all stays a deliberate
+      // per-article choice, so there is intentionally no "enabled" key here.
+      "aiPrimaryColor",
+      "aiBackgroundColor"
     ];
 
     const RELATED_LAYOUTS = new Set(["grid", "list", "slider"]);
@@ -240,6 +248,18 @@ router.post("/", async (req, res) => {
         return res.status(422).json({ error: "Blog listing layout must be theme, featured_2, magazine, grid_2, grid_3, or list." });
       }
       req.body.blogListingLayout = layout;
+    }
+
+    // Validated (not just stored as-is) because these are read back into the AI wizard's own
+    // colour inputs and then into a generated article's palette - a malformed value would come
+    // back as a broken swatch the merchant can't see the cause of, not an obvious error.
+    for (const colorKey of ["aiPrimaryColor", "aiBackgroundColor"]) {
+      if (req.body[colorKey] === undefined) continue;
+      const hex = String(req.body[colorKey]).trim();
+      if (!/^#[0-9a-f]{6}$/i.test(hex)) {
+        return res.status(422).json({ error: `${colorKey} must be a 6-digit hex colour like #1A2B3C.` });
+      }
+      req.body[colorKey] = hex.toUpperCase();
     }
 
     const sidebarAllowed = isFeatureEnabled(shop.planKey, "blog_sidebar");

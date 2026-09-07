@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Modal,
@@ -105,6 +105,14 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
   const [colorsOn, setColorsOn] = useState(false);
   const [primaryColor, setPrimaryColor] = useState("#000000");
   const [backgroundColor, setBackgroundColor] = useState("#FFFFFF");
+  // Whether the merchant has touched the colour controls during THIS wizard session. The saved-
+  // settings prefill lands asynchronously (its fetch races a merchant who reaches step 3 fast on
+  // a resumed session), so without this it could overwrite a colour they'd just picked by hand.
+  const colorsTouched = useRef(false);
+  const markColorsTouched = useCallback((setter) => (value) => {
+    colorsTouched.current = true;
+    setter(value);
+  }, []);
 
   useEffect(() => {
     ensureWideModalCss();
@@ -131,6 +139,9 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
     setColorsOn(false);
     setPrimaryColor("#000000");
     setBackgroundColor("#FFFFFF");
+    // Cleared alongside the values themselves so the next open re-applies the merchant's saved
+    // colours rather than treating these hard defaults as a deliberate choice to preserve.
+    colorsTouched.current = false;
     setQuery("");
     setCategory("All");
   }, []);
@@ -184,6 +195,15 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
       fetch("/api/settings").then((r) => r.json()).then((d) => {
         const defaultAuthor = d.settings?.defaultAuthor;
         if (defaultAuthor) setAuthor((a) => (a ? a : defaultAuthor));
+        // Colours the merchant picked on a previous generation (saved by startGeneration below).
+        // Only the VALUES are restored, never the on/off state: whether this article should
+        // override the template's palette at all is a per-article decision the merchant makes
+        // each time, so the checkbox always starts off and these just sit ready underneath it.
+        // Same guard as the author prefill: only fills state the merchant hasn't already set in
+        // a resumed session, so reopening mid-flow never overwrites what they just chose.
+        const saved = d.settings || {};
+        if (saved.aiPrimaryColor) setPrimaryColor((c) => (colorsTouched.current ? c : saved.aiPrimaryColor));
+        if (saved.aiBackgroundColor) setBackgroundColor((c) => (colorsTouched.current ? c : saved.aiBackgroundColor));
       }).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, [open]);
@@ -312,6 +332,26 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
       if (!res.ok) {
         setError(data.error || "Could not start generation.");
         return;
+      }
+      // Remember the colours (never the on/off state - see the prefill above) so the next article
+      // starts from the same palette once the merchant opts in again. Only written when they
+      // actually used the option this time; leaving it off saves nothing, so an untouched default
+      // never overwrites colours they picked on an earlier article. Deliberately not awaited and
+      // deliberately after the success check: the generation itself is what the merchant asked
+      // for, so a settings write that fails (or is slow) must never block or fail it.
+      if (colorsOn) {
+        fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // Normalized because the hex TEXT field (unlike the swatch picker) accepts shorthand the
+          // merchant typed - "#fff" is a perfectly reasonable thing to type, but the settings route
+          // only accepts 6-digit hex, so sending it raw would 422 into the .catch() below and
+          // silently never save the colour they just picked.
+          body: JSON.stringify({
+            aiPrimaryColor: normalizeHexColor(primaryColor, "#000000"),
+            aiBackgroundColor: normalizeHexColor(backgroundColor, "#FFFFFF"),
+          }),
+        }).catch(() => {});
       }
       // The wizard is a modal inside the list page itself, not a separate route, so navigating
       // to "/posts" doesn't remount anything or trigger a refetch on its own. Handing the job
@@ -458,9 +498,9 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
                 {...{
                   brief, setBrief, credits, outOfCredits, templateName,
                   linkedProducts, setLinkedProducts,
-                  colorsOn, setColorsOn,
-                  primaryColor, setPrimaryColor,
-                  backgroundColor, setBackgroundColor,
+                  colorsOn, setColorsOn: markColorsTouched(setColorsOn),
+                  primaryColor, setPrimaryColor: markColorsTouched(setPrimaryColor),
+                  backgroundColor, setBackgroundColor: markColorsTouched(setBackgroundColor),
                 }}
               />
             )}
