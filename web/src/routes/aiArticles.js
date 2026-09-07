@@ -59,13 +59,22 @@ const planLabel = (planKey) => {
   return "Free";
 };
 
-const slugify = (str) =>
-  String(str || "")
+// Strip-then-truncate (the old order) leaves a dangling trailing hyphen whenever the 80-char cut
+// lands right after one - confirmed live via CreateArticleWizard.jsx's identical bug, duplicated
+// here independently. Truncating first, then cutting back to the last complete word (never
+// splitting one in half) and stripping hyphens LAST closes both problems at once.
+const slugify = (str) => {
+  const full = String(str || "")
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "untitled";
+    .replace(/^-+|-+$/g, "");
+  if (full.length <= 80) return full || "untitled";
+  const truncated = full.slice(0, 80);
+  const lastHyphen = truncated.lastIndexOf("-");
+  const whole = lastHyphen > 0 ? truncated.slice(0, lastHyphen) : truncated;
+  return whole.replace(/^-+|-+$/g, "") || "untitled";
+};
 
 /**
  * Runs one generation to completion, updating the job row as it goes so the list page's poller
