@@ -114,56 +114,8 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
   // rendered item; :first-child stays for themes with no interleaved nodes (no flash).
   const firstChild = ":is(*:first-child, [data-blogger-listing-first])";
   const first = `${list} > ${firstChild}`;
-  // first is safe ONLY for properties harmless on a hidden node (grid-column/grid-row).
-  // *:first-child in that :is() list can match a theme's actual hidden interleaved node
-  // (e.g. a <style data-shopify> tag), not just the JS-verified real item — confirmed live,
-  // giving it `display: flex` turned one theme's hidden style tag into an empty ~980px
-  // flex box in the featured slot. Anything that can make a hidden node visible (display,
-  // height) must use firstStrict instead, which only ever matches the JS-set attribute.
-  const firstStrict = `${list} > [data-blogger-listing-first]`;
   const item = listingItemSelector();
   const resetSpan = `${list} > *, ${collage} > *, ${collage} > *:nth-child(3n + 1), ${collage} > *:nth-child(3n + 2):last-child, ${item} { grid-column: auto${bang}; grid-row: auto${bang}; width: 100%; max-width: 100%; text-align: left${bang}; }`;
-
-  // featured_left/right span the featured post across 2 rows on a container we force to
-  // align-items: start (so the two SIDE posts don't stretch taller than their content).
-  // Without this, the featured item sizes to its own content height and just sits at the
-  // top of the 2-row span, leaving the rest of the span blank. This stretches the item and
-  // its card back out, and lets the image (not the text) absorb the extra height.
-  const card = ":is(.blog-post-card, .card.article-card, .article-card, .article)";
-  const media = ":is(.blog-post-card__image-container, .media, .card__media, .article-card__image)";
-  const fillSpan = `
-  ${firstStrict} {
-    align-self: stretch${bang};
-    display: flex${bang};
-    flex-direction: column${bang};
-  }
-  ${firstStrict} > * {
-    flex: 1 1 auto${bang};
-    min-height: 0${bang};
-    height: 100%${bang};
-  }
-  ${firstStrict} ${card} {
-    height: 100%${bang};
-    display: flex${bang};
-    flex-direction: column${bang};
-  }
-  ${firstStrict} ${card} > *:has(${media}) {
-    display: contents${bang};
-  }
-  ${firstStrict} ${media} {
-    flex: 1 1 auto${bang};
-    min-height: 0${bang};
-    height: auto${bang};
-  }
-  ${firstStrict} ${media} img {
-    height: 100%${bang};
-    width: 100%${bang};
-    object-fit: cover${bang};
-  }`;
-  const fillSpanReset = `
-    ${firstStrict} { align-self: auto${bang}; }
-    ${firstStrict} ${card} { height: auto${bang}; }
-    ${firstStrict} ${media} { flex: none${bang}; }`;
 
   let layoutRules = "";
   if (layout === "grid_2") {
@@ -196,46 +148,6 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
   }
   @media (max-width: 749px) {
     ${list} { grid-template-columns: 1fr${bang}; }
-  }`;
-  } else if (layout === "featured_left") {
-    layoutRules = `
-  ${list} {
-    display: grid${bang};
-    grid-template-columns: 1.15fr minmax(0, 1fr)${bang};
-    grid-auto-flow: dense${bang};
-    gap: 1.5rem${bang};
-    align-items: start${bang};
-  }
-  ${first},
-  ${collage} > ${firstChild} {
-    grid-column: 1${bang};
-    grid-row: 1 / span 2${bang};
-  }
-  ${fillSpan}
-  @media (max-width: 749px) {
-    ${list} { grid-template-columns: 1fr${bang}; }
-    ${first} { grid-column: auto${bang}; grid-row: auto${bang}; }
-    ${fillSpanReset}
-  }`;
-  } else if (layout === "featured_right") {
-    layoutRules = `
-  ${list} {
-    display: grid${bang};
-    grid-template-columns: minmax(0, 1fr) 1.15fr${bang};
-    grid-auto-flow: dense${bang};
-    gap: 1.5rem${bang};
-    align-items: start${bang};
-  }
-  ${first},
-  ${collage} > ${firstChild} {
-    grid-column: 2${bang};
-    grid-row: 1 / span 2${bang};
-  }
-  ${fillSpan}
-  @media (max-width: 749px) {
-    ${list} { grid-template-columns: 1fr${bang}; }
-    ${first} { grid-column: auto${bang}; grid-row: auto${bang}; }
-    ${fillSpanReset}
   }`;
   } else if (layout === "magazine") {
     layoutRules = `

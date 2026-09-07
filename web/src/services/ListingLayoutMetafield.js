@@ -5,8 +5,6 @@ export const THEME_LISTING_LAYOUT = "theme";
 
 const PAID_LISTING_LAYOUTS = new Set([
   "featured_2",
-  "featured_left",
-  "featured_right",
   "magazine",
   "grid_2",
   "grid_3",

@@ -50,73 +50,6 @@
     themes with no interleaved nodes a correct first paint, with no flash).
   {%- endcomment -%}
   {%- assign li_first = ":is(*:first-child, [data-blogger-listing-first])" -%}
-  {%- comment -%}
-    li_first above is safe ONLY for properties that are harmless on a hidden node
-    (grid-column/grid-row: positioning something invisible does nothing visible). On a
-    theme with interleaved non-rendered nodes, *:first-child in that :is() list matches
-    the ACTUAL hidden node (e.g. Shopify's own per-block <style data-shopify> tag), not
-    just the JS-verified real item — so anything that can make a hidden node visible
-    (display, height) must use li_first_strict instead, which drops the :first-child
-    fallback and only ever matches the JS-verified [data-blogger-listing-first] node.
-    Confirmed live: using li_first for `display: flex` here turned a theme's hidden
-    <style> tag into an empty ~980px flex box sitting in the featured slot.
-  {%- endcomment -%}
-  {%- assign li_first_strict = "[data-blogger-listing-first]" -%}
-  {%- comment -%}
-    featured_left/right span the featured post across 2 grid ROWS. Themes are free to set
-    align-items: start on the grid container (this one does, for its own unrelated masonry
-    layout) — without an explicit stretch, a row-spanning item sizes to its own natural
-    content height and just sits at the top of the span, leaving the rest of the spanned
-    area blank. li_fill forces the item AND its card wrapper to actually fill that span, and
-    lets the image (not the text) absorb the extra height so it reads as an intentional
-    large hero photo rather than a stretched card with dead space.
-  {%- endcomment -%}
-  {%- assign li_card = ":is(.blog-post-card, .card.article-card, .article-card, .article)" -%}
-  {%- assign li_media = ":is(.blog-post-card__image-container, .media, .card__media, .article-card__image)" -%}
-  {%- capture li_fill -%}
-    {{ li_grid }} > {{ li_first_strict }} {
-      align-self: stretch !important;
-      display: flex !important;
-      flex-direction: column !important;
-    }
-    {%- comment -%}
-      Themes commonly wrap the actual card one level deeper (e.g. a bare "shopify-block"
-      div) than li_first itself. A percentage height on li_card can't see past that
-      wrapper unless it's ALSO stretched, so flex the item's immediate child (whichever it
-      is) before separately flexing the card that's found somewhere inside it.
-    {%- endcomment -%}
-    {{ li_grid }} > {{ li_first_strict }} > * {
-      flex: 1 1 auto !important;
-      min-height: 0 !important;
-      height: 100% !important;
-    }
-    {{ li_grid }} > {{ li_first_strict }} {{ li_card }} {
-      height: 100% !important;
-      display: flex !important;
-      flex-direction: column !important;
-    }
-    {%- comment -%}
-      flex-grow on li_media only takes effect if it's a DIRECT flex child of li_card. This
-      theme wraps the image one level deeper in its own generic "shopify-block" div, which
-      would otherwise sit there as an un-flexed block box, ignoring li_media's flex-grow
-      entirely. display:contents collapses any such wrapper (identified generically by
-      "contains li_media", not by a theme-specific class name) so li_media becomes a real
-      flex item of li_card.
-    {%- endcomment -%}
-    {{ li_grid }} > {{ li_first_strict }} {{ li_card }} > *:has({{ li_media }}) {
-      display: contents !important;
-    }
-    {{ li_grid }} > {{ li_first_strict }} {{ li_media }} {
-      flex: 1 1 auto !important;
-      min-height: 0 !important;
-      height: auto !important;
-    }
-    {{ li_grid }} > {{ li_first_strict }} {{ li_media }} img {
-      height: 100% !important;
-      width: 100% !important;
-      object-fit: cover !important;
-    }
-  {%- endcapture -%}
   <style id="blogger-listing-critical">
     {{ li_grid }} {
       display: grid !important;
@@ -143,24 +76,7 @@
       object-fit: cover !important;
       object-position: center center !important;
     }
-    {% if listing_layout == 'featured_left' %}
-    {{ li_grid }} {
-      grid-template-columns: 1.15fr minmax(0, 1fr) !important;
-      grid-auto-flow: dense !important;
-    }
-    {{ li_grid }} > {{ li_first }},
-    {{ li_collage }} > {{ li_first }} {
-      grid-column: 1 !important;
-      grid-row: 1 / span 2 !important;
-    }
-    {{ li_fill }}
-    @media (max-width: 749px) {
-      {{ li_grid }} { grid-template-columns: 1fr !important; }
-      {{ li_grid }} > {{ li_first }} { grid-column: auto !important; grid-row: auto !important; align-self: auto !important; }
-      {{ li_grid }} > {{ li_first_strict }} {{ li_card }} { height: auto !important; }
-      {{ li_grid }} > {{ li_first_strict }} {{ li_media }} { flex: none !important; }
-    }
-    {% elsif listing_layout == 'list' %}
+    {% if listing_layout == 'list' %}
     {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
     {{ li_grid }} {{ li_item }}:has(.media img) {
       display: flex !important;
@@ -228,23 +144,6 @@
     }
     @media (max-width: 749px) {
       {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
-    }
-    {% elsif listing_layout == 'featured_right' %}
-    {{ li_grid }} {
-      grid-template-columns: minmax(0, 1fr) 1.15fr !important;
-      grid-auto-flow: dense !important;
-    }
-    {{ li_grid }} > {{ li_first }},
-    {{ li_collage }} > {{ li_first }} {
-      grid-column: 2 !important;
-      grid-row: 1 / span 2 !important;
-    }
-    {{ li_fill }}
-    @media (max-width: 749px) {
-      {{ li_grid }} { grid-template-columns: 1fr !important; }
-      {{ li_grid }} > {{ li_first }} { grid-column: auto !important; grid-row: auto !important; align-self: auto !important; }
-      {{ li_grid }} > {{ li_first_strict }} {{ li_card }} { height: auto !important; }
-      {{ li_grid }} > {{ li_first_strict }} {{ li_media }} { flex: none !important; }
     }
     {% elsif listing_layout == 'magazine' %}
     {{ li_grid }} { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
@@ -379,15 +278,7 @@
         }
         if (layoutValue === 'grid_3') cols(3);
         else if (layoutValue === 'list') cols(1);
-        else if (layoutValue === 'featured_left') {
-          important(container, 'grid-template-columns', '1.15fr minmax(0, 1fr)');
-          important(first, 'grid-column', '1');
-          important(first, 'grid-row', '1 / span 2');
-        } else if (layoutValue === 'featured_right') {
-          important(container, 'grid-template-columns', 'minmax(0, 1fr) 1.15fr');
-          important(first, 'grid-column', '2');
-          important(first, 'grid-row', '1 / span 2');
-        } else if (layoutValue === 'magazine') {
+        else if (layoutValue === 'magazine') {
           cols(3);
           important(first, 'grid-column', '1 / span 2');
         } else {

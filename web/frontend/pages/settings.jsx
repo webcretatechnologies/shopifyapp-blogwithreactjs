@@ -94,8 +94,6 @@ const SIDEBAR_WIDTH_OPTIONS = [
 const BLOG_LISTING_LAYOUTS = [
   { value: "theme", label: "Theme default", hint: "Use your theme's native blog listing, unchanged" },
   { value: "featured_2", label: "Featured + 2 columns", hint: "First post full width, rest in two columns" },
-  { value: "featured_left", label: "Featured left", hint: "Large post on the left, two stacked on the right" },
-  { value: "featured_right", label: "Featured right", hint: "Two stacked on the left, large post on the right" },
   { value: "magazine", label: "Magazine", hint: "Wide featured post, then a 3-column grid" },
   { value: "grid_2", label: "2-column grid", hint: "Every post the same size" },
   { value: "grid_3", label: "3-column grid", hint: "Compact cards in three columns" },
@@ -133,24 +131,6 @@ function ListingLayoutMock({ layout }) {
             <div style={{ flex: 1, height: 16, borderRadius: 3, background: "#e1e3e5" }} />
           </div>
         ))}
-      </div>
-    );
-  }
-  if (layout === "featured_left") {
-    return (
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gridTemplateRows: "1fr 1fr", gap: 4, height: 40 }}>
-        <div style={{ gridRow: "span 2", borderRadius: 3, background: "#d2d5d8" }} />
-        {box()}
-        {box()}
-      </div>
-    );
-  }
-  if (layout === "featured_right") {
-    return (
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gridTemplateRows: "1fr 1fr", gap: 4, height: 40 }}>
-        {box()}
-        <div style={{ gridColumn: 2, gridRow: "1 / span 2", borderRadius: 3, background: "#d2d5d8" }} />
-        {box()}
       </div>
     );
   }
