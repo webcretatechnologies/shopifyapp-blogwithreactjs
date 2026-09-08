@@ -11,7 +11,9 @@ export default function ArticlePreview({
   featuredImage,
   contentHtml,
 }) {
-  const [device, setDevice] = useState("desktop"); // 'desktop' | 'tablet' | 'mobile'
+  // Defaults to 'tablet' (non-fullscreen) so the modal never opens in Max/fullscreen mode
+  // without an explicit merchant click — fullScreen is only true once they pick 'desktop'.
+  const [device, setDevice] = useState("tablet"); // 'desktop' | 'tablet' | 'mobile'
   const scrollRef = useRef(null);
 
   // Inject scoped styles once when modal opens
