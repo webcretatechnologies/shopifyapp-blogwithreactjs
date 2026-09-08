@@ -765,6 +765,7 @@ export default function Articles() {
           },
           {
             content: "Manage comments",
+            icon: ChatIcon,
             onAction: () => navigate("/comments"),
           },
           {
