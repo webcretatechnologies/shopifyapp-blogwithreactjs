@@ -1,5 +1,6 @@
 import sys
 import json
+import time
 from deep_translator import GoogleTranslator
 from concurrent.futures import ThreadPoolExecutor
 
@@ -7,8 +8,29 @@ from concurrent.futures import ThreadPoolExecutor
 # CONFIG
 # ---------------------------
 
-MAX_WORKERS = 10
+# translate.google.com (the free, unofficial endpoint deep_translator scrapes) rate-limits
+# by IP under concurrent load. At MAX_WORKERS=10 a single post's ~20+ fields hammered it hard
+# enough that it started returning its own HTML error page ("Error 500 ... That's an error")
+# instead of a translation for some chunks — and deep_translator doesn't validate the response,
+# so that error page was returned as if it were the real translated text. Lower concurrency
+# plus the retry/validation in do_translate below fixes both the trigger and the symptom.
+MAX_WORKERS = 3
 MAX_TEXT_LENGTH = 5000
+TRANSLATE_RETRIES = 5
+TRANSLATE_RETRY_DELAY = 1.5
+
+# Google's error page for this endpoint always contains this literal text, no matter what was
+# being translated — a real translation into any language cannot legitimately contain it.
+# Matched against ASCII-only markers with the apostrophe stripped, since Google's page uses a
+# curly apostrophe (’) that a plain "'" substring check silently fails to match.
+_ERROR_PAGE_MARKERS = ("thats an error", "thats all we know", "error 500 (server error)")
+
+
+def _looks_like_error_page(text):
+    if not isinstance(text, str):
+        return False
+    normalized = text.replace("’", "").replace("'", "").lower()
+    return any(m in normalized for m in _ERROR_PAGE_MARKERS)
 
 # ---------------------------
 # ARGUMENTS
@@ -66,22 +88,33 @@ def split_text(text, max_length=MAX_TEXT_LENGTH):
     return chunks
 
 
-def do_translate(text_chunk):
-    try:
-        chunks = split_text(text_chunk)
-        translated_chunks = []
-        translator = GoogleTranslator(source="auto", target=target_lang)
-        for chunk in chunks:
+def _translate_one_chunk(chunk):
+    """Translate a single chunk, retrying if the request throws OR if Google's rate-limit
+    error page comes back disguised as a successful translation (see _looks_like_error_page)."""
+    last_result = chunk
+    for attempt in range(1, TRANSLATE_RETRIES + 1):
+        try:
+            translator = GoogleTranslator(source="auto", target=target_lang)
             res = translator.translate(chunk)
-            translated_chunks.append(res if res is not None else chunk)
-        return " ".join(translated_chunks)
-    except Exception as e:
-        # Previously silent — a failed/rate-limited translation request would fall back to the
-        # original text with zero indication anywhere that it happened, making a real failure
-        # indistinguishable from "this string just didn't need translating." Log it so failures
-        # are at least visible in the server's stderr instead of invisibly degrading the output.
-        print(f"do_translate failed for chunk (len={len(text_chunk)}): {e}", file=sys.stderr)
-        return text_chunk
+            if res is None:
+                last_result = chunk
+            elif _looks_like_error_page(res):
+                last_result = chunk
+                print(f"do_translate got rate-limit error page (attempt {attempt}/{TRANSLATE_RETRIES}), retrying", file=sys.stderr)
+            else:
+                return res
+        except Exception as e:
+            last_result = chunk
+            print(f"do_translate failed for chunk (len={len(chunk)}, attempt {attempt}/{TRANSLATE_RETRIES}): {e}", file=sys.stderr)
+        if attempt < TRANSLATE_RETRIES:
+            time.sleep(TRANSLATE_RETRY_DELAY * attempt)
+    return last_result
+
+
+def do_translate(text_chunk):
+    chunks = split_text(text_chunk)
+    translated_chunks = [_translate_one_chunk(chunk) for chunk in chunks]
+    return " ".join(translated_chunks)
 
 
 # Builder blocks are stored as empty <div data-type="..." data-<field>="..."> wrapper divs —
@@ -195,14 +228,9 @@ def translate_text(text):
             return str(soup)
 
         else:
-            # Plain text translation
-            chunks = split_text(text)
-            translated_chunks = []
-            translator = GoogleTranslator(source="auto", target=target_lang)
-            for chunk in chunks:
-                res = translator.translate(chunk)
-                translated_chunks.append(res if res is not None else chunk)
-            return " ".join(translated_chunks)
+            # Plain text translation — shares do_translate's retry + error-page detection
+            # rather than duplicating the same fragile inline call.
+            return do_translate(text)
 
     except Exception as e:
         # sys is already imported at module level (line 1) — a local "import sys" here used

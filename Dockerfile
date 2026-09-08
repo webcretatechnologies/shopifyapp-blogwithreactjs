@@ -8,6 +8,13 @@ ARG SHOPIFY_API_KEY
 # Make it available during npm run build
 ENV SHOPIFY_API_KEY=${SHOPIFY_API_KEY}
 
+# translate.py (spawned by src/routes/posts.js for auto-translate) needs python3 plus
+# deep-translator and beautifulsoup4. Alpine's python3 is "externally managed" (PEP 668), so a
+# plain `pip install` is refused — --break-system-packages is safe here since this image has no
+# other Python workload to conflict with.
+RUN apk add --no-cache python3 py3-pip \
+    && pip install --no-cache-dir --break-system-packages deep-translator beautifulsoup4
+
 COPY web .
 
 # Install root dependencies

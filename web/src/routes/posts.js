@@ -2663,7 +2663,10 @@ router.post("/:id/translate-auto", async (req, res) => {
       metaDescription: post.metaDescription || post.excerpt || "",
     };
 
-    const translateScriptPath = path.join(__dirname, "../../../translate.py");
+    // Lives inside web/ (not the repo root) so it's included by the Dockerfile's `COPY web .`
+    // and ships with the image — it previously sat one directory up, outside what gets copied,
+    // so this spawn always failed in production even when python3 itself was installed.
+    const translateScriptPath = path.join(__dirname, "../../translate.py");
 
     const pythonProcess = spawn("python3", [translateScriptPath, locale]);
 
@@ -2682,6 +2685,12 @@ router.post("/:id/translate-auto", async (req, res) => {
     pythonProcess.stdin.end();
 
     await new Promise((resolve, reject) => {
+      // Without this handler, a spawn failure (e.g. python3 missing from PATH) emits an
+      // unhandled 'error' event that Node rethrows as an uncaught exception — which crashes
+      // the entire server process, taking down every shop's traffic, not just this request.
+      pythonProcess.on("error", (err) => {
+        reject(new Error(`Failed to start translation process: ${err.message}`));
+      });
       pythonProcess.on("close", (code) => {
         if (code !== 0) {
           reject(new Error(`Python process exited with code ${code}: ${errorData}`));
