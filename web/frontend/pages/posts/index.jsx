@@ -38,6 +38,7 @@ import {
   DuplicateIcon,
   ChatIcon,
   DeleteIcon,
+  ChartVerticalIcon,
 } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 import UpgradePrompt from "../../components/UpgradePrompt";
@@ -128,7 +129,7 @@ function CloneArticleModal({ open, title, onTitleChange, onConfirm, onCancel, lo
 }
 
 // ─── Post Action Popover ──────────────────────────────────────────────────────
-function PostActionPopover({ post, onDelete, onClone, cloneEnabled }) {
+function PostActionPopover({ post, onDelete, onClone, cloneEnabled, analyticsEnabled }) {
   const navigate = useNavigate();
   const [popoverActive, setPopoverActive] = useState(false);
 
@@ -148,7 +149,25 @@ function PostActionPopover({ post, onDelete, onClone, cloneEnabled }) {
 
   const actionItems = [];
 
-  // Duplicate action — always first. Disabled (not hidden) when the plan doesn't include it, so
+  // View analytics — first, since it's read-only and the most common reason to open this menu
+  // at all. This is the only way to reach a specific post's analytics page (/analytics/:id) once
+  // a shop has more posts than the Top Performing Posts widget shows (10 on the Analytics page,
+  // 5 on the Dashboard) - without it, any post outside that top list had no discoverable path to
+  // its own analytics. Disabled (not hidden) when the plan doesn't include analytics, same
+  // "still discoverable, not silently missing" posture as Duplicate below - the analytics page
+  // itself is what actually enforces the gate (it already shows LockedOverlay for this).
+  actionItems.push({
+    content: "View analytics",
+    icon: ChartVerticalIcon,
+    disabled: !analyticsEnabled,
+    helpText: analyticsEnabled ? undefined : "Requires a plan upgrade",
+    onAction: () => {
+      togglePopoverActive();
+      navigate(`/analytics/${post.id}`);
+    },
+  });
+
+  // Duplicate action. Disabled (not hidden) when the plan doesn't include it, so
   // it's still discoverable as a thing this app can do — clicking a hidden feature that quietly
   // doesn't exist reads worse than seeing exactly why it's unavailable. Backend still enforces
   // this independently (POST /:id/clone checks clone_article) — this is UX, not the real gate.
@@ -703,6 +722,7 @@ export default function Articles() {
             onDelete={() => handleDelete(post)}
             onClone={() => handleClone(post)}
             cloneEnabled={!!features.clone_article?.enabled}
+            analyticsEnabled={!!features.analytics_dashboard?.enabled}
           />
         </div>
       </IndexTable.Cell>
