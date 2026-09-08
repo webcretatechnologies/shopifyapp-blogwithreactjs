@@ -633,8 +633,11 @@ export async function buildAnalyticsPayload(postWhere, range) {
   const totalCheckouts = totals.totalCheckouts;
   const totalConversions = totals.totalConversions;
 
+  // Views is deliberately excluded from the funnel: not every blog post has a product, so
+  // Views->Add to Cart always shows a huge, meaningless "drop" for content-only posts. The
+  // funnel starts at Add to Cart, the first stage that only ever applies to product-bearing
+  // pageviews, so the drop-offs shown are a real measure of purchase intent.
   const funnel = [
-    { stage: "Views", count: totalViews },
     { stage: "Add to Cart", count: totalAddToCart },
     { stage: "Checkout", count: totalCheckouts },
     { stage: "Conversions", count: totalConversions },
