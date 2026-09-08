@@ -19,7 +19,7 @@
     Same selector set as listingGridSelector() in EditorContentCompiler.js, which serves
     /apps/blog-analytics/listing.css linked below. This block is the render-blocking half of
     that pair, so a narrower list here meant a non-Dawn theme painted its own layout first and
-    only snapped to the app's once the proxy CSS arrived - the exact flash this <style> exists
+    only snapped to the app's once the proxy CSS arrived - the exact flash this critical style block exists
     to prevent. Worse, .blog__posts appeared only in the base rule and in none of the layout
     rules, so those themes got display:grid with no grid-template-columns: a forced single
     column, worse than leaving the theme alone. :is() keeps the comma list from leaking
@@ -33,7 +33,7 @@
     .blog-posts-container / .blog-post-item / .blog-post-card cover Shopify's newer
     block-based ("Horizon"-family) theme, which spans columns via a --col-span custom
     property on .blog-post-item rather than grid-template-columns math. Its own inline
-    per-item <style> only ever sets --col-span (never grid-column directly), so our
+    per-item inline style tag only ever sets --col-span (never grid-column directly), so our
     !important grid-column reset below still wins regardless of that variable's value.
   {%- endcomment -%}
   {%- assign li_grid = ":is(.blog-articles, .blog-articles.blog-articles--collage, .blog__posts, .blog-list, .blog-post-list, .main-blog .blog-articles, ul.blog-articles, #MainContent .blog-articles, #MainContent .blog__posts, #MainContent .blog-list, .blog-posts-container)" -%}
@@ -41,8 +41,8 @@
   {%- assign li_item = ":is(.card.article-card, .article-card, .article)" -%}
   {%- comment -%}
     NEVER target the featured post with a bare :first-child. Themes are free to put
-    non-rendered nodes (Shopify's own per-block <style data-shopify> tags, <script>,
-    <template>) inside the grid container, and :first-child then matches one of THOSE —
+    non-rendered nodes (Shopify's own per-block style/data-shopify tags, script tags,
+    template tags) inside the grid container, and :first-child then matches one of THOSE —
     a display:none node — so the featured span silently lands on nothing and the layout
     looks identical to the theme's default. CSS has no portable "first rendered child"
     selector, so the script below stamps [data-blogger-listing-first] on the real first
@@ -175,13 +175,13 @@
   <link rel="stylesheet" href="/apps/blog-analytics/listing.css?layout={{ listing_layout | url_param_escape }}" fetchpriority="high">
   <script>
     (function () {
-      // The critical <style> above (and listing.css) only ever target a hand-maintained list
+      // The critical style block above (and listing.css) only ever target a hand-maintained list
       // of known theme class names — that list can NEVER cover every theme this app will be
       // installed on (App Store distribution, not one sandbox store). Per the theme-agnostic
       // rule, this block is the real fix, not another class name appended to the list above:
       // it finds the repeating post grid GENERICALLY, using the one thing every Shopify blog
       // theme is guaranteed to share — article links matching /blogs/<handle>/<article>/ —
-      // rather than any theme's own class names. The static <style> above stays only as a
+      // rather than any theme's own class names. The static critical style block above stays only as a
       // zero-flash fast path for the two theme families already confirmed against real
       // stores; every other theme is handled here, so a brand-new theme this app has never
       // seen still gets a working layout instead of silently doing nothing.
@@ -303,7 +303,7 @@
       }
 
       // Stamps the first RENDERED child of each known grid container, so the featured-post
-      // rules can't land on an interleaved <style>/<script> node (see the li_first comment).
+      // rules can't land on an interleaved style/script node (see the li_first comment).
       function markFirstRendered() {
         var containers = document.querySelectorAll(KNOWN_SELECTORS.join(','));
         Array.prototype.forEach.call(containers, function (container) {
@@ -324,7 +324,7 @@
             if (document.querySelector(KNOWN_SELECTORS[i])) { knownMatch = KNOWN_SELECTORS[i]; break; }
           } catch (e) {}
         }
-        // A known selector matched: the static <style> above already applied the right CSS,
+        // A known selector matched: the static critical style block above already applied the right CSS,
         // but it still needs the real first item stamped for the featured layouts.
         if (knownMatch) {
           try { markFirstRendered(); } catch (e) {}

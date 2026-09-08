@@ -235,6 +235,18 @@ export async function trackView({
   const source = detectSource(referer, shopDomain);
   const country = detectCountry(acceptLang, cfCountry, ip);
 
+  // TEMP DEBUG — traffic-source classification is easy to get wrong silently (no raw referer is
+  // persisted anywhere, only the aggregated {source: count} on PostAnalytic), so this line lets a
+  // merchant watch each incoming view's Referer header resolve to a bucket in real time while
+  // testing. Safe to leave in (low volume, no PII beyond what's already logged elsewhere) or
+  // remove once traffic-source behavior is confirmed.
+  console.log(`[TrafficSource] shop=${shopDomain} referer=${JSON.stringify(referer || null)} -> source=${source}`);
+  // TEMP DEBUG — same reasoning as [TrafficSource] above: precedence is cf-ipcountry (real,
+  // set by Cloudflare's edge, NOT spoofable via a client header through the tunnel) > geoip-lite
+  // on the real IP (also reflects reality) > Accept-Language (the only one actually testable by
+  // hand, and only when the request bypasses Cloudflare's edge entirely).
+  console.log(`[TopCountry] shop=${shopDomain} cfCountry=${JSON.stringify(cfCountry || null)} ip=${JSON.stringify(ip || null)} acceptLang=${JSON.stringify(acceptLang || null)} -> country=${JSON.stringify(country || null)}`);
+
   // Deduplicate unique visitors via a persistent table (AnalyticsVisitor), not an in-process
   // Map — a Map resets on every restart/deploy and isn't shared across horizontally-scaled
   // instances, silently inflating "unique visitors". Insert-and-catch-P2002 is the same
