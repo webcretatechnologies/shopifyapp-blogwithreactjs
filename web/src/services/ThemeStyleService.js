@@ -1,17 +1,27 @@
 /**
  * ThemeStyleService
- * Reads the merchant's actual main theme's colors/fonts via the Admin REST Asset API
- * (config/settings_data.json + config/settings_schema.json) so the app's Appearance
- * settings can be synced from the real theme instead of hand-typed. Read-only — never
- * writes anything to Shopify or the DB.
+ *
+ * Theme-agnostic brand-token sync for App Store installs (any theme: Dawn, Spotlight,
+ * Horizon, Debut, custom OS 2.0, vintage, ThemeForest, etc.).
+ *
+ * Strategy (fail soft only when the theme truly has no color data at all):
+ *   1. Parse settings_data.json / settings_schema.json (JSONC-safe)
+ *   2. Named / Dawn-style color_schemes when present
+ *   3. Schema-declared color settings (any id/label)
+ *   4. Deep walk of the entire `current` tree for every opaque color
+ *   5. Visual heuristics (saturation → brand, luminance → text/background)
+ *   6. Optional CSS custom-property peek from common theme assets
+ *
+ * Read-only — never writes to Shopify or the DB.
  */
 
-/** "poppins_n4" -> "Poppins", "playfair_display_n4" -> "Playfair Display". Font picker
- * values are internal IDs (family, snake_cased if multi-word, plus an "_<style><weight>"
- * suffix like "n4"/"i7") — not literal CSS font-family names, so this is a best-effort
- * reconstruction, not a guaranteed-accurate value. Drops only the trailing style/weight
- * segment; every other underscore-separated word is kept and capitalized, so multi-word
- * family names survive intact instead of being truncated to their first word. */
+/** Shopify often prefixes settings_data.json with a /* ... *\/ banner. */
+function parseThemeJson(raw) {
+  if (!raw || typeof raw !== "string") throw new Error("Theme asset was empty");
+  const stripped = raw.replace(/^\uFEFF/, "").replace(/\/\*[\s\S]*?\*\//g, "").trim();
+  return JSON.parse(stripped);
+}
+
 function humanizeFontId(fontId) {
   if (!fontId || typeof fontId !== "string") return null;
   const parts = fontId.split("_");
@@ -21,56 +31,398 @@ function humanizeFontId(fontId) {
   return nameParts.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
-/** Dawn and most Dawn-derived OS 2.0 themes name their color schemes accent-1/accent-2/
- * background-1/etc — a reasonable, but not universal, convention. Falls back gracefully. */
-function extractColorsFromSchemes(colorSchemes) {
-  if (!colorSchemes || typeof colorSchemes !== "object") return {};
-  const schemeKeys = Object.keys(colorSchemes);
-  const findScheme = (...patterns) =>
-    schemeKeys.find((k) => patterns.some((p) => k.toLowerCase().includes(p)));
+/** Normalize theme color strings to #rrggbb for HTML type="color" inputs. */
+export function toHexColor(value) {
+  if (value == null || typeof value !== "string") return null;
+  const v = value.trim();
+  if (!v || v === "transparent" || v === "none") return null;
 
-  const accent1Key = findScheme("accent-1", "accent1") || findScheme("accent");
-  const accent2Key = findScheme("accent-2", "accent2");
-  const baseKey = findScheme("background-1", "background1") || schemeKeys[0];
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v)) {
+    if (v.length === 4) {
+      const r = v[1];
+      const g = v[2];
+      const b = v[3];
+      return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+    }
+    return `#${v.slice(1, 7)}`.toLowerCase();
+  }
 
-  const accent1 = accent1Key ? colorSchemes[accent1Key]?.settings : null;
-  const accent2 = accent2Key ? colorSchemes[accent2Key]?.settings : null;
-  const base = baseKey ? colorSchemes[baseKey]?.settings : null;
+  const rgb = v.match(
+    /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i
+  );
+  if (rgb) {
+    const a = rgb[4] != null ? parseFloat(rgb[4]) : 1;
+    if (!(a > 0.5)) return null;
+    const hex = (n) => {
+      const x = Math.max(0, Math.min(255, Math.round(parseFloat(n))));
+      return x.toString(16).padStart(2, "0");
+    };
+    return `#${hex(rgb[1])}${hex(rgb[2])}${hex(rgb[3])}`;
+  }
 
+  const hsl = v.match(
+    /^hsla?\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%(?:\s*,\s*([\d.]+))?\s*\)$/i
+  );
+  if (hsl) {
+    const a = hsl[4] != null ? parseFloat(hsl[4]) : 1;
+    if (!(a > 0.5)) return null;
+    const h = parseFloat(hsl[1]) / 360;
+    const s = parseFloat(hsl[2]) / 100;
+    const l = parseFloat(hsl[3]) / 100;
+    const hue2rgb = (p, q, t) => {
+      let tt = t;
+      if (tt < 0) tt += 1;
+      if (tt > 1) tt -= 1;
+      if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+      if (tt < 1 / 2) return q;
+      if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+      return p;
+    };
+    let r;
+    let g;
+    let b;
+    if (s === 0) {
+      r = g = b = l;
+    } else {
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1 / 3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1 / 3);
+    }
+    const hex = (n) => Math.round(n * 255).toString(16).padStart(2, "0");
+    return `#${hex(r)}${hex(g)}${hex(b)}`;
+  }
+
+  return null;
+}
+
+function pickFirstHex(...candidates) {
+  for (const c of candidates) {
+    const hex = toHexColor(c);
+    if (hex) return hex;
+  }
+  return null;
+}
+
+function hexToRgb(hex) {
+  const h = toHexColor(hex);
+  if (!h) return null;
   return {
-    primary: accent1?.background || base?.button || null,
-    secondary: accent2?.background || null,
-    background: base?.background || null,
-    text: base?.text || null,
+    r: parseInt(h.slice(1, 3), 16),
+    g: parseInt(h.slice(3, 5), 16),
+    b: parseInt(h.slice(5, 7), 16),
   };
 }
 
-/** Fallback for themes without a color_schemes structure: scan settings_schema.json for
- * standalone `type: "color"` settings whose id/label hints at brand/button usage. */
-function extractColorsFromSchema(settingsSchema, settingsData) {
-  if (!Array.isArray(settingsSchema)) return {};
-  const current = settingsData?.current || {};
-  const hints = { primary: ["primary", "accent", "button"], secondary: ["secondary", "accent_2"] };
-  const result = {};
-
-  for (const group of settingsSchema) {
-    if (!Array.isArray(group.settings)) continue;
-    for (const setting of group.settings) {
-      if (setting.type !== "color" || !current[setting.id]) continue;
-      const haystack = `${setting.id} ${setting.label || ""}`.toLowerCase();
-      for (const [key, patterns] of Object.entries(hints)) {
-        if (!result[key] && patterns.some((p) => haystack.includes(p))) {
-          result[key] = current[setting.id];
-        }
-      }
-    }
-  }
-  return result;
+/** Relative luminance 0..1 (sRGB). */
+function luminance(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const lin = (c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(rgb.r) + 0.7152 * lin(rgb.g) + 0.0722 * lin(rgb.b);
 }
 
-/** Collects every setting `id` declared anywhere in settings_schema.json, so we only read a
- * `current` value when the theme actually declares that setting — avoids false positives on
- * themes that don't use Dawn's `buttons_radius`/`card_corner_radius` naming convention. */
+/** Saturation 0..1 — brand accents tend to be more saturated than grays. */
+function saturation(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max === min) return 0;
+  const l = (max + min) / 2;
+  return (max - min) / (1 - Math.abs(2 * l - 1));
+}
+
+function schemeSetting(settings, ...keys) {
+  if (!settings || typeof settings !== "object") return null;
+  for (const key of keys) {
+    if (settings[key] != null && settings[key] !== "") return settings[key];
+  }
+  const lowerMap = Object.fromEntries(
+    Object.entries(settings).map(([k, v]) => [String(k).toLowerCase(), v])
+  );
+  for (const key of keys) {
+    const hit = lowerMap[key.toLowerCase()];
+    if (hit != null && hit !== "") return hit;
+  }
+  return null;
+}
+
+function extractColorsFromSchemes(colorSchemes) {
+  if (!colorSchemes || typeof colorSchemes !== "object") return {};
+
+  const entries = Object.entries(colorSchemes).filter(
+    ([, v]) => v && typeof v === "object" && v.settings && typeof v.settings === "object"
+  );
+  if (entries.length === 0) return {};
+
+  const findScheme = (...patterns) =>
+    entries.find(([k]) => patterns.some((p) => String(k).toLowerCase().includes(p)));
+
+  const accent1 = findScheme("accent-1", "accent1") || findScheme("accent");
+  const accent2 = findScheme("accent-2", "accent2");
+  const base =
+    findScheme("background-1", "background1", "scheme-1", "scheme1", "default", "main") ||
+    entries[0];
+  const second = accent2 || (entries.length > 1 ? entries[1] : null);
+
+  const baseSettings = base?.[1]?.settings;
+  const accent1Settings = accent1?.[1]?.settings;
+  const secondSettings = second?.[1]?.settings;
+
+  return {
+    primary: pickFirstHex(
+      schemeSetting(
+        accent1Settings,
+        "background",
+        "button",
+        "solid_button_background",
+        "primary",
+        "accent"
+      ),
+      schemeSetting(
+        baseSettings,
+        "button",
+        "solid_button_background",
+        "primary",
+        "accent",
+        "button_background"
+      )
+    ),
+    secondary: pickFirstHex(
+      schemeSetting(
+        secondSettings,
+        "button",
+        "background",
+        "solid_button_background",
+        "primary",
+        "accent"
+      ),
+      schemeSetting(baseSettings, "secondary_button", "secondary", "accent")
+    ),
+    background: pickFirstHex(
+      schemeSetting(baseSettings, "background", "bg", "page_background", "body_background")
+    ),
+    text: pickFirstHex(
+      schemeSetting(baseSettings, "text", "text_color", "body_text", "foreground", "color_text")
+    ),
+  };
+}
+
+/**
+ * Deep-collect every opaque color in an object tree, with a dotted path for scoring.
+ * Skips huge section/block trees that are layout, not brand tokens — but still reads
+ * color_schemes and top-level settings.
+ */
+function collectColorsDeep(node, path = "", out = [], depth = 0) {
+  if (node == null || depth > 8) return out;
+
+  if (typeof node === "string") {
+    const hex = toHexColor(node);
+    if (hex) out.push({ hex, path: path || "value" });
+    return out;
+  }
+
+  if (Array.isArray(node)) {
+    // Color lists are rare; still scan shallowly
+    node.slice(0, 40).forEach((item, i) => collectColorsDeep(item, `${path}[${i}]`, out, depth + 1));
+    return out;
+  }
+
+  if (typeof node !== "object") return out;
+
+  for (const [key, value] of Object.entries(node)) {
+    const keyLower = String(key).toLowerCase();
+    // Skip non-brand noise: section instances, blocks, product media, etc.
+    if (
+      keyLower === "sections" ||
+      keyLower === "blocks" ||
+      keyLower === "block_order" ||
+      keyLower === "order" ||
+      keyLower === "platform_customizations"
+    ) {
+      continue;
+    }
+    const nextPath = path ? `${path}.${key}` : key;
+    collectColorsDeep(value, nextPath, out, depth + 1);
+  }
+  return out;
+}
+
+/** Score a discovered color for a semantic role based on its path + visual traits. */
+function scoreForRole(entry, role) {
+  const p = entry.path.toLowerCase();
+  let score = 0;
+
+  const has = (...words) => words.some((w) => p.includes(w));
+  const sat = saturation(entry.hex);
+  const lum = luminance(entry.hex);
+
+  // Shared junk penalties
+  if (has("shadow", "overlay", "border", "success", "error", "warning", "sale", "badge", "star")) {
+    score -= 40;
+  }
+
+  if (role === "primary") {
+    if (has("button", "btn", "primary", "brand", "accent", "action", "main", "highlight")) score += 50;
+    if (has("scheme-1", "scheme1", "accent-1", "accent1")) score += 20;
+    if (has("secondary", "accent-2", "accent2", "background", "text", "label")) score -= 15;
+    // Prefer saturated mid-luminance brand colors over near-white/black
+    score += Math.round(sat * 35);
+    if (lum > 0.85 || lum < 0.08) score -= 25;
+  } else if (role === "secondary") {
+    if (has("secondary", "accent-2", "accent2", "alt", "scheme-2", "scheme2")) score += 50;
+    if (has("button", "accent", "brand")) score += 15;
+    if (has("text", "background", "label")) score -= 10;
+    score += Math.round(sat * 25);
+    if (lum > 0.85 || lum < 0.08) score -= 20;
+  } else if (role === "text") {
+    if (has("text", "foreground", "font", "heading", "body_text", "typo")) score += 55;
+    if (has("button_label", "btn_label")) score -= 20; // often white-on-button
+    if (has("background", "button", "accent", "brand")) score -= 25;
+    // Prefer dark text
+    score += Math.round((1 - lum) * 40);
+    if (sat > 0.35) score -= 10; // body text is usually near-neutral
+  } else if (role === "background") {
+    if (has("background", "bg", "surface", "page", "body_bg")) score += 55;
+    if (has("button", "text", "accent", "brand")) score -= 25;
+    score += Math.round(lum * 40); // prefer light page backgrounds
+    if (sat > 0.4) score -= 10;
+  }
+
+  return score;
+}
+
+function pickBest(entries, role, used = new Set()) {
+  let best = null;
+  let bestScore = -Infinity;
+  for (const entry of entries) {
+    if (used.has(entry.hex)) continue;
+    const score = scoreForRole(entry, role);
+    if (score > bestScore) {
+      bestScore = score;
+      best = entry;
+    }
+  }
+  // Require a weakly positive score for semantic roles so we don't assign random noise
+  // when a better visual fallback exists later — except we still return the best candidate
+  // and let the caller decide.
+  return best && bestScore > 0 ? best : bestScore > -10 ? best : null;
+}
+
+/**
+ * Theme-agnostic assignment: use semantic scores when possible, otherwise visual traits
+ * so stores without Dawn naming still get real brand colors.
+ */
+function assignColorsFromPool(entries) {
+  if (!entries.length) return {};
+
+  // Dedupe by hex, keep shortest (most specific) path
+  const byHex = new Map();
+  for (const e of entries) {
+    const prev = byHex.get(e.hex);
+    if (!prev || e.path.length < prev.path.length) byHex.set(e.hex, e);
+  }
+  const unique = [...byHex.values()];
+
+  const used = new Set();
+  const take = (role) => {
+    const hit = pickBest(unique, role, used);
+    if (hit) {
+      used.add(hit.hex);
+      return hit.hex;
+    }
+    return null;
+  };
+
+  let primary = take("primary");
+  let secondary = take("secondary");
+  let text = take("text");
+  let background = take("background");
+
+  // Visual fallbacks when semantic naming is missing (custom / vintage themes)
+  const unused = () => unique.filter((e) => !used.has(e.hex));
+
+  if (!primary) {
+    const brandish = unused()
+      .filter((e) => saturation(e.hex) >= 0.18 && luminance(e.hex) > 0.08 && luminance(e.hex) < 0.9)
+      .sort((a, b) => saturation(b.hex) - saturation(a.hex));
+    if (brandish[0]) {
+      primary = brandish[0].hex;
+      used.add(primary);
+    }
+  }
+
+  if (!secondary) {
+    const brandish = unused()
+      .filter((e) => saturation(e.hex) >= 0.12 && e.hex !== primary)
+      .sort((a, b) => saturation(b.hex) - saturation(a.hex));
+    if (brandish[0]) {
+      secondary = brandish[0].hex;
+      used.add(secondary);
+    }
+  }
+
+  if (!text) {
+    const dark = unused().sort((a, b) => luminance(a.hex) - luminance(b.hex));
+    if (dark[0] && luminance(dark[0].hex) < 0.55) {
+      text = dark[0].hex;
+      used.add(text);
+    }
+  }
+
+  if (!background) {
+    const light = unused().sort((a, b) => luminance(b.hex) - luminance(a.hex));
+    if (light[0] && luminance(light[0].hex) > 0.7) {
+      background = light[0].hex;
+      used.add(background);
+    }
+  }
+
+  // Absolute last resort: any colors at all, ordered dark→light for text/bg and first for brand
+  if (!primary && unique.length) {
+    primary = unique.sort((a, b) => saturation(b.hex) - saturation(a.hex))[0].hex;
+    used.add(primary);
+  }
+  if (!text && unique.length) {
+    const candidate = unique.find((e) => !used.has(e.hex)) || unique[0];
+    text = candidate.hex;
+  }
+  if (!secondary && unique.length > 1) {
+    const candidate = unique.find((e) => e.hex !== primary && e.hex !== text);
+    if (candidate) secondary = candidate.hex;
+  }
+
+  return { primary: primary || null, secondary: secondary || null, text: text || null, background: background || null };
+}
+
+function extractColorsFromSchema(settingsSchema, current) {
+  if (!Array.isArray(settingsSchema) || !current || typeof current !== "object") return [];
+  const out = [];
+  for (const group of settingsSchema) {
+    if (!Array.isArray(group.settings)) continue;
+    const groupName = group.name || "";
+    for (const setting of group.settings) {
+      if (setting.type !== "color" && setting.type !== "color_background") continue;
+      if (!setting.id || current[setting.id] == null) continue;
+      const hex = toHexColor(current[setting.id]);
+      if (!hex) continue;
+      out.push({
+        hex,
+        path: `schema.${groupName}.${setting.id}.${setting.label || ""}`,
+      });
+    }
+  }
+  return out;
+}
+
 function schemaSettingIds(settingsSchema) {
   const ids = new Set();
   if (!Array.isArray(settingsSchema)) return ids;
@@ -82,25 +434,117 @@ function schemaSettingIds(settingsSchema) {
   return ids;
 }
 
-/** Dawn/OS 2.0 themes expose button and card corner-radius as top-level numeric settings
- * (`buttons_radius`, `card_corner_radius`) — a convention, not a guarantee, so each value is
- * only trusted when the schema confirms the theme actually declares that exact setting id. */
-function extractShapeFromSchema(settingsSchema, settingsData) {
-  const current = settingsData?.current || {};
+function extractShapeFromSchema(settingsSchema, current) {
   const ids = schemaSettingIds(settingsSchema);
+  const readNumber = (...candidates) => {
+    for (const id of candidates) {
+      if (ids.has(id) && typeof current?.[id] === "number") return current[id];
+      // Some themes store radius as string "8"
+      if (ids.has(id) && current?.[id] != null && current[id] !== "") {
+        const n = Number(current[id]);
+        if (Number.isFinite(n)) return n;
+      }
+    }
+    return null;
+  };
 
-  const readNumber = (id) => (ids.has(id) && typeof current[id] === "number" ? current[id] : null);
+  // Also accept common ids even if schema fetch failed (vintage / broken schema)
+  const looseNumber = (...candidates) => {
+    for (const id of candidates) {
+      if (current?.[id] == null || current[id] === "") continue;
+      const n = Number(current[id]);
+      if (Number.isFinite(n) && n >= 0 && n <= 80) return n;
+    }
+    return null;
+  };
 
-  const buttonRadius = readNumber("buttons_radius");
-  const cardRadius = readNumber("card_corner_radius");
+  const buttonRadius =
+    readNumber(
+      "buttons_radius",
+      "button_radius",
+      "buttons_border_radius",
+      "btn_radius",
+      "button_border_radius",
+      "buttons_corner_radius"
+    ) ??
+    looseNumber(
+      "buttons_radius",
+      "button_radius",
+      "buttons_border_radius",
+      "btn_radius",
+      "button_border_radius"
+    );
 
-  return { buttonRadius, cardRadius };
+  const cardRadius =
+    readNumber("card_corner_radius", "cards_radius", "card_radius", "cards_corner_radius") ??
+    looseNumber("card_corner_radius", "cards_radius", "card_radius");
+
+  return {
+    buttonRadius: buttonRadius != null ? buttonRadius : null,
+    cardRadius: cardRadius != null ? cardRadius : null,
+  };
+}
+
+function mergeColors(...sources) {
+  const out = { primary: null, secondary: null, background: null, text: null };
+  for (const src of sources) {
+    if (!src) continue;
+    for (const key of Object.keys(out)) {
+      if (!out[key] && src[key]) out[key] = src[key];
+    }
+  }
+  return out;
+}
+
+/** Peek common CSS assets for --color-* / --button-* custom properties. */
+async function extractColorsFromCssAssets(client, themeId) {
+  const candidates = [
+    "assets/base.css",
+    "assets/theme.css",
+    "assets/styles.css",
+    "assets/global.css",
+    "assets/main.css",
+    "assets/component-card.css",
+  ];
+
+  const found = [];
+  // Try a few in parallel; ignore misses — many themes won't have these filenames.
+  const results = await Promise.all(
+    candidates.map((key) =>
+      client
+        .get({ path: `themes/${themeId}/assets`, query: { "asset[key]": key } })
+        .then((res) => res.body?.asset?.value || "")
+        .catch(() => "")
+    )
+  );
+
+  const varPatterns = [
+    /--color[^:{}]*button[^:{}]*:\s*([^;}+]+)/gi,
+    /--color[^:{}]*primary[^:{}]*:\s*([^;}+]+)/gi,
+    /--color[^:{}]*accent[^:{}]*:\s*([^;}+]+)/gi,
+    /--color[^:{}]*brand[^:{}]*:\s*([^;}+]+)/gi,
+    /--color[^:{}]*text[^:{}]*:\s*([^;}+]+)/gi,
+    /--color[^:{}]*foreground[^:{}]*:\s*([^;}+]+)/gi,
+    /--color[^:{}]*background[^:{}]*:\s*([^;}+]+)/gi,
+    /--button[^:{}]*background[^:{}]*:\s*([^;}+]+)/gi,
+  ];
+
+  for (const css of results) {
+    if (!css) continue;
+    for (const re of varPatterns) {
+      re.lastIndex = 0;
+      let match;
+      while ((match = re.exec(css)) !== null) {
+        const hex = toHexColor(match[1].trim());
+        if (hex) found.push({ hex, path: `css.${match[0].split(":")[0].trim()}` });
+      }
+    }
+  }
+  return found;
 }
 
 /**
- * Fetch the shop's main theme colors/font/shape. Fails soft — returns nulls for anything not
- * confidently detected rather than guessing wrong, and never throws for the caller to
- * treat as a hard error unless the theme/session itself is unreachable.
+ * Fetch the shop's main theme colors/font/shape — works across arbitrary themes.
  */
 async function fetchThemeStyleTokens(shopify, session) {
   const client = new shopify.api.clients.Rest({ session });
@@ -110,21 +554,68 @@ async function fetchThemeStyleTokens(shopify, session) {
   if (!mainTheme) throw new Error("Could not find the store's main (published) theme");
 
   const [dataReq, schemaReq] = await Promise.all([
-    client.get({ path: `themes/${mainTheme.id}/assets`, query: { "asset[key]": "config/settings_data.json" } }),
-    client.get({ path: `themes/${mainTheme.id}/assets`, query: { "asset[key]": "config/settings_schema.json" } }).catch(() => null),
+    client.get({
+      path: `themes/${mainTheme.id}/assets`,
+      query: { "asset[key]": "config/settings_data.json" },
+    }),
+    client
+      .get({
+        path: `themes/${mainTheme.id}/assets`,
+        query: { "asset[key]": "config/settings_schema.json" },
+      })
+      .catch(() => null),
   ]);
 
-  const settingsData = JSON.parse(dataReq.body.asset.value);
-  const settingsSchema = schemaReq ? JSON.parse(schemaReq.body.asset.value) : null;
-  const current = settingsData.current || {};
+  const settingsData = parseThemeJson(dataReq.body.asset.value);
+  const settingsSchema = schemaReq ? parseThemeJson(schemaReq.body.asset.value) : null;
 
-  let colors = extractColorsFromSchemes(current.color_schemes);
-  if (!colors.primary && settingsSchema) {
-    colors = { ...extractColorsFromSchema(settingsSchema, settingsData), ...colors };
+  let current = settingsData.current;
+  if (typeof current === "string" && settingsData.presets?.[current]) {
+    current = settingsData.presets[current];
+  }
+  if (!current || typeof current !== "object") {
+    // Some exports only have presets — use the first preset as a stand-in
+    const presetValues = settingsData.presets && Object.values(settingsData.presets);
+    current = presetValues?.[0] && typeof presetValues[0] === "object" ? presetValues[0] : {};
   }
 
-  const fontFamily = humanizeFontId(current.type_body_font || current.type_header_font);
-  const shape = extractShapeFromSchema(settingsSchema, settingsData);
+  // Layer 1: structured Dawn / OS 2.0 schemes
+  const fromSchemes = extractColorsFromSchemes(current.color_schemes);
+
+  // Layer 2–4: schema colors + deep tree + optional CSS vars → scored pool
+  const pool = [
+    ...extractColorsFromSchema(settingsSchema, current),
+    ...collectColorsDeep(current),
+  ];
+
+  // CSS peek only when settings alone look thin (keeps sync fast for normal themes)
+  const earlyPoolColors = assignColorsFromPool(pool);
+  const needsCssFallback = !earlyPoolColors.primary || !earlyPoolColors.text;
+  if (needsCssFallback) {
+    try {
+      const cssColors = await extractColorsFromCssAssets(client, mainTheme.id);
+      pool.push(...cssColors);
+    } catch {
+      /* ignore — CSS is a bonus layer */
+    }
+  }
+
+  const fromPool = assignColorsFromPool(pool);
+  const colors = mergeColors(fromSchemes, fromPool);
+
+  const fontFamily = humanizeFontId(
+    current.type_body_font ||
+      current.type_header_font ||
+      current.font_body ||
+      current.font ||
+      current.body_font ||
+      current.heading_font
+  );
+  const shape = extractShapeFromSchema(settingsSchema, current);
+
+  const foundAnyColor = Boolean(
+    colors.primary || colors.secondary || colors.text || colors.background
+  );
 
   return {
     themeName: mainTheme.name,
@@ -136,7 +627,8 @@ async function fetchThemeStyleTokens(shopify, session) {
     },
     fontFamily,
     shape,
+    foundAnyColor,
   };
 }
 
-export default { fetchThemeStyleTokens };
+export default { fetchThemeStyleTokens, toHexColor };

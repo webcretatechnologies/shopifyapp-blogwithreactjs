@@ -1525,21 +1525,43 @@ export default function Settings() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Couldn't read your theme's colors.");
 
-      // Shape (button corner radius) — same fail-soft posture as colors: only applied when
-      // the theme's schema confirmed the value, otherwise the existing setting is left untouched.
-      // Font is no longer synced here at all — it's fetched live from the theme at publish
-      // time (EditorContentCompiler.compileForStorefront), not a stored/editable setting.
+      // Shape (button corner radius) — applied only when detected; colors use multi-layer
+      // theme-agnostic extraction (schemes → schema → deep walk → CSS vars → visual heuristics).
       const shape = data.shape || {};
+      const nextPrimary = data.colors?.primary || null;
+      const nextSecondary = data.colors?.secondary || null;
+      const nextText = data.colors?.text || null;
+      const nextRadius =
+        typeof shape.buttonRadius === "number" ? String(shape.buttonRadius) : null;
+      const pulledSomething = Boolean(
+        nextPrimary || nextSecondary || nextText || nextRadius || data.foundAnyColor
+      );
+
+      if (!pulledSomething) {
+        setToast({
+          content: `No color settings found in "${data.themeName}". Set brand colors manually below — rare for Shopify themes.`,
+          error: true,
+        });
+        return;
+      }
 
       setSettings((s) => ({
         ...s,
-        primaryColor: data.colors?.primary || s.primaryColor,
-        secondaryColor: data.colors?.secondary || s.secondaryColor,
-        textColor: data.colors?.text || s.textColor,
-        buttonRadius: typeof shape.buttonRadius === "number" ? String(shape.buttonRadius) : s.buttonRadius,
+        primaryColor: nextPrimary || s.primaryColor,
+        secondaryColor: nextSecondary || s.secondaryColor,
+        textColor: nextText || s.textColor,
+        buttonRadius: nextRadius != null ? nextRadius : s.buttonRadius,
       }));
+
+      const bits = [
+        nextPrimary && "primary",
+        nextSecondary && "secondary",
+        nextText && "text",
+        nextRadius != null && "button radius",
+      ].filter(Boolean);
+
       setToast({
-        content: `Pulled colors and shape from "${data.themeName}" — review below, then Save Settings to apply`,
+        content: `Synced ${bits.join(", ") || "theme tokens"} from "${data.themeName}" — review below, then Save Settings to apply`,
       });
     } catch (err) {
       setToast({ content: err.message, error: true });
