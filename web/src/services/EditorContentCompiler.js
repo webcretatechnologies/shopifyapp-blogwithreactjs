@@ -96,7 +96,7 @@ function listingImageFitCss(list, bang) {
  * Served live from /styles.css so Settings apply without a resync.
  */
 function generateBlogListingCss(settings = {}, bang = " !important") {
-  const layout = String(settings.blogListingLayout || "featured_2").toLowerCase();
+  const layout = String(settings.blogListingLayout || "theme").toLowerCase();
   // Free (and any shop without the listing_layout feature) must not override the
   // theme's own blog index. "theme" is written on downgrade / gated CSS serve.
   if (!layout || layout === "theme" || layout === "default") {

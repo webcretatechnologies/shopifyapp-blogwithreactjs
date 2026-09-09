@@ -1369,7 +1369,7 @@ const DEFAULT_SETTINGS = {
   blogSidebarWidth: "320",
   blogSidebarHideOnMobile: false,
   blogSidebarSticky: true,
-  blogListingLayout: "featured_2",
+  blogListingLayout: "theme",
   blogSidebarWidgets: JSON.stringify(DEFAULT_SIDEBAR_WIDGETS),
   defaultAuthor: "",
   customHeaderCode: "",
@@ -2194,7 +2194,7 @@ export default function Settings() {
                       }}
                     >
                       {BLOG_LISTING_LAYOUTS.map((opt) => {
-                        const isOn = (settings.blogListingLayout || "featured_2") === opt.value;
+                        const isOn = (settings.blogListingLayout || "theme") === opt.value;
                         const primary = settings.primaryColor || "#008060";
                         const canPick = !!features.listing_layout?.enabled;
                         return (

@@ -13,9 +13,10 @@ const PAID_LISTING_LAYOUTS = new Set([
 
 export function listingLayoutForPlan(planKey, savedLayout) {
   if (!isFeatureEnabled(planKey, "listing_layout")) return THEME_LISTING_LAYOUT;
-  const layout = String(savedLayout || "featured_2").toLowerCase();
-  if (layout === THEME_LISTING_LAYOUT) return THEME_LISTING_LAYOUT;
-  return PAID_LISTING_LAYOUTS.has(layout) ? layout : "featured_2";
+  // First install / no saved preference → leave the theme's native listing alone.
+  const layout = String(savedLayout || THEME_LISTING_LAYOUT).toLowerCase();
+  if (layout === THEME_LISTING_LAYOUT || layout === "default") return THEME_LISTING_LAYOUT;
+  return PAID_LISTING_LAYOUTS.has(layout) ? layout : THEME_LISTING_LAYOUT;
 }
 
 /** Storefront listing CSS should use the theme as-is on Free. */
