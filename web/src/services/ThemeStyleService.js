@@ -496,6 +496,150 @@ function mergeColors(...sources) {
   return out;
 }
 
+/** Chroma 0..1 (max-min in sRGB) — stabler than HSL saturation for pale tints. */
+function chroma(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  return Math.max(r, g, b) - Math.min(r, g, b);
+}
+
+/** True when a color is a usable brand accent (not white/black/gray/pale cream chrome). */
+function isBrandWorthy(hex) {
+  const h = toHexColor(hex);
+  if (!h) return false;
+  const lum = luminance(h);
+  // Pale creams / near-black read as chrome, not CTAs — Aauram's #ecdec1 hover must lose to #b6713e
+  if (lum > 0.78 || lum < 0.08) return false;
+  if (chroma(h) < 0.12) return false;
+  return true;
+}
+
+function brandScore(hex) {
+  // Prefer rich mid-tone accents (real buttons) over washed tints / near-neutrals
+  return chroma(hex) * 100 - Math.abs(luminance(hex) - 0.42) * 55;
+}
+
+function uniqueHexes(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of list) {
+    const h = toHexColor(raw);
+    if (!h || seen.has(h)) continue;
+    seen.add(h);
+    out.push(h);
+  }
+  return out;
+}
+
+/**
+ * Parse live storefront HTML for CSS custom properties (--color-button, etc.).
+ * This is what shoppers actually see — more accurate than settings_data.json when
+ * themes (or checkout apps) stash unrelated colors in theme settings.
+ */
+function extractColorsFromStorefrontHtml(html) {
+  if (!html || typeof html !== "string") return {};
+
+  const byName = new Map(); // varName -> hex[]
+  const re = /--([a-zA-Z0-9_-]+)\s*:\s*([^;}\n]+)/g;
+  let match;
+  while ((match = re.exec(html)) !== null) {
+    const name = match[1].toLowerCase();
+    const hex = toHexColor(match[2].trim());
+    if (!hex) continue;
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(hex);
+  }
+  if (byName.size === 0) return {};
+
+  const vals = (...names) => {
+    const out = [];
+    for (const n of names) {
+      const list = byName.get(n) || [];
+      out.push(...list);
+    }
+    return uniqueHexes(out);
+  };
+
+  // Prefer real CTA button fills over hover/accent tints when both exist.
+  const buttonPool = uniqueHexes(
+    vals("color-button", "color-btn", "color-primary", "color-brand", "color-highlight")
+  )
+    .filter(isBrandWorthy)
+    .sort((a, b) => brandScore(b) - brandScore(a));
+
+  const accentPool = uniqueHexes(
+    vals(
+      "color-button-hover",
+      "color-hover",
+      "color-accent",
+      "color-secondary-button-hover",
+      "color-sale"
+    )
+  )
+    .filter(isBrandWorthy)
+    .sort((a, b) => brandScore(b) - brandScore(a));
+
+  // Prefer a mid/dark CTA fill for Primary (white label text). Light golds become Secondary.
+  const darkButtons = buttonPool
+    .filter((h) => luminance(h) <= 0.55)
+    .sort((a, b) => luminance(a) - luminance(b) || brandScore(b) - brandScore(a));
+  const primary = darkButtons[0] || buttonPool[0] || accentPool[0] || null;
+  const secondary =
+    [...buttonPool, ...accentPool].find((h) => h && h !== primary) || null;
+
+  // Body text: prefer dark near-neutral text/title vars (not white-on-dark scheme copies)
+  const textPool = uniqueHexes(vals("color-text", "color-title", "color-sub-title", "color-body", "color-foreground"));
+  const textDark = textPool
+    .filter((h) => luminance(h) < 0.45)
+    .sort((a, b) => luminance(a) - luminance(b));
+  const text = textDark[0] || textPool[0] || null;
+
+  const bgPool = uniqueHexes(vals("color-background", "color-bg", "color-page", "color-body-bg"));
+  const background =
+    bgPool.filter((h) => luminance(h) > 0.7).sort((a, b) => luminance(b) - luminance(a))[0] ||
+    bgPool[0] ||
+    null;
+
+  return {
+    primary: primary || null,
+    secondary: secondary || null,
+    text: text || null,
+    background: background || null,
+  };
+}
+
+/**
+ * Fetch the published storefront homepage and read rendered CSS variables.
+ * Uses the shop's myshopify domain (always resolves to the live theme). Fail-soft.
+ */
+async function extractColorsFromLiveStorefront(shopDomain) {
+  if (!shopDomain) return {};
+  const url = `https://${shopDomain}/`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent": "ShopifyBlogApp-ThemeSync/1.0",
+        Accept: "text/html",
+      },
+    });
+    if (!res.ok) return {};
+    const html = await res.text();
+    // Cap parse size — vars are almost always in the first styles of <head>
+    return extractColorsFromStorefrontHtml(html.slice(0, 400000));
+  } catch {
+    return {};
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Peek common CSS assets for --color-* / --button-* custom properties. */
 async function extractColorsFromCssAssets(client, themeId) {
   const candidates = [
@@ -508,7 +652,6 @@ async function extractColorsFromCssAssets(client, themeId) {
   ];
 
   const found = [];
-  // Try a few in parallel; ignore misses — many themes won't have these filenames.
   const results = await Promise.all(
     candidates.map((key) =>
       client
@@ -523,6 +666,7 @@ async function extractColorsFromCssAssets(client, themeId) {
     /--color[^:{}]*primary[^:{}]*:\s*([^;}+]+)/gi,
     /--color[^:{}]*accent[^:{}]*:\s*([^;}+]+)/gi,
     /--color[^:{}]*brand[^:{}]*:\s*([^;}+]+)/gi,
+    /--color[^:{}]*hover[^:{}]*:\s*([^;}+]+)/gi,
     /--color[^:{}]*text[^:{}]*:\s*([^;}+]+)/gi,
     /--color[^:{}]*foreground[^:{}]*:\s*([^;}+]+)/gi,
     /--color[^:{}]*background[^:{}]*:\s*([^;}+]+)/gi,
@@ -533,10 +677,10 @@ async function extractColorsFromCssAssets(client, themeId) {
     if (!css) continue;
     for (const re of varPatterns) {
       re.lastIndex = 0;
-      let match;
-      while ((match = re.exec(css)) !== null) {
-        const hex = toHexColor(match[1].trim());
-        if (hex) found.push({ hex, path: `css.${match[0].split(":")[0].trim()}` });
+      let m;
+      while ((m = re.exec(css)) !== null) {
+        const hex = toHexColor(m[1].trim());
+        if (hex) found.push({ hex, path: `css.${m[0].split(":")[0].trim()}` });
       }
     }
   }
@@ -544,16 +688,23 @@ async function extractColorsFromCssAssets(client, themeId) {
 }
 
 /**
- * Fetch the shop's main theme colors/font/shape — works across arbitrary themes.
+ * Fetch the shop's main theme colors/font/shape — theme-agnostic.
+ *
+ * Priority:
+ *   1. Live storefront CSS variables (what shoppers see — beats checkout-app junk in settings)
+ *   2. Dawn / OS 2.0 color_schemes in settings_data.json
+ *   3. Schema + deep settings walk + visual heuristics
+ *   4. Theme CSS asset peek
  */
 async function fetchThemeStyleTokens(shopify, session) {
   const client = new shopify.api.clients.Rest({ session });
+  const shopDomain = session?.shop;
 
   const themesReq = await client.get({ path: "themes" });
   const mainTheme = themesReq.body.themes.find((t) => t.role === "main");
   if (!mainTheme) throw new Error("Could not find the store's main (published) theme");
 
-  const [dataReq, schemaReq] = await Promise.all([
+  const [dataReq, schemaReq, fromStorefront] = await Promise.all([
     client.get({
       path: `themes/${mainTheme.id}/assets`,
       query: { "asset[key]": "config/settings_data.json" },
@@ -564,6 +715,7 @@ async function fetchThemeStyleTokens(shopify, session) {
         query: { "asset[key]": "config/settings_schema.json" },
       })
       .catch(() => null),
+    extractColorsFromLiveStorefront(shopDomain),
   ]);
 
   const settingsData = parseThemeJson(dataReq.body.asset.value);
@@ -574,34 +726,39 @@ async function fetchThemeStyleTokens(shopify, session) {
     current = settingsData.presets[current];
   }
   if (!current || typeof current !== "object") {
-    // Some exports only have presets — use the first preset as a stand-in
     const presetValues = settingsData.presets && Object.values(settingsData.presets);
     current = presetValues?.[0] && typeof presetValues[0] === "object" ? presetValues[0] : {};
   }
 
-  // Layer 1: structured Dawn / OS 2.0 schemes
   const fromSchemes = extractColorsFromSchemes(current.color_schemes);
 
-  // Layer 2–4: schema colors + deep tree + optional CSS vars → scored pool
   const pool = [
     ...extractColorsFromSchema(settingsSchema, current),
     ...collectColorsDeep(current),
   ];
 
-  // CSS peek only when settings alone look thin (keeps sync fast for normal themes)
-  const earlyPoolColors = assignColorsFromPool(pool);
-  const needsCssFallback = !earlyPoolColors.primary || !earlyPoolColors.text;
-  if (needsCssFallback) {
+  // Only dig into theme CSS files when storefront + settings still look thin
+  const early = mergeColors(fromStorefront, fromSchemes, assignColorsFromPool(pool));
+  if (!early.primary || !early.text) {
     try {
-      const cssColors = await extractColorsFromCssAssets(client, mainTheme.id);
-      pool.push(...cssColors);
+      pool.push(...(await extractColorsFromCssAssets(client, mainTheme.id)));
     } catch {
-      /* ignore — CSS is a bonus layer */
+      /* ignore */
     }
   }
 
   const fromPool = assignColorsFromPool(pool);
-  const colors = mergeColors(fromSchemes, fromPool);
+  // Storefront wins — settings often contain Magic Checkout / app blues that aren't the brand.
+  const colors = mergeColors(fromStorefront, fromSchemes, fromPool);
+
+  // If secondary collapsed to near-black/white, prefer a second brand accent from storefront pool
+  if (colors.secondary && (luminance(colors.secondary) < 0.08 || luminance(colors.secondary) > 0.9)) {
+    if (fromStorefront.secondary && isBrandWorthy(fromStorefront.secondary)) {
+      colors.secondary = fromStorefront.secondary;
+    } else if (colors.primary && fromStorefront.primary && fromStorefront.primary !== colors.primary) {
+      colors.secondary = fromStorefront.primary;
+    }
+  }
 
   const fontFamily = humanizeFontId(
     current.type_body_font ||
@@ -628,7 +785,12 @@ async function fetchThemeStyleTokens(shopify, session) {
     fontFamily,
     shape,
     foundAnyColor,
+    source: fromStorefront.primary || fromStorefront.text ? "storefront" : "theme_settings",
   };
 }
 
-export default { fetchThemeStyleTokens, toHexColor };
+export default {
+  fetchThemeStyleTokens,
+  toHexColor,
+  extractColorsFromStorefrontHtml,
+};

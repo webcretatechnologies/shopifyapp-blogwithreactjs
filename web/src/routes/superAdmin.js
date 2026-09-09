@@ -299,9 +299,20 @@ router.get("/stores", validateSuperAdmin, async (req, res) => {
       prisma.shop.count({ where }),
     ]);
 
-    // Fetch plan overrides
+    // Fetch plan overrides. expiresAt is never enforced elsewhere on a timer, so a lapsed
+    // override must be treated as inactive here too, or this list keeps showing "Override: Yes
+    // (Pro Plan)" forever after the expiry date passes even once billing.js's own
+    // getActiveOverride() lookup has started ignoring it. Best-effort delete the expired rows so
+    // repeat loads of this page don't keep re-deriving the same "expired" result.
     const overrides = await prisma.shopPlanOverride.findMany();
-    const overridesMap = new Map(overrides.map((o) => [o.shopDomain, o]));
+    const now = new Date();
+    const expiredIds = overrides.filter((o) => o.expiresAt && o.expiresAt <= now).map((o) => o.id);
+    if (expiredIds.length > 0) {
+      prisma.shopPlanOverride.deleteMany({ where: { id: { in: expiredIds } } }).catch(() => {});
+    }
+    const overridesMap = new Map(
+      overrides.filter((o) => !(o.expiresAt && o.expiresAt <= now)).map((o) => [o.shopDomain, o])
+    );
 
     // Format shops and fetch their contact emails
     const formattedShops = await Promise.all(
@@ -512,6 +523,16 @@ router.post("/stores/:domain/override", validateSuperAdmin, async (req, res) => 
 
     if (!plan) {
       return res.status(400).json({ error: "Override plan is required" });
+    }
+
+    // plan feeds straight into shop.planKey below, which PlanFeatureService then keys feature
+    // gating off of — an unrecognized value wouldn't error, it would just silently fall through
+    // to that service's default feature set with no indication to the admin anything was wrong.
+    if (plan !== "free") {
+      const validPlan = await prisma.subscriptionPlan.findUnique({ where: { name: plan } });
+      if (!validPlan) {
+        return res.status(400).json({ error: `Unknown plan "${plan}"` });
+      }
     }
 
     const shop = await prisma.shop.findUnique({ where: { domain } });

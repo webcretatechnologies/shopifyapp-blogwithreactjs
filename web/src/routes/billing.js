@@ -4,6 +4,7 @@ import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled, getSavedTem
 } from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 import { listingLayoutForPlan, writeListingLayoutMetafield, THEME_LISTING_LAYOUT } from "../services/ListingLayoutMetafield.js";
+import { getActiveOverride } from "../services/ShopPlanOverrideService.js";
 
 const router = express.Router();
 
@@ -141,6 +142,20 @@ router.get("/check", async (req, res) => {
 
     let activePlan = "free";
 
+    // A Super Admin override (Stores Auditor > Override) always wins over whatever Shopify's
+    // live subscription or the local DB fallback below says — this used to be a one-time write
+    // to shop.planKey when the admin set the override, but the resync logic further down would
+    // silently overwrite it back to the real billing plan on the very next /check call, leaving
+    // the Stores Auditor table showing "Override: Yes (Pro Plan)" while the shop was actually
+    // back on Free. Short-circuit before any of that resync logic runs.
+    const activeOverride = shop ? await getActiveOverride(shop.domain) : null;
+    if (activeOverride) {
+      activePlan = activeOverride.overridePlan;
+      if (shop.planKey !== activePlan) {
+        await prisma.shop.update({ where: { id: shop.id }, data: { planKey: activePlan } });
+      }
+    } else {
+
     // Shopify's activeSubscriptions query can still report a just-cancelled subscription as
     // ACTIVE for a few seconds after appSubscriptionCancel (ordinary eventual consistency on
     // Shopify's side) — blindly trusting it here would resync shop.planKey back to the old paid
@@ -186,6 +201,7 @@ router.get("/check", async (req, res) => {
           });
         }
       }
+    }
     }
 
     // Best-effort — resolves every PENDING coupon claim for this shop (not just one matching
@@ -297,11 +313,20 @@ router.post("/request", async (req, res) => {
       }
 
       const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
-      if (shop && shop.planKey !== "free") {
+
+      // The Shopify subscription itself was just genuinely cancelled above regardless — that
+      // part always has to happen, or the merchant keeps being billed. But if a Super Admin
+      // override is in force, the app-level plan the merchant should keep experiencing is the
+      // override, not "free": don't stomp shop.planKey back to free underneath it, and report
+      // the override plan in this response instead of a hardcoded "free" one.
+      const activeOverride = shop ? await getActiveOverride(shop.domain) : null;
+      const resolvedPlan = activeOverride ? activeOverride.overridePlan : "free";
+
+      if (!activeOverride && shop && shop.planKey !== "free") {
         await prisma.shop.update({ where: { id: shop.id }, data: { planKey: "free" } });
       }
       try {
-        await writeListingLayoutMetafield(session, listingLayoutForPlan("free", null));
+        await writeListingLayoutMetafield(session, listingLayoutForPlan(resolvedPlan, null));
       } catch (metaErr) {
         console.warn("[Billing] listing_layout metafield sync skipped:", metaErr.message);
       }
@@ -330,15 +355,15 @@ router.post("/request", async (req, res) => {
       // matters most: a shop that just downgraded off a plan with unused purchased credits must
       // still see those credits reflected here, not a broken "63 of 3" pair from the old plan's
       // now-irrelevant raw usage vs Free's tiny limit.
-      const downgradeAiStatus = getAiCreditStatus("free", shop?.aiCreditsUsed || 0, shop?.aiCreditsPurchased || 0, shop?.aiCreditsPurchasedUsed || 0);
+      const downgradeAiStatus = getAiCreditStatus(resolvedPlan, shop?.aiCreditsUsed || 0, shop?.aiCreditsPurchased || 0, shop?.aiCreditsPurchasedUsed || 0);
       return res.status(200).json({
         confirmationUrl: null,
-        isFree: true,
-        activePlan: "free",
+        isFree: !activeOverride,
+        activePlan: resolvedPlan,
         postCount,
-        postLimit: getArticleLimit("free"),
+        postLimit: getArticleLimit(resolvedPlan),
         templateCount,
-        templateLimit: getSavedTemplateLimit("free"),
+        templateLimit: getSavedTemplateLimit(resolvedPlan),
         aiCreditsUsed: downgradeAiStatus.meterUsed,
         aiCreditLimit: downgradeAiStatus.meterLimit,
         aiCreditsPurchased: shop?.aiCreditsPurchased || 0,
