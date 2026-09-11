@@ -215,7 +215,7 @@ export default function PostAnalytics() {
     </TitleBar>
     <Page
       title={post?.title || "Post analytics"}
-      titleMetadata={post?.status && <Badge tone={post.status === "published" ? "success" : "info"}>{post.status}</Badge>}
+      titleMetadata={post?.status && <Badge tone={post.status === "published" ? "success" : "info"}>{post.status === "published" ? "Published" : post.status === "draft" ? "Draft" : post.status.charAt(0).toUpperCase() + post.status.slice(1)}</Badge>}
       subtitle="Views, funnel, devices, and traffic sources for this post"
       backAction={smartBackAction(navigate, location, "/analytics", "Analytics")}
       secondaryActions={[

@@ -14,7 +14,6 @@ import {
   Text,
   Badge,
   Button,
-  ButtonGroup,
   Box,
   Spinner,
   InlineStack,
@@ -200,11 +199,37 @@ export default function SyncDashboard() {
   };
 
   const formatAppStatus = (status) => {
-    if (!status) return "—";
-    if (status === "published") return "Published";
-    if (status === "draft") return "Draft";
-    if (status === "scheduled") return "Scheduled";
-    return status.charAt(0).toUpperCase() + status.slice(1);
+    const key = String(status || "").trim().toLowerCase();
+    if (!key) return "—";
+    if (key === "published") return "Published";
+    if (key === "draft") return "Draft";
+    if (key === "scheduled") return "Scheduled";
+    return key.charAt(0).toUpperCase() + key.slice(1);
+  };
+
+  const formatSyncLogLabel = (value) => {
+    const key = String(value || "").trim();
+    if (!key) return "—";
+    const LOG_LABELS = {
+      app_to_shopify: "App → Shopify",
+      shopify_to_app: "Shopify → App",
+      applied: "Applied",
+      skipped_echo: "Skipped Echo",
+      skipped_duplicate: "Skipped Duplicate",
+      conflict: "Conflict",
+      error: "Error",
+      article_create: "Article Create",
+      article_update: "Article Update",
+      article_delete: "Article Delete",
+      reconcile: "Reconcile",
+      force_sync: "Force Sync",
+      webhook: "Webhook",
+    };
+    if (LOG_LABELS[key]) return LOG_LABELS[key];
+    // Title-case snake_case / kebab-case fallbacks
+    return key
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
   };
 
   const rowMarkup = posts.map((post, index) => {
@@ -243,11 +268,12 @@ export default function SyncDashboard() {
           </Badge>
         </IndexTable.Cell>
         <IndexTable.Cell>
-          <InlineStack gap="100">
+          <InlineStack gap="100" wrap={false}>
             <Badge tone={syncState.tone}>{syncState.label}</Badge>
             {post.shopifyArticle?.syncMode && (
               <Badge tone={SYNC_MODE_MAP[post.shopifyArticle.syncMode]?.tone || "info"}>
-                {SYNC_MODE_MAP[post.shopifyArticle.syncMode]?.label || post.shopifyArticle.syncMode}
+                {SYNC_MODE_MAP[post.shopifyArticle.syncMode]?.label ||
+                  formatSyncLogLabel(post.shopifyArticle.syncMode)}
               </Badge>
             )}
           </InlineStack>
@@ -267,30 +293,34 @@ export default function SyncDashboard() {
           </Text>
         </IndexTable.Cell>
         <IndexTable.Cell>
-          <ButtonGroup>
-            <Button
-              size="slim"
-              icon={RefreshIcon}
-              loading={isSyncing}
-              disabled={!post.shopifyArticle?.shopifyBlogId || !syncActionsEnabled}
-              onClick={() => forceSync(post)}
-              title={
-                featuresLoaded && !features.sync_actions?.enabled
-                  ? "Force sync is available on Starter and above"
-                  : !post.shopifyArticle?.shopifyBlogId
-                    ? "Post is not linked to a Shopify blog"
-                    : "Force sync to Shopify"
-              }
-            >
-              Sync
-            </Button>
-            <Button
-              size="slim"
-              onClick={() => navigate(`/posts/${post.id}/edit`)}
-            >
-              Edit
-            </Button>
-          </ButtonGroup>
+          {/* Keep Sync + Edit on one row — ButtonGroup wraps in a narrow Actions
+              column and doubles every row's height with empty vertical space. */}
+          <div style={{ whiteSpace: "nowrap" }}>
+            <InlineStack gap="200" wrap={false} blockAlign="center">
+              <Button
+                size="slim"
+                icon={RefreshIcon}
+                loading={isSyncing}
+                disabled={!post.shopifyArticle?.shopifyBlogId || !syncActionsEnabled}
+                onClick={() => forceSync(post)}
+                title={
+                  featuresLoaded && !features.sync_actions?.enabled
+                    ? "Force sync is available on Starter and above"
+                    : !post.shopifyArticle?.shopifyBlogId
+                      ? "Post is not linked to a Shopify blog"
+                      : "Force sync to Shopify"
+                }
+              >
+                Sync
+              </Button>
+              <Button
+                size="slim"
+                onClick={() => navigate(`/posts/${post.id}/edit`)}
+              >
+                Edit
+              </Button>
+            </InlineStack>
+          </div>
         </IndexTable.Cell>
       </IndexTable.Row>
     );
@@ -313,15 +343,15 @@ export default function SyncDashboard() {
         </IndexTable.Cell>
         <IndexTable.Cell>
           <Badge tone={log.direction === "app_to_shopify" ? "info" : "highlight"}>
-            {log.direction}
+            {formatSyncLogLabel(log.direction)}
           </Badge>
         </IndexTable.Cell>
         <IndexTable.Cell>
-          <Badge>{log.eventType}</Badge>
+          <Badge>{formatSyncLogLabel(log.eventType)}</Badge>
         </IndexTable.Cell>
         <IndexTable.Cell>
           <Badge tone={statusColors[log.status] || "info"}>
-            {log.status}
+            {formatSyncLogLabel(log.status)}
           </Badge>
         </IndexTable.Cell>
         <IndexTable.Cell>
