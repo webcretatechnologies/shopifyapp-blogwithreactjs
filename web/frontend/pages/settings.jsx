@@ -1,6 +1,6 @@
 /**
  * Settings — Blog appearance and behavior configuration, organized by tab:
- * Appearance, Content & Display, SEO, and Advanced.
+ * Appearance, Content & Display, SEO, Theme Integrations, and Advanced.
  */
 import {
   Page,
@@ -34,6 +34,7 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../utils/smartBack";
 import { metaRobotsActivateUrl } from "../utils/themeEmbedUtils";
 import EmbedRequirementBanner from "../components/EmbedRequirementBanner";
+import ThemeIntegrationsPanel from "../components/ThemeIntegrationsPanel";
 import UpgradePrompt from "../components/UpgradePrompt";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import ShopifyFilePicker from "../components/ShopifyFilePicker";
@@ -1331,6 +1332,7 @@ const TABS = [
   { id: "appearance", content: "Appearance" },
   { id: "content", content: "Content & display" },
   { id: "seo", content: "SEO & sitemap" },
+  { id: "theme", content: "Theme Integrations" },
   { id: "advanced", content: "Advanced" },
 ];
 
@@ -1391,7 +1393,9 @@ export default function Settings() {
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
+  const [analyticsTrackerActive, setAnalyticsTrackerActive] = useState(null);
   const [themeSupportsAppEmbeds, setThemeSupportsAppEmbeds] = useState(true);
+  const [shopDomain, setShopDomain] = useState(() => window.shopify?.config?.shop || "");
   const [isSyncingTheme, setIsSyncingTheme] = useState(false);
   const [selectedTab, setSelectedTab] = useState(() => {
     const tabParam = searchParams.get("tab");
@@ -1473,10 +1477,23 @@ export default function Settings() {
       .then((r) => r.json())
       .then((data) => {
         setMetaRobotsActive(!!data.metaRobots?.active);
+        setAnalyticsTrackerActive(!!data.analyticsTracker?.active);
         setThemeSupportsAppEmbeds(data.themeSupportsAppEmbeds !== false);
       })
-      .catch(() => setMetaRobotsActive(false));
+      .catch(() => {
+        setMetaRobotsActive(false);
+        setAnalyticsTrackerActive(false);
+      });
   };
+
+  useEffect(() => {
+    fetch("/api/shop")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.shop?.domain) setShopDomain(d.shop.domain);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetchMetaRobotsStatus();
@@ -3131,8 +3148,20 @@ export default function Settings() {
               </>
             )}
 
-            {/* ─── Advanced ────────────────────────────────────────── */}
+            {/* ─── Theme Integrations ─────────────────────────────── */}
             {selectedTab === 3 && (
+              <Layout.Section>
+                <ThemeIntegrationsPanel
+                  shop={shopDomain}
+                  analyticsActive={analyticsTrackerActive}
+                  metaRobotsActive={metaRobotsActive}
+                  themeSupportsAppEmbeds={themeSupportsAppEmbeds}
+                />
+              </Layout.Section>
+            )}
+
+            {/* ─── Advanced ────────────────────────────────────────── */}
+            {selectedTab === 4 && (
               <>
               <Layout.Section>
                 <SectionCard
