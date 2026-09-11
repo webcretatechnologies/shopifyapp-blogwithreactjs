@@ -848,6 +848,9 @@ export default function PostEditor() {
   const [blogSearchValue, setBlogSearchValue] = useState("");
   const [categorySearchValue, setCategorySearchValue] = useState("");
   const [features, setFeatures] = useState({});
+  // Stay false until plan features resolve so Pro/Starter shops don't flash
+  // UpgradePrompt while features is still the empty initial {}.
+  const [featuresLoaded, setFeaturesLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(isEditing);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingHeader, setIsSavingHeader] = useState(false);
@@ -1083,6 +1086,7 @@ export default function PostEditor() {
       setOriginalContentHtml(data.post.contentHtml || "");
       setTags(loadedTags);
       setFeatures(data.features || {});
+      setFeaturesLoaded(true);
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || data.post.blogId || "");
 
       // Reset save bar on fresh load
@@ -1128,7 +1132,10 @@ export default function PostEditor() {
       // Was previously only set for new posts, so plan-gated UI (Schedule, SEO fields, etc.)
       // always rendered as locked when editing an existing post, regardless of the real plan.
       setFeatures(featData.features || {});
-    } catch { }
+      setFeaturesLoaded(true);
+    } catch {
+      setFeaturesLoaded(true);
+    }
   };
 
   // Pre-fill the Author field from Settings → Content & display → "Default author name" so
@@ -2318,14 +2325,14 @@ export default function PostEditor() {
                                 <Text variant="bodySm" tone="subdued">
                                   Controls the JSON-LD schema type published with this article for Google rich results. Choose "None" to disable structured data for this article.
                                 </Text>
-                              ) : (
+                              ) : featuresLoaded ? (
                                 <UpgradePrompt
                                   onUpgrade={handleUpgradeNow}
                                   requiredPlan="Starter"
                                   title="Rich snippets - Starter feature"
                                   description="Controls the JSON-LD schema type published with this article for Google rich results."
                                 />
-                              )}
+                              ) : null}
                             </BlockStack>
 
                             {/* Meta Robots */}
@@ -2388,14 +2395,14 @@ export default function PostEditor() {
                                   indexable while still being left out of that sitemap. Noindex'd
                                   posts are always excluded regardless of this setting.
                                 </Text>
-                              ) : (
+                              ) : featuresLoaded ? (
                                 <UpgradePrompt
                                   onUpgrade={handleUpgradeNow}
                                   requiredPlan="Pro"
                                   title="XML sitemap control - Pro feature"
                                   description="Exclude individual posts from the app's sitemap, submitted separately to Search Console/Bing."
                                 />
-                              )}
+                              ) : null}
                             </BlockStack>
                           </BlockStack>
                         </>
@@ -2409,7 +2416,7 @@ export default function PostEditor() {
                   <Box padding="400">
                     <BlockStack gap="300">
                       <Text variant="headingSm" as="h2">Custom CSS</Text>
-                      {!features.custom_css?.enabled && (
+                      {featuresLoaded && !features.custom_css?.enabled && (
                         <UpgradePrompt
                           onUpgrade={handleUpgradeNow}
                           requiredPlan="Starter"
@@ -2445,7 +2452,7 @@ export default function PostEditor() {
                   <Box padding="400">
                     <BlockStack gap="300">
                       <Text variant="headingSm" as="h2">Visibility</Text>
-                      {!features.post_scheduling?.enabled && (
+                      {featuresLoaded && !features.post_scheduling?.enabled && (
                         <UpgradePrompt
                           onUpgrade={handleUpgradeNow}
                           requiredPlan="Pro"
@@ -2978,14 +2985,14 @@ export default function PostEditor() {
                               : "Related posts are chosen automatically with this source. Leftover manual picks are ignored. Switch to Manual picks to choose specific articles."}
                           </Text>
                         )
-                      ) : (
+                      ) : featuresLoaded ? (
                         <UpgradePrompt
                           onUpgrade={handleUpgradeNow}
                           requiredPlan="Starter"
                           title="Related posts are picked automatically on this plan"
                           description="Upgrade to manually choose which articles show here."
                         />
-                      )}
+                      ) : null}
                       {features.blog_sidebar?.enabled && (
                         <Select
                           label="Sidebar for this post"

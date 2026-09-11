@@ -24,6 +24,7 @@ export default function BlogTemplateGalleryModal({ open, onClose, onApply, confi
   const [category, setCategory] = useState("All");
   const [tab, setTab] = useState(0);
   const [features, setFeatures] = useState({});
+  const [featuresLoaded, setFeaturesLoaded] = useState(false);
   const [error, setError] = useState("");
   // Polaris doesn't stack modals, so the gallery swaps to the full preview in place
   // rather than opening a second one — applying still replaces the current content,
@@ -49,7 +50,11 @@ export default function BlogTemplateGalleryModal({ open, onClose, onApply, confi
           setTemplateLimit(d.limit ?? null);
         })
         .catch(() => setShopTemplates([])),
-      fetch("/api/posts/plan/features").then((r) => r.json()).then((d) => setFeatures(d.features || {})).catch(() => {}),
+      fetch("/api/posts/plan/features")
+        .then((r) => r.json())
+        .then((d) => setFeatures(d.features || {}))
+        .catch(() => setFeatures({}))
+        .finally(() => setFeaturesLoaded(true)),
     ]).finally(() => setLoading(false));
   }, [open]);
 
@@ -317,7 +322,7 @@ export default function BlogTemplateGalleryModal({ open, onClose, onApply, confi
           ) : (
             <InlineGrid columns={{ xs: 1, sm: 2, md: 3, lg: 4 }} gap="400">
               {filtered.map((t) => {
-                const locked = t.tier === "paid" && !premiumOn;
+                const locked = featuresLoaded && t.tier === "paid" && !premiumOn;
                 return (
                   <TemplateGalleryCard
                     key={t.key}

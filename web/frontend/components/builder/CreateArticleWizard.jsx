@@ -87,6 +87,7 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
   const [selected, setSelected] = useState(null); // { kind: 'library'|'shop'|'blank', template }
   const [previewing, setPreviewing] = useState(null);
   const [features, setFeatures] = useState({});
+  const [featuresLoaded, setFeaturesLoaded] = useState(false);
 
   // step 2
   const [title, setTitle] = useState("");
@@ -188,7 +189,8 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
       fetch("/api/posts/plan/features")
         .then((r) => r.json())
         .then((d) => setFeatures(d.features || {}))
-        .catch(() => setFeatures({})),
+        .catch(() => setFeatures({}))
+        .finally(() => setFeaturesLoaded(true)),
       // Same "Settings → Content & display → Default author name" prefill the editor itself
       // applies for brand-new posts - the wizard shouldn't ask twice for what Settings already knows.
       // Guarded so a resumed session with an already-typed author is never overwritten.
@@ -241,7 +243,8 @@ export default function CreateArticleWizard({ open, onClose, onGenerated, initia
   const isBlank = selected?.kind === "blank";
   const outOfCredits = Boolean(credits && credits.limit != null && (credits.remaining ?? 0) <= 0);
   const premiumOn = Boolean(features.templates_premium?.enabled);
-  const isLocked = (kind, template) => kind === "library" && template?.tier === "paid" && !premiumOn;
+  const isLocked = (kind, template) =>
+    featuresLoaded && kind === "library" && template?.tier === "paid" && !premiumOn;
 
   // "Write it yourself" used to just navigate to /posts/new with the template/prefill in router
   // state and leave the actual post creation for whenever the merchant got around to clicking

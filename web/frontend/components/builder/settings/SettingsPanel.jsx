@@ -82,12 +82,14 @@ export default function SettingsPanel() {
   // published page for non-Pro shops (see EditorContentCompiler.js's deviceVisibilityEntitled
   // enforcement, which now silently drops these flags server-side for Free/Starter). Disabling
   // the controls here just makes that restriction visible instead of surprising.
-  const [deviceVisibilityEntitled, setDeviceVisibilityEntitled] = useState(true);
+  // null until /plan/features resolves — avoid flashing the Pro upgrade banner
+  // while the fetch is in flight (initial true would wrongly unlock Free/Starter).
+  const [deviceVisibilityEntitled, setDeviceVisibilityEntitled] = useState(null);
   useEffect(() => {
     fetch("/api/posts/plan/features")
       .then((r) => r.json())
       .then((d) => setDeviceVisibilityEntitled(!!d.features?.device_visibility?.enabled))
-      .catch(() => {});
+      .catch(() => setDeviceVisibilityEntitled(false));
   }, []);
 
   if (selectedBlockIds.length > 1) {
@@ -180,7 +182,7 @@ export default function SettingsPanel() {
               </InlineStack>
             </Box>
 
-            {!deviceVisibilityEntitled && (
+            {deviceVisibilityEntitled === false && (
               <Box paddingBlockEnd="300">
                 <UpgradePrompt
                   onUpgrade={onUpgradeClick || undefined}
@@ -217,7 +219,7 @@ export default function SettingsPanel() {
                       </span>
                     }
                     checked={!!settings[key]}
-                    disabled={!deviceVisibilityEntitled}
+                    disabled={deviceVisibilityEntitled !== true}
                     onChange={(newChecked) => updateBlockSettings(selectedBlock.id, { [key]: newChecked })}
                   />
                 </div>

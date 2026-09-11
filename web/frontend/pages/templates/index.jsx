@@ -49,6 +49,9 @@ export default function BlogTemplatesLibrary() {
   const [category, setCategory] = useState("All");
   const [tab, setTab] = useState(0);
   const [features, setFeatures] = useState({});
+  // Stay false until plan features resolve so Pro shops don't flash premium
+  // templates as locked while features is still {}.
+  const [featuresLoaded, setFeaturesLoaded] = useState(false);
   const [postCount, setPostCount] = useState(0);
   const [postLimit, setPostLimit] = useState(null);
   const [activePlan, setActivePlan] = useState("");
@@ -97,7 +100,8 @@ export default function BlogTemplatesLibrary() {
       fetch("/api/posts/plan/features")
         .then((r) => r.json())
         .then((d) => setFeatures(d.features || {}))
-        .catch(() => {}),
+        .catch(() => setFeatures({}))
+        .finally(() => setFeaturesLoaded(true)),
       fetch("/api/billing/check")
         .then((r) => r.json())
         .then((d) => {
@@ -219,7 +223,7 @@ export default function BlogTemplatesLibrary() {
   };
 
   const renderLibraryCard = (t) => {
-    const locked = t.tier === "paid" && !premiumOn;
+    const locked = featuresLoaded && t.tier === "paid" && !premiumOn;
     return (
       <TemplateGalleryCard
         key={t.key}

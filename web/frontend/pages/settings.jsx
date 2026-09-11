@@ -1405,6 +1405,9 @@ export default function Settings() {
   const [sitemapStatus, setSitemapStatus] = useState(null);
   const [isLoadingSitemap, setIsLoadingSitemap] = useState(true);
   const [features, setFeatures] = useState({});
+  // Stay false until /plan/features resolves so higher-plan shops don't flash
+  // UpgradePrompt while features is still the empty initial {}.
+  const [featuresLoaded, setFeaturesLoaded] = useState(false);
   const [showUpgradeSaveConfirm, setShowUpgradeSaveConfirm] = useState(false);
   const [isSavingForUpgrade, setIsSavingForUpgrade] = useState(false);
   const [categories, setCategories] = useState([]);
@@ -1500,7 +1503,8 @@ export default function Settings() {
     fetch("/api/posts/plan/features")
       .then((r) => r.json())
       .then((d) => setFeatures(d.features || {}))
-      .catch(() => {});
+      .catch(() => setFeatures({}))
+      .finally(() => setFeaturesLoaded(true));
   }, []);
 
   const loadCategories = () => {
@@ -1907,7 +1911,7 @@ export default function Settings() {
                         colors from your live Shopify theme, then save.
                       </Text>
 
-                      {!features.theme_style_sync?.enabled && (
+                      {featuresLoaded && !features.theme_style_sync?.enabled && (
                         <UpgradePrompt
                           onUpgrade={handleUpgradeNow}
                           requiredPlan="Starter"
@@ -2168,7 +2172,7 @@ export default function Settings() {
                   <SectionCard
                     title="Blog listing page"
                     trailing={
-                      features.listing_layout?.enabled ? null : <Badge>Starter+</Badge>
+                      featuresLoaded && !features.listing_layout?.enabled ? <Badge>Starter+</Badge> : null
                     }
                   >
                     {(() => {
@@ -2188,11 +2192,11 @@ export default function Settings() {
                     <Text as="p" variant="bodySm" tone="subdued">
                       Controls the News / blog index (the page that lists all posts), not the
                       individual article. Save settings, then refresh the listing on your store.
-                      {!features.listing_layout?.enabled
+                      {featuresLoaded && !features.listing_layout?.enabled
                         ? " On Free, the storefront uses your theme's default blog layout."
                         : ""}
                     </Text>
-                    {!features.listing_layout?.enabled && (
+                    {featuresLoaded && !features.listing_layout?.enabled && (
                       <UpgradePrompt
                         requiredPlan="Starter"
                         title="Listing layout is a Starter feature"
@@ -2253,10 +2257,10 @@ export default function Settings() {
                   <SectionCard
                     title="Blog sidebar"
                     trailing={
-                      features.blog_sidebar?.enabled ? null : <Badge>Pro+</Badge>
+                      featuresLoaded && !features.blog_sidebar?.enabled ? <Badge>Pro+</Badge> : null
                     }
                   >
-                    {!features.blog_sidebar?.enabled && (
+                    {featuresLoaded && !features.blog_sidebar?.enabled && (
                       <UpgradePrompt
                         requiredPlan="Pro"
                         title="Blog sidebar is a Pro feature"
@@ -3168,7 +3172,7 @@ export default function Settings() {
                   title="Custom code injection"
                   trailing={<Badge tone="attention">Advanced</Badge>}
                 >
-                  {!features.custom_code_injection?.enabled && (
+                  {featuresLoaded && !features.custom_code_injection?.enabled && (
                     <UpgradePrompt
                       onUpgrade={handleUpgradeNow}
                       requiredPlan="Pro"
@@ -3203,7 +3207,7 @@ export default function Settings() {
 
               <Layout.Section>
                 <SectionCard title="Branding">
-                  {!features.remove_branding?.enabled && (
+                  {featuresLoaded && !features.remove_branding?.enabled && (
                     <UpgradePrompt
                       onUpgrade={handleUpgradeNow}
                       requiredPlan="Starter"

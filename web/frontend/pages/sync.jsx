@@ -55,6 +55,9 @@ export default function SyncDashboard() {
   const [syncLogs, setSyncLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [features, setFeatures] = useState({});
+  // Stay false until /plan/features resolves so Pro shops don't flash the
+  // UpgradePrompt while features is still the empty initial {}.
+  const [featuresLoaded, setFeaturesLoaded] = useState(false);
 
   const tabs = [
     { id: "posts", content: "Posts" },
@@ -66,6 +69,8 @@ export default function SyncDashboard() {
   }, []);
 
   const dismissToast = useCallback(() => setToast(null), []);
+
+  const syncActionsEnabled = featuresLoaded && !!features.sync_actions?.enabled;
 
   const fetchPosts = useCallback(async () => {
     setLoading(true);
@@ -96,7 +101,8 @@ export default function SyncDashboard() {
     fetch("/api/posts/plan/features")
       .then((r) => r.json())
       .then((d) => setFeatures(d.features || {}))
-      .catch(() => {});
+      .catch(() => setFeatures({}))
+      .finally(() => setFeaturesLoaded(true));
   }, [fetchPosts]);
 
   useEffect(() => {
@@ -266,10 +272,10 @@ export default function SyncDashboard() {
               size="slim"
               icon={RefreshIcon}
               loading={isSyncing}
-              disabled={!post.shopifyArticle?.shopifyBlogId || !features.sync_actions?.enabled}
+              disabled={!post.shopifyArticle?.shopifyBlogId || !syncActionsEnabled}
               onClick={() => forceSync(post)}
               title={
-                !features.sync_actions?.enabled
+                featuresLoaded && !features.sync_actions?.enabled
                   ? "Force sync is available on Starter and above"
                   : !post.shopifyArticle?.shopifyBlogId
                     ? "Post is not linked to a Shopify blog"
@@ -341,7 +347,7 @@ export default function SyncDashboard() {
           content: reconciling ? "Reconciling..." : "Reconcile all",
           onAction: handleReconcile,
           loading: reconciling,
-          disabled: !features.sync_actions?.enabled,
+          disabled: !syncActionsEnabled,
         }}
         secondaryActions={[
           {
@@ -349,7 +355,7 @@ export default function SyncDashboard() {
             icon: RefreshIcon,
             onAction: handleBulkResync,
             loading: bulkResyncing,
-            disabled: !features.sync_actions?.enabled,
+            disabled: !syncActionsEnabled,
           },
           {
             content: "Refresh",
@@ -380,7 +386,7 @@ export default function SyncDashboard() {
             </Banner>
           </Layout.Section>
 
-          {!features.sync_actions?.enabled && (
+          {featuresLoaded && !features.sync_actions?.enabled && (
             <Layout.Section>
               <UpgradePrompt
                 requiredPlan="Starter"
