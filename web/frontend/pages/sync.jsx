@@ -193,6 +193,14 @@ export default function SyncDashboard() {
       : { label: "Shopify → App", tone: "highlight" };
   };
 
+  const formatAppStatus = (status) => {
+    if (!status) return "—";
+    if (status === "published") return "Published";
+    if (status === "draft") return "Draft";
+    if (status === "scheduled") return "Scheduled";
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
   const rowMarkup = posts.map((post, index) => {
     const syncState = getSyncStateBadge(post);
     const directionBadge = getDirectionBadge(post);
@@ -225,7 +233,7 @@ export default function SyncDashboard() {
         </IndexTable.Cell>
         <IndexTable.Cell>
           <Badge tone={post.status === "published" ? "success" : "info"}>
-            {post.status}
+            {formatAppStatus(post.status)}
           </Badge>
         </IndexTable.Cell>
         <IndexTable.Cell>
