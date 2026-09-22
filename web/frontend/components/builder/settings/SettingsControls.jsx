@@ -686,6 +686,7 @@ export default function SettingsControls({ block, onChange }) {
           options={[
             { label: "Bulleted list", value: "bullet" },
             { label: "Numbered list", value: "numbered" },
+            { label: "None", value: "none" },
           ]}
           value={settings.listStyle || "bullet"}
           onChange={(val) => update("listStyle", val)}

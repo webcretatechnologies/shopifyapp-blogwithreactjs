@@ -980,10 +980,15 @@ export class EditorContentCompiler {
     const renderNodes = (items, isRoot) => {
       if (!items || items.length === 0) return "";
       const Tag = listStyle === "numbered" ? "ol" : "ul";
-      const paddingLeft = isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px";
+      const paddingLeft = listStyle === "none" ? "0" : isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px";
       const marginTop = isRoot ? "0" : "6px";
       const marginBottom = isRoot ? "0" : "2px";
-      const listType = listStyle === "numbered" ? (isRoot ? "decimal" : "lower-alpha") : (isRoot ? "disc" : "circle");
+      const listType =
+        listStyle === "none"
+          ? "none"
+          : listStyle === "numbered"
+          ? (isRoot ? "decimal" : "lower-alpha")
+          : (isRoot ? "disc" : "circle");
 
       // Matches the canvas's onMouseEnter/onMouseLeave underline toggle (TableOfContentsPreview.jsx)
       // — driven inline instead of a sibling <style> block, because Shopify's own admin blog
@@ -1003,11 +1008,13 @@ export class EditorContentCompiler {
           const clickHandler = `var el=document.getElementById('${h.id}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});if(history.pushState){history.pushState(null,null,'#${h.id}');}return false;}`;
           // ::marker colour comes from the <li>, not the <a> - see compileBlocksToHtml.js's
           // matching comment. Without it, panel TOC markers stayed dark on a dark panel.
-          return `<li style="font-size: 14px; margin: 6px 0; display: list-item; color: ${textColor};"><a href="#${h.id}" onclick="${clickHandler}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};" onmouseenter="this.style.textDecoration='underline'" onmouseleave="this.style.textDecoration='none'">${h.text}</a>${childrenHtml}</li>`;
+          const liListStyle = listStyle === "none" ? " list-style-type: none !important;" : "";
+          return `<li style="font-size: 14px; margin: 6px 0; display: list-item; color: ${textColor};${liListStyle}"><a href="#${h.id}" onclick="${clickHandler}" style="color: ${textColor}; text-decoration: none; font-weight: ${isMain ? "600" : "400"};" onmouseenter="this.style.textDecoration='underline'" onmouseleave="this.style.textDecoration='none'">${h.text}</a>${childrenHtml}</li>`;
         })
         .join("\n");
 
-      return `<${Tag} style="margin: ${marginTop} 0 ${marginBottom} 0; padding-left: ${paddingLeft}; list-style-type: ${listType};">\n${itemsHtml}\n</${Tag}>`;
+      const listTypeImportant = listStyle === "none" ? `${listType} !important` : listType;
+      return `<${Tag} style="margin: ${marginTop} 0 ${marginBottom} 0; padding-left: ${paddingLeft}; list-style-type: ${listTypeImportant};">\n${itemsHtml}\n</${Tag}>`;
     };
 
     const listHtml = renderNodes(tree, true);

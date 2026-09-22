@@ -1408,6 +1408,17 @@ async function syncAfterLocalEdit(postId, { publishMode = false } = {}) {
   }
 
   if (!remote) {
+    // The linked article was deleted directly in Shopify (e.g. via Shopify Admin) without the
+    // ARTICLES_DELETE webhook reaching this app, so the local shopifyArticleId now points at
+    // nothing. pushPostToShopify() branches on that id to decide articleUpdate vs articleCreate —
+    // left as-is, it would retry articleUpdate against a dead id and fail the same way again.
+    // Clearing it here forces a fresh articleCreate.
+    if (post.shopifyArticle.shopifyArticleId) {
+      await prisma.shopifyArticle.update({
+        where: { postId: post.id },
+        data: { shopifyArticleId: null, syncState: "linked" },
+      });
+    }
     return pushPostToShopify(postId, { publishMode });
   }
 

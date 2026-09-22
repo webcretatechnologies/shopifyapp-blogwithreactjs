@@ -9,6 +9,18 @@ import BlockErrorBoundary from "../BlockErrorBoundary";
 import BlockContextMenu from "./BlockContextMenu";
 import { getActiveCenterY } from "../utils/treeUtils";
 
+// Move can reparent the block (into/out of a section), so the DOM node the click landed on gets
+// torn down and remounted at its new position on the next render — scrollIntoView has to wait
+// for that remount instead of running against the about-to-be-removed node synchronously.
+function scrollMovedBlockIntoView(id) {
+  requestAnimationFrame(() => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
+  });
+}
+
 const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
   const block = useBuilderStore((s) => s.blocksById[id]);
   const selectedId = useBuilderStore((s) => s.selectedBlockId);
@@ -295,10 +307,10 @@ const CanvasNode = memo(function CanvasNode({ id, isGhost = false }) {
 
           <div style={{ height: "12px", width: "1px", background: "rgba(255,255,255,0.3)", margin: "0 2px" }} />
 
-          <button type="button" title="Move Up" onClick={() => moveBlockUp(id)} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", display: "flex", padding: "2px", borderRadius: "3px" }} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+          <button type="button" title="Move Up" onClick={() => { moveBlockUp(id); scrollMovedBlockIntoView(id); }} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", display: "flex", padding: "2px", borderRadius: "3px" }} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
             <ArrowUp size={13} />
           </button>
-          <button type="button" title="Move Down" onClick={() => moveBlockDown(id)} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", display: "flex", padding: "2px", borderRadius: "3px" }} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+          <button type="button" title="Move Down" onClick={() => { moveBlockDown(id); scrollMovedBlockIntoView(id); }} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", display: "flex", padding: "2px", borderRadius: "3px" }} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
             <ArrowDown size={13} />
           </button>
           <button type="button" title="Duplicate" onClick={() => duplicateBlock(id)} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", display: "flex", padding: "2px", borderRadius: "3px" }} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>

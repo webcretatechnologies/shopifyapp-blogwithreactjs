@@ -10,6 +10,7 @@ import {
   useSensors,
   closestCenter,
   KeyboardSensor,
+  DragOverlay,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -258,6 +259,9 @@ export default function LayersPanel() {
   const requestDeleteSelectedBlocks = useBuilderStore((s) => s.requestDeleteSelectedBlocks);
 
   const [collapsedIds, setCollapsedIds] = useState(new Set());
+  const [activeId, setActiveId] = useState(null);
+  const activeBlock = activeId ? blocksById[activeId] : null;
+  const activeEntry = activeBlock ? BlockRegistry[activeBlock.type] : null;
 
   const toggleCollapse = (id) => {
     setCollapsedIds((prev) => {
@@ -299,19 +303,26 @@ export default function LayersPanel() {
     })
   );
 
+  const handleDragStart = (event) => {
+    setActiveId(event.active.id);
+  };
+
   const handleDragEnd = (event) => {
+    setActiveId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
     const overIsSection = blocksById[over.id]?.type === "Section" || blocksById[over.id]?.type === "ColumnLayout" || blocksById[over.id]?.type === "Column";
-    
+
     // Resolve where to drop in the nested tree
     const target = resolveDropTarget(blocksById, rootIds, active.id, over.id, overIsSection);
-    
+
     if (target) {
       moveBlock(active.id, target.newParentId, target.newIndex);
     }
   };
+
+  const handleDragCancel = () => setActiveId(null);
 
   if (rootIds.length === 0) {
     return (
@@ -389,17 +400,54 @@ export default function LayersPanel() {
         )}
       </div>
 
-      <SortableContext items={flatIds} strategy={verticalListSortingStrategy}>
-        {visibleItems.map((item) => (
-          <LayerRow
-            key={item.id}
-            id={item.id}
-            depth={item.depth}
-            isCollapsed={collapsedIds.has(item.id)}
-            onToggleCollapse={toggleCollapse}
-          />
-        ))}
-      </SortableContext>
+      <DndContext
+        id="layers-dnd-context"
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <SortableContext items={flatIds} strategy={verticalListSortingStrategy}>
+          {visibleItems.map((item) => (
+            <LayerRow
+              key={item.id}
+              id={item.id}
+              depth={item.depth}
+              isCollapsed={collapsedIds.has(item.id)}
+              onToggleCollapse={toggleCollapse}
+            />
+          ))}
+        </SortableContext>
+
+        <DragOverlay dropAnimation={{ duration: 150, easing: "cubic-bezier(0.2, 0, 0, 1)" }}>
+          {activeBlock ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "4px 10px",
+                borderRadius: "6px",
+                background: "var(--p-color-bg-surface)",
+                border: "1px solid var(--p-color-border-focus)",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                fontSize: "12px",
+                fontWeight: 500,
+                color: "var(--p-color-text)",
+                cursor: "grabbing",
+              }}
+            >
+              {activeEntry?.icon && (
+                <div style={{ width: 14, height: 14, color: "var(--p-color-icon-secondary)", flexShrink: 0 }}>
+                  <Icon source={activeEntry.icon.props.source} />
+                </div>
+              )}
+              <span>{activeEntry?.label || activeBlock.type}</span>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }

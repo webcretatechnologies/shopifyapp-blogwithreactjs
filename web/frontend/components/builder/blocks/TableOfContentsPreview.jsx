@@ -35,10 +35,15 @@ function RenderTocList({ items, minLevel, listStyle, textColor, isRoot = true })
     <ListTag
       style={{
         margin: 0,
-        paddingLeft: isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px",
+        paddingLeft: listStyle === "none" ? 0 : isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px",
         marginTop: isRoot ? 0 : "6px",
         marginBottom: isRoot ? 0 : "2px",
-        listStyleType: listStyle === "numbered" ? (isRoot ? "decimal" : "lower-alpha") : (isRoot ? "disc" : "circle"),
+        listStyleType:
+          listStyle === "none"
+            ? "none"
+            : listStyle === "numbered"
+            ? (isRoot ? "decimal" : "lower-alpha")
+            : (isRoot ? "disc" : "circle"),
       }}
     >
       {items.map((item) => {

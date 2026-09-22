@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { enablePatches, produceWithPatches, applyPatches } from "immer";
 import { nanoid } from "./nanoid";
-import { normalizeBlocksAst, createBlock } from "../BlockRegistry";
+import { normalizeBlocksAst, createBlock, BlockRegistry, normalizeBlockType } from "../BlockRegistry";
 import { normalizeAst, denormalizeAst } from "./normalize";
 
 enablePatches();
@@ -310,18 +310,56 @@ export const useBuilderStore = create((set, get) => ({
     });
   },
 
+  // moveBlockUp/moveBlockDown walk the same top-to-bottom order the Layers panel renders
+  // (container, then its children, before the next sibling) one step at a time, so repeated
+  // clicks retrace exactly what drag-and-drop already allows: diving into an adjacent section
+  // from outside, and popping back out to the parent's level once there's nothing left inside.
+  // A block is only ever allowed to CROSS into a neighboring container when it is itself a plain
+  // content block (not a Section/Column) — two containers swap past each other as whole units
+  // instead of nesting one inside the other.
   moveBlockUp(id) {
     get()._commit((draft) => {
       const block = draft.blocksById[id];
       if (!block) return;
       const parentId = block.parentId;
-      const targetArr = parentId ? draft.blocksById[parentId]?.childrenIds : draft.rootIds;
-      if (targetArr) {
-        const idx = targetArr.indexOf(id);
-        if (idx > 0) {
-          targetArr.splice(idx, 1);
-          targetArr.splice(idx - 1, 0, id);
+      const arr = parentId ? draft.blocksById[parentId]?.childrenIds : draft.rootIds;
+      if (!arr) return;
+      const idx = arr.indexOf(id);
+      if (idx === -1) return;
+
+      const isContainerBlock = BlockRegistry[normalizeBlockType(block.type)]?.allowsChildren;
+
+      if (idx > 0) {
+        const neighborId = arr[idx - 1];
+        const neighborBlock = draft.blocksById[neighborId];
+        const neighborAllowsChildren = neighborBlock && BlockRegistry[normalizeBlockType(neighborBlock.type)]?.allowsChildren;
+
+        if (!isContainerBlock && neighborAllowsChildren) {
+          // Step into the previous section, landing at its very bottom — the position
+          // immediately above id in document order.
+          arr.splice(idx, 1);
+          neighborBlock.childrenIds = neighborBlock.childrenIds || [];
+          neighborBlock.childrenIds.push(id);
+          block.parentId = neighborId;
+        } else {
+          arr.splice(idx, 1);
+          arr.splice(idx - 1, 0, id);
         }
+        return;
+      }
+
+      // Already first in its container — step out to sit just before that container,
+      // one level up, instead of being stuck at the edge.
+      if (idx === 0 && parentId) {
+        const parentBlock = draft.blocksById[parentId];
+        const grandParentId = parentBlock?.parentId ?? null;
+        const grandArr = grandParentId ? draft.blocksById[grandParentId]?.childrenIds : draft.rootIds;
+        if (!grandArr) return;
+        const parentIdx = grandArr.indexOf(parentId);
+        if (parentIdx === -1) return;
+        arr.splice(idx, 1);
+        grandArr.splice(parentIdx, 0, id);
+        block.parentId = grandParentId;
       }
     });
   },
@@ -331,13 +369,44 @@ export const useBuilderStore = create((set, get) => ({
       const block = draft.blocksById[id];
       if (!block) return;
       const parentId = block.parentId;
-      const targetArr = parentId ? draft.blocksById[parentId]?.childrenIds : draft.rootIds;
-      if (targetArr) {
-        const idx = targetArr.indexOf(id);
-        if (idx !== -1 && idx < targetArr.length - 1) {
-          targetArr.splice(idx, 1);
-          targetArr.splice(idx + 1, 0, id);
+      const arr = parentId ? draft.blocksById[parentId]?.childrenIds : draft.rootIds;
+      if (!arr) return;
+      const idx = arr.indexOf(id);
+      if (idx === -1) return;
+
+      const isContainerBlock = BlockRegistry[normalizeBlockType(block.type)]?.allowsChildren;
+
+      if (idx < arr.length - 1) {
+        const neighborId = arr[idx + 1];
+        const neighborBlock = draft.blocksById[neighborId];
+        const neighborAllowsChildren = neighborBlock && BlockRegistry[normalizeBlockType(neighborBlock.type)]?.allowsChildren;
+
+        if (!isContainerBlock && neighborAllowsChildren) {
+          // Step into the next section, landing at its very top — the position
+          // immediately below id in document order.
+          arr.splice(idx, 1);
+          neighborBlock.childrenIds = neighborBlock.childrenIds || [];
+          neighborBlock.childrenIds.unshift(id);
+          block.parentId = neighborId;
+        } else {
+          arr.splice(idx, 1);
+          arr.splice(idx + 1, 0, id);
         }
+        return;
+      }
+
+      // Already last in its container — step out to sit just after that container,
+      // one level up, instead of being stuck at the edge.
+      if (idx === arr.length - 1 && parentId) {
+        const parentBlock = draft.blocksById[parentId];
+        const grandParentId = parentBlock?.parentId ?? null;
+        const grandArr = grandParentId ? draft.blocksById[grandParentId]?.childrenIds : draft.rootIds;
+        if (!grandArr) return;
+        const parentIdx = grandArr.indexOf(parentId);
+        if (parentIdx === -1) return;
+        arr.splice(idx, 1);
+        grandArr.splice(parentIdx + 1, 0, id);
+        block.parentId = grandParentId;
       }
     });
   },

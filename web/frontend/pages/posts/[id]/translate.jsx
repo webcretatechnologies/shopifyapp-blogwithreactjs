@@ -38,6 +38,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../../../utils/smartBack";
 import UpgradePrompt from "../../../components/UpgradePrompt";
+import { BlockRegistry } from "../../../components/builder/BlockRegistry";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  DOM / HTML PARSING & BLOCK TRANSLATION HELPERS
@@ -616,6 +617,104 @@ function stripHtml(html) {
   return (tmp.textContent || tmp.innerText || "").trim();
 }
 
+// The AI generator stamps every image it couldn't source a real picture for with this exact
+// alt text (see AiArticleService.js) — it's an internal "you still need to add a photo" marker,
+// never real merchant-facing copy. It isn't part of BlockRegistry's own defaults (Image.alt's
+// default is ""), so it needs its own explicit check alongside the generic one below.
+const AI_PLACEHOLDER_IMAGE_ALT = "Placeholder - replace with your own image";
+
+function isBlankField(val) {
+  if (val === null || val === undefined) return true;
+  const text = stripHtml(formatTextValue(val));
+  return !text.trim();
+}
+
+// General form of "this is scaffold, not real content": a block's own BlockRegistry
+// defaultSettings IS exactly the value it's created with (Heading's "Your Heading", Callout's
+// "Did you know?", ButtonBlock's "Click Here", a commerce block's "Add to Cart", etc.) — a
+// field still equal to that value is something nobody has actually written, for ANY block
+// type, not a one-off case for a particular block. Only compares plain string defaults; a
+// block-specific check (like the AI image alt above, or FaqBlock's sample items below) is
+// still needed for values BlockRegistry itself doesn't default to non-blank.
+function isUnmodifiedDefaultField(blockType, fieldKey, val) {
+  if (val === null || val === undefined) return false;
+  const defaultVal = BlockRegistry[blockType]?.defaultSettings?.[fieldKey];
+  if (typeof defaultVal !== "string" || !defaultVal.trim()) return false;
+  return String(val).trim() === defaultVal.trim();
+}
+
+// FaqBlock scaffolds with 3 sample Q&As (see BlockRegistry.jsx) — an untouched block still
+// carrying that exact sample array is just as un-customized as any single default string field.
+function isUnmodifiedDefaultItems(blockType, fieldKey, items) {
+  const defaultItems = BlockRegistry[blockType]?.defaultSettings?.[fieldKey];
+  if (!Array.isArray(defaultItems) || !Array.isArray(items) || items.length !== defaultItems.length) return false;
+  return items.every((item, i) => {
+    const d = defaultItems[i] || {};
+    return (item?.question || "").trim() === (d.question || "").trim() && (item?.answer || "").trim() === (d.answer || "").trim();
+  });
+}
+
+// The single check every field-level "is this worth translating" decision below goes through —
+// blank, OR still the block's own untouched scaffold default, OR the AI generator's own
+// image-placeholder marker.
+function fieldNeedsTranslation(blockType, fieldKey, val) {
+  if (isBlankField(val)) return false;
+  if (isUnmodifiedDefaultField(blockType, fieldKey, val)) return false;
+  if (blockType === "Image" && fieldKey === "alt" && String(val).trim() === AI_PLACEHOLDER_IMAGE_ALT) return false;
+  return true;
+}
+
+/**
+ * Whether a content block has at least one field actually worth translating. A block whose
+ * every relevant field is empty, or still exactly the scaffold value it was created with (see
+ * fieldNeedsTranslation), only pads out the block list and drags down the translated-percentage
+ * without giving the merchant anything real to translate.
+ */
+function blockHasTranslatableContent(block) {
+  const s = block.settings || {};
+  const t = block.type;
+  switch (t) {
+    case "Heading":
+    case "ButtonBlock":
+      return fieldNeedsTranslation(t, "text", s.text);
+    case "FaqBlock":
+    case "faq": {
+      const itemsAreDefault = isUnmodifiedDefaultItems("FaqBlock", "items", s.items);
+      return (
+        fieldNeedsTranslation(t, "title", s.title) ||
+        (!itemsAreDefault && Array.isArray(s.items) && s.items.some((item) => !isBlankField(item.question) || !isBlankField(item.answer)))
+      );
+    }
+    case "Callout":
+      return fieldNeedsTranslation(t, "title", s.title) || fieldNeedsTranslation(t, "body", s.body || s.text);
+    case "Hero":
+    case "HeroSection":
+      return (
+        fieldNeedsTranslation(t, "heading", s.heading || s.title) ||
+        fieldNeedsTranslation(t, "subheading", s.subheading || s.body) ||
+        fieldNeedsTranslation(t, "ctaText", s.ctaText || s.buttonText)
+      );
+    case "TableOfContents":
+      return fieldNeedsTranslation(t, "title", s.title);
+    case "Image":
+      return fieldNeedsTranslation(t, "alt", s.alt) || fieldNeedsTranslation(t, "caption", s.caption);
+    case "VideoEmbed":
+      return fieldNeedsTranslation(t, "caption", s.caption);
+    case "BuyButton":
+      return fieldNeedsTranslation(t, "buttonText", s.buttonText) || fieldNeedsTranslation(t, "badge", s.badge);
+    case "ProductGrid":
+    case "Collection":
+    case "ProductSlider":
+      return fieldNeedsTranslation(t, "title", s.title || s.heading) || fieldNeedsTranslation(t, "buttonText", s.buttonText);
+    case "ProductCard":
+      return fieldNeedsTranslation(t, "buttonText", s.buttonText);
+    case "Table":
+      return Array.isArray(s.tableData) && s.tableData.some((row) => row.some((cell) => !isBlankField(cell)));
+    default:
+      return !isBlankField(s.content || s.text || (typeof s === "string" ? s : ""));
+  }
+}
+
 // Helper component for side-by-side field pairs with matching Polaris chrome
 function TranslationRowPair({ title, originalValue, translatedValue, onChange, multiline, maxLength, placeholder }) {
   const safeOriginal = formatTextValue(originalValue);
@@ -706,6 +805,17 @@ export default function PostTranslationPage() {
   const [blockTranslations, setBlockTranslations] = useState({});
   const [features, setFeatures] = useState({});
   const [featuresLoaded, setFeaturesLoaded] = useState(false);
+
+  // Blocks with nothing real to translate (empty fields, or an Image still carrying the AI
+  // generator's own placeholder alt text) are excluded from the list shown to the merchant —
+  // they'd otherwise just pad out the block count and drag down the translated percentage.
+  const translatableBlocks = useMemo(
+    () =>
+      originalBlocks
+        .map((block, bIdx) => ({ block, bIdx }))
+        .filter(({ block }) => blockHasTranslatableContent(block)),
+    [originalBlocks]
+  );
 
   // Label for selected locale
   const selectedLocaleObj = useMemo(() => {
@@ -948,38 +1058,102 @@ export default function PostTranslationPage() {
     if (translatedMetaTitle.trim()) filled++;
     if (translatedMetaDesc.trim()) filled++;
 
-    originalBlocks.forEach((block) => {
-      const trans = blockTranslations[block.id];
-      if (block.type === "Heading") {
-        total++;
-        if (trans?.text?.trim()) filled++;
-      } else if (block.type === "FaqBlock" || block.type === "faq") {
-        total++;
-        if (trans?.title?.trim()) filled++;
-        const items = block.settings?.items || [];
-        items.forEach((_, i) => {
-          total += 2;
-          if (trans?.items?.[i]?.question?.trim()) filled++;
-          if (trans?.items?.[i]?.answer?.trim()) filled++;
-        });
-      } else if (block.type === "Callout") {
-        total += 2;
-        if (trans?.title?.trim()) filled++;
-        if (trans?.body?.trim()) filled++;
-      } else if (block.type === "Hero" || block.type === "HeroSection") {
-        total += 3;
-        if (trans?.heading?.trim()) filled++;
-        if (trans?.subheading?.trim()) filled++;
-        if (trans?.ctaText?.trim()) filled++;
-      } else {
-        total++;
-        if (trans?.content?.trim()) filled++;
+    // Only blank-vs-filled among the SAME fields the block form actually renders per type
+    // (mirrors the JSX below), and only fields fieldNeedsTranslation considers real content —
+    // a field with nothing in the original, or still the block's own untouched scaffold
+    // default, isn't something the merchant can translate, so it must not count toward total.
+    const countField = (counts, blockType, fieldKey, originalVal, translatedVal) => {
+      if (!fieldNeedsTranslation(blockType, fieldKey, originalVal)) return;
+      counts.total++;
+      if (!isBlankField(translatedVal)) counts.filled++;
+    };
+
+    translatableBlocks.forEach(({ block }) => {
+      const trans = blockTranslations[block.id] || {};
+      const s = block.settings || {};
+      const t = block.type;
+      const counts = { total: 0, filled: 0 };
+
+      switch (t) {
+        case "Heading":
+        case "ButtonBlock":
+          countField(counts, t, "text", s.text, trans.text);
+          break;
+        case "FaqBlock":
+        case "faq": {
+          countField(counts, t, "title", s.title, trans.title);
+          const itemsAreDefault = isUnmodifiedDefaultItems("FaqBlock", "items", s.items);
+          if (!itemsAreDefault) {
+            (s.items || []).forEach((item, i) => {
+              if (!isBlankField(item.question)) {
+                counts.total++;
+                if (!isBlankField(trans.items?.[i]?.question)) counts.filled++;
+              }
+              if (!isBlankField(item.answer)) {
+                counts.total++;
+                if (!isBlankField(trans.items?.[i]?.answer)) counts.filled++;
+              }
+            });
+          }
+          break;
+        }
+        case "Callout":
+          countField(counts, t, "title", s.title, trans.title);
+          countField(counts, t, "body", s.body || s.text, trans.body);
+          break;
+        case "Hero":
+        case "HeroSection":
+          countField(counts, t, "heading", s.heading || s.title, trans.heading);
+          countField(counts, t, "subheading", s.subheading || s.body, trans.subheading);
+          countField(counts, t, "ctaText", s.ctaText || s.buttonText, trans.ctaText);
+          break;
+        case "TableOfContents":
+          countField(counts, t, "title", s.title, trans.title);
+          break;
+        case "Image":
+          countField(counts, t, "alt", s.alt, trans.alt);
+          countField(counts, t, "caption", s.caption, trans.caption);
+          break;
+        case "VideoEmbed":
+          countField(counts, t, "caption", s.caption, trans.caption);
+          break;
+        case "BuyButton":
+          countField(counts, t, "buttonText", s.buttonText, trans.buttonText);
+          countField(counts, t, "badge", s.badge, trans.badge);
+          break;
+        case "ProductGrid":
+        case "Collection":
+        case "ProductSlider":
+          countField(counts, t, "title", s.title || s.heading, trans.title);
+          countField(counts, t, "buttonText", s.buttonText, trans.buttonText);
+          break;
+        case "ProductCard":
+          countField(counts, t, "buttonText", s.buttonText, trans.buttonText);
+          break;
+        case "Table":
+          (s.tableData || []).forEach((row, r) => {
+            row.forEach((cell, c) => {
+              if (!isBlankField(cell)) {
+                counts.total++;
+                if (!isBlankField(trans.tableData?.[r]?.[c])) counts.filled++;
+              }
+            });
+          });
+          break;
+        default:
+          if (!isBlankField(s.content || s.text || (typeof s === "string" ? s : ""))) {
+            counts.total++;
+            if (!isBlankField(trans.content)) counts.filled++;
+          }
       }
+
+      total += counts.total;
+      filled += counts.filled;
     });
 
     const percentage = total > 0 ? Math.round((filled / total) * 100) : 0;
     return { filled, total, percentage };
-  }, [translatedTitle, translatedExcerpt, translatedMetaTitle, translatedMetaDesc, originalBlocks, blockTranslations]);
+  }, [translatedTitle, translatedExcerpt, translatedMetaTitle, translatedMetaDesc, translatableBlocks, blockTranslations]);
 
   const isFirstRender = useRef(true);
   const saveBarId = "translation-save-bar";
@@ -1047,7 +1221,21 @@ export default function PostTranslationPage() {
         body: JSON.stringify({ locale: selectedLocale }),
       });
 
-      const data = await res.json();
+      // A hung translation, an expired session, or a tunnel/proxy timeout can all return a
+      // non-JSON body (an HTML error page, or nothing) instead of this route's own JSON error —
+      // res.json() on that throws a raw "unexpected character..." parse error that told the
+      // merchant nothing. Read as text first so a bad body gives a real explanation instead.
+      const rawBody = await res.text();
+      let data;
+      try {
+        data = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        throw new Error(
+          res.ok
+            ? "Translation server returned an unexpected response. Please try again."
+            : `Translation failed (server returned status ${res.status}). Please try again.`
+        );
+      }
       if (!res.ok) throw new Error(data.error || "Auto-translate failed");
 
       setToast({ content: "✨ Translation generated and saved successfully!" });
@@ -1287,7 +1475,7 @@ export default function PostTranslationPage() {
                 <InlineStack align="space-between" blockAlign="center">
                   <BlockStack gap="100">
                     <Text variant="headingMd" as="h2">
-                      Article Content Blocks ({originalBlocks.length})
+                      Article Content Blocks ({translatableBlocks.length})
                     </Text>
                     <Text variant="bodySm" tone="subdued">
                       Translate individual block content without touching raw HTML code or CSS styling.
@@ -1295,12 +1483,12 @@ export default function PostTranslationPage() {
                   </BlockStack>
                 </InlineStack>
 
-                {originalBlocks.length === 0 ? (
+                {translatableBlocks.length === 0 ? (
                   <Box padding="400" background="bg-surface-secondary" borderRadius="200" align="center">
                     <Text tone="subdued">No content blocks found to translate.</Text>
                   </Box>
                 ) : (
-                  originalBlocks.map((block, bIdx) => {
+                  translatableBlocks.map(({ block, bIdx }) => {
                     const blockIcon = getBlockIcon(block.type);
                     const trans = blockTranslations[block.id] || {};
                     const s = block.settings || {};

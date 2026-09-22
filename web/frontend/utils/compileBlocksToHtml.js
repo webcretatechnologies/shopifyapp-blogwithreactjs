@@ -248,10 +248,15 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
       const renderTocNodesHtml = (items, isRoot = true) => {
         if (!items || items.length === 0) return "";
         const Tag = listStyle === "numbered" ? "ol" : "ul";
-        const paddingLeft = isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px";
+        const paddingLeft = listStyle === "none" ? "0" : isRoot ? (listStyle === "numbered" ? "20px" : "18px") : "20px";
         const marginTop = isRoot ? "0" : "6px";
         const marginBottom = isRoot ? "0" : "2px";
-        const listType = listStyle === "numbered" ? (isRoot ? "decimal" : "lower-alpha") : (isRoot ? "disc" : "circle");
+        const listType =
+          listStyle === "none"
+            ? "none"
+            : listStyle === "numbered"
+            ? (isRoot ? "decimal" : "lower-alpha")
+            : (isRoot ? "disc" : "circle");
 
         // Matches the canvas's onMouseEnter/onMouseLeave underline toggle
         // (TableOfContentsPreview.jsx) — driven inline instead of a sibling <style> block, because
@@ -271,11 +276,13 @@ function compileCoreBlockHtml(type, settings, children, blockId, context = {}) {
             // inside it. Only the link carried textColor, so on a panel TOC the text went white
             // while the markers kept inheriting the page's dark default - invisible numbers on a
             // dark panel. Colour the <li> too so marker and label always match.
-            return `<li style="font-size: 14px; margin: 6px 0; display: list-item; color: ${textColor};">${link}${childrenHtml}</li>`;
+            const liListStyle = listStyle === "none" ? " list-style-type: none !important;" : "";
+            return `<li style="font-size: 14px; margin: 6px 0; display: list-item; color: ${textColor};${liListStyle}">${link}${childrenHtml}</li>`;
           })
           .join("\n");
 
-        return `<${Tag} style="margin: ${marginTop} 0 ${marginBottom} 0; padding-left: ${paddingLeft}; list-style-type: ${listType};">\n${lisHtml}\n</${Tag}>`;
+        const listTypeImportant = listStyle === "none" ? `${listType} !important` : listType;
+        return `<${Tag} style="margin: ${marginTop} 0 ${marginBottom} 0; padding-left: ${paddingLeft}; list-style-type: ${listTypeImportant};">\n${lisHtml}\n</${Tag}>`;
       };
 
       const tree = buildTocNodes(matchingHeadings);

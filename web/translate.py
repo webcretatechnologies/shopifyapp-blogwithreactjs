@@ -1,7 +1,7 @@
 import sys
 import json
 import time
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, MyMemoryTranslator
 from concurrent.futures import ThreadPoolExecutor
 
 # ---------------------------
@@ -18,6 +18,64 @@ MAX_WORKERS = 3
 MAX_TEXT_LENGTH = 5000
 TRANSLATE_RETRIES = 5
 TRANSLATE_RETRY_DELAY = 1.5
+
+# MyMemory (also free, also bundled in deep_translator, no API key) is the fallback once Google's
+# unofficial endpoint starts rate-limiting this server's IP — different provider, different quota,
+# so it keeps working while Google is blocked. Its free anonymous tier caps each individual query
+# at ~500 chars, far below MAX_TEXT_LENGTH, so it needs its own smaller chunk size.
+MYMEMORY_MAX_TEXT_LENGTH = 450
+MYMEMORY_SOURCE = "en-GB"  # this app's content is always authored in English; MyMemory has no "auto"
+MYMEMORY_RETRIES = 2
+MYMEMORY_RETRY_DELAY = 1.0
+
+# MyMemory requires full "xx-XX" locale codes, not the plain 2-letter (or Shopify-style) codes
+# this app passes in as target_lang. Only the common storefront locales are mapped; anything
+# missing falls back to a "xx-XX" guess (repeating the code as the region), which covers most
+# remaining cases (e.g. "de" -> "de-DE") without needing an exhaustive table.
+MYMEMORY_LANG_MAP = {
+    "en": "en-GB", "fr": "fr-FR", "de": "de-DE", "es": "es-ES", "it": "it-IT",
+    "pt": "pt-PT", "pt-br": "pt-BR", "pt-pt": "pt-PT", "nl": "nl-NL", "sv": "sv-SE",
+    "da": "da-DK", "fi": "fi-FI", "no": "nb-NO", "nb": "nb-NO", "nn": "nn-NO",
+    "pl": "pl-PL", "tr": "tr-TR", "th": "th-TH", "vi": "vi-VN", "id": "id-ID",
+    "ru": "ru-RU", "cs": "cs-CZ", "el": "el-GR", "he": "he-IL", "ro": "ro-RO",
+    "hu": "hu-HU", "uk": "uk-UA", "sk": "sk-SK", "sl": "sl-SI", "bg": "bg-BG",
+    "hr": "hr-HR", "et": "et-EE", "lv": "lv-LV", "lt": "lt-LT", "hi": "hi-IN",
+    "ja": "ja-JP", "ko": "ko-KR", "ar": "ar-SA", "zh": "zh-CN", "zh-cn": "zh-CN",
+    "zh-tw": "zh-TW", "zh-hans": "zh-CN", "zh-hant": "zh-TW",
+}
+
+
+def _mymemory_target_code(target_lang):
+    key = (target_lang or "").strip().lower()
+    return MYMEMORY_LANG_MAP.get(key, f"{key}-{key.upper()}")
+
+
+# Set once Google's endpoint confirms it's rate-limiting this IP (see _looks_like_error_page /
+# the "too many requests" exception text), so every chunk after that skips straight to MyMemory
+# instead of each one separately burning through Google retries that are guaranteed to keep
+# failing for the rest of this run.
+_google_rate_limited = False
+
+
+def _translate_via_mymemory(text, target_lang):
+    target_code = _mymemory_target_code(target_lang)
+    chunks = split_text(text, max_length=MYMEMORY_MAX_TEXT_LENGTH)
+    translated_parts = []
+    for chunk in chunks:
+        result = chunk
+        for attempt in range(1, MYMEMORY_RETRIES + 1):
+            try:
+                translator = MyMemoryTranslator(source=MYMEMORY_SOURCE, target=target_code)
+                res = translator.translate(chunk)
+                if res:
+                    result = res
+                    break
+            except Exception as e:
+                print(f"MyMemory fallback failed (attempt {attempt}/{MYMEMORY_RETRIES}): {e}", file=sys.stderr)
+            if attempt < MYMEMORY_RETRIES:
+                time.sleep(MYMEMORY_RETRY_DELAY)
+        translated_parts.append(result)
+    return " ".join(translated_parts)
 
 # Google's error page for this endpoint always contains this literal text, no matter what was
 # being translated — a real translation into any language cannot legitimately contain it.
@@ -90,7 +148,14 @@ def split_text(text, max_length=MAX_TEXT_LENGTH):
 
 def _translate_one_chunk(chunk):
     """Translate a single chunk, retrying if the request throws OR if Google's rate-limit
-    error page comes back disguised as a successful translation (see _looks_like_error_page)."""
+    error page comes back disguised as a successful translation (see _looks_like_error_page).
+    Once Google is confirmed rate-limited for this run, skip straight to the MyMemory fallback
+    instead of burning retries against an endpoint that's already known to be blocked."""
+    global _google_rate_limited
+
+    if _google_rate_limited:
+        return _translate_via_mymemory(chunk, target_lang)
+
     last_result = chunk
     for attempt in range(1, TRANSLATE_RETRIES + 1):
         try:
@@ -104,6 +169,10 @@ def _translate_one_chunk(chunk):
             else:
                 return res
         except Exception as e:
+            if "too many requests" in str(e).lower():
+                print("Google endpoint is rate-limiting this IP — switching remaining chunks to MyMemory fallback", file=sys.stderr)
+                _google_rate_limited = True
+                return _translate_via_mymemory(chunk, target_lang)
             last_result = chunk
             print(f"do_translate failed for chunk (len={len(chunk)}, attempt {attempt}/{TRANSLATE_RETRIES}): {e}", file=sys.stderr)
         if attempt < TRANSLATE_RETRIES:

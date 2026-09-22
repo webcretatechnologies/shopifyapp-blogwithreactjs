@@ -2684,15 +2684,34 @@ router.post("/:id/translate-auto", async (req, res) => {
     pythonProcess.stdin.write(JSON.stringify(sourceData));
     pythonProcess.stdin.end();
 
+    // translate.py hits Google's unofficial, unrate-limited-by-us translate endpoint per field
+    // with its own retry/backoff (see translate.py) — a long article can legitimately take a
+    // while, but with no upper bound a slow run outlives the dev tunnel's own request timeout.
+    // The tunnel then drops the connection and serves its own HTML timeout page, which the
+    // frontend's `res.json()` chokes on ("unexpected character at line 1 column 1") since it
+    // isn't JSON at all — the real failure (a hang) never even reaches this route's own error
+    // handling. Killing the process ourselves after a bound guarantees a JSON response instead.
+    const TRANSLATE_TIMEOUT_MS = 90_000;
+    let timedOut = false;
+
     await new Promise((resolve, reject) => {
+      const timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        pythonProcess.kill("SIGKILL");
+      }, TRANSLATE_TIMEOUT_MS);
+
       // Without this handler, a spawn failure (e.g. python3 missing from PATH) emits an
       // unhandled 'error' event that Node rethrows as an uncaught exception — which crashes
       // the entire server process, taking down every shop's traffic, not just this request.
       pythonProcess.on("error", (err) => {
+        clearTimeout(timeoutHandle);
         reject(new Error(`Failed to start translation process: ${err.message}`));
       });
       pythonProcess.on("close", (code) => {
-        if (code !== 0) {
+        clearTimeout(timeoutHandle);
+        if (timedOut) {
+          reject(new Error("Translation timed out. Try again, or translate a shorter article."));
+        } else if (code !== 0) {
           reject(new Error(`Python process exited with code ${code}: ${errorData}`));
         } else {
           resolve();
