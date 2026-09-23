@@ -1,3 +1,8 @@
+# Builds the production image and pushes it to GHCR.
+# Server deploys (`./deploy.sh`) only pull this image — no build on the host.
+#
+# Trigger: push to main (same role as B2B's master branch).
+# Merge development → main when you want a production image + deploy.
 name: Build and Push Docker Image
 
 on:

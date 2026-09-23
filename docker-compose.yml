@@ -30,10 +30,16 @@ services:
 
 
   app:
+    image: ${APP_IMAGE:-ghcr.io/webcretatechnologies/shopifyapp-blogwithreactjs:latest}
+    # CI (.github/workflows/docker-build.yml) builds+pushes this image on every
+    # push to main. Server deploys run `deploy.sh`, which just pulls it —
+    # no local build. `build:` below is only for local `docker compose build`.
     build:
       context: .
       dockerfile: Dockerfile
       args:
+        # Public Shopify app key (baked into the frontend bundle). For local
+        # builds, set SHOPIFY_API_KEY in .env. CI passes vars.SHOPIFY_API_KEY.
         SHOPIFY_API_KEY: ${SHOPIFY_API_KEY}
 
     container_name: blog-react-app
@@ -49,14 +55,75 @@ services:
       DATABASE_URL: mysql://root:root@mysql:3306/shopify_blog_react
 
     ports:
-      - "3001:3000"
+      # Host port defaults to 3001 (existing server mapping). Override with
+      # APP_HOST_PORT in a local .env if it collides.
+      - "${APP_HOST_PORT:-3001}:3000"
+
+    volumes:
+      # Persist merchant uploads across image pulls / container recreates.
+      # Matches web/index.js + multer destination: /app/public/uploads.
+      - ./web/public/uploads:/app/public/uploads
 
     depends_on:
       mysql:
         condition: service_healthy
 
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000/api/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 60s
+
     networks:
       - blog-react-network
+
+
+  # Nginx resolves Docker DNS once at start/reload. After compose recreates
+  # the app it gets a new IP, so edge_nginx keeps proxying the old one (502)
+  # until `nginx -s reload`. This watcher reloads when the app becomes healthy.
+  edge-reload:
+    image: docker:27-cli
+    container_name: blog-react-edge-reload
+    restart: unless-stopped
+    network_mode: none
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      EDGE_NGINX_CONTAINER: ${EDGE_NGINX_CONTAINER:-edge_nginx}
+      APP_CONTAINER: blog-react-app
+    command:
+      - /bin/sh
+      - -c
+      - |
+        last_id=""
+        last_health=""
+        echo "Watching $$APP_CONTAINER; will reload $$EDGE_NGINX_CONTAINER"
+        while true; do
+          id=$$(docker inspect -f '{{.Id}}' "$$APP_CONTAINER" 2>/dev/null || true)
+          health=$$(docker inspect -f '{{.State.Health.Status}}' "$$APP_CONTAINER" 2>/dev/null || echo missing)
+          if [ "$$health" = "healthy" ] && { [ "$$health" != "$$last_health" ] || [ "$$id" != "$$last_id" ]; }; then
+            if docker inspect "$$EDGE_NGINX_CONTAINER" >/dev/null 2>&1; then
+              docker exec "$$EDGE_NGINX_CONTAINER" nginx -s reload \
+                && echo "Reloaded $$EDGE_NGINX_CONTAINER ($$health)" \
+                || echo "Failed to reload $$EDGE_NGINX_CONTAINER"
+            else
+              echo "$$EDGE_NGINX_CONTAINER not found; skip reload"
+            fi
+          fi
+          last_id="$$id"
+          last_health="$$health"
+          sleep 5
+        done
 
 
   # Self-hosted fallback for web/translate.py's LibreTranslateProvider (Google -> DeepL ->
