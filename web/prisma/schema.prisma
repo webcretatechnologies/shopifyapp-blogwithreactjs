@@ -210,6 +210,11 @@ model PostTranslation {
   contentHtml     String?  @db.LongText
   metaTitle       String?  @db.VarChar(120)
   metaDescription String?  @db.Text
+  /** Map of {originalString: translatedString} built up incrementally as Auto-Translate streams
+      results in. Lets a run interrupted by a timeout/rate-limit/crash resume from where it left
+      off next time instead of re-translating strings already done — translate.py is handed this
+      back on the next run and skips any string already present in it. */
+  translationCache Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   post            Post     @relation(fields: [postId], references: [id], onDelete: Cascade)

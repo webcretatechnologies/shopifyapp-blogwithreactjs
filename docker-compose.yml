@@ -59,6 +59,68 @@ services:
       - blog-react-network
 
 
+  # Self-hosted fallback for web/translate.py's LibreTranslateProvider (Google -> DeepL ->
+  # LibreTranslate -> MyMemory chain). Not required — the app already runs fine without it
+  # (LIBRETRANSLATE_URL unset in .env keeps this provider disabled and the chain falls through
+  # to MyMemory) — this just gives that hop a real, free backend instead of always skipping it.
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: blog-react-libretranslate
+    restart: unless-stopped
+
+    environment:
+      # Restricts which Argos Translate models are downloaded/loaded, purely to bound this
+      # container's own memory/disk footprint on a shared host — has no effect on which
+      # locales the Shopify store can request. The app still discovers whatever LibreTranslate
+      # actually loaded dynamically via GET /languages (see LibreTranslateProvider), it is
+      # never hard-coded on the app side. Extend this list (or unset it to load everything)
+      # if the host has the resources for it.
+      #
+      # This list covers the 21 requested languages, verified one at a time against Argos
+      # Translate's real package index (2026-09-24) rather than assumed:
+      #   - "no" (generic Norwegian) has no Argos package at all; Argos's actual code is "nb"
+      #     (Bokmål) — used below instead. LibreTranslate reports it as "nb" in /languages, and
+      #     LibreTranslateProvider's alias table (see translate.py) maps "no"/"nb" to it either way.
+      #   - "gu" (Gujarati) is NOT in Argos's package index — confirmed by pulling the live
+      #     index, not by a failed download. LibreTranslate cannot serve Gujarati at all; the
+      #     provider chain correctly falls through to MyMemory for it (MyMemory does support
+      #     Gujarati) rather than this being something to force here.
+      LT_LOAD_ONLY: en,es,fr,de,pt,it,nl,zh,ja,ko,ar,hi,tr,pl,sv,da,nb,th,vi,id
+      LT_DISABLE_WEB_UI: "true"
+
+    # This host is memory-constrained (checked via `free -h` before adding this service —
+    # only ~3.2Gi available at the time). Argos Translate models are memory-hungry, so this
+    # caps the container instead of letting it pressure everything else on the box. Raise or
+    # remove if you've confirmed the host has headroom.
+    mem_limit: 2g
+    cpus: 1.5
+
+    # No published port: only the app container talks to this, over the Docker network at
+    # http://libretranslate:5000 (LIBRETRANSLATE_URL in .env) — nothing needs it from outside.
+    # Uncomment for local debugging only, bound to localhost so it's never internet-reachable:
+    # ports:
+    #   - "127.0.0.1:5000:5000"
+
+    volumes:
+      # Argos Translate model downloads live under the container's home dir — a named volume
+      # here means they survive `docker compose down`/image updates instead of re-downloading
+      # (multiple hundred MB) on every container recreation.
+      - libretranslate_models:/home/libretranslate/.local
+
+    healthcheck:
+      # Ships with the image; avoids depending on curl/wget being present in this image.
+      test: ["CMD", "./venv/bin/python", "scripts/healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Model loading on first boot can take a while — give it room before the first check
+      # counts as a failure, without blocking `docker compose up` on it.
+      start_period: 120s
+
+    networks:
+      - blog-react-network
+
+
   adminer:
     image: adminer:latest
     container_name: blog-react-adminer
@@ -77,6 +139,7 @@ services:
 
 volumes:
   mysql_data:
+  libretranslate_models:
 
 
 networks:

@@ -617,6 +617,136 @@ function stripHtml(html) {
   return (tmp.textContent || tmp.innerText || "").trim();
 }
 
+// ── Live Auto-Translate preview ────────────────────────────────────────────────────────────
+// translate.py streams each finished string as {original, translated}. To drop those into the
+// form while the run is still going, the post's own HTML is rewritten with the translations
+// received so far and fed through the same hydrateBlockTranslationsFromHtml() the final result
+// uses. The walk below mirrors translate.py's translate_text() exactly (same attributes, same
+// JSON keys, same text nodes), because translate.py's cache keys ARE those exact strings.
+// Strings not translated yet become LIVE_PENDING rather than "" — an emptied text node would
+// drop out of extractBlocksFromPost() and shift every later block's positional match — and a
+// field is only filled in once its value contains no LIVE_PENDING at all.
+const LIVE_PENDING = "";
+const LIVE_FLAT_TEXT_ATTRS = new Set([
+  "data-text", "data-title", "data-caption", "data-alt", "data-subheading",
+  "data-heading", "data-button-text", "data-buttontext", "data-badge",
+  "data-description", "data-question", "data-answer", "data-label",
+  "data-cta-text", // HeroSection's CTA button label — see translate.py's matching FLAT_TEXT_ATTRS
+]);
+const LIVE_JSON_TEXT_KEYS = new Set([
+  "text", "title", "content", "caption", "alt", "subheading", "heading",
+  "buttonText", "badge", "description", "question", "answer", "name", "label",
+]);
+
+function liveTranslateString(str, liveMap) {
+  if (typeof str !== "string" || !str.trim()) return str;
+  if (str.includes("<") && str.includes(">")) return liveTranslateHtml(str, liveMap);
+  return liveMap.has(str) ? liveMap.get(str) : LIVE_PENDING;
+}
+
+function liveTranslateJson(value, liveMap) {
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      typeof item === "string" && item.trim()
+        ? liveTranslateString(item, liveMap)
+        : item && typeof item === "object"
+          ? liveTranslateJson(item, liveMap)
+          : item
+    );
+  }
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, v] of Object.entries(value)) {
+      out[key] =
+        typeof v === "string" && LIVE_JSON_TEXT_KEYS.has(key) && v.trim()
+          ? liveTranslateString(v, liveMap)
+          : v && typeof v === "object"
+            ? liveTranslateJson(v, liveMap)
+            : v;
+    }
+    return out;
+  }
+  return value;
+}
+
+function liveTranslateHtml(html, liveMap) {
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+  for (const node of textNodes) {
+    const parentTag = node.parentNode?.nodeName?.toLowerCase();
+    if (parentTag === "script" || parentTag === "style") continue;
+    const original = node.nodeValue;
+    if (!original || !original.trim()) continue;
+    node.nodeValue = liveMap.has(original) ? liveMap.get(original) : LIVE_PENDING;
+  }
+  for (const el of doc.body.querySelectorAll("*")) {
+    for (const attr of Array.from(el.attributes)) {
+      const value = attr.value;
+      if (!value || !value.trim()) continue;
+      if (attr.name === "data-content") {
+        el.setAttribute(attr.name, liveTranslateString(value, liveMap));
+      } else if (LIVE_FLAT_TEXT_ATTRS.has(attr.name)) {
+        el.setAttribute(attr.name, liveMap.has(value) ? liveMap.get(value) : LIVE_PENDING);
+      } else if (value.startsWith("{") || value.startsWith("[")) {
+        try {
+          el.setAttribute(attr.name, JSON.stringify(liveTranslateJson(JSON.parse(value), liveMap)));
+        } catch {
+          /* not JSON after all — translate.py skips these too */
+        }
+      }
+    }
+  }
+  return doc.body.innerHTML;
+}
+
+// Counts non-whitespace text nodes in an HTML string (plain text counts as one implicit node).
+// Used to detect a partially-translated RichText field — see hydrateBlockTranslationsFromHtml's
+// generic/RichText branch — by comparing this count between the original and translated HTML
+// rather than trusting "the string isn't empty," which a single successful paragraph out of
+// several would already satisfy.
+function countNonEmptyTextNodes(html) {
+  if (!html || !html.trim()) return 0;
+  if (!html.includes("<")) return 1;
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  let count = 0;
+  while (walker.nextNode()) {
+    const parentTag = walker.currentNode.parentNode?.nodeName?.toLowerCase();
+    if (parentTag === "script" || parentTag === "style") continue;
+    if (walker.currentNode.nodeValue && walker.currentNode.nodeValue.trim()) count++;
+  }
+  return count;
+}
+
+// Merges a live-hydrated block map into the current one, taking only fields that are fully
+// translated (no LIVE_PENDING left) and actually differ from the English original. The latter
+// matters because hydrateBlockTranslationsFromHtml() falls back to the original text for fields
+// translate.py never touches — those must not be shown as "translated" mid-run. The final
+// server result still replaces everything once the run completes.
+function mergeLiveTranslations(current, next, original) {
+  if (typeof next === "string") {
+    const done = next.trim() && !next.includes(LIVE_PENDING) && next !== original;
+    return done ? next : current;
+  }
+  if (Array.isArray(next)) {
+    const base = Array.isArray(current) ? [...current] : [];
+    next.forEach((value, i) => {
+      base[i] = mergeLiveTranslations(base[i], value, Array.isArray(original) ? original[i] : undefined);
+    });
+    return base;
+  }
+  if (next && typeof next === "object") {
+    const base = current && typeof current === "object" && !Array.isArray(current) ? { ...current } : {};
+    for (const [key, value] of Object.entries(next)) {
+      base[key] = mergeLiveTranslations(base[key], value, original && typeof original === "object" ? original[key] : undefined);
+    }
+    return base;
+  }
+  return current ?? next;
+}
+
 // The AI generator stamps every image it couldn't source a real picture for with this exact
 // alt text (see AiArticleService.js) — it's an internal "you still need to add a photo" marker,
 // never real merchant-facing copy. It isn't part of BlockRegistry's own defaults (Image.alt's
@@ -715,6 +845,47 @@ function blockHasTranslatableContent(block) {
   }
 }
 
+// Live Auto-Translate status: "N of total" with a determinate bar and the section that just
+// finished. `total` comes from translate.py's up-front "plan" event, so it's the real number of
+// strings in this post, not an estimate.
+const PROVIDER_DISPLAY_NAMES = { google: "Google", deepl: "DeepL", libretranslate: "LibreTranslate", mymemory: "MyMemory", cache: "cache" };
+
+function LiveTranslateProgress({ progress, compact = false }) {
+  const { count = 0, total = 0, label, cached, provider, failed = 0 } = progress;
+  const percent = total > 0 ? Math.min(100, Math.round((count / total) * 100)) : 0;
+  // "Text segments" here is a deliberately different, finer-grained count than the "N of M
+  // fields translated" badge above this component (see completionStats) — that one counts
+  // editable field rows (Title, Excerpt, a FAQ's Question #1, ...), one per row regardless of
+  // length; this one counts every individual text node/attribute translate.py walks inside the
+  // raw HTML (a single RichText field can contain several paragraph text nodes counted
+  // separately). Both numbers are correct for what they measure — the label says which.
+  const headline =
+    total > 0 && count > 0
+      ? `Translating ${Math.min(count, total)} of ${total} text segments (${percent}%)`
+      : label || "Starting…";
+  const providerName = provider && PROVIDER_DISPLAY_NAMES[provider];
+
+  return (
+    <BlockStack gap="200">
+      <InlineStack gap="200" blockAlign="center" wrap={false}>
+        <Spinner size="small" />
+        <BlockStack gap="050">
+          <Text variant="bodySm" fontWeight="semibold">{headline}</Text>
+          {count > 0 && label && (
+            <Text variant="bodySm" tone="subdued" truncate={compact}>
+              {cached ? "Reused from a previous run: " : "Just translated: "}
+              {label}
+              {providerName ? ` (${providerName})` : ""}
+              {failed > 0 ? ` · ${failed} couldn't be translated` : ""}
+            </Text>
+          )}
+        </BlockStack>
+      </InlineStack>
+      <ProgressBar progress={percent} size="small" tone="primary" animated />
+    </BlockStack>
+  );
+}
+
 // Helper component for side-by-side field pairs with matching Polaris chrome
 function TranslationRowPair({ title, originalValue, translatedValue, onChange, multiline, maxLength, placeholder }) {
   const safeOriginal = formatTextValue(originalValue);
@@ -786,6 +957,9 @@ export default function PostTranslationPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
+  // Live section-by-section feedback while Auto-Translate streams (see handleAutoTranslate) —
+  // null when not translating, otherwise { count, label, resuming, cachedCount }.
+  const [translateProgress, setTranslateProgress] = useState(null);
   const [translations, setTranslations] = useState([]);
   const [storeLocales, setStoreLocales] = useState([]);
 
@@ -903,62 +1077,78 @@ export default function PostTranslationPage() {
       const matchingTransBlock = nextOfType(origBlock.type) || parsedTranslatedBlocks[idx];
       const transSettings = matchingTransBlock?.settings || {};
 
+      // Deliberately NEVER falls back to origSettings here: a translated field that's empty
+      // (translate.py returns "" for a unit every provider failed on, see do_translate) must
+      // stay blank in this editable column. Falling back to the English original would make a
+      // failed translation indistinguishable from a real one — the merchant would see English
+      // text sitting in the Hindi/French/etc. field with no sign anything went wrong. The
+      // Original/English reference column (driven from origSettings directly, not this map)
+      // is the only place English is meant to show.
       if (origBlock.type === "Heading" || origBlock.type === "heading") {
-        initialMap[origBlock.id] = { text: formatTextValue(transSettings.text || origSettings.text) };
+        initialMap[origBlock.id] = { text: formatTextValue(transSettings.text) };
       } else if (origBlock.type === "FaqBlock" || origBlock.type === "faq") {
         const origItems = Array.isArray(origSettings.items) ? origSettings.items : [];
         const transItems = Array.isArray(transSettings.items) ? transSettings.items : [];
         initialMap[origBlock.id] = {
-          title: formatTextValue(transSettings.title || origSettings.title || "Frequently Asked Questions"),
+          title: formatTextValue(transSettings.title),
           items: origItems.map((item, i) => ({
-            question: formatTextValue(transItems[i]?.question || item.question),
-            answer: formatTextValue(transItems[i]?.answer || item.answer),
+            question: formatTextValue(transItems[i]?.question),
+            answer: formatTextValue(transItems[i]?.answer),
           })),
         };
       } else if (origBlock.type === "Callout") {
         initialMap[origBlock.id] = {
-          title: formatTextValue(transSettings.title || origSettings.title),
-          body: formatTextValue(transSettings.body || origSettings.body),
+          title: formatTextValue(transSettings.title),
+          body: formatTextValue(transSettings.body),
         };
       } else if (origBlock.type === "Hero" || origBlock.type === "HeroSection") {
         initialMap[origBlock.id] = {
-          heading: formatTextValue(transSettings.heading || origSettings.heading),
-          subheading: formatTextValue(transSettings.subheading || origSettings.subheading),
-          ctaText: formatTextValue(transSettings.ctaText || origSettings.ctaText),
+          heading: formatTextValue(transSettings.heading),
+          subheading: formatTextValue(transSettings.subheading),
+          ctaText: formatTextValue(transSettings.ctaText),
         };
       } else if (origBlock.type === "TableOfContents") {
-        initialMap[origBlock.id] = { title: formatTextValue(transSettings.title || origSettings.title) };
+        initialMap[origBlock.id] = { title: formatTextValue(transSettings.title) };
       } else if (origBlock.type === "Image") {
         initialMap[origBlock.id] = {
-          alt: formatTextValue(transSettings.alt || origSettings.alt),
-          caption: formatTextValue(transSettings.caption || origSettings.caption),
+          alt: formatTextValue(transSettings.alt),
+          caption: formatTextValue(transSettings.caption),
         };
       } else if (origBlock.type === "VideoEmbed") {
-        initialMap[origBlock.id] = { caption: formatTextValue(transSettings.caption || origSettings.caption) };
+        initialMap[origBlock.id] = { caption: formatTextValue(transSettings.caption) };
       } else if (origBlock.type === "ButtonBlock") {
-        initialMap[origBlock.id] = { text: formatTextValue(transSettings.text || origSettings.text) };
+        initialMap[origBlock.id] = { text: formatTextValue(transSettings.text) };
       } else if (origBlock.type === "BuyButton") {
         initialMap[origBlock.id] = {
-          buttonText: formatTextValue(transSettings.buttonText || origSettings.buttonText),
-          badge: formatTextValue(transSettings.badge || origSettings.badge),
+          buttonText: formatTextValue(transSettings.buttonText),
+          badge: formatTextValue(transSettings.badge),
         };
       } else if (["ProductGrid", "Collection", "ProductSlider"].includes(origBlock.type)) {
         initialMap[origBlock.id] = {
-          title: formatTextValue(transSettings.title || origSettings.title || origSettings.heading),
-          buttonText: formatTextValue(transSettings.buttonText || origSettings.buttonText),
+          title: formatTextValue(transSettings.title),
+          buttonText: formatTextValue(transSettings.buttonText),
         };
       } else if (origBlock.type === "ProductCard") {
-        initialMap[origBlock.id] = { buttonText: formatTextValue(transSettings.buttonText || origSettings.buttonText) };
+        initialMap[origBlock.id] = { buttonText: formatTextValue(transSettings.buttonText) };
       } else if (origBlock.type === "Table") {
         const origRows = Array.isArray(origSettings.tableData) ? origSettings.tableData : [];
         const transRows = Array.isArray(transSettings.tableData) ? transSettings.tableData : [];
         initialMap[origBlock.id] = {
-          tableData: origRows.map((row, r) => row.map((cell, c) => formatTextValue(transRows[r]?.[c] ?? cell))),
+          tableData: origRows.map((row, r) => row.map((_cell, c) => formatTextValue(transRows[r]?.[c]))),
         };
       } else {
-        // RichText paragraph / generic fallback
+        // RichText paragraph / generic fallback. Unlike every other field above, this one is a
+        // raw HTML blob that can itself contain several separately-translated text nodes (each
+        // paragraph is its own translate.py unit) — so "not blank" alone doesn't mean "fully
+        // translated," only "at least one paragraph succeeded." contentComplete compares how
+        // many non-empty text nodes the translated HTML has against the original, so a field
+        // where e.g. 2 of 3 paragraphs failed is flagged incomplete instead of counted as done
+        // (see completionStats' matching check).
+        const origContent = formatTextValue(origSettings.content ?? origSettings.text);
+        const transContent = formatTextValue(transSettings.content ?? transSettings.text);
         initialMap[origBlock.id] = {
-          content: formatTextValue(transSettings.content || transSettings.text || origSettings.content || origSettings.text),
+          content: transContent,
+          contentComplete: countNonEmptyTextNodes(transContent) >= countNonEmptyTextNodes(origContent),
         };
       }
     });
@@ -1014,6 +1204,11 @@ export default function PostTranslationPage() {
         current[parentKey] = list;
       } else {
         current[fieldPath] = value;
+        // A merchant editing a RichText field's content directly means they're now the
+        // authority on it — it must count as complete regardless of the auto-translate-derived
+        // contentComplete flag set by hydrateBlockTranslationsFromHtml, or a manual fix for a
+        // partially-failed field would still show as incomplete after the merchant fixed it.
+        if (fieldPath === "content") current.contentComplete = true;
       }
 
       const updatedMap = { ...prev, [blockId]: current };
@@ -1143,7 +1338,10 @@ export default function PostTranslationPage() {
         default:
           if (!isBlankField(s.content || s.text || (typeof s === "string" ? s : ""))) {
             counts.total++;
-            if (!isBlankField(trans.content)) counts.filled++;
+            // contentComplete (set by hydrateBlockTranslationsFromHtml) catches a RichText field
+            // where only some of its paragraphs translated — that must not count as "filled"
+            // just because the field as a whole isn't blank.
+            if (!isBlankField(trans.content) && trans.contentComplete !== false) counts.filled++;
           }
       }
 
@@ -1211,8 +1409,41 @@ export default function PostTranslationPage() {
 
   const handleAutoTranslate = async () => {
     if (!post || !selectedLocale) return;
-    setToast({ content: "🪄 Translating content..." });
     setIsTranslating(true);
+    setTranslateProgress({ count: 0, total: 0, label: "Starting…" });
+
+    // Every string translated so far this run (original -> translated). Re-applied to the post
+    // on a short throttle so each field fills in as soon as all of its text has arrived.
+    const liveMap = new Map();
+    const englishBlockMap =
+      post.contentHtml && originalBlocks.length > 0
+        ? hydrateBlockTranslationsFromHtml(post.contentHtml, originalBlocks)
+        : {};
+    let liveFlushTimer = null;
+    const flushLiveTranslations = () => {
+      liveFlushTimer = null;
+      const liveTopLevel = (source) => {
+        if (!source || !source.trim()) return null;
+        const value = liveTranslateString(source, liveMap);
+        return value && !value.includes(LIVE_PENDING) ? value : null;
+      };
+      const title = liveTopLevel(post.title);
+      if (title !== null) setTranslatedTitle(title);
+      const excerpt = liveTopLevel(post.excerpt);
+      if (excerpt !== null) setTranslatedExcerpt(stripHtml(excerpt));
+      const metaTitle = liveTopLevel(post.metaTitle || post.title);
+      if (metaTitle !== null) setTranslatedMetaTitle(metaTitle);
+      const metaDescription = liveTopLevel(post.metaDescription || post.excerpt);
+      if (metaDescription !== null) setTranslatedMetaDesc(stripHtml(metaDescription));
+
+      if (post.contentHtml && originalBlocks.length > 0) {
+        const liveBlockMap = hydrateBlockTranslationsFromHtml(liveTranslateHtml(post.contentHtml, liveMap), originalBlocks);
+        setBlockTranslations((current) => mergeLiveTranslations(current, liveBlockMap, englishBlockMap));
+      }
+    };
+    const scheduleLiveFlush = () => {
+      if (!liveFlushTimer) liveFlushTimer = setTimeout(flushLiveTranslations, 150);
+    };
 
     try {
       const res = await fetch(`/api/posts/${id}/translate-auto`, {
@@ -1221,32 +1452,104 @@ export default function PostTranslationPage() {
         body: JSON.stringify({ locale: selectedLocale }),
       });
 
-      // A hung translation, an expired session, or a tunnel/proxy timeout can all return a
-      // non-JSON body (an HTML error page, or nothing) instead of this route's own JSON error —
-      // res.json() on that throws a raw "unexpected character..." parse error that told the
-      // merchant nothing. Read as text first so a bad body gives a real explanation instead.
-      const rawBody = await res.text();
-      let data;
-      try {
-        data = rawBody ? JSON.parse(rawBody) : {};
-      } catch {
-        throw new Error(
-          res.ok
-            ? "Translation server returned an unexpected response. Please try again."
-            : `Translation failed (server returned status ${res.status}). Please try again.`
-        );
+      // The route streams NDJSON (one JSON object per line) as translation progresses instead
+      // of one big buffered response — this is what makes the block-by-block progress below
+      // live, and (via the server's own incremental DB writes as each line arrives) is also
+      // why a run interrupted partway through isn't lost: the next click resumes from there.
+      if (!res.ok || !res.body) {
+        const rawBody = await res.text().catch(() => "");
+        let data = {};
+        try {
+          data = rawBody ? JSON.parse(rawBody) : {};
+        } catch {
+          throw new Error(`Translation failed (server returned status ${res.status}). Please try again.`);
+        }
+        throw new Error(data.error || "Auto-translate failed");
       }
-      if (!res.ok) throw new Error(data.error || "Auto-translate failed");
 
-      setToast({ content: "✨ Translation generated and saved successfully!" });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalEvent = null;
+      let streamError = null;
 
-      if (data.translation) {
-        setTranslatedTitle(data.translation.title || "");
-        setTranslatedExcerpt(stripHtml(data.translation.excerpt || ""));
-        const contentHtml = data.translation.contentHtml || "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // keep the last, possibly-incomplete line for the next chunk
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line) continue;
+          let event;
+          try {
+            event = JSON.parse(line);
+          } catch {
+            continue; // ignore a malformed line rather than aborting a mostly-working stream
+          }
+
+          if (event.type === "start") {
+            setTranslateProgress((p) => ({
+              ...p,
+              label: event.resuming ? `Resuming — ${event.cachedCount} section${event.cachedCount === 1 ? "" : "s"} already translated` : "Starting…",
+            }));
+          } else if (event.type === "plan") {
+            setTranslateProgress((p) => ({ ...p, total: event.total }));
+          } else if (event.type === "progress") {
+            setTranslateProgress((p) => ({
+              ...p,
+              count: event.count,
+              label: event.label,
+              cached: event.cached,
+              provider: event.provider,
+              failed: (p?.failed || 0) + (event.succeeded === false ? 1 : 0),
+            }));
+            // Failed strings come back as the untouched English — never show those as translated.
+            if (event.succeeded !== false && typeof event.original === "string") {
+              liveMap.set(event.original, event.translated);
+              scheduleLiveFlush();
+            }
+          } else if (event.type === "complete" || event.type === "error") {
+            finalEvent = event;
+          }
+        }
+      }
+
+      // Apply anything still waiting on the throttle before the final result lands, so an
+      // interrupted run (no "complete" event) still leaves every finished field filled in.
+      if (liveFlushTimer) {
+        clearTimeout(liveFlushTimer);
+        flushLiveTranslations();
+      }
+
+      if (!finalEvent) {
+        throw new Error("Connection to the translation server was lost. Whatever finished before that was saved — click Auto-Translate again to resume.");
+      }
+      if (finalEvent.type === "error") {
+        streamError = finalEvent.message;
+      }
+
+      if (streamError) {
+        setToast({ content: `⚠️ ${streamError}`, error: true });
+      } else if (finalEvent.warning) {
+        // A section that fails on every translation provider is saved blank, never as the
+        // English original (see translate.py's do_translate/translate_text), so a "successful"
+        // response can still have unresolved blank fields. `warning` is how the server surfaces
+        // that instead of it silently passing as a complete translation.
+        setToast({ content: `⚠️ ${finalEvent.warning}`, error: true });
+      } else {
+        setToast({ content: "✨ Translation generated and saved successfully!" });
+      }
+
+      if (finalEvent.translation) {
+        setTranslatedTitle(finalEvent.translation.title || "");
+        setTranslatedExcerpt(stripHtml(finalEvent.translation.excerpt || ""));
+        const contentHtml = finalEvent.translation.contentHtml || "";
         setTranslatedContent(contentHtml);
-        setTranslatedMetaTitle(data.translation.metaTitle || "");
-        setTranslatedMetaDesc(stripHtml(data.translation.metaDescription || ""));
+        setTranslatedMetaTitle(finalEvent.translation.metaTitle || "");
+        setTranslatedMetaDesc(stripHtml(finalEvent.translation.metaDescription || ""));
 
         // Hydrate block translations
         if (originalBlocks.length > 0) {
@@ -1260,6 +1563,7 @@ export default function PostTranslationPage() {
       setToast({ content: `❌ ${err.message}`, error: true });
     } finally {
       setIsTranslating(false);
+      setTranslateProgress(null);
     }
   };
 
@@ -1317,6 +1621,30 @@ export default function PostTranslationPage() {
       </TitleBar>
       {toast && (
         <Toast content={toast.content} error={toast.error} onDismiss={() => setToast(null)} />
+      )}
+
+      {/* Floating copy of the live progress, so it stays visible while the merchant scrolls
+          down through the blocks to watch their fields fill in. */}
+      {translateProgress && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "min(420px, calc(100vw - 32px))",
+            zIndex: 520,
+            background: "var(--p-color-bg-surface)",
+            border: "1px solid var(--p-color-border)",
+            borderRadius: "12px",
+            boxShadow: "var(--p-shadow-400)",
+            padding: "12px 14px",
+          }}
+        >
+          <LiveTranslateProgress progress={translateProgress} compact />
+        </div>
       )}
 
       {/* Always-mounted SaveBar — visibility controlled by window.shopify.saveBar.show/hide */}
@@ -1401,6 +1729,22 @@ export default function PostTranslationPage() {
                 <Box paddingBlockStart="200">
                   <ProgressBar progress={completionStats.percentage} size="small" tone={completionStats.percentage === 100 ? "success" : "primary"} />
                 </Box>
+
+                {/* Live section-by-section Auto-Translate feed — see handleAutoTranslate's
+                    streamed NDJSON progress events. "Fields" above counts editable rows (Title,
+                    a FAQ's Question #1, ...); "text segments" below counts the individual pieces
+                    of text within them (a single field can contain several) — different counts
+                    by design, not a bug, so the label says which is which. */}
+                {translateProgress && (
+                  <BlockStack gap="150">
+                    <Text variant="bodySm" tone="subdued">
+                      Fields (above) = editable rows · Text segments (below) = individual pieces of text within them
+                    </Text>
+                    <Box padding="300" background="bg-surface-secondary" borderRadius="200">
+                      <LiveTranslateProgress progress={translateProgress} />
+                    </Box>
+                  </BlockStack>
+                )}
 
                 {storeLocales.length === 0 && (
                   <Banner tone="warning" icon={AlertCircleIcon}>

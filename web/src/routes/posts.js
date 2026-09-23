@@ -2638,13 +2638,24 @@ router.post("/:id/translations", async (req, res) => {
   }
 });
 
+// Streams translation progress to the client as NDJSON (one JSON object per line) instead of
+// making the merchant stare at a spinner for the whole run, and persists translate.py's
+// growing string-cache to the DB after every line — not just at the end — so a run killed by
+// the timeout below, a rate limit, or a crash leaves everything done so far saved. The next
+// Auto-Translate click on the same post+locale reuses that cache (see translationCache on
+// PostTranslation) and only re-translates whatever didn't finish, instead of starting over.
 router.post("/:id/translate-auto", async (req, res) => {
+  const postId = parseInt(req.params.id);
+  const { locale } = req.body;
+
+  // NDJSON helper — every response path from here on (success, warning, or error) goes
+  // through this instead of res.json(), since headers are committed the moment streaming
+  // starts and a later res.status(...).json(...) would throw "headers already sent".
+  const send = (obj) => res.write(`${JSON.stringify(obj)}\n`);
+
   try {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
-
-    const postId = parseInt(req.params.id);
-    const { locale } = req.body;
     if (!locale) return res.status(422).json({ error: "Locale is required" });
     if (!isFeatureEnabled(shop.planKey, "translations")) {
       return res.status(403).json({ error: "Auto-translate is available on the Pro plan. Please upgrade to use this feature." });
@@ -2655,6 +2666,12 @@ router.post("/:id/translate-auto", async (req, res) => {
     });
     if (!post) return res.status(404).json({ error: "Post not found" });
 
+    const existingTranslation = await prisma.postTranslation.findUnique({
+      where: { postId_locale: { postId, locale } },
+    });
+    const existingTranslations = existingTranslation?.translationCache || {};
+    const resuming = Object.keys(existingTranslations).length > 0;
+
     const sourceData = {
       title: post.title || "",
       excerpt: post.excerpt || "",
@@ -2663,86 +2680,173 @@ router.post("/:id/translate-auto", async (req, res) => {
       metaDescription: post.metaDescription || post.excerpt || "",
     };
 
+    // Headers committed now — everything past this point streams, and every error path must
+    // write an NDJSON error line + res.end() rather than res.status(...).json(...).
+    res.writeHead(200, {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no", // prevents nginx-style reverse proxies from buffering the whole stream before forwarding it
+    });
+    send({ type: "start", resuming, cachedCount: Object.keys(existingTranslations).length });
+
     // Lives inside web/ (not the repo root) so it's included by the Dockerfile's `COPY web .`
     // and ships with the image — it previously sat one directory up, outside what gets copied,
     // so this spawn always failed in production even when python3 itself was installed.
     const translateScriptPath = path.join(__dirname, "../../translate.py");
-
     const pythonProcess = spawn("python3", [translateScriptPath, locale]);
 
-    let outputData = "";
+    let stdoutBuffer = "";
     let errorData = "";
+    let doneLine = null;
+    // Rebuilt line-by-line from "progress" events as they stream in — this (not the final
+    // "done" line's cache, which may never arrive) is what gets persisted incrementally.
+    const runningCache = { ...existingTranslations };
+    let lastPersist = Promise.resolve();
 
-    pythonProcess.stdout.on("data", (data) => {
-      outputData += data.toString();
+    const persistCache = () => {
+      // Chained so a slow write never overlaps the next one and lands out of order —
+      // each persist always reflects a superset of the one before it.
+      lastPersist = lastPersist
+        .then(() =>
+          prisma.postTranslation.upsert({
+            where: { postId_locale: { postId, locale } },
+            create: { postId, locale, translationCache: runningCache },
+            update: { translationCache: runningCache },
+          })
+        )
+        .catch((err) => console.error("translate-auto: failed to persist partial cache:", err));
+      return lastPersist;
+    };
+
+    pythonProcess.stdout.on("data", (chunk) => {
+      stdoutBuffer += chunk.toString();
+      const lines = stdoutBuffer.split("\n");
+      stdoutBuffer = lines.pop(); // last element may be a partial line — keep it for next time
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        let parsed;
+        try {
+          parsed = JSON.parse(line);
+        } catch {
+          continue; // a stray non-JSON stdout line (shouldn't happen, but never let it break the stream)
+        }
+
+        if (parsed.type === "plan") {
+          send({ type: "plan", total: parsed.total });
+        } else if (parsed.type === "progress") {
+          if (parsed.succeeded && !parsed.cached) {
+            runningCache[parsed.original] = parsed.translated;
+            persistCache();
+          }
+          // original/translated let the browser drop each string into its field the moment it
+          // arrives, instead of waiting for the whole post to finish.
+          send({
+            type: "progress",
+            count: parsed.count,
+            label: parsed.label,
+            cached: parsed.cached,
+            succeeded: parsed.succeeded,
+            original: parsed.original,
+            translated: parsed.translated,
+            // Which provider (google/deepl/libretranslate/mymemory/cache) produced this string —
+            // purely informational, additive to the existing event shape.
+            provider: parsed.provider || null,
+          });
+        } else if (parsed.type === "done") {
+          doneLine = parsed;
+        }
+      }
     });
 
     pythonProcess.stderr.on("data", (data) => {
       errorData += data.toString();
     });
 
-    pythonProcess.stdin.write(JSON.stringify(sourceData));
+    pythonProcess.stdin.write(JSON.stringify({ sourceData, existingTranslations }));
     pythonProcess.stdin.end();
 
-    // translate.py hits Google's unofficial, unrate-limited-by-us translate endpoint per field
-    // with its own retry/backoff (see translate.py) — a long article can legitimately take a
-    // while, but with no upper bound a slow run outlives the dev tunnel's own request timeout.
-    // The tunnel then drops the connection and serves its own HTML timeout page, which the
-    // frontend's `res.json()` chokes on ("unexpected character at line 1 column 1") since it
-    // isn't JSON at all — the real failure (a hang) never even reaches this route's own error
-    // handling. Killing the process ourselves after a bound guarantees a JSON response instead.
-    const TRANSLATE_TIMEOUT_MS = 90_000;
+    // translate.py hits free translation endpoints with their own retry/backoff (see
+    // translate.py) — a long article can legitimately take a while. The timeout here just
+    // guarantees a clean end to the stream instead of an indefinite hang; thanks to the
+    // incremental cache persistence above, whatever finished before the timeout is not lost —
+    // the next Auto-Translate click resumes from there instead of starting over.
+    const TRANSLATE_TIMEOUT_MS = 170_000;
     let timedOut = false;
 
-    await new Promise((resolve, reject) => {
-      const timeoutHandle = setTimeout(() => {
-        timedOut = true;
-        pythonProcess.kill("SIGKILL");
-      }, TRANSLATE_TIMEOUT_MS);
+    try {
+      await new Promise((resolve, reject) => {
+        const timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          pythonProcess.kill("SIGKILL");
+        }, TRANSLATE_TIMEOUT_MS);
 
-      // Without this handler, a spawn failure (e.g. python3 missing from PATH) emits an
-      // unhandled 'error' event that Node rethrows as an uncaught exception — which crashes
-      // the entire server process, taking down every shop's traffic, not just this request.
-      pythonProcess.on("error", (err) => {
-        clearTimeout(timeoutHandle);
-        reject(new Error(`Failed to start translation process: ${err.message}`));
+        // Without this handler, a spawn failure (e.g. python3 missing from PATH) emits an
+        // unhandled 'error' event that Node rethrows as an uncaught exception — which crashes
+        // the entire server process, taking down every shop's traffic, not just this request.
+        pythonProcess.on("error", (err) => {
+          clearTimeout(timeoutHandle);
+          reject(new Error(`Failed to start translation process: ${err.message}`));
+        });
+        pythonProcess.on("close", (code) => {
+          clearTimeout(timeoutHandle);
+          if (timedOut) {
+            reject(new Error("TIMEOUT"));
+          } else if (code !== 0 && !doneLine) {
+            reject(new Error(`Python process exited with code ${code}: ${errorData}`));
+          } else {
+            resolve();
+          }
+        });
       });
-      pythonProcess.on("close", (code) => {
-        clearTimeout(timeoutHandle);
-        if (timedOut) {
-          reject(new Error("Translation timed out. Try again, or translate a shorter article."));
-        } else if (code !== 0) {
-          reject(new Error(`Python process exited with code ${code}: ${errorData}`));
-        } else {
-          resolve();
-        }
-      });
-    });
-
-    const parsedOutput = JSON.parse(outputData.trim());
-
-    if (parsedOutput.success === false) {
-      throw new Error(parsedOutput.message || "Translation failed inside Python script");
+    } catch (err) {
+      await lastPersist; // make sure every already-streamed field is safely saved before responding
+      const partialCount = Object.keys(runningCache).length - Object.keys(existingTranslations).length;
+      const message =
+        err.message === "TIMEOUT"
+          ? `Translation is taking longer than expected and was stopped. ${partialCount} new field${partialCount === 1 ? "" : "s"} finished and ${partialCount === 1 ? "was" : "were"} saved — click Auto-Translate again to resume the rest.`
+          : err.message;
+      send({ type: "error", message });
+      return res.end();
     }
+
+    if (!doneLine) {
+      await lastPersist;
+      send({ type: "error", message: "Translation process ended without a result. Click Auto-Translate again to resume." });
+      return res.end();
+    }
+
+    const result = doneLine.translatedJson || {};
+    const finalCache = doneLine.cache || runningCache;
+
+    // A plain-text top-level field whose translation came back identical to the source and was
+    // never cached failed on every provider — saving it would store the English text as this
+    // locale's "translation" (and sync it to Shopify as one). Keep whatever this locale already
+    // had instead (e.g. a title the merchant typed by hand), or leave it empty.
+    const topLevelField = (key) => {
+      const source = sourceData[key] || "";
+      const translated = result[key] || "";
+      if (!translated) return existingTranslation?.[key] ?? null;
+      const isPlainText = !(source.includes("<") && source.includes(">"));
+      if (isPlainText && translated === source && !(source in finalCache)) {
+        return existingTranslation?.[key] ?? null;
+      }
+      return translated;
+    };
+    const fields = {
+      title: topLevelField("title"),
+      excerpt: topLevelField("excerpt"),
+      contentHtml: result.contentHtml || null,
+      metaTitle: topLevelField("metaTitle"),
+      metaDescription: topLevelField("metaDescription"),
+      translationCache: finalCache,
+    };
 
     const translation = await prisma.postTranslation.upsert({
       where: { postId_locale: { postId, locale } },
-      create: { 
-        postId, 
-        locale, 
-        title: parsedOutput.title || null, 
-        excerpt: parsedOutput.excerpt || null, 
-        contentHtml: parsedOutput.contentHtml || null, 
-        metaTitle: parsedOutput.metaTitle || null, 
-        metaDescription: parsedOutput.metaDescription || null 
-      },
-      update: { 
-        title: parsedOutput.title || null, 
-        excerpt: parsedOutput.excerpt || null, 
-        contentHtml: parsedOutput.contentHtml || null, 
-        metaTitle: parsedOutput.metaTitle || null, 
-        metaDescription: parsedOutput.metaDescription || null 
-      },
+      create: { postId, locale, ...fields },
+      update: fields,
     });
 
     const session = res.locals.shopify?.session;
@@ -2750,10 +2854,35 @@ router.post("/:id/translate-auto", async (req, res) => {
       await syncTranslationToShopify(postId, translation, session);
     }
 
-    res.json({ success: true, translation });
+    // translate.py degrades gracefully by returning the original English text for any chunk
+    // that fails on every provider, rather than erroring the whole run — so a "successful"
+    // response can still have unresolved fields. `failures` is the only signal that happened.
+    // Failed fields are saved as blank (never as English — see do_translate/translate_text),
+    // so this wording must only ever promise what's actually true: blank, not English; the rest
+    // of the article kept; a retry attempting just the blanks. Do not restore "...left in
+    // English" wording here — that describes the old, no-longer-true behavior.
+    const failedChunks = doneLine.failures || 0;
+    // `notice` is translate.py's reason the backup provider stopped mid-run (daily free quota
+    // used up, or the language isn't supported) — more useful to the merchant than a bare count.
+    const failureSummary = `${failedChunks} text segment${failedChunks === 1 ? "" : "s"} could not be translated and ${failedChunks === 1 ? "was" : "were"} left blank.`;
+    send({
+      type: "complete",
+      translation,
+      warning: failedChunks > 0
+        ? doneLine.notice
+          ? `${doneLine.notice} ${failureSummary} Successfully translated content was preserved. Retry Auto-Translate to attempt the remaining segments.`
+          : `${failureSummary} Successfully translated content was preserved. Retry Auto-Translate to attempt the remaining segments.`
+        : null,
+    });
+    res.end();
   } catch (err) {
     console.error("POST /:id/translate-auto error:", err);
-    res.status(500).json({ error: err.message });
+    if (res.headersSent) {
+      send({ type: "error", message: err.message });
+      res.end();
+    } else {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 
