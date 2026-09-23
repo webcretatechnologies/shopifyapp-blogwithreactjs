@@ -869,17 +869,23 @@ function LiveTranslateProgress({ progress, compact = false }) {
     <BlockStack gap="200">
       <InlineStack gap="200" blockAlign="center" wrap={false}>
         <Spinner size="small" />
-        <BlockStack gap="050">
-          <Text variant="bodySm" fontWeight="semibold">{headline}</Text>
-          {count > 0 && label && (
-            <Text variant="bodySm" tone="subdued" truncate={compact}>
-              {cached ? "Reused from a previous run: " : "Just translated: "}
-              {label}
-              {providerName ? ` (${providerName})` : ""}
-              {failed > 0 ? ` · ${failed} couldn't be translated` : ""}
-            </Text>
-          )}
-        </BlockStack>
+        {/* min-width: 0 is required for a flex child to actually shrink below its content's
+            natural width — without it, `wrap={false}` on the InlineStack above just lets long
+            "Just translated: ..." lines overflow past the box edge instead of truncating (the
+            bug this fixes: text visibly spilling outside the floating progress card). */}
+        <div style={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
+          <BlockStack gap="050">
+            <Text variant="bodySm" fontWeight="semibold" truncate>{headline}</Text>
+            {count > 0 && label && (
+              <Text variant="bodySm" tone="subdued" truncate>
+                {cached ? "Reused from a previous run: " : "Just translated: "}
+                {label}
+                {providerName ? ` (${providerName})` : ""}
+                {failed > 0 ? ` · ${failed} couldn't be translated` : ""}
+              </Text>
+            )}
+          </BlockStack>
+        </div>
       </InlineStack>
       <ProgressBar progress={percent} size="small" tone="primary" animated />
     </BlockStack>
@@ -1624,7 +1630,14 @@ export default function PostTranslationPage() {
       )}
 
       {/* Floating copy of the live progress, so it stays visible while the merchant scrolls
-          down through the blocks to watch their fields fill in. */}
+          down through the blocks to watch their fields fill in. Pinned via position:fixed —
+          inside Shopify's embedded admin iframe, "fixed" is relative to the iframe's own
+          document (which resizes to the full page height, not just the visible viewport), so
+          this ends up wherever the LONG page's bottom happens to be, not glued to the actual
+          bottom of the screen the merchant sees. Harmless in practice here since the box's own
+          content no longer overflows its bounds (see LiveTranslateProgress's truncate fix) —
+          it can still land mid-page while scrolling, but it no longer spills text outside itself
+          when it does. */}
       {translateProgress && (
         <div
           role="status"
@@ -1635,12 +1648,15 @@ export default function PostTranslationPage() {
             left: "50%",
             transform: "translateX(-50%)",
             width: "min(420px, calc(100vw - 32px))",
+            maxWidth: "calc(100vw - 32px)",
             zIndex: 520,
             background: "var(--p-color-bg-surface)",
             border: "1px solid var(--p-color-border)",
             borderRadius: "12px",
             boxShadow: "var(--p-shadow-400)",
             padding: "12px 14px",
+            boxSizing: "border-box",
+            overflow: "hidden",
           }}
         >
           <LiveTranslateProgress progress={translateProgress} compact />
