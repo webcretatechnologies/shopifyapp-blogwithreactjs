@@ -164,6 +164,10 @@ app.use("/", sidebarRoutes);
 // ─── App Proxy Routes (Validated via Shopify Signature) ──────────────────────
 app.use("/api/proxy", proxyRoutes);
 
+// Health check — must be BEFORE the /api session middleware below, or Docker
+// healthchecks get a 302 to /api/auth and mark the container unhealthy.
+app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+
 // ─── Shopify Auth & Webhook Routes ────────────────────────────────────────────
 app.get(shopify.config.auth.path, shopify.auth.begin());
 app.get(
@@ -601,9 +605,6 @@ app.use("/api", (req, res, next) => {
 });
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Health check
-app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
 // Shop info + plan
 app.get("/api/shop", async (_req, res) => {

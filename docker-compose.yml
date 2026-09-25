@@ -5,6 +5,9 @@ services:
     container_name: blog-react-db
     restart: always
 
+    # Permanently disable binary logging (reduces disk growth from binlogs).
+    command: ["mysqld", "--skip-log-bin"]
+
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: shopify_blog_react
