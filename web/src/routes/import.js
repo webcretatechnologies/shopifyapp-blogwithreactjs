@@ -112,17 +112,20 @@ router.get("/articles", async (req, res) => {
       image_alt: a.image?.altText || "",
     }));
 
-    // Check which ones are already imported
-    const importedIds = await prisma.shopifyArticle.findMany({
+    // Check which ones are already imported — also grab the local postId so the importer UI
+    // can link straight to the existing post's edit page instead of just showing an "Imported"
+    // badge with nowhere to click.
+    const importedLinks = await prisma.shopifyArticle.findMany({
       where: { shopifyArticleId: { in: articles.map((a) => String(a.id)) } },
-      select: { shopifyArticleId: true },
+      select: { shopifyArticleId: true, postId: true },
     });
-    const importedSet = new Set(importedIds.map((r) => r.shopifyArticleId));
+    const importedMap = new Map(importedLinks.map((r) => [r.shopifyArticleId, r.postId]));
 
     res.json({
       articles: articles.map((a) => ({
         ...a,
-        is_imported: importedSet.has(String(a.id)),
+        is_imported: importedMap.has(String(a.id)),
+        post_id: importedMap.get(String(a.id)) ?? null,
       })),
     });
   } catch (err) {

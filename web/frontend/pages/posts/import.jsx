@@ -181,7 +181,9 @@ export default function ArticleImporter() {
       }
       // Mark the article as imported in local state
       setAllArticles((prev) =>
-        prev.map((a) => (String(a.id) === String(articleId) ? { ...a, is_imported: true } : a))
+        prev.map((a) =>
+          String(a.id) === String(articleId) ? { ...a, is_imported: true, post_id: data.post_id } : a
+        )
       );
     } catch (err) {
       // Surfaced inside the modal, not the page banner behind it — the modal overlay would
@@ -327,11 +329,16 @@ export default function ArticleImporter() {
 
   // ─── Table rows ───────────────────────────────────────────────────────────
   const rowMarkup = paginatedArticles.map((article, index) => {
-    const { id, title, author, published_at, is_imported, image, image_alt } = article;
+    const { id, title, author, published_at, is_imported, post_id, image, image_alt } = article;
     const isPublished = Boolean(published_at);
 
     return (
-      <IndexTable.Row id={String(id)} key={id} position={index}>
+      <IndexTable.Row
+        id={String(id)}
+        key={id}
+        position={index}
+        onClick={is_imported && post_id ? () => navigate(`/posts/${post_id}/edit`) : undefined}
+      >
         {/* Title */}
         <IndexTable.Cell>
           <InlineStack gap="300" blockAlign="center" wrap={false}>
@@ -412,12 +419,16 @@ export default function ArticleImporter() {
           <div onClick={(e) => e.stopPropagation()}>
             <Button
               size="slim"
-              icon={ImportIcon}
+              icon={is_imported ? undefined : ImportIcon}
               loading={importingId === id}
-              disabled={is_imported || postsAtLimit || (importingId !== null && importingId !== id)}
-              onClick={() => requestImport(article)}
+              disabled={!is_imported && (postsAtLimit || (importingId !== null && importingId !== id))}
+              onClick={
+                is_imported
+                  ? (post_id ? () => navigate(`/posts/${post_id}/edit`) : undefined)
+                  : () => requestImport(article)
+              }
             >
-              {is_imported ? "Imported" : "Import"}
+              {is_imported ? "Edit article" : "Import"}
             </Button>
           </div>
         </IndexTable.Cell>
