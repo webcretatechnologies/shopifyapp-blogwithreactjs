@@ -119,6 +119,14 @@ function articleFromGraphQL(article) {
     // scheduling invisible to the reconciliation/merge engine.
     published_at: article.publishedAt || null,
     isScheduled: !article.isPublished && !!article.publishedAt && new Date(article.publishedAt) > new Date(),
+    // Must be surfaced (not just isScheduled/published_at) — computeContentHash reads
+    // fields.published directly, and without this it's always undefined/false, so the
+    // hash never changes when Shopify flips a scheduled article live. reconcilePost then
+    // sees inboundHash === lastOutboundHash ("in_sync") and returns early without ever
+    // calling handleArticleWebhook, so the local post's status stays "scheduled" forever
+    // even after Shopify has actually published the article — the "stays hidden and never
+    // publishes" bug.
+    published: !!article.isPublished,
     updated_at: article.updatedAt || null,
     blog_id: article.blog?.id ? numericIdFromGid(article.blog.id) : null,
     // Now wired into the real two-way merge (OPTIONAL_REMOTE_FIELDS below) — only available via
@@ -1076,8 +1084,13 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
   const tagNames = formatOutboundTags(post);
   // Scheduling: Shopify rejects isPublished:true combined with a future publishDate
   // ("Can't set isPublished to true and also set a future publish date" — verified against
-  // a live store). The correct combination is isPublished:false + a future publishDate;
-  // Shopify flips isPublished to true itself once that instant passes.
+  // a live store). The correct combination is isPublished:false + a future publishDate.
+  // IMPORTANT: contrary to what this used to assume, Shopify does NOT flip isPublished to
+  // true on its own once that instant passes — confirmed live: the article sits at
+  // isPublished:false indefinitely, and Shopify's own admin "Manage schedule" panel still
+  // shows it as scheduled with "This time has already passed" long after the date. Getting
+  // it live requires this app to notice the due date and push isPublished:true itself —
+  // see promoteDueScheduledPosts below, which the reconciliation scheduler now calls.
   const isScheduled = !publishMode && post.status === "scheduled" && post.publishedAt && post.publishedAt > new Date();
   const published = publishMode ? true : (post.status === "published");
   const publishAt = isScheduled ? post.publishedAt.toISOString() : null;
@@ -2079,6 +2092,37 @@ async function retryFailedSchedulePushes(shopId) {
   }
 }
 
+/**
+ * Promotes scheduled posts whose scheduled instant has already arrived to actually-published.
+ * Shopify does not auto-flip a scheduled article's isPublished on its own (see the comment in
+ * pushPostToShopify) — without this, a post stays "scheduled"/hidden forever once its time passes.
+ */
+async function promoteDueScheduledPosts(shopId) {
+  const due = await prisma.post.findMany({
+    where: {
+      shopId,
+      status: "scheduled",
+      publishedAt: { lte: new Date() },
+      shopifyArticle: { isNot: null },
+    },
+    take: 20,
+  });
+
+  for (const post of due) {
+    try {
+      await pushPostToShopify(post.id, { publishMode: true });
+      await prisma.post.update({
+        where: { id: post.id },
+        data: { status: "published" },
+      });
+      console.log(`[Reconciliation] Promoted due scheduled post ${post.id} to published`);
+    } catch (err) {
+      console.error(`[Reconciliation] Failed to promote due scheduled post ${post.id}:`, err.message);
+    }
+    await delay(RECONCILE_DELAY_MS);
+  }
+}
+
 async function reconcileAllLinkedPosts(shopDomain) {
   try {
     const shop = await prisma.shop.findUnique({ where: { domain: shopDomain } });
@@ -2086,6 +2130,10 @@ async function reconcileAllLinkedPosts(shopDomain) {
 
     await retryFailedSchedulePushes(shop.id).catch((err) => {
       console.error(`[Reconciliation] retryFailedSchedulePushes failed for shop ${shopDomain}:`, err.message);
+    });
+
+    await promoteDueScheduledPosts(shop.id).catch((err) => {
+      console.error(`[Reconciliation] promoteDueScheduledPosts failed for shop ${shopDomain}:`, err.message);
     });
 
     const linkedPosts = await prisma.post.findMany({
@@ -2186,6 +2234,7 @@ export const ArticleSyncService = {
   handleArticleWebhook,
   reconcilePost,
   pollReconcilePost,
+  promoteDueScheduledPosts,
   reconcileAllShops,
   reconcileAllLinkedPosts,
   startReconciliationScheduler,
