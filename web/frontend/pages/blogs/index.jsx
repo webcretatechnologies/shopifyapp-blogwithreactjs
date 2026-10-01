@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../../utils/smartBack";
+import KpiRow from "../../components/common/KpiRow";
 import {
   Page,
   Layout,
@@ -76,6 +77,8 @@ export default function Blogs() {
   const location = useLocation();
   const [blogs, setBlogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Unfiltered totals for the KPI row (search/sort only affect the table).
+  const [blogStats, setBlogStats] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
 
   // Delete confirmation modal state
@@ -96,6 +99,13 @@ export default function Blogs() {
       const res = await fetch("/api/posts/shopify/blogs");
       const data = await res.json();
       let fetchedBlogs = data.blogs || [];
+      const policyOf = (b) => String(b.commentPolicy || "").toUpperCase();
+      setBlogStats({
+        total: fetchedBlogs.length,
+        moderated: fetchedBlogs.filter((b) => policyOf(b) === "MODERATED").length,
+        open: fetchedBlogs.filter((b) => policyOf(b) === "AUTO_PUBLISHED").length,
+        closed: fetchedBlogs.filter((b) => policyOf(b) === "CLOSED").length,
+      });
 
       // Sorting
       if (sortSelected.length > 0) {
@@ -253,6 +263,17 @@ export default function Blogs() {
       }}
     >
       <Layout>
+        <Layout.Section>
+          <KpiRow
+            loading={isLoading && !blogStats}
+            items={[
+              { label: "Total blogs", value: blogStats?.total ?? 0 },
+              { label: "Comments moderated", value: blogStats?.moderated ?? 0 },
+              { label: "Comments auto-published", value: blogStats?.open ?? 0 },
+              { label: "Comments closed", value: blogStats?.closed ?? 0 },
+            ]}
+          />
+        </Layout.Section>
         <Layout.Section>
           <Card padding="0">
             <IndexFilters

@@ -6,6 +6,7 @@ import {
 import { Download } from "lucide-react";
 import ConfirmActionModal from "../../ConfirmActionModal";
 import BackHeader from "../BackHeader";
+import KpiRow from "../../common/KpiRow";
 import AnalyticsChart from "../../analytics/AnalyticsChart";
 import { downloadAdminFile } from "../../../utils/adminApi";
 
@@ -321,6 +322,15 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
           <Text variant="headingLg" as="h3">Coupons</Text>
           {navButtons}
         </InlineStack>
+
+        <KpiRow
+          items={[
+            { label: "Total coupons", value: coupons.length },
+            { label: "Active", value: coupons.filter((c) => c.active && (!c.endsAt || new Date(c.endsAt) > new Date())).length },
+            { label: "Inactive or expired", value: coupons.filter((c) => !c.active || (c.endsAt && new Date(c.endsAt) <= new Date())).length },
+            { label: "Total redemptions", value: coupons.reduce((n, c) => n + (c.totalUses || 0), 0) },
+          ]}
+        />
 
         <Card>
           <Box padding="500">

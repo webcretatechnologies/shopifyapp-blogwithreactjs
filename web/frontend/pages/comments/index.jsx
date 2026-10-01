@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../utils/smartBack";
+import KpiRow from "../../components/common/KpiRow";
 import {
   Page,
   Layout,
@@ -128,6 +129,32 @@ export default function Comments() {
         return "Comments updated successfully";
     }
   };
+
+  // Unfiltered counts for the KPI row — refetched whenever the visible list changes (e.g. after
+  // moderation) so the totals never go stale; search/status filters don't affect them.
+  const [commentStats, setCommentStats] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const qs = articleIdParam ? `?article_id=${encodeURIComponent(articleIdParam)}` : "";
+    window
+      .fetch(`/api/comments${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d || d.protectedDataRequired) return;
+        const all = d.comments || [];
+        const norm = (c) => (c.status || "unapproved").toLowerCase();
+        setCommentStats({
+          total: all.length,
+          approved: all.filter((c) => ["published", "approved"].includes(norm(c))).length,
+          pending: all.filter((c) => ["pending", "unapproved", "not_approved"].includes(norm(c))).length,
+          spam: all.filter((c) => norm(c) === "spam").length,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [comments, articleIdParam]);
 
   const handleModerate = async (action, ids) => {
     setLoading(true);
@@ -421,6 +448,18 @@ export default function Comments() {
             </Layout.Section>
           )}
 
+          {commentStats && (
+            <Layout.Section>
+              <KpiRow
+                items={[
+                  { label: "Total comments", value: commentStats.total, onClick: () => setStatusFilter(["all"]) },
+                  { label: "Approved", value: commentStats.approved, onClick: () => setStatusFilter(["published"]) },
+                  { label: "Awaiting approval", value: commentStats.pending, onClick: () => setStatusFilter(["unapproved"]) },
+                  { label: "Spam", value: commentStats.spam, onClick: () => setStatusFilter(["spam"]) },
+                ]}
+              />
+            </Layout.Section>
+          )}
           <Layout.Section>
             <Card padding="0">
               <IndexFilters

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../utils/smartBack";
+import KpiRow from "../../components/common/KpiRow";
 import {
   Page,
   Layout,
@@ -254,6 +255,19 @@ export default function BlogTemplatesLibrary() {
     >
       <TitleBar title="Blog templates" />
       <Layout>
+        <Layout.Section>
+          <KpiRow
+            loading={loading}
+            items={[
+              { label: "Library templates", value: templates.length, onClick: () => setTab(0) },
+              { label: "My saved templates", value: savedCount, onClick: () => setTab(1) },
+              {
+                label: "Saved template limit",
+                value: templateLimit == null ? "Unlimited" : `${savedCount} / ${templateLimit}`,
+              },
+            ]}
+          />
+        </Layout.Section>
         <Layout.Section>
           <BlockStack gap="400">
             {/* One plan notice at a time. Two full-width warning banners — the article limit and

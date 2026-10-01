@@ -6,6 +6,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../utils/smartBack";
 import UpgradePrompt from "../components/UpgradePrompt";
+import KpiRow from "../components/common/KpiRow";
 import {
   Page,
   Layout,
@@ -68,6 +69,18 @@ export default function SyncDashboard() {
   }, []);
 
   const dismissToast = useCallback(() => setToast(null), []);
+
+  // KPI figures derive from the posts already loaded for the table (first 50), not a separate query.
+  const syncKpis = (() => {
+    const linked = posts.filter((p) => p.shopifyArticle);
+    const times = linked.map((p) => new Date(p.shopifyArticle.syncedAt || 0).getTime()).filter(Boolean);
+    return {
+      linked: linked.length,
+      notSynced: posts.length - linked.length,
+      errors: linked.filter((p) => p.shopifyArticle.lastError).length,
+      lastSync: times.length ? new Date(Math.max(...times)).toLocaleString() : "Never",
+    };
+  })();
 
   const syncActionsEnabled = featuresLoaded && !!features.sync_actions?.enabled;
 
@@ -399,6 +412,17 @@ export default function SyncDashboard() {
         ]}
       >
         <Layout>
+          <Layout.Section>
+            <KpiRow
+              loading={loading}
+              items={[
+                { label: "Linked to Shopify", value: syncKpis.linked },
+                { label: "Not synced", value: syncKpis.notSynced },
+                { label: "With sync errors", value: syncKpis.errors },
+                { label: "Last synced", value: syncKpis.lastSync },
+              ]}
+            />
+          </Layout.Section>
           <Layout.Section>
             <Banner>
               <p>

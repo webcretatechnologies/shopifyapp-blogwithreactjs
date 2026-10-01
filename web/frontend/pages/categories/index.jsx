@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../../utils/smartBack";
+import KpiRow from "../../components/common/KpiRow";
 import {
   Page,
   Layout,
@@ -62,6 +63,8 @@ export default function Categories() {
   const location = useLocation();
   const [categories, setCategories] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Unfiltered totals for the KPI row (search/sort only affect the table).
+  const [categoryStats, setCategoryStats] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -78,6 +81,13 @@ export default function Categories() {
       const res = await fetch("/api/categories");
       const data = await res.json();
       let rows = data.categories || [];
+      const top = rows.reduce((m, c) => ((c.postCount || 0) > (m?.postCount || 0) ? c : m), null);
+      setCategoryStats({
+        total: rows.length,
+        assigned: rows.reduce((n, c) => n + (c.postCount || 0), 0),
+        empty: rows.filter((c) => !c.postCount).length,
+        top: top && top.postCount ? top.name : "—",
+      });
 
       if (sortSelected.length > 0) {
         const [key, direction] = sortSelected[0].split(" ");
@@ -197,6 +207,17 @@ export default function Categories() {
         }}
       >
         <Layout>
+          <Layout.Section>
+            <KpiRow
+              loading={isLoading && !categoryStats}
+              items={[
+                { label: "Total categories", value: categoryStats?.total ?? 0 },
+                { label: "Article assignments", value: categoryStats?.assigned ?? 0 },
+                { label: "Empty categories", value: categoryStats?.empty ?? 0 },
+                { label: "Most used", value: categoryStats?.top ?? "—" },
+              ]}
+            />
+          </Layout.Section>
           <Layout.Section>
             <Card padding="0">
               <IndexFilters

@@ -24,6 +24,7 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../utils/smartBack";
+import KpiRow from "../../components/common/KpiRow";
 import { ImportIcon, ArrowLeftIcon } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 import FirstPostCongratsModal from "../../components/FirstPostCongratsModal";
@@ -546,6 +547,35 @@ export default function ArticleImporter() {
                   )}
                 </BlockStack>
               </Card>
+
+              {/* ─── KPIs — unfiltered counts for the selected blog; clicking applies the filter ─── */}
+              {selectedBlog && (
+                <KpiRow
+                  loading={loadingArticles}
+                  items={[
+                    {
+                      label: "Articles in blog",
+                      value: allArticles.length.toLocaleString(),
+                      onClick: () => { setPublishStatusFilter([]); setImportStatusFilter([]); setPage(1); },
+                    },
+                    {
+                      label: "Already imported",
+                      value: allArticles.filter((a) => a.is_imported).length.toLocaleString(),
+                      onClick: () => { setImportStatusFilter(["imported"]); setPage(1); },
+                    },
+                    {
+                      label: "Not yet imported",
+                      value: allArticles.filter((a) => !a.is_imported).length.toLocaleString(),
+                      onClick: () => { setImportStatusFilter(["not_imported"]); setPage(1); },
+                    },
+                    {
+                      label: "Drafts (unpublished)",
+                      value: allArticles.filter((a) => !a.published_at).length.toLocaleString(),
+                      onClick: () => { setPublishStatusFilter(["draft"]); setPage(1); },
+                    },
+                  ]}
+                />
+              )}
 
               {/* ─── Articles Table ─── */}
               {selectedBlog && (

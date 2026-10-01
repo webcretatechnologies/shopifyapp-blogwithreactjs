@@ -42,6 +42,7 @@ import {
 } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 import UpgradePrompt from "../../components/UpgradePrompt";
+import KpiRow from "../../components/common/KpiRow";
 
 const STATUS_BADGE_MAP = {
   published: "success",
@@ -252,6 +253,17 @@ export default function Articles() {
   const [postCount, setPostCount] = useState(0);
   const [postLimit, setPostLimit] = useState(null);
   const [activePlan, setActivePlan] = useState("");
+
+  // Unfiltered counts for the KPI row — same endpoint the Dashboard uses.
+  const [kpis, setKpis] = useState(null);
+  const [kpisLoading, setKpisLoading] = useState(true);
+  useEffect(() => {
+    fetch("/api/posts/meta/dashboard-extras")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setKpis(d))
+      .catch(() => {})
+      .finally(() => setKpisLoading(false));
+  }, []);
 
   // Delete confirmation modal state
   const [deleteTargetPost, setDeleteTargetPost] = useState(null);
@@ -793,6 +805,18 @@ export default function Articles() {
               />
             </Layout.Section>
           )}
+          <Layout.Section>
+            <KpiRow
+              loading={kpisLoading}
+              items={[
+                { label: "Total articles", value: kpis?.planUsage?.used ?? 0, onClick: () => { setStatusFilter([]); setSyncFilter([]); setPage(1); } },
+                { label: "Published", value: kpis?.published ?? 0, onClick: () => { setStatusFilter(["published"]); setPage(1); } },
+                { label: "Drafts", value: kpis?.drafts ?? 0, onClick: () => { setStatusFilter(["draft"]); setPage(1); } },
+                { label: "Scheduled", value: kpis?.scheduled ?? 0, onClick: () => { setStatusFilter(["scheduled"]); setPage(1); } },
+                { label: "Not synced to Shopify", value: kpis?.notSynced ?? 0 },
+              ]}
+            />
+          </Layout.Section>
           <Layout.Section>
             <Card padding="0">
               <IndexFilters

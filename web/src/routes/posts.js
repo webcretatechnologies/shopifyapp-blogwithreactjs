@@ -993,9 +993,10 @@ router.get("/meta/dashboard-extras", async (req, res) => {
     const now = new Date();
     const WEEKS = 8;
     const cadenceStart = new Date(now.getTime() - WEEKS * 7 * 24 * 60 * 60 * 1000);
-    const [totalPosts, draftCount, scheduledCount, notSyncedCount, upcoming, syncIssues, recentlyPublished, savedTemplateCount] =
+    const [totalPosts, publishedCount, draftCount, scheduledCount, notSyncedCount, upcoming, syncIssues, recentlyPublished, savedTemplateCount] =
       await Promise.all([
         prisma.post.count({ where: { shopId: shop.id } }),
+        prisma.post.count({ where: { shopId: shop.id, status: "published" } }),
         prisma.post.count({ where: { shopId: shop.id, status: "draft" } }),
         prisma.post.count({ where: { shopId: shop.id, status: "scheduled" } }),
         prisma.post.count({ where: { shopId: shop.id, shopifyArticle: null } }),
@@ -1055,6 +1056,7 @@ router.get("/meta/dashboard-extras", async (req, res) => {
     const aiCreditStatus = getAiCreditStatus(shop.planKey, shop.aiCreditsUsed || 0, shop.aiCreditsPurchased || 0, shop.aiCreditsPurchasedUsed || 0);
 
     res.json({
+      published: publishedCount,
       drafts: draftCount,
       scheduled: scheduledCount,
       notSynced: notSyncedCount,
