@@ -278,6 +278,28 @@ router.post("/request", async (req, res) => {
   try {
         const session = res.locals.shopify.session;
     const { plan, host, couponCode } = req.body;
+    const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
+
+    // Merchant-initiated plan changes from the Billing page must always win over any
+    // Super Admin override. We clear the override only once the request has actually succeeded
+    // (immediate for Free cancellation; after Shopify accepts a paid-plan subscription request).
+    const clearPlanOverride = async (selectedPlan) => {
+      const removed = await prisma.shopPlanOverride
+        .delete({ where: { shopDomain: session.shop } })
+        .catch(() => null);
+
+      // Audit trail: merchant explicitly changed plan, so any admin override was removed.
+      if (removed && shop?.id) {
+        await prisma.adminActivityLog.create({
+          data: {
+            action: `Auto-cleared plan override for ${session.shop} after merchant selected ${selectedPlan}`,
+            targetType: "shop",
+            targetId: shop.id,
+            meta: { shopDomain: session.shop, selectedPlan, previousOverridePlan: removed.overridePlan },
+          },
+        }).catch(() => {});
+      }
+    };
 
     if (plan === "free") {
       // Previously this just returned success without doing anything — no real Shopify
@@ -312,17 +334,12 @@ router.post("/request", async (req, res) => {
         }
       }
 
-      const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
+      // Merchant selected Free explicitly — remove any active override so Billing reflects
+      // the merchant's own choice going forward.
+      await clearPlanOverride("free");
+      const resolvedPlan = "free";
 
-      // The Shopify subscription itself was just genuinely cancelled above regardless — that
-      // part always has to happen, or the merchant keeps being billed. But if a Super Admin
-      // override is in force, the app-level plan the merchant should keep experiencing is the
-      // override, not "free": don't stomp shop.planKey back to free underneath it, and report
-      // the override plan in this response instead of a hardcoded "free" one.
-      const activeOverride = shop ? await getActiveOverride(shop.domain) : null;
-      const resolvedPlan = activeOverride ? activeOverride.overridePlan : "free";
-
-      if (!activeOverride && shop && shop.planKey !== "free") {
+      if (shop && shop.planKey !== "free") {
         await prisma.shop.update({ where: { id: shop.id }, data: { planKey: "free" } });
       }
       try {
@@ -358,7 +375,7 @@ router.post("/request", async (req, res) => {
       const downgradeAiStatus = getAiCreditStatus(resolvedPlan, shop?.aiCreditsUsed || 0, shop?.aiCreditsPurchased || 0, shop?.aiCreditsPurchasedUsed || 0);
       return res.status(200).json({
         confirmationUrl: null,
-        isFree: !activeOverride,
+        isFree: true,
         activePlan: resolvedPlan,
         postCount,
         postLimit: getArticleLimit(resolvedPlan),
@@ -489,6 +506,11 @@ router.post("/request", async (req, res) => {
         },
       }).catch((err) => console.error("Failed to record coupon claim:", err));
     }
+
+    // Shopify accepted the merchant's paid-plan request (returned a confirmationUrl / charge ID),
+    // so clear any Super Admin override now to let the merchant-selected plan take effect once
+    // approved.
+    await clearPlanOverride(dbPlan.name);
 
     res.status(200).json({ confirmationUrl: data.confirmationUrl });
   } catch (error) {

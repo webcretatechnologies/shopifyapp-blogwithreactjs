@@ -303,6 +303,20 @@ export default function Plans() {
           setPostLimit("postLimit" in data ? data.postLimit : null);
           setBillingCycle(data.billingCycle ?? null);
           showPlanToast("You're now on the Free plan");
+        } else {
+          // A Super Admin override can keep gating on a paid tier even after the merchant's
+          // Shopify subscription has been cancelled. That's still a successful request, but this
+          // branch was previously ignored entirely (no UI update, no toast), so it looked broken.
+          setActivePlan(data.activePlan || activePlan || "free");
+          setPostCount(data.postCount ?? postCount);
+          setTemplateCount(data.templateCount ?? templateCount);
+          setTemplateLimit("templateLimit" in data ? data.templateLimit : templateLimit);
+          setAiUsed(data.aiCreditsUsed ?? aiUsed);
+          setAiLimit("aiCreditLimit" in data ? data.aiCreditLimit : aiLimit);
+          setAiPurchased(data.aiCreditsPurchased ?? aiPurchased);
+          setPostLimit("postLimit" in data ? data.postLimit : postLimit);
+          setBillingCycle(data.billingCycle ?? null);
+          showPlanToast(`Downgrade processed. Your current app access remains on ${data.activePlan || "the overridden"} plan.`);
         }
         return true;
       }
