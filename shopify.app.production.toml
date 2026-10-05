@@ -6,8 +6,8 @@
 # client_id here if you deliberately created a separate app entry in the Partner Dashboard for
 # production (e.g. to keep a "-Local" dev app and a real public app distinct) — in that case,
 # replace it with that app's own client_id.
-client_id = "db7af6a97819553f43a7aa7171f811c5"
-name = "Blog Builder - Aauram"
+client_id = "f8e0930c60752d499542301d06d88640"
+name = "Blog Builder"
 application_url = "https://blogapp-dev.boxtasks.com"
 embedded = true
 
