@@ -149,7 +149,7 @@ const PLAN_DEFAULTS = {
     analytics_advanced: { enabled: true, limit: null },
     templates_premium: { enabled: true, limit: null },
     template_limit: { enabled: true, limit: null },
-    ai_credits: { enabled: true, limit: 100 },
+    ai_credits: { enabled: true, limit: 60 },
     custom_code_injection: { enabled: true, limit: null },
   },
   business: {
@@ -441,7 +441,7 @@ const AI_CREDIT_RENDER = (f) => {
 
 const TEMPLATE_LIMIT_RENDER = (f) => {
   const limit = f.template_limit?.limit;
-  return limit == null ? "Unlimited Saved Templates" : `Save ${limit} of Your Own Templates`;
+  return limit == null ? "Unlimited Saved Templates" : `${limit} Saved Templates`;
 };
 
 const PRICE_ORDER = ["free", "starter", "pro"];

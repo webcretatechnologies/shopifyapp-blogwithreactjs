@@ -13,6 +13,7 @@ import {
   Divider,
   ProgressBar,
   Banner,
+  ButtonGroup,
   TextField,
   Spinner,
 } from "@shopify/polaris";
@@ -23,7 +24,6 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../utils/smartBack";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import PlanUsageMeters from "../components/PlanUsageMeters";
-import "./plans.css";
 
 function intervalSuffix(interval) {
   return interval === "ANNUAL" ? "/year" : "/month";
@@ -60,10 +60,17 @@ function planUsageLimits(features = []) {
     return value ? value.replace(/^Up to\s+/i, "") : fallback;
   };
   return [
-    { label: "Articles", value: valueFor(/articles/i, "Included") },
-    { label: "Saved templates", value: valueFor(/templates/i, "Included") },
+    // The row label supplies the context, so keep unlimited values concise.
+    { label: "Articles", value: valueFor(/articles/i, "Included").replace(/^Unlimited Articles$/i, "Unlimited") },
+    // The label already says “Saved templates”, so the full “Unlimited Saved
+    // Templates” string makes the value column overflow on narrower cards.
+    { label: "Saved templates", value: valueFor(/templates/i, "Included").replace(/^Unlimited Saved Templates$/i, "Unlimited") },
     { label: "AI credits", value: valueFor(/AI credits/i, "Included") },
   ];
+}
+
+function isUsageLimitBullet(feature) {
+  return /^(Up to \d+ Articles|Unlimited Articles|\d+ Saved Templates|Unlimited Saved Templates|\d+ AI Credits|Unlimited AI Credits)$/i.test(feature);
 }
 
 export default function Plans() {
@@ -382,7 +389,8 @@ export default function Plans() {
   // overriding whatever order was set in Super Admin. "Next plan to upgrade to" still needs a
   // true price ordering regardless of display order, so that's computed separately. Which plan
   // shows the "Recommended" badge is a Super Admin-set flag (plan.isRecommended, edited via
-  // EditPlanCoreModal's "Recommend / Highlight Plan in UI" checkbox) — not derived here at all.
+  // EditPlanCoreModal's "Recommend / Highlight Plan in UI" checkbox). A tier's monthly and
+  // yearly variants share that recommendation so merchants see the same guidance in either view.
   const hasYearlyPlans = dynamicPlans.some((plan) => Number(plan.price) > 0 && plan.interval === "ANNUAL");
   const hasMonthlyPlans = dynamicPlans.some((plan) => Number(plan.price) > 0 && plan.interval !== "ANNUAL");
   // Free is a shared baseline; the selected cadence only filters paid offers.
@@ -415,7 +423,6 @@ export default function Plans() {
       title="Plans & Billing"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
     >
-      <div className="plans-billing">
       <Layout>
         <Layout.Section>
           <Text as="p" variant="bodyMd" tone="subdued">
@@ -447,7 +454,7 @@ export default function Plans() {
 
         {!isLoading && (
           <Layout.Section>
-            <div className="billing-surface billing-usage">
+            <Card>
               <BlockStack gap="400">
                 <InlineStack align="space-between" blockAlign="start" gap="400" wrap={false}>
                   <BlockStack gap="050">
@@ -517,7 +524,7 @@ export default function Plans() {
                   ]}
                 />
               </BlockStack>
-            </div>
+            </Card>
           </Layout.Section>
         )}
 
@@ -618,31 +625,25 @@ export default function Plans() {
               </Text>
               {hasMonthlyPlans && hasYearlyPlans && (
                 <div style={{ display: "flex", justifyContent: "center" }}>
-                  <div className="billing-cycle-control">
-                    <div className="billing-cycle-tabs" role="group" aria-label="Billing frequency">
-                      <button
-                        type="button"
-                        className={selectedBillingInterval === "EVERY_30_DAYS" ? "is-selected" : ""}
-                        aria-pressed={selectedBillingInterval === "EVERY_30_DAYS"}
+                  <InlineStack gap="300" blockAlign="center">
+                    <ButtonGroup variant="segmented">
+                      <Button
+                        pressed={selectedBillingInterval === "EVERY_30_DAYS"}
                         onClick={() => setSelectedBillingInterval("EVERY_30_DAYS")}
                       >
                         Monthly
-                      </button>
-                      <button
-                        type="button"
-                        className={selectedBillingInterval === "ANNUAL" ? "is-selected" : ""}
-                        aria-pressed={selectedBillingInterval === "ANNUAL"}
+                      </Button>
+                      <Button
+                        pressed={selectedBillingInterval === "ANNUAL"}
                         onClick={() => setSelectedBillingInterval("ANNUAL")}
                       >
                         Yearly
-                      </button>
-                    </div>
+                      </Button>
+                    </ButtonGroup>
                     {bestYearlySavingsPct > 0 && (
-                      <span className="billing-yearly-saving">
-                        Save up to {bestYearlySavingsPct}% yearly
-                      </span>
+                      <Badge tone="success">Save up to {bestYearlySavingsPct}% yearly</Badge>
                     )}
-                  </div>
+                  </InlineStack>
                 </div>
               )}
             </BlockStack>
@@ -650,7 +651,7 @@ export default function Plans() {
         </Layout.Section>
 
         <Layout.Section>
-          <div className="billing-surface billing-coupon">
+          <Card>
             <BlockStack gap="300">
               <BlockStack gap="050">
                 <Text as="h3" variant="headingMd">Have a coupon code?</Text>
@@ -697,14 +698,16 @@ export default function Plans() {
                 </Banner>
               )}
             </BlockStack>
-          </div>
+          </Card>
         </Layout.Section>
 
         <Layout.Section>
           <InlineGrid columns={{ xs: 1, md: displayPlans.length || 1 }} gap="400">
             {displayPlans.map((plan) => {
               const isCurrent = activePlan === plan.name;
-              const isRecommended = !!plan.isRecommended;
+              const isRecommended = dynamicPlans.some(
+                (candidate) => candidate.title === plan.title && candidate.isRecommended
+              );
               const price = Number(plan.price);
               const monthlyEquivalent = plan.interval === "ANNUAL"
                 ? dynamicPlans.find((candidate) =>
@@ -719,6 +722,11 @@ export default function Plans() {
                 ? Math.round((yearlySavings / yearlyAtMonthlyRate) * 100)
                 : 0;
               const usageLimits = planUsageLimits(plan.features);
+              // Numeric allowances belong solely in Usage Limits. Keep product capabilities such
+              // as “Blog Templates” in Features & Security, but never duplicate their limits.
+              const displayFeatures = Array.isArray(plan.features)
+                ? plan.features.filter((feature) => !isUsageLimitBullet(feature))
+                : [];
               const annualMonthlyRate = plan.interval === "ANNUAL" ? price / 12 : null;
 
               const couponAppliesHere = Boolean(
@@ -738,15 +746,24 @@ export default function Plans() {
                 : null;
 
               return (
-                <div key={plan.name} className="plan-price-card">
-                  <Box padding="500" className="plan-price-card__body">
+                <Box
+                  key={plan.name}
+                  borderWidth={isRecommended ? "050" : "025"}
+                  borderColor={isRecommended ? "border-inverse" : "border"}
+                  borderRadius="300"
+                  background="bg-surface"
+                  padding="0"
+                >
+                  <Box padding="500">
                     <BlockStack gap="400">
                       <InlineStack align="space-between" blockAlign="start">
                         <BlockStack gap="100">
-                          <Text as="h3" variant="headingMd">{plan.title} Plan</Text>
+                          <InlineStack gap="150" blockAlign="center" wrap>
+                            <Text as="h3" variant="headingMd">{plan.title} Plan</Text>
+                            {isRecommended && <Badge tone="info">Recommended</Badge>}
+                          </InlineStack>
                           <Text as="p" variant="bodySm" tone="subdued">{plan.description}</Text>
                         </BlockStack>
-                        {isRecommended && <Badge tone="info">Recommended</Badge>}
                       </InlineStack>
 
                       <Box paddingBlockStart="200" paddingBlockEnd="200">
@@ -819,9 +836,9 @@ export default function Plans() {
                       <BlockStack gap="150">
                         <Text as="strong" variant="bodySm">Usage Limits</Text>
                         {usageLimits.map((limit) => (
-                          <InlineStack key={limit.label} align="space-between" gap="200">
+                          <InlineStack key={limit.label} align="space-between" gap="100" wrap={false} className="plan-usage-limit">
                             <Text as="span" variant="bodySm" tone="subdued">{limit.label}</Text>
-                            <Text as="span" variant="bodySm" fontWeight="semibold">{limit.value}</Text>
+                            <Text as="span" variant="bodySm" fontWeight="semibold" alignment="end">{limit.value}</Text>
                           </InlineStack>
                         ))}
                       </BlockStack>
@@ -836,7 +853,7 @@ export default function Plans() {
                             <Text as="strong" variant="bodySm">All {plan.basedOnPlanTitle} Plan features +</Text>
                           </div>
                         )}
-                        {Array.isArray(plan.features) && plan.features.map((feature, i) => (
+                        {displayFeatures.map((feature, i) => (
                           <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
                             <Icon source={CheckIcon} tone="success" />
                             <Text as="span" variant="bodySm">{feature}</Text>
@@ -872,7 +889,7 @@ export default function Plans() {
                       </Box>
                     </BlockStack>
                   </Box>
-                </div>
+                </Box>
               );
             })}
           </InlineGrid>
@@ -880,7 +897,6 @@ export default function Plans() {
         </>
         )}
       </Layout>
-      </div>
 
       <ConfirmActionModal
         open={!!downgradeTarget}
