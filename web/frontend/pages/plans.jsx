@@ -378,6 +378,22 @@ export default function Plans() {
   );
   const byPriceAsc = [...displayPlans].sort((a, b) => Number(a.price) - Number(b.price));
   const nextPlan = byPriceAsc.find((p) => Number(p.price) > currentPrice);
+  // Derive the banner from the live Super Admin prices so it never becomes stale.
+  const bestYearlySavingsPct = dynamicPlans
+    .filter((plan) => plan.interval === "ANNUAL" && Number(plan.price) > 0)
+    .reduce((best, yearlyPlan) => {
+      const monthlyPlan = dynamicPlans.find((candidate) =>
+        candidate.interval !== "ANNUAL" &&
+        Number(candidate.price) > 0 &&
+        candidate.title.trim().toLowerCase() === yearlyPlan.title.trim().toLowerCase()
+      );
+      if (!monthlyPlan) return best;
+      const yearlyAtMonthlyRate = Number(monthlyPlan.price) * 12;
+      const savingPct = yearlyAtMonthlyRate > 0
+        ? Math.round(((yearlyAtMonthlyRate - Number(yearlyPlan.price)) / yearlyAtMonthlyRate) * 100)
+        : 0;
+      return Math.max(best, savingPct);
+    }, 0);
 
   return (
     <>
@@ -602,7 +618,11 @@ export default function Plans() {
                     >
                       Yearly
                     </Button>
-                    <Text as="span" variant="bodySm" tone="success">Save with yearly billing</Text>
+                    {bestYearlySavingsPct > 0 && (
+                      <Text as="span" variant="bodySm" tone="success">
+                        Save up to {bestYearlySavingsPct}% yearly
+                      </Text>
+                    )}
                   </InlineStack>
                 </div>
               )}
