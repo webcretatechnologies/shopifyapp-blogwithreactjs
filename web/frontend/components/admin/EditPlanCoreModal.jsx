@@ -2,7 +2,7 @@ import { Modal, FormLayout, TextField, Select, Checkbox } from "@shopify/polaris
 
 const BILLING_INTERVAL_OPTIONS = [
   { label: "Every 30 Days", value: "EVERY_30_DAYS" },
-  { label: "Annual", value: "ANNUAL" },
+  { label: "Yearly (annual)", value: "ANNUAL" },
 ];
 
 /**
@@ -82,6 +82,7 @@ export default function EditPlanCoreModal({ open, plan, onChange, onSave, onClos
               options={BILLING_INTERVAL_OPTIONS}
               value={plan.interval}
               onChange={set("interval")}
+              helpText="Yearly plans are charged once every 12 months through Shopify."
             />
           </FormLayout.Group>
           <FormLayout.Group>

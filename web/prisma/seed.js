@@ -58,6 +58,22 @@ const SUBSCRIPTION_PLANS = [
     sortOrder: 2,
   },
   {
+    // Annual variants deliberately retain the tier word in their key. PlanFeatureService maps
+    // feature gates by tier keyword, so an annual Starter subscription receives exactly the
+    // same access as its monthly counterpart.
+    name: "Starter Plan Annual",
+    title: "Starter",
+    price: 199.99,
+    currency: "USD",
+    interval: "ANNUAL",
+    trialDays: 0,
+    description: "Built for growing stores — billed yearly",
+    features: [],
+    isActive: true,
+    isRecommended: false,
+    sortOrder: 3,
+  },
+  {
     name: "Pro Plan",
     title: "Pro",
     price: 39.99,
@@ -68,7 +84,20 @@ const SUBSCRIPTION_PLANS = [
     features: [],
     isActive: true,
     isRecommended: false,
-    sortOrder: 3,
+    sortOrder: 4,
+  },
+  {
+    name: "Pro Plan Annual",
+    title: "Pro",
+    price: 399.99,
+    currency: "USD",
+    interval: "ANNUAL",
+    trialDays: 0,
+    description: "For professional content creators — billed yearly",
+    features: [],
+    isActive: true,
+    isRecommended: true,
+    sortOrder: 5,
   },
 ];
 

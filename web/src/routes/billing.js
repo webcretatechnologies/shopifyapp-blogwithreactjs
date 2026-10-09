@@ -77,16 +77,30 @@ router.get("/plans", async (req, res) => {
     // Bullet-diffing needs a strict low-to-high price order internally — each tier's bullets are
     // computed as "what's new vs the plan directly below it in price" — so this pass always runs
     // price-ascending regardless of the admin's chosen display order.
-    const byPriceAsc = [...plans].sort((a, b) => Number(a.price) - Number(b.price));
-    const tiered = buildTieredPlanFeatures(byPriceAsc.map((p) => p.name));
+    // A yearly Starter tier should inherit the same feature story as monthly Starter — it must
+    // not be compared to every monthly plan merely because its annual charge is numerically
+    // higher. Build the marketing ladder independently for each billing cadence (with Free as
+    // the shared base tier), then merge those results back onto the admin-controlled card order.
+    const featureGroups = new Map();
+    for (const plan of plans) {
+      const group = Number(plan.price) === 0 ? "free" : plan.interval === "ANNUAL" ? "annual" : "monthly";
+      if (!featureGroups.has(group)) featureGroups.set(group, []);
+      featureGroups.get(group).push(plan);
+    }
     const featuresByPlanId = new Map(
-      byPriceAsc.map((plan, index) => [
-        plan.id,
-        {
-          features: tiered[index].bullets,
-          basedOnPlanTitle: tiered[index].basedOnIndex !== null ? byPriceAsc[tiered[index].basedOnIndex].title : null,
-        },
-      ])
+      [...featureGroups.entries()].flatMap(([group, groupPlans]) => {
+        const freePlan = featureGroups.get("free")?.[0];
+        const ladder = group === "free" ? groupPlans : [freePlan, ...groupPlans].filter(Boolean);
+        const byPriceAsc = [...ladder].sort((a, b) => Number(a.price) - Number(b.price));
+        const tiered = buildTieredPlanFeatures(byPriceAsc.map((p) => p.name));
+        return byPriceAsc.map((plan, index) => [
+          plan.id,
+          {
+            features: tiered[index].bullets,
+            basedOnPlanTitle: tiered[index].basedOnIndex !== null ? byPriceAsc[tiered[index].basedOnIndex].title : null,
+          },
+        ]);
+      })
     );
     // Card *display* order, however, is the admin's own Sort Order (already the `plans` array's
     // order, per the query above) — previously this route discarded that entirely and always
@@ -404,7 +418,10 @@ router.post("/request", async (req, res) => {
     let appliedCoupon = null;
     if (couponCode) {
       const couponResult = await validateCouponForShop(couponCode, session.shop, dbPlan.name);
-      if (couponResult.ok) appliedCoupon = couponResult.coupon;
+      // Never quietly discard a coupon after it was shown as applied in the UI. That could send
+      // a merchant to Shopify expecting a discounted annual charge, then charge full price.
+      if (!couponResult.ok) return res.status(400).json({ error: couponResult.error });
+      appliedCoupon = couponResult.coupon;
     }
 
     // Test mode is controlled by BILLING_TEST_MODE in the root .env — while it's set, every
@@ -426,6 +443,15 @@ router.post("/request", async (req, res) => {
 
     // Use EVERY_30_DAYS or ANNUAL
     let interval = dbPlan.interval === "ANNUAL" ? "ANNUAL" : "EVERY_30_DAYS";
+    // Coupon duration is stored in calendar months for Super Admin reporting. Shopify expects
+    // `durationLimitInIntervals`, so a 12-month coupon on an annual subscription is one yearly
+    // charge, not twelve yearly charges. A partial-year duration still discounts the first annual
+    // charge because Shopify recurring discounts cannot end mid-interval.
+    const couponDurationInIntervals = appliedCoupon
+      ? interval === "ANNUAL"
+        ? Math.max(1, Math.ceil(appliedCoupon.durationMonths / 12))
+        : appliedCoupon.durationMonths
+      : null;
 
     const mutation = `
       mutation appSubscriptionCreate($name: String!, $lineItems: [AppSubscriptionLineItemInput!]!, $returnUrl: URL!, $test: Boolean, $trialDays: Int) {
@@ -464,7 +490,7 @@ router.post("/request", async (req, res) => {
               ...(appliedCoupon
                 ? {
                     discount: {
-                      durationLimitInIntervals: appliedCoupon.durationMonths,
+                      durationLimitInIntervals: couponDurationInIntervals,
                       value: appliedCoupon.discountType === "PERCENTAGE"
                         ? { percentage: appliedCoupon.percentOff / 100 }
                         : { amount: appliedCoupon.amountOff },

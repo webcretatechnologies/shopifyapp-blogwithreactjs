@@ -36,6 +36,14 @@ function validatePlanFields({ price, trialDays }) {
   }
   return null;
 }
+
+const BILLING_INTERVALS = new Set(["EVERY_30_DAYS", "ANNUAL"]);
+
+function validateBillingInterval(interval) {
+  return interval !== undefined && !BILLING_INTERVALS.has(interval)
+    ? "Billing interval must be Every 30 Days or Annual."
+    : null;
+}
 const prisma = new PrismaClient();
 
 const SECRET = process.env.SHOPIFY_API_SECRET || "super-admin-secret-key-123";
@@ -747,6 +755,8 @@ router.post("/pricing/plans", validateSuperAdmin, async (req, res) => {
     if (!name || !title) return res.status(400).json({ error: "Name and Title are required." });
     const validationError = validatePlanFields({ price, trialDays });
     if (validationError) return res.status(400).json({ error: validationError });
+    const intervalError = validateBillingInterval(interval);
+    if (intervalError) return res.status(400).json({ error: intervalError });
 
     // At most one plan is ever "Recommended" (matches the single badge the merchant billing page
     // shows) — clearing every other plan's flag first, in the same transaction as the create,
@@ -788,6 +798,21 @@ router.put("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
 
     const validationError = validatePlanFields({ price, trialDays });
     if (validationError) return res.status(400).json({ error: validationError });
+    const intervalError = validateBillingInterval(interval);
+    if (intervalError) return res.status(400).json({ error: intervalError });
+
+    const existingPlan = await prisma.subscriptionPlan.findUnique({ where: { id } });
+    if (!existingPlan) return res.status(404).json({ error: "Plan not found." });
+
+    // Shopify keeps the subscription name that was used at approval time. Renaming an offered
+    // plan while stores still use that name would orphan their feature mapping on the next billing
+    // check, so require an admin to retire it and create a replacement instead.
+    if (name && name !== existingPlan.name) {
+      const activeSubscribers = await prisma.shop.count({ where: { planKey: existingPlan.name, uninstalledAt: null } });
+      if (activeSubscribers > 0) {
+        return res.status(409).json({ error: `This plan has ${activeSubscribers} active subscriber${activeSubscribers === 1 ? "" : "s"}. Its subscription slug cannot be changed.` });
+      }
+    }
 
     // Same single-badge guarantee as the create route above.
     const updatedPlan = await prisma.$transaction(async (tx) => {
@@ -824,6 +849,12 @@ router.put("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
 router.delete("/pricing/plans/:id", validateSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
+    const plan = await prisma.subscriptionPlan.findUnique({ where: { id } });
+    if (!plan) return res.status(404).json({ error: "Plan not found." });
+    const activeSubscribers = await prisma.shop.count({ where: { planKey: plan.name, uninstalledAt: null } });
+    if (activeSubscribers > 0) {
+      return res.status(409).json({ error: `Cannot delete a plan with ${activeSubscribers} active subscriber${activeSubscribers === 1 ? "" : "s"}. Mark it inactive to hide it from new purchases instead.` });
+    }
     await prisma.subscriptionPlan.delete({ where: { id } });
     res.json({ success: true });
   } catch (err) {
@@ -1307,7 +1338,8 @@ async function buildCouponUsageRows(query) {
     const priceBeforeDiscount = Number(claim.priceBeforeDiscount);
     const discountedPrice = Number(claim.discountedPrice);
     const saving = Math.round((priceBeforeDiscount - discountedPrice) * 100) / 100;
-    const cycles = isAnnual ? Math.max(1, Math.round(claim.couponDurationMonths / 12)) : claim.couponDurationMonths;
+    // Must mirror billing.js's conversion to Shopify's durationLimitInIntervals exactly.
+    const cycles = isAnnual ? Math.max(1, Math.ceil(claim.couponDurationMonths / 12)) : claim.couponDurationMonths;
     const total = Math.round(discountedPrice * cycles * 100) / 100;
     const fullPriceFrom = new Date(claim.createdAt);
     fullPriceFrom.setMonth(fullPriceFrom.getMonth() + claim.couponDurationMonths);

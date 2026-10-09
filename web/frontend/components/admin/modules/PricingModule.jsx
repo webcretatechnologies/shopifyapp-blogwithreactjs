@@ -107,7 +107,7 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
 
   const handleDeletePlan = (plan) => {
     const subscriberNote = plan.subscriberCount > 0
-      ? ` ${plan.subscriberCount} store${plan.subscriberCount === 1 ? " is" : "s are"} currently on this plan — they keep their existing Shopify subscription; this only removes it from being offered to new/upgrading merchants.`
+      ? ` ${plan.subscriberCount} store${plan.subscriberCount === 1 ? " is" : "s are"} currently on this plan. Active plans cannot be deleted; mark this plan inactive instead so current subscribers keep their access.`
       : "";
     setConfirmAction({
       title: `Delete "${plan.title}"?`,
@@ -158,7 +158,9 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
               <Text as="p" variant="bodySm">
                 <strong>Live-synced with the merchant billing page.</strong> Editing a plan here
                 updates <code>/plans</code> immediately. Plans created here dynamically appear in
-                the merchant portal.
+                the merchant portal. Choose <strong>Yearly (annual)</strong> when creating a
+                yearly offer; use the same tier word in its slug (for example, “Pro Plan Annual”)
+                so it inherits the correct feature access.
               </Text>
             </Banner>
             <Divider />

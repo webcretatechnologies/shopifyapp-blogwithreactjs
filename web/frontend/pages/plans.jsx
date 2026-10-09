@@ -28,6 +28,18 @@ function intervalSuffix(interval) {
   return interval === "ANNUAL" ? "/year" : "/month";
 }
 
+function couponDurationLabel(durationMonths, interval) {
+  if (interval !== "ANNUAL") {
+    return `Applies for ${durationMonths} month${durationMonths === 1 ? "" : "s"}, then the regular price.`;
+  }
+  const yearlyCycles = Math.max(1, Math.ceil(durationMonths / 12));
+  return `Applies to your first ${yearlyCycles} yearly billing ${yearlyCycles === 1 ? "cycle" : "cycles"}.`;
+}
+
+// One-time AI credit purchases remain available in the backend for existing purchase/webhook
+// flows, but are intentionally not marketed from the merchant billing screen.
+const SHOW_ONE_TIME_AI_CREDIT_PACKS = false;
+
 // Returns null (not a clamped near-zero number) when a fixed-amount coupon is too large for this
 // specific plan's price — Shopify's own appSubscriptionCreate rejects discount.value.amount >=
 // price outright, so clamping the displayed price to $0.01 would show a discount that could never
@@ -61,6 +73,7 @@ export default function Plans() {
   const [purchasingPack, setPurchasingPack] = useState(null);
   const [billingCycle, setBillingCycle] = useState(null);
   const [dynamicPlans, setDynamicPlans] = useState([]);
+  const [selectedBillingInterval, setSelectedBillingInterval] = useState("EVERY_30_DAYS");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittingTier, setSubmittingTier] = useState(null);
@@ -84,6 +97,8 @@ export default function Plans() {
   useEffect(() => {
     (async () => {
       const { checkData, plansData } = await fetchBillingData();
+      const currentPlan = plansData?.plans?.find((plan) => plan.name === checkData?.activePlan);
+      if (currentPlan?.interval === "ANNUAL") setSelectedBillingInterval("ANNUAL");
       // billing.js's returnUrl appends ?subscribed=1 once Shopify's own approval screen sends the
       // merchant back here — without this, a successful upgrade/downgrade landed the merchant back
       // on this page with zero confirmation that anything actually happened.
@@ -355,22 +370,28 @@ export default function Plans() {
   // true price ordering regardless of display order, so that's computed separately. Which plan
   // shows the "Recommended" badge is a Super Admin-set flag (plan.isRecommended, edited via
   // EditPlanCoreModal's "Recommend / Highlight Plan in UI" checkbox) — not derived here at all.
-  const displayPlans = dynamicPlans;
-  const byPriceAsc = [...dynamicPlans].sort((a, b) => Number(a.price) - Number(b.price));
+  const hasYearlyPlans = dynamicPlans.some((plan) => Number(plan.price) > 0 && plan.interval === "ANNUAL");
+  const hasMonthlyPlans = dynamicPlans.some((plan) => Number(plan.price) > 0 && plan.interval !== "ANNUAL");
+  // Free is a shared baseline; the selected cadence only filters paid offers.
+  const displayPlans = dynamicPlans.filter((plan) =>
+    Number(plan.price) === 0 || plan.interval === selectedBillingInterval
+  );
+  const byPriceAsc = [...displayPlans].sort((a, b) => Number(a.price) - Number(b.price));
   const nextPlan = byPriceAsc.find((p) => Number(p.price) > currentPrice);
 
   return (
     <>
-    <TitleBar title="Plans & billing" />
+    <TitleBar title="Plans & Billing" />
     <Page
-      title="Plans & billing"
+      title="Plans & Billing"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
     >
+      <div style={{ maxWidth: "960px", margin: "0 auto", width: "100%" }}>
       <Layout>
         <Layout.Section>
           <Text as="p" variant="bodyMd" tone="subdued">
-            Select the best subscription plan, review usage metrics, and upgrade or downgrade at
-            any time.
+            Select the best subscription plan, review usage metrics, and cancel or upgrade your
+            account at any time.
           </Text>
         </Layout.Section>
 
@@ -405,34 +426,18 @@ export default function Plans() {
                     <Text as="p" variant="bodySm" tone="subdued">
                       {billingCycle?.renewsOn
                         ? `Current billing period · resets ${formatDate(billingCycle.renewsOn)}`
-                        : `${currentPlanTitle} plan · limits don't reset each billing cycle`}
+                        : "Usage limits reset at the start of your next billing cycle."}
                     </Text>
                   </BlockStack>
                   <InlineStack gap="200" blockAlign="center">
-                    <Badge tone={postsAtLimit ? "critical" : postsNearLimit ? "warning" : "success"}>
+                    {!isFreePlanActive && (
+                      <Badge tone="attention">
+                        {currentPlanDetails?.interval === "ANNUAL" ? "Billed yearly" : "Billed monthly"}
+                      </Badge>
+                    )}
+                    <Badge tone={postsAtLimit ? "critical" : postsNearLimit ? "warning" : "info"}>
                       {`${currentPlanTitle} Plan`}
                     </Badge>
-                    {isFreePlanActive ? (
-                      nextPlan && (
-                        <Button
-                          size="slim"
-                          variant="primary"
-                          onClick={() => handleSubscribe(nextPlan.name)}
-                          loading={isSubmitting && submittingTier === nextPlan.name}
-                        >
-                          Upgrade
-                        </Button>
-                      )
-                    ) : (
-                      <Button
-                        size="slim"
-                        tone="critical"
-                        onClick={() => requestDowngrade(byPriceAsc[0])}
-                        disabled={!byPriceAsc[0]}
-                      >
-                        Downgrade
-                      </Button>
-                    )}
                   </InlineStack>
                 </InlineStack>
 
@@ -487,7 +492,7 @@ export default function Plans() {
           </Layout.Section>
         )}
 
-        {!isLoading && aiLimit != null && creditPacks.length > 0 && (
+        {SHOW_ONE_TIME_AI_CREDIT_PACKS && !isLoading && aiLimit != null && creditPacks.length > 0 && (
           <Layout.Section>
             <Card>
               <Box padding="500">
@@ -575,12 +580,32 @@ export default function Plans() {
         {!isLoading && (
         <>
         <Layout.Section>
-          <Box paddingBlockStart="600" paddingBlockEnd="400">
+          <Box paddingBlockStart="800" paddingBlockEnd="400">
             <BlockStack gap="100">
-              <Text as="h2" variant="headingLg">Choose your plan</Text>
+              <Text as="h2" variant="headingLg">Choose Your Plan</Text>
               <Text as="p" variant="bodyMd" tone="subdued">
-                Upgrade or downgrade at any time. Changes take effect immediately.
+                Upgrade or downgrade at any time. Upgrades take effect immediately; changes to a
+                lower yearly plan begin at your next renewal.
               </Text>
+              {hasMonthlyPlans && hasYearlyPlans && (
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <InlineStack gap="200" blockAlign="center">
+                    <Button
+                      pressed={selectedBillingInterval === "EVERY_30_DAYS"}
+                      onClick={() => setSelectedBillingInterval("EVERY_30_DAYS")}
+                    >
+                      Monthly
+                    </Button>
+                    <Button
+                      pressed={selectedBillingInterval === "ANNUAL"}
+                      onClick={() => setSelectedBillingInterval("ANNUAL")}
+                    >
+                      Yearly
+                    </Button>
+                    <Text as="span" variant="bodySm" tone="success">Save with yearly billing</Text>
+                  </InlineStack>
+                </div>
+              )}
             </BlockStack>
           </Box>
         </Layout.Section>
@@ -627,8 +652,7 @@ export default function Plans() {
                     </Text>
                     <Text as="span" variant="bodySm">
                       {appliedCoupon.description ? `${appliedCoupon.description} — ` : ""}
-                      Applies for {appliedCoupon.durationMonths} month
-                      {appliedCoupon.durationMonths === 1 ? "" : "s"}, then the regular price.
+                      {couponDurationLabel(appliedCoupon.durationMonths, selectedBillingInterval)}
                     </Text>
                   </InlineStack>
                 </Banner>
@@ -643,6 +667,18 @@ export default function Plans() {
               const isCurrent = activePlan === plan.name;
               const isRecommended = !!plan.isRecommended;
               const price = Number(plan.price);
+              const monthlyEquivalent = plan.interval === "ANNUAL"
+                ? dynamicPlans.find((candidate) =>
+                    candidate.interval !== "ANNUAL" &&
+                    Number(candidate.price) > 0 &&
+                    candidate.title.trim().toLowerCase() === plan.title.trim().toLowerCase()
+                  )
+                : null;
+              const yearlyAtMonthlyRate = monthlyEquivalent ? Number(monthlyEquivalent.price) * 12 : null;
+              const yearlySavings = yearlyAtMonthlyRate ? Math.max(0, yearlyAtMonthlyRate - price) : 0;
+              const yearlySavingsPct = yearlyAtMonthlyRate && yearlySavings > 0
+                ? Math.round((yearlySavings / yearlyAtMonthlyRate) * 100)
+                : 0;
 
               const couponAppliesHere = Boolean(
                 appliedCoupon &&
@@ -691,8 +727,7 @@ export default function Plans() {
                             <Text as="span" variant="bodySm" tone="success">
                               {appliedCoupon.discountType === "PERCENTAGE"
                                 ? `${appliedCoupon.percentOff}% off`
-                                : `$${appliedCoupon.amountOff} off`} for {appliedCoupon.durationMonths} month
-                              {appliedCoupon.durationMonths === 1 ? "" : "s"}
+                                : `$${appliedCoupon.amountOff} off`} · {couponDurationLabel(appliedCoupon.durationMonths, plan.interval)}
                             </Text>
                           </BlockStack>
                         ) : (
@@ -700,6 +735,25 @@ export default function Plans() {
                             <Text as="span" variant="heading2xl">${price.toFixed(2)}</Text>
                             <Text as="span" variant="bodySm" tone="subdued">{intervalSuffix(plan.interval)}</Text>
                           </InlineStack>
+                        )}
+                        {plan.interval === "ANNUAL" && yearlySavings > 0 && (
+                          <Box paddingBlockStart="150">
+                            <InlineStack gap="150" blockAlign="center" wrap>
+                              <Text as="span" variant="bodySm" tone="subdued">
+                                ${yearlyAtMonthlyRate.toFixed(2)} yearly at the monthly rate
+                              </Text>
+                              <Badge tone="success">
+                                Save ${yearlySavings.toFixed(2)} ({yearlySavingsPct}%)
+                              </Badge>
+                            </InlineStack>
+                          </Box>
+                        )}
+                        {showDiscountHere && (
+                          <Box paddingBlockStart="100">
+                            <Text as="span" variant="bodySm" tone="subdued">
+                              {couponDurationLabel(appliedCoupon.durationMonths, plan.interval)}
+                            </Text>
+                          </Box>
                         )}
                         {plan.trialDays > 0 && !isCurrent && (
                           <Box paddingBlockStart="150">
@@ -734,14 +788,18 @@ export default function Plans() {
                           loading={isSubmitting && submittingTier === plan.name}
                           disabled={isCurrent || isSubmitting}
                           onClick={() =>
-                            price > currentPrice
+                            price > currentPrice && plan.interval === currentPlanDetails?.interval
                               ? handleSubscribe(plan.name)
-                              : requestDowngrade(plan)
+                              : plan.name === "free"
+                                ? requestDowngrade(plan)
+                                : handleSubscribe(plan.name)
                           }
                         >
                           {isCurrent
                             ? "Current Plan"
-                            : price > currentPrice
+                            : plan.interval !== currentPlanDetails?.interval
+                              ? `Switch to ${plan.title} Plan`
+                              : price > currentPrice
                               ? `Upgrade to ${plan.title} Plan`
                               : `Downgrade to ${plan.title} Plan`}
                         </Button>
@@ -756,6 +814,7 @@ export default function Plans() {
         </>
         )}
       </Layout>
+      </div>
 
       <ConfirmActionModal
         open={!!downgradeTarget}
