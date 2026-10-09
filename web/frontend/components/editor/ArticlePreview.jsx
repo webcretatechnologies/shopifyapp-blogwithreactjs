@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Modal, InlineStack, Button } from "@shopify/polaris";
 import { DesktopIcon, MobileIcon, TabletIcon } from "@shopify/polaris-icons";
 import { PREVIEW_CONTENT_CSS } from "./previewContentCss";
@@ -71,6 +71,45 @@ export default function ArticlePreview({
   const isTablet = device === "tablet";
 
   const deviceWidth = isMobile ? 375 : isTablet ? 768 : 900;
+
+  // Compiled article buttons are anchors because that is what Shopify storefront HTML needs.
+  // Inside the embedded preview, however, following a relative link would navigate the app iframe
+  // itself to the local Cloudflare tunnel. Firefox correctly refuses to frame that page. Keep hash
+  // links local for TOC scrolling, suppress placeholders, and open real destinations outside the
+  // embedded app instead.
+  const handlePreviewLinkClick = useCallback((event) => {
+    const anchor = event.target instanceof Element ? event.target.closest("a") : null;
+    if (!anchor) return;
+
+    const rawHref = String(anchor.getAttribute("href") || "").trim();
+    if (rawHref.startsWith("#") && rawHref.length > 1) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!rawHref || rawHref === "#" || rawHref === "/") {
+      window.shopify?.toast?.show("This link will become active when the article is published");
+      return;
+    }
+
+    let destination;
+    try {
+      if (/^https?:\/\//i.test(rawHref)) {
+        destination = new URL(rawHref);
+      } else if (rawHref.startsWith("/")) {
+        const shop = String(window.shopify?.config?.shop || "").trim();
+        if (!shop) throw new Error("Store domain is unavailable");
+        destination = new URL(rawHref, `https://${shop}`);
+      } else {
+        throw new Error("Unsupported preview link");
+      }
+    } catch {
+      window.shopify?.toast?.show("This link cannot be opened from preview");
+      return;
+    }
+
+    window.open(destination.href, "_blank", "noopener,noreferrer");
+  }, []);
 
   return (
     <Modal
@@ -273,6 +312,7 @@ export default function ArticlePreview({
               {contentHtml ? (
                 <div
                   className="blogger-preview-content"
+                  onClick={handlePreviewLinkClick}
                   dangerouslySetInnerHTML={{ __html: contentHtml }}
                 />
               ) : (

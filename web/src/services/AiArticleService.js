@@ -2,6 +2,7 @@ import { getBlogTemplateByKey } from "../data/blogTemplates.js";
 import {
   BLOCK_VOCABULARY,
   BLOCK_VOCABULARY_COMPACT,
+  GLOBAL_SETTING_DECISION_POLICY,
   ALLOWED_AI_BLOCK_TYPES,
   buildTemplateManifest,
   buildCompactPromptManifest,
@@ -294,6 +295,47 @@ function adaptTreeToTopic(blocks, ctx, blockUpdatesMap = null) {
   };
 
   return (Array.isArray(blocks) ? blocks : []).map(walk).filter(Boolean);
+}
+
+// A TableOfContents renders its own list marker. Listicle headings such as "1. Choose a palette"
+// already carry that meaning, so a numbered TOC would render the confusing "1. 1. Choose a
+// palette" shown in the editor. This is a final safety net after AI/template adaptation: keep the
+// editor's own heading copy, and select the TOC's native bullet setting when that copy is numbered.
+const EXPLICIT_ORDINAL_HEADING_RE = /^\s*(?:\d{1,3}[.)]\s+|(?:step|tip|way|idea)\s+\d+\s*[:.)-]\s*)/i;
+
+function optimizeTableOfContentsNumbering(blocks) {
+  const headings = [];
+  const collectHeadings = (items) => {
+    (Array.isArray(items) ? items : []).forEach((block) => {
+      if (!block || typeof block !== "object") return;
+      if (block.type === "Heading") {
+        headings.push({
+          level: Number(block.settings?.level) || 2,
+          text: String(block.settings?.text || "").trim(),
+        });
+      }
+      collectHeadings(block.children);
+    });
+  };
+
+  collectHeadings(blocks);
+
+  const rewrite = (items) => (Array.isArray(items) ? items : []).map((block) => {
+    if (!block || typeof block !== "object") return block;
+    const settings = { ...(block.settings || {}) };
+    if (block.type === "TableOfContents" && (settings.listStyle || "bullet") === "numbered") {
+      const levels = Array.isArray(settings.levels) && settings.levels.length
+        ? settings.levels.map(Number)
+        : [2, 3];
+      const headingsAlreadyNumbered = headings.some(
+        (heading) => levels.includes(heading.level) && EXPLICIT_ORDINAL_HEADING_RE.test(heading.text)
+      );
+      if (headingsAlreadyNumbered) settings.listStyle = "bullet";
+    }
+    return { ...block, settings, children: rewrite(block.children) };
+  });
+
+  return rewrite(blocks);
 }
 
 /** Template headings carry the section's job ("Ingredients", "Step 1: ...") - keep that shape. */
@@ -690,25 +732,15 @@ async function generateWithGroq({ topic, detail, text }, explicitTitle, requirem
   // Compact the already-built full manifest (same b_N ids as adaptTreeToTopic walk).
   let promptManifest = requirements.manifest || [];
   if (promptManifest.length) {
-    const PRIORITY = new Set([
-      "Heading", "RichText", "Table", "Callout", "FaqBlock", "TableOfContents",
-      "HeroSection", "Image", "ButtonBlock", "BuyButton", "ProductGrid", "ProductSlider",
-      "Collection", "ProductCard", "VideoEmbed",
-    ]);
-    promptManifest = promptManifest.map((entry) => {
-      if (!PRIORITY.has(entry.type)) {
-        return { id: entry.id, type: entry.type, category: entry.category };
-      }
-      return {
-        id: entry.id,
-        type: entry.type,
-        category: entry.category,
-        section: entry.section_heading || undefined,
-        role: entry.role,
-        writable: entry.writable_settings,
-        settings: entry.current_settings,
-      };
-    });
+    promptManifest = promptManifest.map((entry) => ({
+      id: entry.id,
+      type: entry.type,
+      category: entry.category,
+      section: entry.section_heading || undefined,
+      role: entry.role,
+      writable: entry.writable_settings,
+      settings: entry.current_settings,
+    }));
   }
 
   const system = [
@@ -725,6 +757,10 @@ async function generateWithGroq({ topic, detail, text }, explicitTitle, requirem
     "instead of inventing a plausible-sounding figure, especially in FAQ answers and table cells.",
     "Tables MUST get full new tableData (never keep sample cookie/recipe rows).",
     "RichText: settings.paragraphs as string[]. Never invent image URLs. No markdown.",
+    "Table of Contents: inspect its current listStyle and the headings you write. A heading with its own",
+    "ordinal prefix (for example, '1. Paint the walls' or 'Step 1') requires listStyle: bullet; use",
+    "listStyle: numbered only when headings are unnumbered. Never create duplicate markers such as '1. 1.'.",
+    GLOBAL_SETTING_DECISION_POLICY,
     productNames.length
       ? `Products linked to this article: ${productNames.join(", ")}. Mention them by name where it reads ` +
         "naturally (an intro, a CTA, a closing line) - never invent a price, size, or spec for them beyond the name."
@@ -1716,6 +1752,7 @@ export async function generateArticleBlocks({ brief, title, templateKey, templat
     resultMetaDescription = ctx.metaDescription || null;
   }
 
+  blocks = optimizeTableOfContentsNumbering(blocks);
   blocks = applyProducts(blocks, products);
   blocks = applyColors(blocks, colors || {});
   blocks = assignBlockIds(blocks);

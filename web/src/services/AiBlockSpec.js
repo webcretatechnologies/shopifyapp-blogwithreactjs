@@ -93,6 +93,52 @@ export const LOCKED_SETTINGS = {
   ProductCard: ["productId", "price", "imageUrl", "buttonColor", "buttonRadius", "borderRadius", "borderColor"],
 };
 
+// One shared policy for every builder block. The manifest supplies each block's writable keys
+// and current values; this vocabulary tells the model how to make visual decisions without a
+// bespoke prompt branch every time a new section type is added to the editor.
+export const GLOBAL_SETTING_DECISION_POLICY = `
+SETTING DECISION POLICY
+- Treat each manifest entry's writable list as the complete contract for that block. You may tune
+  only those keys, and only when the article's purpose, reading flow, or device readability improves.
+- Preserve a current setting when there is no clear content-led reason to change it. Never guess at
+  a setting that is not in the manifest, and never return locked keys.
+- Layout: use modest CSS spacing (typically 12-48px), keep one-column reading flow for prose, and
+  use 2-4 columns only for genuinely parallel content such as comparisons, product cards, or short facts.
+- Typography: keep one H1 for the article title; use H2 for primary sections and H3 only beneath an
+  H2. Use alignment deliberately (left for long-form reading, center for short hero/CTA content).
+- Toggles: enable CTAs, prices, descriptions, badges, collapsible panels, and buttons only when the
+  block's actual content benefits from them; do not turn on empty decorative UI.
+- Tables, FAQs, products, and media: choose row counts, item counts, columns, layout, and display
+  toggles based on the topic—not the template's sample count. Never invent product data, URLs, or images.
+- Table of Contents: its listStyle creates markers itself. Use numbered only for unnumbered heading
+  labels; use bullet when headings already contain ordinals. Never create duplicate numbering.
+`.trim();
+
+// Content payloads are represented by the specialised compact previews below. All other writable
+// settings are included automatically, so new block settings become AI-visible by adding them to
+// WRITABLE_SETTINGS rather than by writing another prompt-specific branch.
+const CONTENT_PAYLOAD_SETTINGS = new Set(["content", "paragraphs", "tableData", "items"]);
+
+function compactCurrentValue(value) {
+  if (typeof value === "string") return value.slice(0, 180);
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value) && value.every((item) => typeof item === "string" || typeof item === "number")) {
+    return value.slice(0, 12);
+  }
+  return undefined;
+}
+
+function includeCurrentWritableSettings(type, promptSettings, sourceSettings) {
+  const out = { ...(promptSettings || {}) };
+  const source = sourceSettings || {};
+  for (const key of WRITABLE_SETTINGS[type] || []) {
+    if (CONTENT_PAYLOAD_SETTINGS.has(key) || Object.prototype.hasOwnProperty.call(out, key)) continue;
+    const value = compactCurrentValue(source[key]);
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
 export const BLOCK_VOCABULARY = `
 # Shopify Blog Builder — complete block reference
 
@@ -161,6 +207,9 @@ Single column inside ColumnLayout. Settings:
 - title — panel label ("In this article", "Make it", etc.)
 - listStyle: bullet|numbered, style: plain|panel, collapsible: bool
 - Auto-built from headings at render — you do not list sections manually
+- Numbering rule: a list number must appear in exactly one place. If the article headings already
+  begin with "1.", "Step 1", or another ordinal, choose listStyle: bullet. If headings are plain
+  labels, use listStyle: numbered when ordered navigation helps. Never create "1. 1. Heading".
 
 ### Divider / Spacer
 - Divider: style (solid|dashed|dotted), thickness, marginTop/Bottom — spacing rhythm
@@ -241,32 +290,15 @@ rule exists to prevent.
 - Table: tableData[[]] — MUST replace all sample rows with this topic's own data; row count is not fixed
 - Callout: type, title, body, emoji
 - FaqBlock: title, items[{question,answer}] — write NEW questions (never reuse/reword the template's); item_count_in_template is not a target, use 2-6 based on what this topic needs
-- TableOfContents: title, listStyle, style | Divider/Spacer: thickness/margins/height
+- TableOfContents: title, listStyle, style. IMPORTANT: choose exactly one numbering source — use
+  bullet when heading text has an ordinal prefix; use numbered only for unnumbered heading labels.
+  Never allow a rendered TOC to read "1. 1. Heading". | Divider/Spacer: thickness/margins/height
 - Image: alt, caption, alignment (never src) | VideoEmbed: caption, url only if brief has one
 - HeroSection: heading, subheading, showCta, ctaText, minHeight (never ctaUrl - locked, filled post-generation)
 - ButtonBlock: text (never url - locked, filled post-generation) | BuyButton: buttonText, showPrice, badge
 - ProductGrid/Slider: title, columns, buttonText | Collection: heading, columns | ProductCard: title, buttonText
 Rules: no invented photos/products/prices/health claims; no markdown; rewrite ALL sample copy.
 `.trim();
-
-/** Types we always ask the model to rewrite when present in a template. */
-const PROMPT_PRIORITY_TYPES = new Set([
-  "Heading",
-  "RichText",
-  "Table",
-  "Callout",
-  "FaqBlock",
-  "TableOfContents",
-  "HeroSection",
-  "Image",
-  "ButtonBlock",
-  "BuyButton",
-  "ProductGrid",
-  "ProductSlider",
-  "Collection",
-  "ProductCard",
-  "VideoEmbed",
-]);
 
 const BLOCK_CATEGORY_MAP = {
   Section: "layout",
@@ -307,33 +339,40 @@ export function sanitizeSettingsForPrompt(type, settings) {
     // text says around it - models anchor hard on a concrete number sitting next to the block
     // they're patching. Naming it as a minimum instead removes that anchor.
     const templateHad = (s.content.content || []).filter((n) => n.type === "paragraph").length;
-    return {
+    return includeCurrentWritableSettings(type, {
       min_paragraphs: Math.max(1, templateHad),
       write_more_if_topic_needs_depth: true,
       template_sample_preview: paras.slice(0, 120),
-    };
+    }, s);
   }
   if (type === "Image") {
-    return { alt: s.alt || "", caption: s.caption || "", alignment: s.alignment || "center" };
+    return includeCurrentWritableSettings(type, {
+      alt: s.alt || "",
+      caption: s.caption || "",
+      alignment: s.alignment || "center",
+    }, s);
   }
   if (type === "HeroSection") {
-    return {
+    return includeCurrentWritableSettings(type, {
       heading: s.heading || "",
       subheading: s.subheading || "",
       showCta: Boolean(s.showCta),
       ctaText: s.ctaText || "",
       minHeight: s.minHeight || "",
-    };
+    }, s);
   }
   if (type === "BuyButton") {
-    return { buttonText: s.buttonText || "Add to Cart", showPrice: s.showPrice !== false };
+    return includeCurrentWritableSettings(type, {
+      buttonText: s.buttonText || "Add to Cart",
+      showPrice: s.showPrice !== false,
+    }, s);
   }
   if (type === "ProductGrid" || type === "ProductSlider" || type === "Collection") {
-    return {
+    return includeCurrentWritableSettings(type, {
       title: s.title || s.heading || "",
       columns: s.columns,
       buttonText: s.buttonText || "",
-    };
+    }, s);
   }
   if (type === "Html") {
     return {};
@@ -343,7 +382,7 @@ export function sanitizeSettingsForPrompt(type, settings) {
     const sample = s.hasHeader !== false
       ? [s.tableData[0], s.tableData[1] || []].filter((r) => Array.isArray(r) && r.length)
       : s.tableData.slice(0, 2);
-    return {
+    return includeCurrentWritableSettings(type, {
       cols: s.cols || s.tableData[0]?.length || 2,
       hasHeader: s.hasHeader !== false,
       sample_rows: sample,
@@ -352,7 +391,7 @@ export function sanitizeSettingsForPrompt(type, settings) {
       // model mirrors whatever row count it's shown, same failure mode as the FAQ count below.
       must_replace: true,
       row_count_is_not_fixed: "add or remove rows - use however many this topic's data actually needs",
-    };
+    }, s);
   }
   if (type === "FaqBlock") {
     // Previously included the template's own sample_questions verbatim, which - given to a model
@@ -361,36 +400,34 @@ export function sanitizeSettingsForPrompt(type, settings) {
     // untouched, and why it never varied count: it was shown 2 real questions and matched them.
     // structure_example is deliberately generic (not the template's real questions) and item_count
     // is framed as a floor, not a target.
-    return {
+    return includeCurrentWritableSettings(type, {
       title: s.title || "FAQs",
       structure_example: "{question, answer}",
       item_count_in_template: Array.isArray(s.items) ? s.items.length : 0,
       instruction:
         "Write NEW topic-specific questions (never reuse or lightly reword the template's own) and " +
         "use however many items - 2 to 6 - genuinely fit this topic, not necessarily the template's count",
-    };
+    }, s);
   }
   if (type === "Section" || type === "ColumnLayout" || type === "Column" || type === "Divider" || type === "Spacer") {
     const slim = {};
     for (const key of WRITABLE_SETTINGS[type] || []) {
       if (s[key] != null && s[key] !== "") slim[key] = s[key];
     }
-    return slim;
+    return includeCurrentWritableSettings(type, slim, s);
   }
 
   for (const key of locked) delete s[key];
-  return s;
+  return includeCurrentWritableSettings(type, s, s);
 }
 
 /**
- * Compact manifest for the Groq prompt: priority content/media/commerce blocks with slim
- * settings. Layout shells are listed as id+type only so ids stay aligned with the full tree.
+ * Compact manifest for the Groq prompt. Every block retains its safe, slim settings contract so
+ * the model can make layout decisions too; large content payloads stay compacted by
+ * sanitizeSettingsForPrompt().
  */
 export function buildCompactPromptManifest(blocks) {
   return buildTemplateManifest(blocks).map((entry) => {
-    if (!PROMPT_PRIORITY_TYPES.has(entry.type)) {
-      return { id: entry.id, type: entry.type, category: entry.category };
-    }
     return {
       id: entry.id,
       type: entry.type,
@@ -444,6 +481,7 @@ export function buildTemplateManifest(blocks) {
         role: role || undefined,
         writable_settings: WRITABLE_SETTINGS[block.type] || [],
         locked_settings: LOCKED_SETTINGS[block.type] || [],
+        setting_policy: "Use the shared SETTING DECISION POLICY with only writable_settings.",
         current_settings: sanitizeSettingsForPrompt(block.type, settings),
         child_count: Array.isArray(block.children) ? block.children.length : 0,
       });
