@@ -345,7 +345,12 @@ function rewriteHeading(text, ctx) {
 
   const stepMatch = original.match(/^(Step\s*\d+|[0-9]+\.)\s*[:.]?\s*(.*)$/i);
   if (stepMatch) {
-    return `${stepMatch[1]}: ${ctx.nextStepTitle()}`;
+    // A numeric prefix already includes its period (`1.`), so adding a colon produced the
+    // storefront's awkward `1.: Heading` output. "Step 1" needs its colon; `1.` does not.
+    const prefix = stepMatch[1];
+    return /^step\b/i.test(prefix)
+      ? `${prefix}: ${ctx.nextStepTitle()}`
+      : `${prefix} ${ctx.nextStepTitle()}`;
   }
   // A heading that already reads as a generic section label ("Ingredients", "The verdict")
   // stays as-is; one that names the template's own sample subject gets re-pointed at the topic.
@@ -401,6 +406,12 @@ function localGenerator({ topic, detail }, explicitTitle, requirements = emptyRe
     "Finish and rest",
     "Store it properly",
     "Review what worked",
+    "Focus on the biggest improvement",
+    "Refine the important details",
+    "Balance the overall result",
+    "Make the approach easy to maintain",
+    "Solve the common friction points",
+    "Review and improve over time",
   ];
 
   const base = {
@@ -423,6 +434,83 @@ function localGenerator({ topic, detail }, explicitTitle, requirements = emptyRe
 const STEP_HEADING_RE = /^(Step\s*\d+|[0-9]+\.)\s*[:.]?\s*(.*)$/i;
 const PLACEHOLDER_HEADING_RE = /\[|\bproduct name\b|\bcollection name\b/i;
 
+const LISTICLE_NOUN_RE = "ways?|tips?|ideas?|steps?|strategies|habits|rules|mistakes|reasons|questions|things|methods|projects|upgrades|changes";
+
+/** Extract a promised item count only when the title genuinely reads as a listicle. */
+function explicitListItemCount(title) {
+  const text = String(title || "").trim();
+  const match = text.match(new RegExp(`\\b(\\d{1,2})\\s+(?:[a-z]+\\s+){0,3}(?:${LISTICLE_NOUN_RE})\\b`, "i"));
+  const count = Number(match?.[1]);
+  return Number.isInteger(count) && count >= 2 && count <= 20 ? count : 0;
+}
+
+function findOrdinalHeading(block) {
+  if (!block || typeof block !== "object") return null;
+  if (block.type === "Heading" && STEP_HEADING_RE.test(String(block.settings?.text || "").trim())) {
+    return block;
+  }
+  for (const child of Array.isArray(block.children) ? block.children : []) {
+    const found = findOrdinalHeading(child);
+    if (found) return found;
+  }
+  return null;
+}
+
+function cloneListSection(block, ordinal) {
+  const copy = JSON.parse(JSON.stringify(block));
+  const clearIds = (node) => {
+    if (!node || typeof node !== "object") return;
+    delete node.id;
+    (Array.isArray(node.children) ? node.children : []).forEach(clearIds);
+  };
+  clearIds(copy);
+  const heading = findOrdinalHeading(copy);
+  if (heading) {
+    const prefix = String(heading.settings?.text || "").match(STEP_HEADING_RE)?.[1] || `${ordinal}.`;
+    heading.settings = {
+      ...(heading.settings || {}),
+      text: /^step\b/i.test(prefix) ? `Step ${ordinal}: [List item ${ordinal}]` : `${ordinal}. [List item ${ordinal}]`,
+    };
+  }
+  return copy;
+}
+
+/**
+ * A saved template is a design starting point, not a cap on the article's promised list count.
+ * Find the sibling collection containing its numbered section groups and extend it by cloning the
+ * final group. The cloned blocks retain all visual settings, while their placeholder copy gives
+ * the model independently addressable manifest entries to fill.
+ */
+function expandTemplateForExplicitListCount(blocks, requestedCount) {
+  if (!requestedCount || !Array.isArray(blocks)) return blocks;
+
+  const expanded = JSON.parse(JSON.stringify(blocks));
+
+  let best = null;
+  const inspect = (list) => {
+    if (!Array.isArray(list)) return;
+    const indexes = list
+      .map((block, index) => (findOrdinalHeading(block) ? index : -1))
+      .filter((index) => index >= 0);
+    if (indexes.length >= 2 && (!best || indexes.length > best.indexes.length)) {
+      best = { list, indexes };
+    }
+    list.forEach((block) => inspect(block?.children));
+  };
+  inspect(expanded);
+
+  if (!best || best.indexes.length >= requestedCount) return expanded;
+
+  const prototype = best.list[best.indexes[best.indexes.length - 1]];
+  const insertionIndex = best.indexes[best.indexes.length - 1] + 1;
+  const additions = Array.from(
+    { length: requestedCount - best.indexes.length },
+    (_, index) => cloneListSection(prototype, best.indexes.length + index + 1)
+  );
+  best.list.splice(insertionIndex, 0, ...additions);
+  return expanded;
+}
+
 function emptyRequirements() {
   return {
     manifest: [],
@@ -438,6 +526,7 @@ function emptyRequirements() {
     productTitleSlots: [],
     heroCtaSlots: [],
     videoCaptionSlots: [],
+    explicitListItemCount: 0,
   };
 }
 
@@ -757,6 +846,11 @@ async function generateWithGroq({ topic, detail, text }, explicitTitle, requirem
     "instead of inventing a plausible-sounding figure, especially in FAQ answers and table cells.",
     "Tables MUST get full new tableData (never keep sample cookie/recipe rows).",
     "RichText: settings.paragraphs as string[]. Never invent image URLs. No markdown.",
+    requirements.explicitListItemCount
+      ? `The title explicitly promises ${requirements.explicitListItemCount} list items. You MUST deliver exactly ` +
+        `${requirements.explicitListItemCount} distinct primary numbered sections—one per item. Do not merge, omit, ` +
+        `or substitute a conclusion for an item; the FAQ/conclusion are additional content, not list items.`
+      : "",
     "Table of Contents: inspect its current listStyle and the headings you write. A heading with its own",
     "ordinal prefix (for example, '1. Paint the walls' or 'Step 1') requires listStyle: bullet; use",
     "listStyle: numbered only when headings are unnumbered. Never create duplicate markers such as '1. 1.'.",
@@ -770,6 +864,9 @@ async function generateWithGroq({ topic, detail, text }, explicitTitle, requirem
 
   const user = [
     `Title: ${subject}`,
+    requirements.explicitListItemCount
+      ? `Non-negotiable list requirement: exactly ${requirements.explicitListItemCount} distinct numbered primary sections.`
+      : "",
     `Brief:\n"""\n${briefText || "(write generically about the title)"}\n"""`,
     `Manifest (${promptManifest.length} blocks):`,
     JSON.stringify(promptManifest),
@@ -1788,7 +1885,14 @@ export async function generateArticleBlocks({ brief, title, templateKey, templat
       baseBlocks = buildBlankScaffold({ withProducts });
     }
 
+    const promisedListCount = explicitListItemCount(title || parsed.topic);
+    baseBlocks = expandTemplateForExplicitListCount(baseBlocks, promisedListCount);
     const requirements = collectContentRequirements(baseBlocks);
+    // Do not make an impossible promise to the model when a template has no repeatable numbered
+    // section group. When it does, expansion above has created one manifest slot per list item.
+    if (promisedListCount && requirements.stepCount >= promisedListCount) {
+      requirements.explicitListItemCount = promisedListCount;
+    }
     let ctx;
     if (!usedFallback && isAiProviderConfigured()) {
       try {
