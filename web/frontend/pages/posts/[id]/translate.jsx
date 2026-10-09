@@ -287,18 +287,18 @@ function extractBlocksFromPost(post) {
         });
         return;
       }
-      if (dataType === "VideoEmbed" && ds.caption !== undefined) {
+      if ((dataType === "VideoEmbed" || dataType === "VideoBlock") && ds.caption !== undefined) {
         blocks.push({
           id: `block_video_${blocks.length}`,
-          type: "VideoEmbed",
+          type: dataType,
           settings: { caption: ds.caption || "" },
         });
         return;
       }
-      if (dataType === "ButtonBlock" && ds.text !== undefined) {
+      if ((dataType === "ButtonBlock" || dataType === "CTAButton") && ds.text !== undefined) {
         blocks.push({
           id: `block_button_${blocks.length}`,
-          type: "ButtonBlock",
+          type: dataType,
           settings: { text: ds.text || "" },
         });
         return;
@@ -311,19 +311,21 @@ function extractBlocksFromPost(post) {
         });
         return;
       }
-      if ((dataType === "ProductGrid" || dataType === "Collection" || dataType === "ProductSlider") && (ds.title !== undefined || ds.buttonText !== undefined)) {
+      if ((dataType === "ProductGrid" || dataType === "Collection" || dataType === "ProductSlider") && (ds.title !== undefined || ds.heading !== undefined || ds.buttonText !== undefined)) {
         blocks.push({
           id: `block_products_${blocks.length}`,
           type: dataType,
-          settings: { title: ds.title || ds.heading || "", buttonText: ds.buttonText || "" },
+          settings: dataType === "Collection"
+            ? { heading: ds.heading || ds.title || "", buttonText: ds.buttonText || "" }
+            : { title: ds.title || "", buttonText: ds.buttonText || "" },
         });
         return;
       }
-      if (dataType === "ProductCard" && ds.buttonText !== undefined) {
+      if (dataType === "ProductCard" && (ds.title !== undefined || ds.buttonText !== undefined)) {
         blocks.push({
           id: `block_productcard_${blocks.length}`,
           type: "ProductCard",
-          settings: { buttonText: ds.buttonText || "" },
+          settings: { title: ds.title || "", buttonText: ds.buttonText || "" },
         });
         return;
       }
@@ -529,9 +531,11 @@ function applyBlockTranslationsToHtml(originalHtml, originalBlocks, blockTransla
         setAttr("data-caption", trans.caption);
         break;
       case "VideoEmbed":
+      case "VideoBlock":
         setAttr("data-caption", trans.caption);
         break;
       case "ButtonBlock":
+      case "CTAButton":
         setAttr("data-text", trans.text);
         break;
       case "BuyButton":
@@ -539,12 +543,16 @@ function applyBlockTranslationsToHtml(originalHtml, originalBlocks, blockTransla
         setAttr("data-badge", trans.badge);
         break;
       case "ProductGrid":
-      case "Collection":
       case "ProductSlider":
         setAttr("data-title", trans.title);
         setAttr("data-button-text", trans.buttonText);
         break;
+      case "Collection":
+        setAttr("data-heading", trans.heading);
+        setAttr("data-button-text", trans.buttonText);
+        break;
       case "ProductCard":
+        setAttr("data-title", trans.title);
         setAttr("data-button-text", trans.buttonText);
         break;
       case "Table":
@@ -630,12 +638,12 @@ const LIVE_PENDING = "";
 const LIVE_FLAT_TEXT_ATTRS = new Set([
   "data-text", "data-title", "data-caption", "data-alt", "data-subheading",
   "data-heading", "data-button-text", "data-buttontext", "data-badge",
-  "data-description", "data-question", "data-answer", "data-label",
+  "data-description", "data-question", "data-answer", "data-label", "data-body",
   "data-cta-text", // HeroSection's CTA button label — see translate.py's matching FLAT_TEXT_ATTRS
 ]);
 const LIVE_JSON_TEXT_KEYS = new Set([
   "text", "title", "content", "caption", "alt", "subheading", "heading",
-  "buttonText", "badge", "description", "question", "answer", "name", "label",
+  "buttonText", "ctaText", "badge", "description", "question", "answer", "name", "label", "body", "subtitle", "headline",
 ]);
 
 function liveTranslateString(str, liveMap) {
@@ -806,6 +814,7 @@ function blockHasTranslatableContent(block) {
   switch (t) {
     case "Heading":
     case "ButtonBlock":
+    case "CTAButton":
       return fieldNeedsTranslation(t, "text", s.text);
     case "FaqBlock":
     case "faq": {
@@ -829,15 +838,17 @@ function blockHasTranslatableContent(block) {
     case "Image":
       return fieldNeedsTranslation(t, "alt", s.alt) || fieldNeedsTranslation(t, "caption", s.caption);
     case "VideoEmbed":
+    case "VideoBlock":
       return fieldNeedsTranslation(t, "caption", s.caption);
     case "BuyButton":
       return fieldNeedsTranslation(t, "buttonText", s.buttonText) || fieldNeedsTranslation(t, "badge", s.badge);
     case "ProductGrid":
-    case "Collection":
     case "ProductSlider":
-      return fieldNeedsTranslation(t, "title", s.title || s.heading) || fieldNeedsTranslation(t, "buttonText", s.buttonText);
+      return fieldNeedsTranslation(t, "title", s.title) || fieldNeedsTranslation(t, "buttonText", s.buttonText);
+    case "Collection":
+      return fieldNeedsTranslation(t, "heading", s.heading) || fieldNeedsTranslation(t, "buttonText", s.buttonText);
     case "ProductCard":
-      return fieldNeedsTranslation(t, "buttonText", s.buttonText);
+      return fieldNeedsTranslation(t, "title", s.title) || fieldNeedsTranslation(t, "buttonText", s.buttonText);
     case "Table":
       return Array.isArray(s.tableData) && s.tableData.some((row) => row.some((cell) => !isBlankField(cell)));
     default:
@@ -1120,22 +1131,30 @@ export default function PostTranslationPage() {
           alt: formatTextValue(transSettings.alt),
           caption: formatTextValue(transSettings.caption),
         };
-      } else if (origBlock.type === "VideoEmbed") {
+      } else if (origBlock.type === "VideoEmbed" || origBlock.type === "VideoBlock") {
         initialMap[origBlock.id] = { caption: formatTextValue(transSettings.caption) };
-      } else if (origBlock.type === "ButtonBlock") {
+      } else if (origBlock.type === "ButtonBlock" || origBlock.type === "CTAButton") {
         initialMap[origBlock.id] = { text: formatTextValue(transSettings.text) };
       } else if (origBlock.type === "BuyButton") {
         initialMap[origBlock.id] = {
           buttonText: formatTextValue(transSettings.buttonText),
           badge: formatTextValue(transSettings.badge),
         };
-      } else if (["ProductGrid", "Collection", "ProductSlider"].includes(origBlock.type)) {
+      } else if (["ProductGrid", "ProductSlider"].includes(origBlock.type)) {
         initialMap[origBlock.id] = {
           title: formatTextValue(transSettings.title),
           buttonText: formatTextValue(transSettings.buttonText),
         };
+      } else if (origBlock.type === "Collection") {
+        initialMap[origBlock.id] = {
+          heading: formatTextValue(transSettings.heading),
+          buttonText: formatTextValue(transSettings.buttonText),
+        };
       } else if (origBlock.type === "ProductCard") {
-        initialMap[origBlock.id] = { buttonText: formatTextValue(transSettings.buttonText) };
+        initialMap[origBlock.id] = {
+          title: formatTextValue(transSettings.title),
+          buttonText: formatTextValue(transSettings.buttonText),
+        };
       } else if (origBlock.type === "Table") {
         const origRows = Array.isArray(origSettings.tableData) ? origSettings.tableData : [];
         const transRows = Array.isArray(transSettings.tableData) ? transSettings.tableData : [];
@@ -1278,6 +1297,7 @@ export default function PostTranslationPage() {
       switch (t) {
         case "Heading":
         case "ButtonBlock":
+        case "CTAButton":
           countField(counts, t, "text", s.text, trans.text);
           break;
         case "FaqBlock":
@@ -1316,6 +1336,7 @@ export default function PostTranslationPage() {
           countField(counts, t, "caption", s.caption, trans.caption);
           break;
         case "VideoEmbed":
+        case "VideoBlock":
           countField(counts, t, "caption", s.caption, trans.caption);
           break;
         case "BuyButton":
@@ -1323,12 +1344,16 @@ export default function PostTranslationPage() {
           countField(counts, t, "badge", s.badge, trans.badge);
           break;
         case "ProductGrid":
-        case "Collection":
         case "ProductSlider":
-          countField(counts, t, "title", s.title || s.heading, trans.title);
+          countField(counts, t, "title", s.title, trans.title);
+          countField(counts, t, "buttonText", s.buttonText, trans.buttonText);
+          break;
+        case "Collection":
+          countField(counts, t, "heading", s.heading, trans.heading);
           countField(counts, t, "buttonText", s.buttonText, trans.buttonText);
           break;
         case "ProductCard":
+          countField(counts, t, "title", s.title, trans.title);
           countField(counts, t, "buttonText", s.buttonText, trans.buttonText);
           break;
         case "Table":
@@ -1999,7 +2024,7 @@ export default function PostTranslationPage() {
                             </BlockStack>
                           )}
 
-                          {block.type === "VideoEmbed" && (
+                          {(block.type === "VideoEmbed" || block.type === "VideoBlock") && (
                             <TranslationRowPair
                               title="Video caption"
                               originalValue={s.caption}
@@ -2008,7 +2033,7 @@ export default function PostTranslationPage() {
                             />
                           )}
 
-                          {block.type === "ButtonBlock" && (
+                          {(block.type === "ButtonBlock" || block.type === "CTAButton") && (
                             <TranslationRowPair
                               title="Button text"
                               originalValue={s.text}
@@ -2034,11 +2059,11 @@ export default function PostTranslationPage() {
                             </BlockStack>
                           )}
 
-                          {["ProductGrid", "Collection", "ProductSlider"].includes(block.type) && (
+                          {["ProductGrid", "ProductSlider"].includes(block.type) && (
                             <BlockStack gap="300">
                               <TranslationRowPair
                                 title="Section title"
-                                originalValue={s.title || s.heading}
+                                originalValue={s.title}
                                 translatedValue={trans.title || ""}
                                 onChange={(val) => handleBlockTranslationChange(block.id, "title", val)}
                               />
@@ -2051,13 +2076,38 @@ export default function PostTranslationPage() {
                             </BlockStack>
                           )}
 
+                          {block.type === "Collection" && (
+                            <BlockStack gap="300">
+                              <TranslationRowPair
+                                title="Section title"
+                                originalValue={s.heading}
+                                translatedValue={trans.heading || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "heading", val)}
+                              />
+                              <TranslationRowPair
+                                title="Button text"
+                                originalValue={s.buttonText}
+                                translatedValue={trans.buttonText || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "buttonText", val)}
+                              />
+                            </BlockStack>
+                          )}
+
                           {block.type === "ProductCard" && (
-                            <TranslationRowPair
-                              title="Button text"
-                              originalValue={s.buttonText}
-                              translatedValue={trans.buttonText || ""}
-                              onChange={(val) => handleBlockTranslationChange(block.id, "buttonText", val)}
-                            />
+                            <BlockStack gap="300">
+                              <TranslationRowPair
+                                title="Product title"
+                                originalValue={s.title}
+                                translatedValue={trans.title || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "title", val)}
+                              />
+                              <TranslationRowPair
+                                title="Button text"
+                                originalValue={s.buttonText}
+                                translatedValue={trans.buttonText || ""}
+                                onChange={(val) => handleBlockTranslationChange(block.id, "buttonText", val)}
+                              />
+                            </BlockStack>
                           )}
 
                           {block.type === "Table" && Array.isArray(s.tableData) && (
@@ -2080,7 +2130,7 @@ export default function PostTranslationPage() {
 
                           {![
                             "Heading", "FaqBlock", "faq", "Callout", "Hero", "HeroSection",
-                            "TableOfContents", "Image", "VideoEmbed", "ButtonBlock", "BuyButton",
+                            "TableOfContents", "Image", "VideoEmbed", "VideoBlock", "ButtonBlock", "CTAButton", "BuyButton",
                             "ProductGrid", "Collection", "ProductSlider", "ProductCard", "Table",
                           ].includes(block.type) && (
                               <TranslationRowPair

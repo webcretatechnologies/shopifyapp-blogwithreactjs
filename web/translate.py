@@ -670,7 +670,7 @@ def do_translate(text_chunk, label="Content"):
 FLAT_TEXT_ATTRS = {
     "data-text", "data-title", "data-caption", "data-alt", "data-subheading",
     "data-heading", "data-button-text", "data-buttontext", "data-badge",
-    "data-description", "data-question", "data-answer", "data-label",
+    "data-description", "data-question", "data-answer", "data-label", "data-body",
     # HeroSection's CTA button label (settings.ctaText) — verified missing via a full audit of
     # every text-bearing setting key against this set (2026-09-24): it's the only genuine text
     # field BlockRegistry defines that wasn't covered here, which is why a HeroSection's button
@@ -684,9 +684,9 @@ FLAT_TEXT_ATTRS = {
 HTML_ATTRS = {"data-content"}
 JSON_TEXT_KEYS = {
     "text", "title", "content", "caption", "alt", "subheading", "heading",
-    "buttonText", "badge", "description", "question", "answer", "name", "label",
+    "buttonText", "ctaText", "badge", "description", "question", "answer", "name", "label", "body", "subtitle", "headline",
 }
-ATTR_LABELS = {"data-alt": "alt text", "data-button-text": "button text", "data-buttontext": "button text", "data-cta-text": "button text"}
+ATTR_LABELS = {"data-alt": "alt text", "data-button-text": "button text", "data-buttontext": "button text", "data-cta-text": "button text", "data-body": "body"}
 
 
 def _humanize_block_type(block_type):
