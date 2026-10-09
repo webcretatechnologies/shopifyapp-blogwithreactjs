@@ -1212,6 +1212,29 @@ function fillMissingListPlaceholder(units, placeholderType) {
 }
 
 /**
+ * A blank article needs a small, explicit layout decision in addition to its content units.
+ * Previously the response described a hero but not whether a hero was warranted, and the server
+ * inserted a table of contents for every article with three headings. That made unrelated posts
+ * converge on the same "Hero → TOC → sections → FAQ" outline even when the model's copy differed.
+ *
+ * This intentionally accepts only booleans. Missing/malformed layout data means "do not add the
+ * optional chrome" rather than silently restoring the old always-on default.
+ */
+function resolveBlankArticleLayout(response, units) {
+  const requested = response?.layout && typeof response.layout === "object" ? response.layout : {};
+  const headingCount = units.filter((u) => u.type === "heading").length;
+  const hasHeroCopy = Boolean(response?.hero && (response.hero.heading || response.hero.subheading));
+
+  return {
+    pattern: typeof requested.pattern === "string" ? requested.pattern.slice(0, 40) : "custom",
+    showHero: requested.showHero === true && hasHeroCopy,
+    // A jump list is useful only for a genuinely long/scannable article. Four headings avoids
+    // turning a short three-part explanation into the same TOC-led layout every time.
+    showTableOfContents: requested.showTableOfContents === true && headingCount >= 4,
+  };
+}
+
+/**
  * The blank-template path when a real model is available. Earlier versions of this still forced
  * every article through a fixed Hero -> intro -> two body sections -> FAQ -> CTA skeleton and
  * only let the model vary the wording inside it, which was the actual complaint: two different
@@ -1291,7 +1314,12 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
     "side-by-side halves with no real comparison between them, that reads as a layout accident, not " +
     "a design choice. Most articles should leave at least one of table/columns/callout/faq at zero - " +
     "reaching for all of them regardless of topic is what makes AI output look templated; the goal " +
-    "is that a reader could tell which specific unit choices this exact topic earned. " +
+    "is that a reader could tell which specific unit choices this exact topic earned. First choose a " +
+    "layout pattern for this article (for example: editorial, practical-guide, listicle, comparison, " +
+    "recipe, product-roundup, or quick-answer). A hero and a table of contents are optional layout " +
+    "elements, not defaults: use a hero when the article benefits from a strong opening, and use a " +
+    "table of contents only for a long, scannable guide or list. Never turn both on merely because " +
+    "they are available. A short answer, personal story, or focused product note often needs neither. " +
     "Respond with ONLY a single JSON object, no commentary before or after it.";
 
   const paletteDoc = {
@@ -1299,6 +1327,8 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
       "a hex color like \"#b5482a\" that fits this topic's mood and category (warm tones for food/home, " +
       "cool tones for tech/wellness, bold tones for fashion/fitness, etc.) - choose deliberately, never " +
       "default to black or gray",
+    layout:
+      '{ "pattern": "editorial|practical-guide|listicle|comparison|recipe|product-roundup|quick-answer|custom", "showHero": true|false, "showTableOfContents": true|false } - make these decisions for THIS article. A table of contents is only for a long guide/list with at least four headings; do not choose hero + table of contents as a default pair',
     hero:
       "{ heading, subheading, showCta, ctaText } or null - a banner at the very top; skip it (null) " +
       "only if this topic genuinely doesn't want one. showCta/ctaText are optional - include a short " +
@@ -1379,8 +1409,9 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
   const metaTitle = String(response.metaTitle || "").trim().slice(0, 70) || null;
   const metaDescription = String(response.metaDescription || "").trim().slice(0, 320) || null;
   const blocks = buildTreeFromUnits(units, { withProducts, accent, tint });
+  const layout = resolveBlankArticleLayout(response, units);
 
-  if (response.hero && (response.hero.heading || response.hero.subheading)) {
+  if (layout.showHero) {
     const showCta = Boolean(response.hero.showCta && String(response.hero.ctaText || "").trim());
     blocks.unshift({
       type: "HeroSection",
@@ -1407,10 +1438,9 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
   }
 
   // Headings are what the storefront's TableOfContents block scans for at render time (see
-  // compileBlocksToHtml.js) - it's not something the model needs to build itself, only something
-  // worth showing once there's enough structure for a jump-list to actually help.
-  const headingCount = units.filter((u) => u.type === "heading").length;
-  if (headingCount >= 3) {
+  // compileBlocksToHtml.js). It is deliberately *not* automatic: the model has to choose it in
+  // the article's layout plan, and resolveBlankArticleLayout verifies it has enough headings.
+  if (layout.showTableOfContents) {
     blocks.splice(blocks[0]?.type === "HeroSection" ? 1 : 0, 0, {
       type: "Section",
       settings: { paddingTop: "28px", paddingBottom: "12px" },
