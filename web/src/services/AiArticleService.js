@@ -946,7 +946,7 @@ function applyColors(blocks, { primaryColor, backgroundColor }) {
         settings.color = primary;
       }
       if (block.type === "ButtonBlock" && settings.backgroundColor) settings.backgroundColor = primary;
-      if ((block.type === "BuyButton" || block.type === "ProductGrid" || block.type === "Collection") && settings.buttonColor) {
+      if ((block.type === "BuyButton" || block.type === "ProductGrid" || block.type === "ProductSlider" || block.type === "Collection" || block.type === "ProductCard") && settings.buttonColor) {
         settings.buttonColor = primary;
       }
       if (block.type === "HeroSection" && settings.ctaColor) settings.ctaColor = primary;
@@ -1111,7 +1111,7 @@ function buildBlankScaffold({ withProducts } = {}) {
 // runs of units into Sections (a new Section starts at each heading), merges consecutive
 // paragraphs into one RichText, and applies the same "never invent an image/product" rules as
 // everywhere else in this file regardless of what the model asked for.
-const CONTENT_UNIT_TYPES = ["heading", "paragraph", "image", "callout", "table", "faq", "divider", "button", "columns", "video", "productCard", "productGrid"];
+const CONTENT_UNIT_TYPES = ["heading", "paragraph", "image", "callout", "table", "faq", "divider", "button", "columns", "video", "buyButton", "productCard", "productGrid", "productSlider"];
 
 /** Only a real YouTube/Vimeo link is trusted - the model is told never to invent one, but this
  *  is the actual enforcement, same as every other "never invent" rule in this file. */
@@ -1285,10 +1285,11 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
     "output is inserted directly into already-styled blocks. " +
     (productNames.length
       ? `Products linked to this article: ${productNames.join(", ")}. Mention them by name where it reads ` +
-        "naturally (an intro, a closing line, a callout), AND decide where a productCard or " +
-        "productGrid unit genuinely earns its place - right after the paragraph that talks about a " +
-        "product it's showcasing reads far better than one dumped at the very end regardless of " +
-        "context. Never invent a price, size or spec for them beyond the name; the real product " +
+        "naturally (an intro, a closing line, a callout), AND decide which commerce unit genuinely " +
+        "earns its place: buyButton for one primary product ready to add to cart, productCard for one " +
+        "product worth a visual spotlight, productGrid for a compact group, or productSlider for several " +
+        "products that benefit from browsing. Place it after the relevant paragraph, never as an " +
+        "automatic footer. Never invent a price, size or spec for them beyond the name; the real product " +
         "data is bound in for you afterward. "
       : "No products are linked to this article - don't invent a product to reference, and never " +
         "include a productCard or productGrid unit (there's nothing real to put in one). ") +
@@ -1353,8 +1354,12 @@ async function generateBlankArticleWithGroq({ text }, explicitTitle, { withProdu
         ? {
             productCard:
               '{ "type": "productCard" } - spotlights ONE linked product right where it\'s most relevant (e.g. right after a paragraph that discusses it); the real product\'s name/price/image are bound in for you, you never provide them',
+            buyButton:
+              '{ "type": "buyButton", "text": "2-4 word action label" } - an add-to-cart control for ONE linked product; use only when this article makes one product the clear primary recommendation',
             productGrid:
               '{ "type": "productGrid", "count": 2 } - showcases several linked products together (count: 2-6); use this instead of repeating productCard several times in a row when multiple products genuinely belong together in one spot',
+            productSlider:
+              '{ "type": "productSlider", "count": 3 } - a horizontally browsable showcase for 2-6 linked products; use only when a compact grid would make the article feel crowded',
           }
         : {}),
     },
@@ -1650,6 +1655,17 @@ function buildTreeFromUnits(units, { withProducts, accent, tint }) {
         });
         break;
       }
+      case "buyButton": {
+        if (!withProducts) break;
+        flushParagraphs();
+        productBlockPlaced = true;
+        current.children.push({
+          type: "BuyButton",
+          settings: { buttonText: text(u.text) || "Add to cart", layout: "horizontal", showPrice: true },
+          children: [],
+        });
+        break;
+      }
       case "productGrid": {
         if (!withProducts) break;
         flushParagraphs();
@@ -1658,6 +1674,18 @@ function buildTreeFromUnits(units, { withProducts, accent, tint }) {
         current.children.push({
           type: "ProductGrid",
           settings: { columns: Math.min(count, 3), showPrice: true, showButton: true, buttonColor: accent, manualProducts: Array.from({ length: count }) },
+          children: [],
+        });
+        break;
+      }
+      case "productSlider": {
+        if (!withProducts) break;
+        flushParagraphs();
+        productBlockPlaced = true;
+        const count = Math.max(2, Math.min(6, Number(u.count) || 3));
+        current.children.push({
+          type: "ProductSlider",
+          settings: { showPrice: true, showButton: true, buttonColor: accent, manualProducts: Array.from({ length: count }) },
           children: [],
         });
         break;
