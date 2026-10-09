@@ -979,6 +979,7 @@ export default function PostTranslationPage() {
   const [translateProgress, setTranslateProgress] = useState(null);
   const [translations, setTranslations] = useState([]);
   const [storeLocales, setStoreLocales] = useState([]);
+  const [storefrontUrl, setStorefrontUrl] = useState("");
 
   // Selected locale for translation
   const [selectedLocale, setSelectedLocale] = useState("");
@@ -1062,6 +1063,39 @@ export default function PostTranslationPage() {
       .catch(() => {})
       .finally(() => setFeaturesLoaded(true));
   }, [id, loadTranslations, loadLocales]);
+
+  // A published post's storefront path needs Shopify's blog handle, not the local blog ID.
+  // Resolve it through the existing authenticated endpoint and only expose the external action
+  // once we have a complete, trustworthy URL.
+  useEffect(() => {
+    let cancelled = false;
+    setStorefrontUrl("");
+
+    if (!post || post.status !== "published") return undefined;
+
+    const shopDomain = window.shopify?.config?.shop;
+    const blogId = post.shopifyArticle?.shopifyBlogId || post.blogId;
+    const articleHandle = post.slug;
+    if (!shopDomain || !blogId || !articleHandle) return undefined;
+
+    fetch(`/api/posts/shopify/blogs/${encodeURIComponent(blogId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const blogHandle = data?.blog?.handle;
+        if (!cancelled && blogHandle) {
+          setStorefrontUrl(
+            `https://${shopDomain}/blogs/${encodeURIComponent(blogHandle)}/${encodeURIComponent(articleHandle)}`
+          );
+        }
+      })
+      .catch(() => {
+        // A missing/deleted Shopify blog should not leave a broken storefront action behind.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [post]);
 
   // Helper to re-hydrate block translation state from translated HTML/blocks
   const hydrateBlockTranslationsFromHtml = useCallback((translatedHtml, blocks) => {
@@ -1649,6 +1683,11 @@ export default function PostTranslationPage() {
         <button variant="breadcrumb" onClick={() => navigate(`/posts/${id}/edit`)}>
           Back to edit
         </button>
+        {post.status === "published" && storefrontUrl && (
+          <button onClick={() => window.open(storefrontUrl, "_blank", "noopener,noreferrer")}>
+            View on Storefront
+          </button>
+        )}
       </TitleBar>
       {toast && (
         <Toast content={toast.content} error={toast.error} onDismiss={() => setToast(null)} />
