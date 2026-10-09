@@ -2640,6 +2640,25 @@ router.post("/:id/translations", async (req, res) => {
   }
 });
 
+// A compatibility check for translations created before translate.py started rejecting
+// near-identical English responses from providers. Keep short labels/brand names intact, but do
+// not preserve a substantial English sentence as this locale's prior "translation".
+function isEffectivelyUnchangedTranslation(source, translated) {
+  if (typeof source !== "string" || typeof translated !== "string") return false;
+  const englishWords = source.match(/[A-Za-z]+/g) || [];
+  if (englishWords.length < 3 || englishWords.reduce((count, word) => count + word.length, 0) < 12) {
+    return false;
+  }
+  const canonical = (value) =>
+    (value || "")
+      .normalize("NFKC")
+      .toLocaleLowerCase()
+      .match(/[\p{L}\p{N}_]+/gu)
+      ?.join(" ") || "";
+  const normalizedSource = canonical(source);
+  return Boolean(normalizedSource) && normalizedSource === canonical(translated);
+}
+
 // Streams translation progress to the client as NDJSON (one JSON object per line) instead of
 // making the merchant stare at a spinner for the whole run, and persists translate.py's
 // growing string-cache to the DB after every line — not just at the end — so a run killed by
@@ -2829,7 +2848,15 @@ router.post("/:id/translate-auto", async (req, res) => {
     const topLevelField = (key) => {
       const source = sourceData[key] || "";
       const translated = result[key] || "";
-      if (!translated) return existingTranslation?.[key] ?? null;
+      if (!translated) {
+        const previous = existingTranslation?.[key] ?? null;
+        // A bad legacy cache entry was removed by translate.py above. Clear the matching stale
+        // field too; otherwise the old English value would keep looking like a translation.
+        if (isEffectivelyUnchangedTranslation(source, previous) && !(source in finalCache)) {
+          return null;
+        }
+        return previous;
+      }
       const isPlainText = !(source.includes("<") && source.includes(">"));
       if (isPlainText && translated === source && !(source in finalCache)) {
         return existingTranslation?.[key] ?? null;

@@ -4,6 +4,7 @@ import sys
 import json
 import time
 import threading
+import unicodedata
 import requests
 from deep_translator import GoogleTranslator
 from deep_translator.constants import MY_MEMORY_LANGUAGES_TO_CODES
@@ -97,7 +98,7 @@ def _count_failure():
 # ---------------------------
 # TRANSLATION PROVIDERS
 # ---------------------------
-# Chain: Google -> DeepL -> LibreTranslate -> MyMemory -> failed. Each provider is tried in turn
+# Chain: Google -> LibreTranslate -> DeepL -> MyMemory -> failed. Each provider is tried in turn
 # for a given chunk; the first one to return a usable translation wins, and later providers in
 # the list are never called. A provider that is disabled (missing config) or doesn't support the
 # target language is skipped without being attempted. A provider that hits a run-wide failure
@@ -191,6 +192,34 @@ def _looks_like_leaked_markup(original, translated):
     if _MARKUP_TAG_RE.search(original or ""):
         return False  # original itself had markup-like text — not this function's problem to judge
     return bool(_MARKUP_TAG_RE.search(translated))
+
+
+def _is_effectively_unchanged_translation(original, translated):
+    """Detect an English sentence that a provider returned unchanged.
+
+    Some local/statistical providers occasionally return the input with only casing or
+    whitespace changes (for example, an English blog title requested in Arabic). Treating
+    that as a success silently saves English in a translated field and poisons the resume
+    cache. Short labels and likely names are deliberately excluded because leaving those
+    unchanged can be legitimate.
+    """
+    if not isinstance(original, str) or not isinstance(translated, str):
+        return False
+
+    # Only reject substantial English prose/headings. This avoids falsely rejecting a brand,
+    # an acronym, a product SKU, or a short label that should remain unchanged.
+    english_words = re.findall(r"[A-Za-z]+", original)
+    if len(english_words) < 3 or sum(len(word) for word in english_words) < 12:
+        return False
+
+    def canonical(value):
+        value = unicodedata.normalize("NFKC", value).casefold()
+        # Case, spacing and punctuation-only edits are not a translation.
+        return " ".join(re.findall(r"[\\w]+", value, flags=re.UNICODE))
+
+    source = canonical(original)
+    result = canonical(translated)
+    return bool(source) and source == result
 
 
 class GoogleProvider(TranslationProvider):
@@ -459,13 +488,12 @@ class MyMemoryProvider(TranslationProvider):
 
 # Order defines the fallback chain: the first available, language-supporting provider to
 # succeed for a given chunk wins, and providers after it in this list are never called for
-# that chunk. Google is always first; MyMemory is always last, matching the existing behavior
-# this replaces. The app keeps working with only Google + MyMemory configured — DeepL and
-# LibreTranslate quietly disable themselves (see each __init__) when their config is absent.
+# that chunk. The order deliberately favors Google, then the local LibreTranslate service,
+# then DeepL, with MyMemory as the final fallback.
 PROVIDERS = [
     GoogleProvider(enabled=_env_flag("TRANSLATION_GOOGLE_ENABLED", True)),
-    DeepLProvider(),
     LibreTranslateProvider(),
+    DeepLProvider(),
     MyMemoryProvider(),
 ]
 
@@ -539,6 +567,15 @@ def _try_provider(provider, chunk):
                 if attempt < TRANSIENT_RETRIES:
                     time.sleep(TRANSIENT_RETRY_DELAY * attempt)
                 continue
+            if _is_effectively_unchanged_translation(chunk, result):
+                # This is a provider-quality failure for this particular string, not an outage.
+                # Do not retry or disable the provider: it may translate the next string well,
+                # and a later enabled provider may still produce a real translation.
+                print(
+                    f"[Translation] {provider.name} returned the English input unchanged — discarding",
+                    file=sys.stderr,
+                )
+                return None
             provider.note_success()
             return result
         except PermanentProviderError as e:
@@ -600,6 +637,12 @@ def do_translate(text_chunk, label="Content"):
     resumable caching and duplicate suppression all live in this one place."""
     with _lock:
         cached = existing_translations.get(text_chunk)
+        if cached is not None and _is_effectively_unchanged_translation(text_chunk, cached):
+            # Caches created before this guard may contain an English sentence that a provider
+            # incorrectly reported as translated. Remove it so a retry never presents that stale
+            # value as a successful translation again.
+            existing_translations.pop(text_chunk, None)
+            cached = None
         in_flight = _inflight.get(text_chunk) if cached is None else None
         is_owner = cached is None and in_flight is None
         if is_owner:

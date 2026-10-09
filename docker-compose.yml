@@ -56,6 +56,9 @@ services:
       NODE_ENV: production
       PORT: "3000"
       DATABASE_URL: mysql://root:root@mysql:3306/shopify_blog_react
+      # The host dev server uses 127.0.0.1:5000; the container reaches the same service through
+      # Docker DNS. This override keeps the configured fallback chain available in both modes.
+      LIBRETRANSLATE_URL: http://libretranslate:5000
 
     ports:
       # Host port defaults to 3001 (existing server mapping). Override with
@@ -165,11 +168,10 @@ services:
     mem_limit: 2g
     cpus: 1.5
 
-    # No published port: only the app container talks to this, over the Docker network at
-    # http://libretranslate:5000 (LIBRETRANSLATE_URL in .env) — nothing needs it from outside.
-    # Uncomment for local debugging only, bound to localhost so it's never internet-reachable:
-    # ports:
-    #   - "127.0.0.1:5000:5000"
+    # The Shopify CLI runs the development backend on the host, so expose this only to localhost
+    # as well as the Docker network. It is never reachable from the public internet.
+    ports:
+      - "127.0.0.1:5000:5000"
 
     volumes:
       # Argos Translate model downloads live under the container's home dir — a named volume
