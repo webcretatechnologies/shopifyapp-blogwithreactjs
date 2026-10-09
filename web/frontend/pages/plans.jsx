@@ -23,6 +23,7 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { smartBackAction } from "../utils/smartBack";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import PlanUsageMeters from "../components/PlanUsageMeters";
+import "./plans.css";
 
 function intervalSuffix(interval) {
   return interval === "ANNUAL" ? "/year" : "/month";
@@ -51,6 +52,18 @@ function applyCouponDiscount(price, coupon) {
   }
   if (Number(coupon.amountOff) >= price) return null;
   return Math.max(0, Math.round((price - Number(coupon.amountOff)) * 100) / 100);
+}
+
+function planUsageLimits(features = []) {
+  const valueFor = (pattern, fallback) => {
+    const value = features.find((feature) => pattern.test(feature));
+    return value ? value.replace(/^Up to\s+/i, "") : fallback;
+  };
+  return [
+    { label: "Articles", value: valueFor(/articles/i, "Included") },
+    { label: "Saved templates", value: valueFor(/templates/i, "Included") },
+    { label: "AI credits", value: valueFor(/AI credits/i, "Included") },
+  ];
 }
 
 export default function Plans() {
@@ -402,7 +415,7 @@ export default function Plans() {
       title="Plans & Billing"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
     >
-      <div style={{ maxWidth: "960px", margin: "0 auto", width: "100%" }}>
+      <div className="plans-billing">
       <Layout>
         <Layout.Section>
           <Text as="p" variant="bodyMd" tone="subdued">
@@ -434,7 +447,7 @@ export default function Plans() {
 
         {!isLoading && (
           <Layout.Section>
-            <Card>
+            <div className="billing-surface billing-usage">
               <BlockStack gap="400">
                 <InlineStack align="space-between" blockAlign="start" gap="400" wrap={false}>
                   <BlockStack gap="050">
@@ -504,7 +517,7 @@ export default function Plans() {
                   ]}
                 />
               </BlockStack>
-            </Card>
+            </div>
           </Layout.Section>
         )}
 
@@ -605,25 +618,31 @@ export default function Plans() {
               </Text>
               {hasMonthlyPlans && hasYearlyPlans && (
                 <div style={{ display: "flex", justifyContent: "center" }}>
-                  <InlineStack gap="200" blockAlign="center">
-                    <Button
-                      pressed={selectedBillingInterval === "EVERY_30_DAYS"}
-                      onClick={() => setSelectedBillingInterval("EVERY_30_DAYS")}
-                    >
-                      Monthly
-                    </Button>
-                    <Button
-                      pressed={selectedBillingInterval === "ANNUAL"}
-                      onClick={() => setSelectedBillingInterval("ANNUAL")}
-                    >
-                      Yearly
-                    </Button>
+                  <div className="billing-cycle-control">
+                    <div className="billing-cycle-tabs" role="group" aria-label="Billing frequency">
+                      <button
+                        type="button"
+                        className={selectedBillingInterval === "EVERY_30_DAYS" ? "is-selected" : ""}
+                        aria-pressed={selectedBillingInterval === "EVERY_30_DAYS"}
+                        onClick={() => setSelectedBillingInterval("EVERY_30_DAYS")}
+                      >
+                        Monthly
+                      </button>
+                      <button
+                        type="button"
+                        className={selectedBillingInterval === "ANNUAL" ? "is-selected" : ""}
+                        aria-pressed={selectedBillingInterval === "ANNUAL"}
+                        onClick={() => setSelectedBillingInterval("ANNUAL")}
+                      >
+                        Yearly
+                      </button>
+                    </div>
                     {bestYearlySavingsPct > 0 && (
-                      <Text as="span" variant="bodySm" tone="success">
+                      <span className="billing-yearly-saving">
                         Save up to {bestYearlySavingsPct}% yearly
-                      </Text>
+                      </span>
                     )}
-                  </InlineStack>
+                  </div>
                 </div>
               )}
             </BlockStack>
@@ -631,7 +650,7 @@ export default function Plans() {
         </Layout.Section>
 
         <Layout.Section>
-          <Card>
+          <div className="billing-surface billing-coupon">
             <BlockStack gap="300">
               <BlockStack gap="050">
                 <Text as="h3" variant="headingMd">Have a coupon code?</Text>
@@ -678,7 +697,7 @@ export default function Plans() {
                 </Banner>
               )}
             </BlockStack>
-          </Card>
+          </div>
         </Layout.Section>
 
         <Layout.Section>
@@ -699,6 +718,8 @@ export default function Plans() {
               const yearlySavingsPct = yearlyAtMonthlyRate && yearlySavings > 0
                 ? Math.round((yearlySavings / yearlyAtMonthlyRate) * 100)
                 : 0;
+              const usageLimits = planUsageLimits(plan.features);
+              const annualMonthlyRate = plan.interval === "ANNUAL" ? price / 12 : null;
 
               const couponAppliesHere = Boolean(
                 appliedCoupon &&
@@ -712,17 +733,13 @@ export default function Plans() {
               // applyCouponDiscount's own comment). Treat that as "doesn't apply to this plan"
               // for rendering purposes, same as the scoping/price checks above.
               const showDiscountHere = couponAppliesHere && discountedPrice !== null;
+              const annualDiscountedMonthlyRate = plan.interval === "ANNUAL" && discountedPrice !== null
+                ? discountedPrice / 12
+                : null;
 
               return (
-                <Box
-                  key={plan.name}
-                  borderWidth="025"
-                  borderColor="border"
-                  borderRadius="300"
-                  background="bg-surface"
-                  padding="0"
-                >
-                  <Box padding="500">
+                <div key={plan.name} className="plan-price-card">
+                  <Box padding="500" className="plan-price-card__body">
                     <BlockStack gap="400">
                       <InlineStack align="space-between" blockAlign="start">
                         <BlockStack gap="100">
@@ -739,10 +756,16 @@ export default function Plans() {
                           <BlockStack gap="100">
                             <InlineStack gap="150" blockAlign="baseline">
                               <Text as="span" variant="bodyLg" tone="subdued" textDecorationLine="line-through">
-                                ${price.toFixed(2)}
+                                ${(plan.interval === "ANNUAL" && monthlyEquivalent
+                                  ? Number(monthlyEquivalent.price)
+                                  : price).toFixed(2)}
                               </Text>
-                              <Text as="span" variant="heading2xl">${discountedPrice.toFixed(2)}</Text>
-                              <Text as="span" variant="bodySm" tone="subdued">{intervalSuffix(plan.interval)}</Text>
+                              <Text as="span" variant="heading2xl">
+                                ${(annualDiscountedMonthlyRate ?? discountedPrice).toFixed(2)}
+                              </Text>
+                              <Text as="span" variant="bodySm" tone="subdued">
+                                {plan.interval === "ANNUAL" ? "/month" : intervalSuffix(plan.interval)}
+                              </Text>
                             </InlineStack>
                             <Text as="span" variant="bodySm" tone="success">
                               {appliedCoupon.discountType === "PERCENTAGE"
@@ -752,18 +775,27 @@ export default function Plans() {
                           </BlockStack>
                         ) : (
                           <InlineStack gap="150" blockAlign="baseline">
-                            <Text as="span" variant="heading2xl">${price.toFixed(2)}</Text>
-                            <Text as="span" variant="bodySm" tone="subdued">{intervalSuffix(plan.interval)}</Text>
+                            {plan.interval === "ANNUAL" && monthlyEquivalent && (
+                              <Text as="span" variant="bodyLg" tone="subdued" textDecorationLine="line-through">
+                                ${Number(monthlyEquivalent.price).toFixed(2)}
+                              </Text>
+                            )}
+                            <Text as="span" variant="heading2xl">
+                              ${(annualMonthlyRate ?? price).toFixed(2)}
+                            </Text>
+                            <Text as="span" variant="bodySm" tone="subdued">
+                              {plan.interval === "ANNUAL" ? "/month" : intervalSuffix(plan.interval)}
+                            </Text>
                           </InlineStack>
                         )}
                         {plan.interval === "ANNUAL" && yearlySavings > 0 && (
                           <Box paddingBlockStart="150">
                             <InlineStack gap="150" blockAlign="center" wrap>
                               <Text as="span" variant="bodySm" tone="subdued">
-                                ${yearlyAtMonthlyRate.toFixed(2)} yearly at the monthly rate
+                                Billed ${price.toFixed(2)} yearly
                               </Text>
                               <Badge tone="success">
-                                Save ${yearlySavings.toFixed(2)} ({yearlySavingsPct}%)
+                                Save ${yearlySavings.toFixed(2)}
                               </Badge>
                             </InlineStack>
                           </Box>
@@ -781,6 +813,18 @@ export default function Plans() {
                           </Box>
                         )}
                       </Box>
+
+                      <Divider />
+
+                      <BlockStack gap="150">
+                        <Text as="strong" variant="bodySm">Usage Limits</Text>
+                        {usageLimits.map((limit) => (
+                          <InlineStack key={limit.label} align="space-between" gap="200">
+                            <Text as="span" variant="bodySm" tone="subdued">{limit.label}</Text>
+                            <Text as="span" variant="bodySm" fontWeight="semibold">{limit.value}</Text>
+                          </InlineStack>
+                        ))}
+                      </BlockStack>
 
                       <Divider />
 
@@ -818,7 +862,9 @@ export default function Plans() {
                           {isCurrent
                             ? "Current Plan"
                             : plan.interval !== currentPlanDetails?.interval
-                              ? `Switch to ${plan.title} Plan`
+                              ? plan.interval === "ANNUAL" && yearlySavingsPct > 0
+                                ? `Switch to yearly · save ${yearlySavingsPct}%`
+                                : `Switch to ${plan.title} Plan`
                               : price > currentPrice
                               ? `Upgrade to ${plan.title} Plan`
                               : `Downgrade to ${plan.title} Plan`}
@@ -826,7 +872,7 @@ export default function Plans() {
                       </Box>
                     </BlockStack>
                   </Box>
-                </Box>
+                </div>
               );
             })}
           </InlineGrid>
