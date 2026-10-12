@@ -32,10 +32,11 @@ export default function AiCreditsBadge() {
   }, []);
 
   const notify = useCallback((content, error = false) => {
-    // App Bridge uses Shopify's native admin notification. Keep a visible fallback for a
-    // development or unexpected non-embedded context.
+    // App Bridge uses Shopify's native admin notification. Always retain the in-app notice too:
+    // some live embedded-admin contexts can suppress or delay the App Bridge toast during the
+    // top-level return redirect from Shopify's purchase approval page.
+    setNotification({ content, error });
     if (window.shopify?.toast) window.shopify.toast.show(content, error ? { isError: true } : undefined);
-    else setNotification({ content, error });
   }, []);
 
   useEffect(() => {
@@ -137,8 +138,15 @@ export default function AiCreditsBadge() {
     }
   };
 
-  // An unlimited plan has no reason to buy a top-up, so do not add noise to its header.
-  if (!credits || credits.limit == null) return null;
+  const notificationMarkup = notification && (
+    <div style={{ position: "fixed", top: 16, right: 16, zIndex: 600, maxWidth: 440 }}>
+      <Banner tone={notification.error ? "critical" : "success"} onDismiss={() => setNotification(null)}>{notification.content}</Banner>
+    </div>
+  );
+
+  // An unlimited plan has no reason to buy a top-up, so do not add noise to its header. Preserve
+  // a pending purchase result notice even if the balance request has not completed yet.
+  if (!credits || credits.limit == null) return notificationMarkup || null;
   const atLimit = (credits.remaining ?? 0) <= 0;
   const smallestPack = packs.length
     ? packs.reduce((smallest, pack) => (Number(pack.credits) < Number(smallest.credits) ? pack : smallest), packs[0])
@@ -265,11 +273,7 @@ export default function AiCreditsBadge() {
         </Modal.Section>
       </Modal>
 
-      {notification && (
-        <div style={{ position: "fixed", top: 16, right: 16, zIndex: 600 }}>
-          <Banner tone={notification.error ? "critical" : "success"} onDismiss={() => setNotification(null)}>{notification.content}</Banner>
-        </div>
-      )}
+      {notificationMarkup}
     </>
   );
 }
