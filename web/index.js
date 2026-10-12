@@ -427,6 +427,10 @@ app.post(
                 aiCreditPeriodStartedAt: null,
                 aiCreditPeriodEndsAt: null,
                 aiCreditPeriodPlanKey: null,
+                articlePeriodUsed: 0,
+                articlePeriodStartedAt: null,
+                articlePeriodEndsAt: null,
+                articlePeriodPlanKey: null,
               },
             });
             if (shopRecord) {

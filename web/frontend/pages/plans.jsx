@@ -461,10 +461,10 @@ export default function Plans() {
                     <Text as="h3" variant="headingMd">Plan usage</Text>
                     <Text as="p" variant="bodySm" tone="subdued">
                       {isFreePlanActive
-                        ? "Your Free AI credits are a one-time lifetime allowance."
+                        ? "Free articles and AI credits are one-time lifetime allowances."
                         : billingCycle?.renewsOn
-                        ? `AI credits reset monthly. Subscription renews ${formatDate(billingCycle.renewsOn)}`
-                        : "AI credits reset monthly while your plan is active."}
+                        ? `Article and AI allowances reset monthly. Subscription renews ${formatDate(billingCycle.renewsOn)}`
+                        : "Article and AI allowances reset monthly while your plan is active."}
                     </Text>
                   </BlockStack>
                   <InlineStack gap="200" blockAlign="center">

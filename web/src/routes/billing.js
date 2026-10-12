@@ -1,6 +1,6 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
-import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled, getSavedTemplateLimit, getAiCreditStatus, refreshAiCreditPeriod
+import { getArticleLimit, getArticleUsageStatus, buildTieredPlanFeatures, isFeatureEnabled, getSavedTemplateLimit, getAiCreditStatus, refreshAiCreditPeriod, refreshArticlePeriod
 } from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 import { listingLayoutForPlan, writeListingLayoutMetafield, THEME_LISTING_LAYOUT } from "../services/ListingLayoutMetafield.js";
@@ -17,6 +17,10 @@ function shopPlanState(planKey) {
     aiCreditPeriodStartedAt: null,
     aiCreditPeriodEndsAt: null,
     aiCreditPeriodPlanKey: null,
+    articlePeriodUsed: 0,
+    articlePeriodStartedAt: null,
+    articlePeriodEndsAt: null,
+    articlePeriodPlanKey: null,
   };
 }
 
@@ -256,10 +260,11 @@ router.get("/check", async (req, res) => {
     // Saved templates are the app's second plan cap (PlanFeature "template_limit"), so the usage
     // card can show both without a second round trip.
     const templateLimit = getSavedTemplateLimit(activePlan);
-    const currentShop = await refreshAiCreditPeriod(
+    let currentShop = await refreshAiCreditPeriod(
       creditShop,
       prisma,
     );
+    currentShop = await refreshArticlePeriod(currentShop, prisma);
     const aiCreditsPurchased = currentShop?.aiCreditsPurchased || 0;
     // aiCreditsUsed/aiCreditLimit are the METER-SAFE pair (getAiCreditStatus's meterUsed/
     // meterLimit), not raw shop.aiCreditsUsed vs the bare plan limit — a raw pair can invert
@@ -304,8 +309,10 @@ router.get("/check", async (req, res) => {
       };
     }
 
+    const articleUsage = getArticleUsageStatus(activePlan, currentShop?.articlePeriodUsed || 0, postCount);
+
     res.status(200).json({
-      activePlan, postCount, postLimit,
+      activePlan, postCount: articleUsage.used, postLimit,
       templateCount, templateLimit,
       aiCreditsUsed, aiCreditLimit, aiCreditsPurchased,
       billingCycle,

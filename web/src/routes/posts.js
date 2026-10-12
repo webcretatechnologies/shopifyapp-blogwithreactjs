@@ -13,9 +13,13 @@ import shopify from "../../shopify.js";
 import {
   getFeaturesForPlan,
   getArticleLimit,
+  getArticleUsageStatus,
+  reserveArticleAllowance,
+  releaseArticleAllowance,
   getSavedTemplateLimit,
   getAiCreditStatus,
   refreshAiCreditPeriod,
+  refreshArticlePeriod,
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
@@ -123,7 +127,8 @@ async function getShopFromSession(res) {
   const session = res.locals.shopify?.session;
   if (!session) return null;
   const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
-  return refreshAiCreditPeriod(shop, prisma);
+  const creditShop = await refreshAiCreditPeriod(shop, prisma);
+  return refreshArticlePeriod(creditShop, prisma);
 }
 
 // ─── GET /api/posts — List all posts for shop ─────────────────────────────────
@@ -225,7 +230,7 @@ router.post("/", async (req, res) => {
     const limit = getArticleLimit(shop.planKey);
     if (limit !== null) {
       const count = await prisma.post.count({ where: { shopId: shop.id } });
-      if (count >= limit) {
+      if (getArticleUsageStatus(shop.planKey, shop.articlePeriodUsed, count).remaining === 0) {
         return res.status(403).json({
           error: `You've reached your plan limit of ${limit} articles. Please upgrade to add more.`,
         });
@@ -310,8 +315,14 @@ router.post("/", async (req, res) => {
       shop.planKey
     );
 
-    const post = await prisma.post.create({
-      data: {
+    const articleReservation = await reserveArticleAllowance(shop, prisma);
+    if (!articleReservation.allowed) {
+      return res.status(403).json({ error: `You've reached your plan limit of ${getArticleLimit(shop.planKey)} articles for this month. Please upgrade or wait for your next monthly reset.` });
+    }
+    let post;
+    try {
+      post = await prisma.post.create({
+        data: {
         shopId: shop.id,
         title,
         slug: slug || generateSlug(title),
@@ -341,8 +352,12 @@ router.post("/", async (req, res) => {
         metaDescription: metaDescription || null,
         needsAutoSave: Boolean(needsAutoSave),
         ...sanitizeSeoFields(shop, req.body),
-      },
-    });
+        },
+      });
+    } catch (createError) {
+      await releaseArticleAllowance(articleReservation, prisma);
+      throw createError;
+    }
 
     // Sync tags
     if (tags.length) {
@@ -700,7 +715,7 @@ router.post("/:id/clone", async (req, res) => {
     const limit = getArticleLimit(shop.planKey);
     if (limit !== null) {
       const count = await prisma.post.count({ where: { shopId: shop.id } });
-      if (count >= limit) {
+      if (getArticleUsageStatus(shop.planKey, shop.articlePeriodUsed, count).remaining === 0) {
         return res.status(403).json({
           error: `You've reached your plan limit of ${limit} articles. Please upgrade to clone more.`,
         });
@@ -724,8 +739,14 @@ router.post("/:id/clone", async (req, res) => {
     const clonedTitle = ((req.body.title || "").trim()) || `Copy of ${sourcePost.title}`;
 
     // 4. Create the cloned post record
-    const clonedPost = await prisma.post.create({
-      data: {
+    const articleReservation = await reserveArticleAllowance(shop, prisma);
+    if (!articleReservation.allowed) {
+      return res.status(403).json({ error: `You've reached your plan limit of ${getArticleLimit(shop.planKey)} articles for this month. Please upgrade or wait for your next monthly reset.` });
+    }
+    let clonedPost;
+    try {
+      clonedPost = await prisma.post.create({
+        data: {
         shopId: shop.id,
         title: clonedTitle,
         slug: generateSlug(clonedTitle),
@@ -759,8 +780,12 @@ router.post("/:id/clone", async (req, res) => {
         richSnippetData: sourcePost.richSnippetData,
         publishedAt: null,        // Clone is never auto-published
         trackingKey: null,        // Will be generated fresh on first view
-      },
-    });
+        },
+      });
+    } catch (createError) {
+      await releaseArticleAllowance(articleReservation, prisma);
+      throw createError;
+    }
 
     // 5. Clone PostTag associations
     const tagNames = sourcePost.tags.map((pt) => pt.tag?.name).filter(Boolean);
@@ -1064,7 +1089,7 @@ router.get("/meta/dashboard-extras", async (req, res) => {
       upcoming: upcoming.map((p) => ({ id: p.id, title: p.title, publishedAt: p.publishedAt })),
       planUsage: {
         plan: shop.planKey,
-        used: totalPosts,
+        used: getArticleUsageStatus(shop.planKey, shop.articlePeriodUsed, totalPosts).used,
         limit: getArticleLimit(shop.planKey),
         // Second cap on the same card — saved templates (PlanFeature "template_limit").
         templatesUsed: savedTemplateCount,

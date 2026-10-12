@@ -318,6 +318,108 @@ export function getArticleLimit(planKey) {
   return getFeatureLimit(planKey, "article_limit");
 }
 
+function calculateArticlePeriodRollover(shop, now) {
+  const planKey = shop.planKey || "free";
+  const startedAt = validDate(shop.articlePeriodStartedAt);
+  const storedEnd = validDate(shop.articlePeriodEndsAt);
+  const planChanged = shop.articlePeriodPlanKey !== planKey;
+
+  if (planChanged || !startedAt) {
+    return { shouldReset: true, periodStartedAt: now, periodEndsAt: nextCalendarMonth(now) };
+  }
+
+  let periodEnd = storedEnd || nextCalendarMonth(startedAt);
+  if (periodEnd > now) return { shouldReset: false };
+
+  const anchorDay = startedAt.getUTCDate();
+  let periodStart = periodEnd;
+  do {
+    periodStart = periodEnd;
+    periodEnd = nextCalendarMonth(periodEnd, anchorDay);
+  } while (periodEnd <= now);
+  return { shouldReset: true, periodStartedAt: periodStart, periodEndsAt: periodEnd };
+}
+
+/** Refresh the paid article allowance. Free's article cap is intentionally lifetime and is
+ * therefore enforced from its Post count instead of this period ledger. */
+export async function refreshArticlePeriod(shop, prismaClient, attempt = 0) {
+  if (!shop || resolvePlanBucket(shop.planKey) === "free") return shop;
+  const rollover = calculateArticlePeriodRollover(shop, new Date());
+  if (!rollover.shouldReset) return shop;
+
+  const { count } = await prismaClient.shop.updateMany({
+    where: {
+      id: shop.id,
+      planKey: shop.planKey,
+      articlePeriodUsed: shop.articlePeriodUsed || 0,
+      articlePeriodStartedAt: shop.articlePeriodStartedAt || null,
+      articlePeriodEndsAt: shop.articlePeriodEndsAt || null,
+      articlePeriodPlanKey: shop.articlePeriodPlanKey || null,
+    },
+    data: {
+      articlePeriodUsed: 0,
+      articlePeriodStartedAt: rollover.periodStartedAt,
+      articlePeriodEndsAt: rollover.periodEndsAt,
+      articlePeriodPlanKey: shop.planKey || "free",
+    },
+  });
+  if (count === 1) return {
+    ...shop, articlePeriodUsed: 0,
+    articlePeriodStartedAt: rollover.periodStartedAt,
+    articlePeriodEndsAt: rollover.periodEndsAt,
+    articlePeriodPlanKey: shop.planKey || "free",
+  };
+  const current = await prismaClient.shop.findUnique({ where: { id: shop.id } });
+  if (!current || attempt >= 2) return current || shop;
+  return refreshArticlePeriod(current, prismaClient, attempt + 1);
+}
+
+/** Atomically reserve one paid-plan article slot immediately before a Post is created. */
+export async function reserveArticleAllowance(shop, prismaClient, attempt = 0) {
+  const current = await refreshArticlePeriod(shop, prismaClient);
+  const limit = getArticleLimit(current?.planKey);
+  if (!current || limit == null || resolvePlanBucket(current.planKey) === "free") {
+    return { allowed: true, reserved: false, shop: current };
+  }
+  const { count } = await prismaClient.shop.updateMany({
+    where: {
+      id: current.id,
+      planKey: current.planKey,
+      articlePeriodPlanKey: current.articlePeriodPlanKey,
+      articlePeriodEndsAt: current.articlePeriodEndsAt,
+      articlePeriodUsed: { lt: limit },
+    },
+    data: { articlePeriodUsed: { increment: 1 } },
+  });
+  if (count === 1) return { allowed: true, reserved: true, shop: { ...current, articlePeriodUsed: (current.articlePeriodUsed || 0) + 1 } };
+  if (attempt >= 1) return { allowed: false, reserved: false, shop: current };
+  const latest = await prismaClient.shop.findUnique({ where: { id: current.id } });
+  return reserveArticleAllowance(latest, prismaClient, attempt + 1);
+}
+
+/** Release a reservation only if Post creation itself failed before a row was persisted. */
+export async function releaseArticleAllowance(reservation, prismaClient) {
+  if (!reservation?.reserved || !reservation.shop) return;
+  await prismaClient.shop.updateMany({
+    where: {
+      id: reservation.shop.id,
+      planKey: reservation.shop.planKey,
+      articlePeriodPlanKey: reservation.shop.articlePeriodPlanKey,
+      articlePeriodEndsAt: reservation.shop.articlePeriodEndsAt,
+      articlePeriodUsed: { gt: 0 },
+    },
+    data: { articlePeriodUsed: { decrement: 1 } },
+  });
+}
+
+export function getArticleUsageStatus(planKey, articlePeriodUsed = 0, lifetimePostCount = 0) {
+  const limit = getArticleLimit(planKey);
+  const used = resolvePlanBucket(planKey) === "free"
+    ? Math.max(0, lifetimePostCount || 0)
+    : Math.max(0, articlePeriodUsed || 0);
+  return { used, limit, remaining: limit == null ? null : Math.max(0, limit - used) };
+}
+
 /**
  * How many templates of their own a shop may keep. null = unlimited (Pro and above).
  */
@@ -536,8 +638,8 @@ function resolvePlanBucket(planKey) {
 // The article-count bullet is handled separately per tier (own wording, own live limit) since
 // it's numeric and always present, never a moving boolean.
 const ARTICLE_LIMIT_RENDER = {
-  free: (f) => `Up to ${f.article_limit?.limit ?? 2} Articles`,
-  starter: (f) => `Up to ${f.article_limit?.limit ?? 30} Articles`,
+  free: (f) => `Up to ${f.article_limit?.limit ?? 2} Articles (lifetime)`,
+  starter: (f) => `Up to ${f.article_limit?.limit ?? 30} Monthly Articles`,
   pro: () => "Unlimited Articles",
 };
 ARTICLE_LIMIT_RENDER.business = ARTICLE_LIMIT_RENDER.pro;

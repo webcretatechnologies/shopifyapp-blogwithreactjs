@@ -41,6 +41,12 @@ model Shop {
   aiCreditPeriodStartedAt DateTime?
   aiCreditPeriodEndsAt DateTime?
   aiCreditPeriodPlanKey String?
+  /// Paid-plan article creation allowance. Unlike Free's lifetime article cap, this ledger
+  /// resets every calendar month even when Shopify bills the subscription annually.
+  articlePeriodUsed Int @default(0)
+  articlePeriodStartedAt DateTime?
+  articlePeriodEndsAt DateTime?
+  articlePeriodPlanKey String?
   /** Lifetime total AI generations bought via one-time AppPurchaseOneTime credit packs. Only ever
       incremented by the app_purchases_one_time/update webhook once Shopify confirms the charge
       is ACTIVE, never optimistically on checkout redirect. Never decremented - it's a purchase

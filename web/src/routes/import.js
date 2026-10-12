@@ -1,7 +1,7 @@
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import shopify from "../../shopify.js";
-import { getArticleLimit } from "../services/PlanFeatureService.js";
+import { getArticleLimit, getArticleUsageStatus, refreshArticlePeriod, reserveArticleAllowance, releaseArticleAllowance } from "../services/PlanFeatureService.js";
 import { ArticleSyncService } from "../services/ArticleSyncService.js";
 import { ShopifyArticleParser } from "../services/ShopifyArticleParser.js";
 import { isShopFirstPost } from "../utils/firstPost.js";
@@ -13,7 +13,7 @@ async function getShopFromSession(res) {
   const session = res.locals.shopify?.session;
   if (!session) return null;
   const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
-  return shop;
+  return refreshArticlePeriod(shop, prisma);
 }
 
 function generateSlug(title) {
@@ -165,7 +165,7 @@ router.post("/execute", async (req, res) => {
     const limit = getArticleLimit(shop.planKey);
     if (limit !== null) {
       const count = await prisma.post.count({ where: { shopId: shop.id } });
-      if (count >= limit) {
+      if (getArticleUsageStatus(shop.planKey, shop.articlePeriodUsed, count).remaining === 0) {
         return res.status(403).json({ error: `Article limit reached. Please upgrade your plan.` });
       }
     }
@@ -223,7 +223,17 @@ router.post("/execute", async (req, res) => {
       productSliderPosition: "none",
     };
 
-    const post = await prisma.post.create({ data: postData });
+    const articleReservation = await reserveArticleAllowance(shop, prisma);
+    if (!articleReservation.allowed) {
+      return res.status(403).json({ error: "Article limit reached for this month. Please upgrade or wait for your next monthly reset." });
+    }
+    let post;
+    try {
+      post = await prisma.post.create({ data: postData });
+    } catch (createError) {
+      await releaseArticleAllowance(articleReservation, prisma);
+      throw createError;
+    }
 
     // ── Process Tags ───────────────────────────────────────────────────────────
     if (shopifyArticle.tags) {

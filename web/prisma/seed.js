@@ -47,7 +47,7 @@ const SUBSCRIPTION_PLANS = [
   {
     name: "Starter Plan",
     title: "Starter",
-    price: 19.99,
+    price: 14.99,
     currency: "USD",
     interval: "EVERY_30_DAYS",
     trialDays: 0,
@@ -63,7 +63,7 @@ const SUBSCRIPTION_PLANS = [
     // same access as its monthly counterpart.
     name: "Starter Plan Annual",
     title: "Starter",
-    price: 199.99,
+    price: 99.99,
     currency: "USD",
     interval: "ANNUAL",
     trialDays: 0,
@@ -76,7 +76,7 @@ const SUBSCRIPTION_PLANS = [
   {
     name: "Pro Plan",
     title: "Pro",
-    price: 39.99,
+    price: 29.99,
     currency: "USD",
     interval: "EVERY_30_DAYS",
     trialDays: 0,
@@ -89,7 +89,7 @@ const SUBSCRIPTION_PLANS = [
   {
     name: "Pro Plan Annual",
     title: "Pro",
-    price: 399.99,
+    price: 199.99,
     currency: "USD",
     interval: "ANNUAL",
     trialDays: 0,
