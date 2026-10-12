@@ -32,13 +32,18 @@ export function countedClaimsWhere(extra) {
 }
 
 export function couponDiscountLabel(coupon) {
+  if (coupon.discountType === "FIXED_PRICE") return "Plan-specific price";
   return coupon.discountType === "PERCENTAGE"
     ? `${Number(coupon.percentOff)}% off`
     : `$${Number(coupon.amountOff).toFixed(2)} off`;
 }
 
 /** Rounds to 2 decimals, never below 0. */
-export function applyCouponDiscount(price, coupon) {
+export function applyCouponDiscount(price, coupon, planName = null) {
+  if (coupon.discountType === "FIXED_PRICE") {
+    const target = Number(coupon.planPrices?.[planName]);
+    return Number.isFinite(target) && target > 0 && target < price ? target : price;
+  }
   if (coupon.discountType === "PERCENTAGE") {
     return Math.max(0, Math.round(price * (1 - Number(coupon.percentOff) / 100) * 100) / 100);
   }
@@ -127,6 +132,7 @@ export async function validateCouponForShop(code, shopDomain, planTier = null) {
       description: coupon.description,
       appliesTo: coupon.appliesTo,
       planTiers,
+      planPrices: coupon.planPrices || null,
     },
   };
 }

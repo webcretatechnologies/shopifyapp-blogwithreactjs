@@ -46,7 +46,11 @@ const SHOW_ONE_TIME_AI_CREDIT_PACKS = true;
 // price outright, so clamping the displayed price to $0.01 would show a discount that could never
 // actually be applied here. Callers fall back to the plan's real full price when this returns
 // null. Percentage coupons can never hit this (already capped at 99% server-side).
-function applyCouponDiscount(price, coupon) {
+function applyCouponDiscount(price, coupon, planName = null) {
+  if (coupon.discountType === "FIXED_PRICE") {
+    const target = Number(coupon.planPrices?.[planName]);
+    return Number.isFinite(target) && target > 0 && target < price ? target : null;
+  }
   if (coupon.discountType === "PERCENTAGE") {
     return Math.max(0, Math.round(price * (1 - Number(coupon.percentOff) / 100) * 100) / 100);
   }
@@ -694,7 +698,7 @@ export default function Plans() {
                     <Text as="span" fontWeight="semibold">
                       {appliedCoupon.code} · {appliedCoupon.discountType === "PERCENTAGE"
                         ? `${appliedCoupon.percentOff}% off`
-                        : `$${appliedCoupon.amountOff} off`}
+                        : appliedCoupon.discountType === "FIXED_PRICE" ? "special plan price" : `$${appliedCoupon.amountOff} off`}
                     </Text>
                     <Text as="span" variant="bodySm">
                       {appliedCoupon.description ? `${appliedCoupon.description} — ` : ""}
@@ -741,7 +745,7 @@ export default function Plans() {
                 (appliedCoupon.appliesTo !== "SPECIFIC_PLANS" ||
                   appliedCoupon.planTiers?.includes(plan.name))
               );
-              const discountedPrice = couponAppliesHere ? applyCouponDiscount(price, appliedCoupon) : null;
+              const discountedPrice = couponAppliesHere ? applyCouponDiscount(price, appliedCoupon, plan.name) : null;
               // discountedPrice can still be null here even when couponAppliesHere is true — a
               // fixed-amount coupon too large for this specific plan's price (see
               // applyCouponDiscount's own comment). Treat that as "doesn't apply to this plan"
@@ -793,7 +797,7 @@ export default function Plans() {
                             <Text as="span" variant="bodySm" tone="success">
                               {appliedCoupon.discountType === "PERCENTAGE"
                                 ? `${appliedCoupon.percentOff}% off`
-                                : `$${appliedCoupon.amountOff} off`} · {couponDurationLabel(appliedCoupon.durationMonths, plan.interval)}
+                                : appliedCoupon.discountType === "FIXED_PRICE" ? "Early access price" : `$${appliedCoupon.amountOff} off`} · {couponDurationLabel(appliedCoupon.durationMonths, plan.interval)}
                             </Text>
                           </BlockStack>
                         ) : (

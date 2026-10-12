@@ -544,6 +544,8 @@ model Coupon {
   discountType   String   @default("PERCENTAGE") @db.VarChar(20) // PERCENTAGE | FIXED_AMOUNT
   percentOff     Decimal? @db.Decimal(5, 2)
   amountOff      Decimal? @db.Decimal(10, 2)
+  /// Exact promotional price keyed by SubscriptionPlan.name, for FIXED_PRICE coupons.
+  planPrices     Json?
   durationMonths Int
   description    String?  @db.Text
   active         Boolean  @default(true)

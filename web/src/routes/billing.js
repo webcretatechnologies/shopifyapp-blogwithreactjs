@@ -529,7 +529,9 @@ router.post("/request", async (req, res) => {
                       durationLimitInIntervals: couponDurationInIntervals,
                       value: appliedCoupon.discountType === "PERCENTAGE"
                         ? { percentage: appliedCoupon.percentOff / 100 }
-                        : { amount: appliedCoupon.amountOff },
+                        : { amount: appliedCoupon.discountType === "FIXED_PRICE"
+                          ? Math.round((parseFloat(dbPlan.price) - applyCouponDiscount(parseFloat(dbPlan.price), appliedCoupon, dbPlan.name)) * 100) / 100
+                          : appliedCoupon.amountOff },
                     },
                   }
                 : {}),
@@ -552,7 +554,7 @@ router.post("/request", async (req, res) => {
     // panel's usage counts, not something the charge itself depends on).
     const shopifyChargeId = data?.appSubscription?.id;
     if (appliedCoupon && shopifyChargeId) {
-      const discountedPrice = applyCouponDiscount(parseFloat(dbPlan.price), appliedCoupon);
+      const discountedPrice = applyCouponDiscount(parseFloat(dbPlan.price), appliedCoupon, dbPlan.name);
       await prisma.couponClaim.create({
         data: {
           couponId: appliedCoupon.id,

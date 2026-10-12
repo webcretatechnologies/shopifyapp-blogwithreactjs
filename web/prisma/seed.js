@@ -13,10 +13,15 @@
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
-import {
-  upsertPlanFeaturesFromDefaults,
-  refreshPlanFeaturesCache,
-} from "../src/services/PlanFeatureService.js";
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+
+// `node prisma/seed.js` bypasses Prisma CLI's root-env injection. Load the app's
+// repository-root .env before dynamically importing services that initialise Prisma.
+dotenv.config({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
+
+let upsertPlanFeaturesFromDefaults;
+let refreshPlanFeaturesCache;
 
 const prisma = new PrismaClient();
 
@@ -149,6 +154,20 @@ async function seedAiCreditPacks() {
   );
 }
 
+async function seedFirst50Coupon() {
+  const coupon = await prisma.coupon.upsert({
+    where: { code: "FIRST50" },
+    update: {},
+    create: {
+      code: "FIRST50", discountType: "FIXED_PRICE", planPrices: { "Starter Plan": 9.99, "Pro Plan": 19.99 },
+      durationMonths: 1, description: "Early access offer — save on your first month. Limited to the first 50 stores. Renews at the regular monthly price after the offer.",
+      totalUses: 50, usesPerStore: 1, appliesTo: "SPECIFIC_PLANS", active: true,
+    },
+  });
+  const plans = await prisma.subscriptionPlan.findMany({ where: { name: { in: ["Starter Plan", "Pro Plan"] } }, select: { id: true } });
+  await prisma.couponPlan.createMany({ data: plans.map((plan) => ({ couponId: coupon.id, planId: plan.id })), skipDuplicates: true });
+}
+
 async function seedPlanFeatures() {
   // Creates any missing PlanFeature row and re-applies the keys whose tier placement changed in
   // code. The app also does this on boot, but doing it here means a fresh DB is fully configured
@@ -181,8 +200,10 @@ async function seedSuperAdmin() {
 }
 
 async function main() {
+  ({ upsertPlanFeaturesFromDefaults, refreshPlanFeaturesCache } = await import("../src/services/PlanFeatureService.js"));
   console.log(`Seeding default data${FORCE ? " (--force: existing rows will be overwritten)" : ""}...`);
   await seedSubscriptionPlans();
+  await seedFirst50Coupon();
   await seedPlanFeatures();
   await seedAiCreditPacks();
   await seedSuperAdmin();

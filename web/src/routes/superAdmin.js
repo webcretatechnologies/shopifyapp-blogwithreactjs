@@ -1109,7 +1109,8 @@ function validateCouponPayload(body) {
   if (!code || !COUPON_CODE_RE.test(code)) {
     return { error: "Code must be uppercase letters, numbers, underscores, or hyphens only." };
   }
-  const discountType = body.discountType === "FIXED_AMOUNT" ? "FIXED_AMOUNT" : "PERCENTAGE";
+  const discountType = ["PERCENTAGE", "FIXED_AMOUNT", "FIXED_PRICE"].includes(body.discountType)
+    ? body.discountType : "PERCENTAGE";
   const percentOff = discountType === "PERCENTAGE" ? parseFloat(body.percentOff) : null;
   const amountOff = discountType === "FIXED_AMOUNT" ? parseFloat(body.amountOff) : null;
   // Capped at 99%, not 100 — a 100%-off coupon produces a $0 subscription line item, which
@@ -1137,6 +1138,7 @@ function validateCouponPayload(body) {
       discountType,
       percentOff,
       amountOff,
+      planPrices: discountType === "FIXED_PRICE" && body.planPrices && typeof body.planPrices === "object" ? body.planPrices : null,
       durationMonths,
       description: body.description || null,
       active: body.active !== undefined ? Boolean(body.active) : true,
@@ -1162,6 +1164,15 @@ function validateCouponPayload(body) {
 // SPECIFIC_STORES (a store-scoped coupon can still match any paid plan the merchant picks).
 // Percentage coupons are never checked here — they're already capped at 99% above.
 async function validateCouponAmountAgainstPlans(data, planIds) {
+  if (data.discountType === "FIXED_PRICE") {
+    if (data.appliesTo !== "SPECIFIC_PLANS" || planIds.length === 0) return "Plan-specific prices require selected plans.";
+    const plans = await prisma.subscriptionPlan.findMany({ where: { id: { in: planIds } } });
+    for (const plan of plans) {
+      const target = Number(data.planPrices?.[plan.name]);
+      if (!(target > 0) || target >= Number(plan.price)) return `Enter a promotional price below the regular price for ${plan.name}.`;
+    }
+    return null;
+  }
   if (data.discountType !== "FIXED_AMOUNT") return null;
 
   const applicablePlans = data.appliesTo === "SPECIFIC_PLANS" && planIds.length > 0

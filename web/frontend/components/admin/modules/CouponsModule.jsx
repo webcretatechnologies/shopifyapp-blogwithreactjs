@@ -13,12 +13,13 @@ import { downloadAdminFile } from "../../../utils/adminApi";
 const DownloadIcon = (props) => <Download size={16} {...props} />;
 
 const BLANK_COUPON = {
-  code: "", discountType: "PERCENTAGE", percentOff: "10", amountOff: "",
+  code: "", discountType: "PERCENTAGE", percentOff: "10", amountOff: "", planPrices: {},
   durationMonths: "1", description: "", active: true, startsAt: "", endsAt: "",
   totalUses: "", usesPerStore: "1", appliesTo: "ALL_PAID_PLANS", planIds: [], shopDomains: [],
 };
 
 function couponDiscountLabel(coupon) {
+  if (coupon.discountType === "FIXED_PRICE") return "Plan-specific price";
   return coupon.discountType === "PERCENTAGE"
     ? `${Number(coupon.percentOff)}% off`
     : `$${Number(coupon.amountOff).toFixed(2)} off`;
@@ -165,6 +166,7 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
       discountType: coupon.discountType,
       percentOff: coupon.percentOff !== null ? String(coupon.percentOff) : "",
       amountOff: coupon.amountOff !== null ? String(coupon.amountOff) : "",
+      planPrices: coupon.planPrices || {},
       durationMonths: String(coupon.durationMonths),
       description: coupon.description || "",
       active: coupon.active,
@@ -411,6 +413,7 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
                     options={[
                       { label: "Percentage (%)", value: "PERCENTAGE" },
                       { label: "Fixed amount ($)", value: "FIXED_AMOUNT" },
+                      { label: "Fixed price by plan", value: "FIXED_PRICE" },
                     ]}
                     helpText="Percentage scales with the plan price. Fixed amount takes a flat sum off every billing cycle."
                   />
@@ -425,7 +428,7 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
                       autoComplete="off"
                       helpText="Capped at 99% — Shopify rejects a $0 subscription."
                     />
-                  ) : (
+                  ) : editingCoupon.discountType === "FIXED_AMOUNT" ? (
                     <TextField
                       label="Value"
                       value={editingCoupon.amountOff}
@@ -435,7 +438,7 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
                       autoComplete="off"
                       helpText="Amount off each billing cycle, in the plan's own currency."
                     />
-                  )}
+                  ) : <Text as="p" tone="subdued" variant="bodySm">Choose specific plans below, then enter each plan’s exact promotional price.</Text>}
                 </FormLayout.Group>
                 <FormLayout.Group>
                   <TextField
@@ -570,6 +573,11 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
                             </Text>
                           </BlockStack>
                         </InlineStack>
+                        {editingCoupon.discountType === "FIXED_PRICE" && checked && (
+                          <div onClick={(event) => event.stopPropagation()} style={{ marginTop: 10 }}>
+                            <TextField label="Promotional price" value={String(editingCoupon.planPrices?.[p.name] ?? "")} onChange={(value) => setEditingCoupon((current) => ({ ...current, planPrices: { ...(current.planPrices || {}), [p.name]: value } }))} type="number" prefix="$" autoComplete="off" />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
