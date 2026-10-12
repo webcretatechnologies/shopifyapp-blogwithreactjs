@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Card, Box, Text, BlockStack, InlineStack, Banner, Divider, Button, Checkbox } from "@shopify/polaris";
+import { Card, Box, Text, BlockStack, InlineStack, Banner, Divider, Button, Checkbox, Icon } from "@shopify/polaris";
+import { AlertTriangleIcon } from "@shopify/polaris-icons";
 import ConfirmActionModal from "../../ConfirmActionModal";
 import PlanCard from "../PlanCard";
 import EditPlanCoreModal from "../EditPlanCoreModal";
@@ -151,12 +152,34 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
   return (
     <BlockStack gap="500">
       <Card>
-        <Box padding="500"><BlockStack gap="300">
-          <Text variant="headingMd" as="h3">Shopify billing modes</Text>
-          <Banner tone="warning"><Text as="p" variant="bodySm">Test mode creates Shopify test charges. Turn it off only when you are ready to collect real money.</Text></Banner>
-          <Checkbox label="Subscription billing test mode" helpText="Starter and Pro recurring subscriptions" checked={billingModes.subscriptionTestMode} onChange={(value) => changeBillingMode("subscriptionTestMode", value)} />
-          <Checkbox label="One-time AI credit pack test mode" helpText="One-time AI credit pack purchases" checked={billingModes.oneTimeTestMode} onChange={(value) => changeBillingMode("oneTimeTestMode", value)} />
-        </BlockStack></Box>
+        <Box padding="500">
+          <BlockStack gap="300">
+            <Text variant="headingMd" as="h3">Shopify billing modes</Text>
+            <div
+              role="alert"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                padding: "10px 12px",
+                borderRadius: "var(--p-border-radius-200)",
+                // Match the warning surface used by the Coupon module's availability notice.
+                background: "#fff1e5",
+              }}
+            >
+              <div style={{ display: "flex", flex: "0 0 auto", alignItems: "center" }}>
+                <Icon source={AlertTriangleIcon} tone="caution" />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <Text as="p" variant="bodySm">
+                  Test mode creates Shopify test charges. Turn it off only when you are ready to collect real money.
+                </Text>
+              </div>
+            </div>
+            <Checkbox label="Subscription billing test mode" helpText="Starter and Pro recurring subscriptions" checked={billingModes.subscriptionTestMode} onChange={(value) => changeBillingMode("subscriptionTestMode", value)} />
+            <Checkbox label="One-time AI credit pack test mode" helpText="One-time AI credit pack purchases" checked={billingModes.oneTimeTestMode} onChange={(value) => changeBillingMode("oneTimeTestMode", value)} />
+          </BlockStack>
+        </Box>
       </Card>
       <Card>
         <Box padding="500">
