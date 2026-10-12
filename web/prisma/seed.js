@@ -104,9 +104,9 @@ const SUBSCRIPTION_PLANS = [
 // Mirrors the defaults the AiCreditPack migration inserts. Repeated here so a database that was
 // created by `prisma db push` (or one where the packs were deleted) still ends up with them.
 const AI_CREDIT_PACKS = [
-  { key: "small", credits: 10, price: 4.99, currency: "USD", isActive: true, isRecommended: false, sortOrder: 1 },
-  { key: "medium", credits: 25, price: 9.99, currency: "USD", isActive: true, isRecommended: false, sortOrder: 2 },
-  { key: "large", credits: 60, price: 19.99, currency: "USD", isActive: true, isRecommended: true, sortOrder: 3 },
+  { key: "small", credits: 5, price: 4.99, currency: "USD", isActive: true, isRecommended: false, sortOrder: 1 },
+  { key: "medium", credits: 20, price: 9.99, currency: "USD", isActive: true, isRecommended: false, sortOrder: 2 },
+  { key: "large", credits: 50, price: 19.99, currency: "USD", isActive: true, isRecommended: true, sortOrder: 3 },
 ];
 
 async function seedSubscriptionPlans() {

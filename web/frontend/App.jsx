@@ -23,11 +23,11 @@ export default function App() {
               <a href="/dashboard" rel="home" />
               <a href="/posts">{t("Navigation.managePosts")}</a>
               <a href="/categories">Categories</a>
+              <a href="/analytics">Analytics</a>
               <a href="/posts/import">Import</a>
               <a href="/templates">Blog templates</a>
               <a href="/sync">Sync status</a>
               <a href="/comments">Comments</a>
-              <a href="/analytics">Analytics</a>
               <a href="/plans">{t("Navigation.pricingPlans")}</a>
               <a href="/settings">{t("Navigation.settings")}</a>
             </NavMenu>

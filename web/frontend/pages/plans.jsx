@@ -37,9 +37,9 @@ function couponDurationLabel(durationMonths, interval) {
   return `Applies to your first ${yearlyCycles} yearly billing ${yearlyCycles === 1 ? "cycle" : "cycles"}.`;
 }
 
-// One-time AI credit purchases remain available in the backend for existing purchase/webhook
-// flows, but are intentionally not marketed from the merchant billing screen.
-const SHOW_ONE_TIME_AI_CREDIT_PACKS = false;
+// One-time AI credit packs are approved through Shopify before they are added to the merchant's
+// balance; the UI only starts the purchase and never credits optimistically.
+const SHOW_ONE_TIME_AI_CREDIT_PACKS = true;
 
 // Returns null (not a clamped near-zero number) when a fixed-amount coupon is too large for this
 // specific plan's price — Shopify's own appSubscriptionCreate rejects discount.value.amount >=
