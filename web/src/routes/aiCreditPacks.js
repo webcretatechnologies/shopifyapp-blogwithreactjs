@@ -94,8 +94,16 @@ router.get("/latest-purchase", async (req, res) => {
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
     await reconcilePendingPurchases(session, shop);
 
+    // Prisma's local primary key is an Int, while URL query values are always strings.
+    // Convert only a valid positive integer; otherwise retain the safe latest-purchase fallback.
+    const requestedPurchaseId = typeof req.query.purchaseId === "string"
+      ? Number.parseInt(req.query.purchaseId, 10)
+      : null;
+    const purchaseId = Number.isSafeInteger(requestedPurchaseId) && requestedPurchaseId > 0
+      ? requestedPurchaseId
+      : null;
     const purchase = await prisma.aiCreditPurchase.findFirst({
-      where: { shopId: shop.id },
+      where: { shopId: shop.id, ...(purchaseId ? { id: purchaseId } : {}) },
       orderBy: { createdAt: "desc" },
     });
     if (!purchase) return res.json({ purchase: null });
@@ -180,7 +188,7 @@ router.post("/purchase", async (req, res) => {
     // Recorded PENDING now, credited only once app_purchases_one_time/update confirms ACTIVE
     // (see index.js's webhook handler) — never optimistically here, since the merchant hasn't
     // actually approved the charge on Shopify's screen yet.
-    await prisma.aiCreditPurchase.create({
+    const purchase = await prisma.aiCreditPurchase.create({
       data: {
         shopId: shop.id,
         packKey: pack.key,
@@ -193,7 +201,9 @@ router.post("/purchase", async (req, res) => {
       },
     });
 
-    res.status(200).json({ confirmationUrl: data.confirmationUrl });
+    // The browser stores this id before leaving for Shopify. It lets the return screen reconcile
+    // this exact charge rather than accidentally reporting an older successful pack purchase.
+    res.status(200).json({ confirmationUrl: data.confirmationUrl, purchaseId: purchase.id });
   } catch (error) {
     console.error("Failed to start AI credit pack purchase:", error);
     res.status(500).json({ error: "Failed to start purchase" });

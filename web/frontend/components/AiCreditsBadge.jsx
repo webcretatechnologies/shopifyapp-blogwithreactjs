@@ -10,6 +10,28 @@ function money(value, currency = "USD") {
   }
 }
 
+const PENDING_AI_CREDIT_PURCHASE_KEY = "blogger_pending_ai_credit_purchase";
+
+function getPendingPurchase() {
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_AI_CREDIT_PURCHASE_KEY);
+    if (!raw) return null;
+    const pending = JSON.parse(raw);
+    // Do not repeatedly revive a stale browser session weeks after a merchant abandoned a charge.
+    return pending?.startedAt && Date.now() - pending.startedAt < 30 * 60 * 1000 ? pending : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingPurchase() {
+  try {
+    window.sessionStorage.removeItem(PENDING_AI_CREDIT_PURCHASE_KEY);
+  } catch {
+    // Session storage is only a return-flow convenience; never block the purchase UI for it.
+  }
+}
+
 /** Shared balance chip and fast path for buying one-time AI credit packs. */
 export default function AiCreditsBadge() {
   const location = useLocation();
@@ -46,24 +68,40 @@ export default function AiCreditsBadge() {
   // Shopify's confirmation returns with this flag. Reconcile the real charge before reporting
   // success: returning from the confirmation page alone does not prove it was approved.
   useEffect(() => {
-    if (new URLSearchParams(location.search).get("credits_purchased") !== "1") return undefined;
+    const hasReturnFlag = new URLSearchParams(location.search).get("credits_purchased") === "1";
+    const pendingPurchase = getPendingPurchase();
+    if (!hasReturnFlag && !pendingPurchase) return undefined;
+
+    // Some live Shopify admin return flows normalize the callback URL and discard custom query
+    // parameters. Session storage still survives that top-level navigation, so restore the page
+    // the merchant started from before showing their purchase result.
+    if (pendingPurchase?.returnPath && pendingPurchase.returnPath !== location.pathname) {
+      navigate({ pathname: pendingPurchase.returnPath }, { replace: true });
+      return undefined;
+    }
 
     // Do not remove the flag yet. Updating the route immediately unmounts this effect and marks
     // its in-flight reconciliation request as cancelled before it can show a result.
     const clearPurchaseReturnFlag = () => {
-      const next = new URLSearchParams(location.search);
-      next.delete("credits_purchased");
-      navigate(
-        { pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : "" },
-        { replace: true },
-      );
+      if (hasReturnFlag) {
+        const next = new URLSearchParams(location.search);
+        next.delete("credits_purchased");
+        navigate(
+          { pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : "" },
+          { replace: true },
+        );
+      }
+      clearPendingPurchase();
     };
 
     let cancelled = false;
     let timeout;
     const checkOutcome = async (attempt = 0) => {
       try {
-        const response = await fetch("/api/ai/credit-packs/latest-purchase");
+        const purchaseQuery = pendingPurchase?.purchaseId
+          ? `?purchaseId=${encodeURIComponent(pendingPurchase.purchaseId)}`
+          : "";
+        const response = await fetch(`/api/ai/credit-packs/latest-purchase${purchaseQuery}`);
         const data = await response.json();
         const purchase = data.purchase;
         if (cancelled) return;
@@ -131,6 +169,15 @@ export default function AiCreditsBadge() {
       });
       const data = await response.json();
       if (!response.ok || !data.confirmationUrl) throw new Error(data.error || "Failed to start purchase.");
+      try {
+        window.sessionStorage.setItem(PENDING_AI_CREDIT_PURCHASE_KEY, JSON.stringify({
+          purchaseId: data.purchaseId,
+          returnPath,
+          startedAt: Date.now(),
+        }));
+      } catch {
+        // The URL callback remains the fallback if browser storage is unavailable.
+      }
       window.open(data.confirmationUrl, "_top");
     } catch (error) {
       setPurchaseError(error.message || "Failed to start purchase.");

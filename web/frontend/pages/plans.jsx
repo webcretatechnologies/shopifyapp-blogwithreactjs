@@ -176,6 +176,15 @@ export default function Plans() {
       });
       const data = await res.json();
       if (res.ok && data.confirmationUrl) {
+        try {
+          window.sessionStorage.setItem("blogger_pending_ai_credit_purchase", JSON.stringify({
+            purchaseId: data.purchaseId,
+            returnPath: window.location.pathname,
+            startedAt: Date.now(),
+          }));
+        } catch {
+          // The server return URL remains available if storage is unavailable.
+        }
         window.open(data.confirmationUrl, "_top");
       } else {
         setError(data.error || "Failed to start purchase.");
