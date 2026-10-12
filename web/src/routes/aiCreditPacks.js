@@ -30,6 +30,27 @@ async function reconcilePendingPurchases(session, shop) {
   }
 }
 
+// Shopify redirects back to this URL after the merchant has dealt with its approval screen.
+// Keep that redirect inside our embedded app: accepting an arbitrary URL here would create an
+// open-redirect endpoint and could send a merchant away from Shopify altogether.
+function safeReturnPath(value) {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return "/plans";
+  }
+
+  try {
+    const parsed = new URL(value, "https://embedded-app.invalid");
+    // These are assigned by the purchase endpoint below. Removing them here prevents a client
+    // from accidentally inflating the URL by passing the embedded `host` token twice.
+    parsed.searchParams.delete("host");
+    parsed.searchParams.delete("shop");
+    parsed.searchParams.delete("credits_purchased");
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return "/plans";
+  }
+}
+
 // ─── GET /api/ai/credit-packs — pack options plus the shop's own current balance ──
 router.get("/", async (req, res) => {
   try {
@@ -61,8 +82,8 @@ router.get("/", async (req, res) => {
 });
 
 // ─── GET /api/ai/credit-packs/latest-purchase — status of the shop's most recent purchase ──
-// Polled by plans.jsx right after the merchant is redirected back from Shopify's own approval
-// screen (?credits_purchased=1), so the success/error toast reflects what Shopify's
+// Polled by the shared AI-credit badge right after the merchant is redirected back from Shopify's
+// own approval screen (?credits_purchased=1), so the success/error notification reflects what Shopify's
 // app_purchases_one_time/update webhook actually confirmed (PENDING -> APPROVED, or -> DECLINED/
 // CANCELLED/EXPIRED if the merchant backed out) instead of a static "thanks" shown regardless of
 // outcome, or shown before the webhook has even landed.
@@ -100,7 +121,7 @@ router.post("/purchase", async (req, res) => {
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
 
-    const { packKey, host } = req.body || {};
+    const { packKey, host, returnPath } = req.body || {};
     const pack = await getActiveAiCreditPack(packKey);
     if (!pack) {
       return res.status(400).json({ error: "Invalid credit pack selected" });
@@ -118,12 +139,13 @@ router.post("/purchase", async (req, res) => {
     // moves).
     const isTestMode = await isBillingTestMode("oneTime");
 
-    // Lands back on the Plans & Billing page with a `credits_purchased=1` flag, mirroring
-    // billing.js's `subscribed=1` — plans.jsx uses it to show a real confirmation toast once the
-    // merchant returns from Shopify's own approval screen, rather than just landing them back
-    // on the page with no acknowledgement that anything happened.
-    let returnUrl = `https://${shopify.api.config.hostName}/plans?shop=${session.shop}&credits_purchased=1`;
-    if (host) returnUrl += `&host=${encodeURIComponent(host)}`;
+    // Send the merchant back to the screen from which they opened the credit picker. The shared
+    // badge consumes `credits_purchased=1`, reconciles the Shopify charge, and displays the
+    // outcome there instead of forcing the merchant through Plans & Billing.
+    const returnUrl = new URL(safeReturnPath(returnPath), `https://${shopify.api.config.hostName}`);
+    returnUrl.searchParams.set("shop", session.shop);
+    returnUrl.searchParams.set("credits_purchased", "1");
+    if (typeof host === "string" && host) returnUrl.searchParams.set("host", host);
 
     const client = new shopify.api.clients.Graphql({ session });
     const mutation = `
@@ -138,7 +160,7 @@ router.post("/purchase", async (req, res) => {
     const variables = {
       name: `${pack.credits} AI Credits`,
       price: { amount: packPrice, currencyCode: pack.currency || "USD" },
-      returnUrl,
+      returnUrl: returnUrl.toString(),
       test: isTestMode,
     };
 
