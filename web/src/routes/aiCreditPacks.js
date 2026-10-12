@@ -1,6 +1,7 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
 import { listActiveAiCreditPacks, getActiveAiCreditPack } from "../services/AiCreditPackService.js";
+import { reconcilePendingAiCreditPurchases } from "../services/AiCreditPurchaseService.js";
 import { getAiCreditLimit, getAiCreditStatus, refreshAiCreditPeriod } from "../services/PlanFeatureService.js";
 
 const router = express.Router();
@@ -12,14 +13,34 @@ async function getShopFromSession(res) {
   return refreshAiCreditPeriod(shop, prisma);
 }
 
+async function reconcilePendingPurchases(session, shop) {
+  if (!session || !shop) return;
+  try {
+    const graphqlClient = new shopify.api.clients.Graphql({ session });
+    await reconcilePendingAiCreditPurchases({
+      prisma,
+      graphqlClient,
+      shopId: shop.id,
+    });
+  } catch (error) {
+    // Webhook delivery remains the fast path. A temporary reconciliation failure should not make
+    // the billing page unavailable; the next page load/poll will try again.
+    console.warn("Failed to reconcile pending AI credit purchases:", error.message);
+  }
+}
+
 // ─── GET /api/ai/credit-packs — pack options plus the shop's own current balance ──
 router.get("/", async (req, res) => {
   try {
-    const shop = await getShopFromSession(res);
+    const session = res.locals.shopify?.session;
+    let shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
+    await reconcilePendingPurchases(session, shop);
+    // Reconciliation may have just incremented the purchased balance.
+    shop = await prisma.shop.findUnique({ where: { id: shop.id } });
 
     const packs = await listActiveAiCreditPacks();
-    const status = getAiCreditStatus(shop.planKey, shop.aiCreditsUsed || 0, shop.aiCreditsPurchased || 0, shop.aiCreditsPurchasedUsed || 0);
+    const status = getAiCreditStatus(shop.planKey, shop.aiCreditsUsed || 0, shop.aiCreditsPurchased || 0, shop.aiCreditsPurchasedUsed || 0, shop.freeAiCreditsUsed || 0);
     res.json({
       // Decimal -> Number so the frontend gets a plain number to call .toFixed on, not a Prisma
       // Decimal object that would serialize to a string.
@@ -46,8 +67,10 @@ router.get("/", async (req, res) => {
 // outcome, or shown before the webhook has even landed.
 router.get("/latest-purchase", async (req, res) => {
   try {
+    const session = res.locals.shopify?.session;
     const shop = await getShopFromSession(res);
     if (!shop) return res.status(401).json({ error: "Unauthorized" });
+    await reconcilePendingPurchases(session, shop);
 
     const purchase = await prisma.aiCreditPurchase.findFirst({
       where: { shopId: shop.id },

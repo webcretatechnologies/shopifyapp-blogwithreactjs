@@ -37,7 +37,7 @@ const PLAN_DEFAULTS = {
     hero: { enabled: true, limit: null },
     announcement: { enabled: true, limit: null },
     custom_css: { enabled: false, limit: null },
-    article_limit: { enabled: true, limit: 5 },
+    article_limit: { enabled: true, limit: 2 },
     toc: { enabled: false, limit: null },
     clone_article: { enabled: false, limit: null },
     post_scheduling: { enabled: false, limit: null },
@@ -56,8 +56,8 @@ const PLAN_DEFAULTS = {
     analytics_dashboard: { enabled: true, limit: null },
     analytics_advanced: { enabled: false, limit: null },
     templates_premium: { enabled: true, limit: null },
-    template_limit: { enabled: true, limit: 2 },
-    ai_credits: { enabled: true, limit: 3 },
+    template_limit: { enabled: true, limit: 1 },
+    ai_credits: { enabled: true, limit: 2 },
     custom_code_injection: { enabled: false, limit: null },
   },
   starter: {
@@ -83,7 +83,7 @@ const PLAN_DEFAULTS = {
     hero: { enabled: true, limit: null },
     announcement: { enabled: true, limit: null },
     custom_css: { enabled: true, limit: null },
-    article_limit: { enabled: true, limit: 20 },
+    article_limit: { enabled: true, limit: 30 },
     toc: { enabled: true, limit: null },
     clone_article: { enabled: true, limit: null },
     post_scheduling: { enabled: false, limit: null },
@@ -102,8 +102,8 @@ const PLAN_DEFAULTS = {
     analytics_dashboard: { enabled: true, limit: null },
     analytics_advanced: { enabled: false, limit: null },
     templates_premium: { enabled: true, limit: null },
-    template_limit: { enabled: true, limit: 5 },
-    ai_credits: { enabled: true, limit: 25 },
+    template_limit: { enabled: true, limit: 10 },
+    ai_credits: { enabled: true, limit: 15 },
     custom_code_injection: { enabled: false, limit: null },
   },
   pro: {
@@ -149,7 +149,7 @@ const PLAN_DEFAULTS = {
     analytics_advanced: { enabled: true, limit: null },
     templates_premium: { enabled: true, limit: null },
     template_limit: { enabled: true, limit: null },
-    ai_credits: { enabled: true, limit: 60 },
+    ai_credits: { enabled: true, limit: 40 },
     custom_code_injection: { enabled: true, limit: null },
   },
   business: {
@@ -335,30 +335,114 @@ export function getAiCreditLimit(planKey) {
   return getFeatureLimit(planKey, "ai_credits");
 }
 
+function validDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Move to the next calendar-month boundary without Date#setMonth's Jan 31 -> Mar 3 rollover. */
+function nextCalendarMonth(date, anchorDay = date.getUTCDate()) {
+  const next = new Date(date);
+  next.setUTCDate(1);
+  next.setUTCMonth(next.getUTCMonth() + 1);
+  const lastDay = new Date(Date.UTC(
+    next.getUTCFullYear(),
+    next.getUTCMonth() + 1,
+    0,
+    next.getUTCHours(),
+    next.getUTCMinutes(),
+    next.getUTCSeconds(),
+    next.getUTCMilliseconds(),
+  )).getUTCDate();
+  next.setUTCDate(Math.min(anchorDay, lastDay));
+  return next;
+}
+
+function calculateAiCreditRollover(shop, now, billingPeriodEnd = null) {
+  const planKey = shop.planKey || "free";
+  const startedAt = validDate(shop.aiCreditPeriodStartedAt);
+  const storedEnd = validDate(shop.aiCreditPeriodEndsAt);
+  const suppliedEnd = validDate(billingPeriodEnd);
+  const planChanged = shop.aiCreditPeriodPlanKey !== planKey;
+
+  // A subscription renewal date is useful only when it is the next monthly boundary. Annual
+  // subscription renewals must never turn the monthly credit allowance into a yearly allowance.
+  const suppliedMonthlyEnd = suppliedEnd && suppliedEnd > now &&
+    suppliedEnd.getTime() - now.getTime() <= 35 * 24 * 60 * 60 * 1000
+    ? suppliedEnd
+    : null;
+
+  if (planChanged || !startedAt) {
+    return {
+      shouldReset: true,
+      periodStartedAt: now,
+      periodEndsAt: suppliedMonthlyEnd || nextCalendarMonth(now),
+    };
+  }
+
+  let periodEnd = storedEnd || suppliedMonthlyEnd || nextCalendarMonth(startedAt);
+  if (periodEnd > now) return { shouldReset: false };
+
+  const anchorDay = startedAt.getUTCDate();
+  let periodStart = periodEnd;
+  do {
+    periodStart = periodEnd;
+    periodEnd = nextCalendarMonth(periodEnd, anchorDay);
+  } while (periodEnd <= now);
+
+  return { shouldReset: true, periodStartedAt: periodStart, periodEndsAt: periodEnd };
+}
+
 /** Refresh paid plan-funded allowances once per calendar month. Free-plan credits and one-time
  * purchased credits never expire here. aiCreditsUsed retains aiCreditsPurchasedUsed as its
- * baseline so the existing two-pool calculation still reports zero plan usage after a reset. */
-export async function refreshAiCreditPeriod(shop, prismaClient) {
+ * baseline so the existing two-pool calculation still reports zero plan usage after a reset.
+ *
+ * The compare-and-set guards make rollover safe when several app requests arrive together at a
+ * boundary: only the first request that still sees the old period/counters can reset them. */
+export async function refreshAiCreditPeriod(shop, prismaClient, billingPeriodEnd = null, attempt = 0) {
   if (!shop) return shop;
   const planKey = shop.planKey || "free";
   // Free includes a small, lifetime credit allowance. Only paid subscription tiers replenish.
   if (resolvePlanBucket(planKey) === "free") return shop;
 
   const now = new Date();
-  const startedAt = shop.aiCreditPeriodStartedAt ? new Date(shop.aiCreditPeriodStartedAt) : null;
-  const nextReset = startedAt ? new Date(startedAt) : null;
-  if (nextReset) nextReset.setMonth(nextReset.getMonth() + 1);
-  const needsReset = shop.aiCreditPeriodPlanKey !== planKey || !nextReset || nextReset <= now;
-  if (!needsReset) return shop;
+  const rollover = calculateAiCreditRollover(shop, now, billingPeriodEnd);
+  if (!rollover.shouldReset) return shop;
 
-  return prismaClient.shop.update({
-    where: { id: shop.id },
+  const { count } = await prismaClient.shop.updateMany({
+    where: {
+      id: shop.id,
+      planKey: shop.planKey,
+      aiCreditsUsed: shop.aiCreditsUsed || 0,
+      aiCreditsPurchasedUsed: shop.aiCreditsPurchasedUsed || 0,
+      aiCreditPeriodStartedAt: shop.aiCreditPeriodStartedAt || null,
+      aiCreditPeriodEndsAt: shop.aiCreditPeriodEndsAt || null,
+      aiCreditPeriodPlanKey: shop.aiCreditPeriodPlanKey || null,
+    },
     data: {
       aiCreditsUsed: shop.aiCreditsPurchasedUsed || 0,
-      aiCreditPeriodStartedAt: now,
+      aiCreditPeriodStartedAt: rollover.periodStartedAt,
+      aiCreditPeriodEndsAt: rollover.periodEndsAt,
       aiCreditPeriodPlanKey: planKey,
     },
   });
+
+  if (count === 1) {
+    return {
+      ...shop,
+      aiCreditsUsed: shop.aiCreditsPurchasedUsed || 0,
+      aiCreditPeriodStartedAt: rollover.periodStartedAt,
+      aiCreditPeriodEndsAt: rollover.periodEndsAt,
+      aiCreditPeriodPlanKey: planKey,
+    };
+  }
+
+  // Another request changed the counters or completed the rollover first. Re-read rather than
+  // overwriting its work; bound the retries so a very busy shop can never spin indefinitely.
+  const current = await prismaClient.shop.findUnique({ where: { id: shop.id } });
+  if (!current || attempt >= 2) return current || shop;
+  return refreshAiCreditPeriod(current, prismaClient, billingPeriodEnd, attempt + 1);
 }
 
 /**
@@ -381,7 +465,7 @@ export async function refreshAiCreditPeriod(shop, prismaClient) {
  * `effectiveLimit - remaining` instead, so it's always <= effectiveLimit and matches what's
  * actually true (a normal shop with no downgrade quirk sees meterUsed === aiCreditsUsed exactly).
  */
-export function getAiCreditStatus(planKey, aiCreditsUsed = 0, aiCreditsPurchased = 0, aiCreditsPurchasedUsed = 0) {
+export function getAiCreditStatus(planKey, aiCreditsUsed = 0, aiCreditsPurchased = 0, aiCreditsPurchasedUsed = 0, freeAiCreditsUsed = 0) {
   const planLimit = getAiCreditLimit(planKey);
   const purchased = Math.max(0, aiCreditsPurchased || 0);
   const purchasedUsed = Math.max(0, aiCreditsPurchasedUsed || 0);
@@ -401,7 +485,9 @@ export function getAiCreditStatus(planKey, aiCreditsUsed = 0, aiCreditsPurchased
     };
   }
 
-  const planCreditsUsed = Math.max(0, (aiCreditsUsed || 0) - purchasedUsed);
+  const planCreditsUsed = resolvePlanBucket(planKey) === "free"
+    ? Math.max(0, freeAiCreditsUsed || 0)
+    : Math.max(0, (aiCreditsUsed || 0) - purchasedUsed);
   const planRemaining = Math.max(0, planLimit - planCreditsUsed);
   const remaining = planRemaining + purchasedRemaining;
   const effectiveLimit = planLimit + purchased;
@@ -450,8 +536,8 @@ function resolvePlanBucket(planKey) {
 // The article-count bullet is handled separately per tier (own wording, own live limit) since
 // it's numeric and always present, never a moving boolean.
 const ARTICLE_LIMIT_RENDER = {
-  free: (f) => `Up to ${f.article_limit?.limit ?? 5} Articles`,
-  starter: (f) => `Up to ${f.article_limit?.limit ?? 20} Articles`,
+  free: (f) => `Up to ${f.article_limit?.limit ?? 2} Articles`,
+  starter: (f) => `Up to ${f.article_limit?.limit ?? 30} Articles`,
   pro: () => "Unlimited Articles",
 };
 ARTICLE_LIMIT_RENDER.business = ARTICLE_LIMIT_RENDER.pro;
@@ -477,7 +563,7 @@ const MASTER_BULLETS = [
   { label: "SEO Meta (basic)", keys: [] },
   { label: "Author", keys: [] },
   { label: "Blog Management", keys: [] },
-  { label: "Blog Templates", keys: [] },
+  { label: "21+ Blog Templates", keys: [] },
   { label: "Sync Theme Colors", keys: ["theme_style_sync"] },
   { label: "Blog Comments", keys: [] },
   { label: "Import Shopify Blogs", keys: [] },

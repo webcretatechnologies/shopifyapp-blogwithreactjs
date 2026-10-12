@@ -36,7 +36,10 @@ model Shop {
   /** AI generations consumed in the current plan-credit period, plus already-consumed
       purchased credits. The plan portion resets every month. */
   aiCreditsUsed Int           @default(0)
+  /// Free-plan AI usage is lifetime and must not be erased by a later paid-plan reset.
+  freeAiCreditsUsed Int       @default(0)
   aiCreditPeriodStartedAt DateTime?
+  aiCreditPeriodEndsAt DateTime?
   aiCreditPeriodPlanKey String?
   /** Lifetime total AI generations bought via one-time AppPurchaseOneTime credit packs. Only ever
       incremented by the app_purchases_one_time/update webhook once Shopify confirms the charge

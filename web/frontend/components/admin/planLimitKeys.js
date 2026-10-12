@@ -42,7 +42,7 @@ export const TIER_BULLETS = {
     { label: "SEO Meta (basic)", keys: [] },
     { label: "Author", keys: [] },
     { label: "Blog Management", keys: [] },
-    { label: "Blog Templates", keys: [] },
+    { label: "21+ Blog Templates", keys: [] },
     { label: "Sync Theme Colors", keys: ["theme_style_sync"] },
     { label: "Blog Comments", keys: [] },
     { label: "Import Shopify Blogs", keys: [] },

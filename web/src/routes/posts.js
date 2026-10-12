@@ -1054,7 +1054,7 @@ router.get("/meta/dashboard-extras", async (req, res) => {
       : [];
     const postTitleById = Object.fromEntries(relatedPosts.map((p) => [p.id, p.title]));
 
-    const aiCreditStatus = getAiCreditStatus(shop.planKey, shop.aiCreditsUsed || 0, shop.aiCreditsPurchased || 0, shop.aiCreditsPurchasedUsed || 0);
+    const aiCreditStatus = getAiCreditStatus(shop.planKey, shop.aiCreditsUsed || 0, shop.aiCreditsPurchased || 0, shop.aiCreditsPurchasedUsed || 0, shop.freeAiCreditsUsed || 0);
 
     res.json({
       published: publishedCount,

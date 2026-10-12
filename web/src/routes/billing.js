@@ -8,6 +8,18 @@ import { getActiveOverride } from "../services/ShopPlanOverrideService.js";
 
 const router = express.Router();
 
+function shopPlanState(planKey) {
+  if (String(planKey || "free").toLowerCase() !== "free") return { planKey };
+  return {
+    planKey: "free",
+    // A later subscription to the same paid plan is a new allowance period, not a continuation
+    // of the cancelled subscription's old clock.
+    aiCreditPeriodStartedAt: null,
+    aiCreditPeriodEndsAt: null,
+    aiCreditPeriodPlanKey: null,
+  };
+}
+
 // Best-effort reconciliation for every PENDING coupon claim belonging to this shop — not just
 // whatever matches the CURRENT activeSub (there may be none, e.g. the merchant is back on Free
 // after declining). PENDING no longer counts toward usage limits at all (see CouponService.js),
@@ -166,7 +178,7 @@ router.get("/check", async (req, res) => {
     if (activeOverride) {
       activePlan = activeOverride.overridePlan;
       if (shop.planKey !== activePlan) {
-        await prisma.shop.update({ where: { id: shop.id }, data: { planKey: activePlan } });
+        await prisma.shop.update({ where: { id: shop.id }, data: shopPlanState(activePlan) });
       }
     } else {
 
@@ -191,7 +203,7 @@ router.get("/check", async (req, res) => {
       if (shop && shop.planKey !== activePlan) {
         await prisma.shop.update({
           where: { id: shop.id },
-          data: { planKey: activePlan }
+          data: shopPlanState(activePlan)
         });
       }
 
@@ -211,7 +223,7 @@ router.get("/check", async (req, res) => {
         if (shop && shop.planKey !== "free") {
           await prisma.shop.update({
             where: { id: shop.id },
-            data: { planKey: "free" }
+            data: shopPlanState("free")
           });
         }
       }
@@ -221,6 +233,19 @@ router.get("/check", async (req, res) => {
     // Best-effort — resolves every PENDING coupon claim for this shop (not just one matching
     // activeSub) against Shopify's real subscription status. See the function's own docblock.
     await reconcilePendingCouponClaims(session.shop, session);
+
+    // Re-read after the plan synchronization above. refreshAiCreditPeriod uses compare-and-set
+    // guards, so passing the stale pre-sync Shop snapshot would correctly refuse to overwrite it
+    // but would also postpone the new plan's first credit period until another request.
+    let creditShop = shop
+      ? await prisma.shop.findUnique({ where: { id: shop.id } })
+      : null;
+    if (creditShop && creditShop.planKey !== activePlan) {
+      creditShop = await prisma.shop.update({
+        where: { id: creditShop.id },
+        data: shopPlanState(activePlan),
+      });
+    }
 
     // Article limit is sourced from PlanFeatureService's DB-backed "article_limit" PlanFeature
     // row (the same source Super Admin's Sync Limits modal edits) — previously this route kept
@@ -232,7 +257,7 @@ router.get("/check", async (req, res) => {
     // card can show both without a second round trip.
     const templateLimit = getSavedTemplateLimit(activePlan);
     const currentShop = await refreshAiCreditPeriod(
-      shop ? { ...shop, planKey: activePlan } : shop,
+      creditShop,
       prisma,
     );
     const aiCreditsPurchased = currentShop?.aiCreditsPurchased || 0;
@@ -242,7 +267,7 @@ router.get("/check", async (req, res) => {
     // usage even though unspent purchased credits still cover it, which would render as a broken
     // >100% progress bar on the plans page. aiCreditsPurchased stays the raw lifetime-purchased
     // count (unrelated to the meter) so the page can still show "+10 purchased" as its own label.
-    const aiCreditStatus = getAiCreditStatus(activePlan, currentShop?.aiCreditsUsed || 0, aiCreditsPurchased, currentShop?.aiCreditsPurchasedUsed || 0);
+    const aiCreditStatus = getAiCreditStatus(activePlan, currentShop?.aiCreditsUsed || 0, aiCreditsPurchased, currentShop?.aiCreditsPurchasedUsed || 0, currentShop?.freeAiCreditsUsed || 0);
     const aiCreditLimit = aiCreditStatus.meterLimit;
     const aiCreditsUsed = aiCreditStatus.meterUsed;
     const templateCount = shop
@@ -357,8 +382,8 @@ router.post("/request", async (req, res) => {
       await clearPlanOverride("free");
       const resolvedPlan = "free";
 
-      if (shop && shop.planKey !== "free") {
-        await prisma.shop.update({ where: { id: shop.id }, data: { planKey: "free" } });
+      if (shop) {
+        await prisma.shop.update({ where: { id: shop.id }, data: shopPlanState("free") });
       }
       try {
         await writeListingLayoutMetafield(session, listingLayoutForPlan(resolvedPlan, null));
@@ -390,7 +415,7 @@ router.post("/request", async (req, res) => {
       // matters most: a shop that just downgraded off a plan with unused purchased credits must
       // still see those credits reflected here, not a broken "63 of 3" pair from the old plan's
       // now-irrelevant raw usage vs Free's tiny limit.
-      const downgradeAiStatus = getAiCreditStatus(resolvedPlan, shop?.aiCreditsUsed || 0, shop?.aiCreditsPurchased || 0, shop?.aiCreditsPurchasedUsed || 0);
+      const downgradeAiStatus = getAiCreditStatus(resolvedPlan, shop?.aiCreditsUsed || 0, shop?.aiCreditsPurchased || 0, shop?.aiCreditsPurchasedUsed || 0, shop?.freeAiCreditsUsed || 0);
       return res.status(200).json({
         confirmationUrl: null,
         isFree: true,

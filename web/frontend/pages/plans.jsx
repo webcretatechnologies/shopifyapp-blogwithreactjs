@@ -461,7 +461,7 @@ export default function Plans() {
                     <Text as="h3" variant="headingMd">Plan usage</Text>
                     <Text as="p" variant="bodySm" tone="subdued">
                       {isFreePlanActive
-                        ? "Your 3 Free AI credits are a one-time lifetime allowance."
+                        ? "Your Free AI credits are a one-time lifetime allowance."
                         : billingCycle?.renewsOn
                         ? `AI credits reset monthly. Subscription renews ${formatDate(billingCycle.renewsOn)}`
                         : "AI credits reset monthly while your plan is active."}
@@ -577,7 +577,11 @@ export default function Plans() {
                                 display: "flex",
                                 flexDirection: "column",
                                 alignItems: "center",
-                                border: `1px solid ${isBestValue ? "var(--p-color-border-emphasis)" : "var(--p-color-border)"}`,
+                                // Match the Recommended plan card: its Polaris `050` border is
+                                // the 2px inverse border. The standard packs retain `025` (1px).
+                                border: isBestValue
+                                  ? "2px solid var(--p-color-border-inverse)"
+                                  : "1px solid var(--p-color-border)",
                                 borderRadius: "var(--p-border-radius-300)",
                                 background: "var(--p-color-bg-surface-secondary)",
                                 padding: "20px 16px 16px",

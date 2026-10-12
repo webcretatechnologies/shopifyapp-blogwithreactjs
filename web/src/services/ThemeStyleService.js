@@ -15,6 +15,78 @@
  * Read-only — never writes to Shopify or the DB.
  */
 
+// Theme tokens are shop/theme-level data, but storefront compilation can run once per
+// article during reconciliation. Keep a short cache and share an in-flight lookup so a
+// reconciliation pass does not refetch the same assets for every article.
+const THEME_TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
+const SHOPIFY_REST_MIN_INTERVAL_MS = 550;
+const SHOPIFY_REST_MAX_ATTEMPTS = 4;
+
+const themeTokenCache = new Map();
+const themeTokenRequests = new Map();
+const shopRestQueues = new Map();
+const shopRestNextAllowedAt = new Map();
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isShopifyThrottleError(err) {
+  return Number(err?.response?.code || err?.statusCode || err?.status) === 429;
+}
+
+function retryAfterMs(err, attempt) {
+  const raw = err?.response?.retryAfter;
+  const seconds = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.ceil(seconds * 1000) + 100;
+  }
+  return Math.min(1000 * (2 ** attempt), 8000) + Math.floor(Math.random() * 150);
+}
+
+/**
+ * Serialize this service's Admin REST calls per shop and retry only explicit 429s.
+ * Shopify's standard REST bucket drains at two calls/second, so 550 ms leaves a
+ * small margin without slowing requests to different stores.
+ */
+async function shopifyRestRequest(shopDomain, request) {
+  const key = shopDomain || "unknown-shop";
+  const previous = shopRestQueues.get(key) || Promise.resolve();
+
+  const current = previous.catch(() => undefined).then(async () => {
+    for (let attempt = 0; attempt < SHOPIFY_REST_MAX_ATTEMPTS; attempt += 1) {
+      const waitMs = Math.max(0, (shopRestNextAllowedAt.get(key) || 0) - Date.now());
+      if (waitMs > 0) await delay(waitMs);
+
+      try {
+        const response = await request();
+        shopRestNextAllowedAt.set(key, Date.now() + SHOPIFY_REST_MIN_INTERVAL_MS);
+        return response;
+      } catch (err) {
+        if (!isShopifyThrottleError(err) || attempt === SHOPIFY_REST_MAX_ATTEMPTS - 1) {
+          throw err;
+        }
+
+        const waitAfterThrottle = retryAfterMs(err, attempt);
+        shopRestNextAllowedAt.set(key, Date.now() + waitAfterThrottle);
+        await delay(waitAfterThrottle);
+      }
+    }
+
+    throw new Error("Shopify REST request exhausted its retry attempts");
+  });
+
+  // Keep the queue alive even when one request fails, and remove it once this is
+  // still the latest queued request so idle shops do not accumulate in memory.
+  const queueTail = current.then(() => undefined, () => undefined);
+  shopRestQueues.set(key, queueTail);
+  queueTail.finally(() => {
+    if (shopRestQueues.get(key) === queueTail) shopRestQueues.delete(key);
+  });
+
+  return current;
+}
+
 /** Shopify often prefixes settings_data.json with a /* ... *\/ banner. */
 function parseThemeJson(raw) {
   if (!raw || typeof raw !== "string") throw new Error("Theme asset was empty");
@@ -641,7 +713,7 @@ async function extractColorsFromLiveStorefront(shopDomain) {
 }
 
 /** Peek common CSS assets for --color-* / --button-* custom properties. */
-async function extractColorsFromCssAssets(client, themeId) {
+async function extractColorsFromCssAssets(client, themeId, shopDomain) {
   const candidates = [
     "assets/base.css",
     "assets/theme.css",
@@ -652,14 +724,17 @@ async function extractColorsFromCssAssets(client, themeId) {
   ];
 
   const found = [];
-  const results = await Promise.all(
-    candidates.map((key) =>
-      client
-        .get({ path: `themes/${themeId}/assets`, query: { "asset[key]": key } })
-        .then((res) => res.body?.asset?.value || "")
-        .catch(() => "")
-    )
-  );
+  const results = [];
+  for (const key of candidates) {
+    try {
+      const res = await shopifyRestRequest(shopDomain, () =>
+        client.get({ path: `themes/${themeId}/assets`, query: { "asset[key]": key } })
+      );
+      results.push(res.body?.asset?.value || "");
+    } catch {
+      results.push("");
+    }
+  }
 
   const varPatterns = [
     /--color[^:{}]*button[^:{}]*:\s*([^;}+]+)/gi,
@@ -696,25 +771,27 @@ async function extractColorsFromCssAssets(client, themeId) {
  *   3. Schema + deep settings walk + visual heuristics
  *   4. Theme CSS asset peek
  */
-async function fetchThemeStyleTokens(shopify, session) {
+async function fetchThemeStyleTokensUncached(shopify, session) {
   const client = new shopify.api.clients.Rest({ session });
   const shopDomain = session?.shop;
 
-  const themesReq = await client.get({ path: "themes" });
+  const themesReq = await shopifyRestRequest(shopDomain, () => client.get({ path: "themes" }));
   const mainTheme = themesReq.body.themes.find((t) => t.role === "main");
   if (!mainTheme) throw new Error("Could not find the store's main (published) theme");
 
   const [dataReq, schemaReq, fromStorefront] = await Promise.all([
-    client.get({
-      path: `themes/${mainTheme.id}/assets`,
-      query: { "asset[key]": "config/settings_data.json" },
-    }),
-    client
-      .get({
+    shopifyRestRequest(shopDomain, () =>
+      client.get({
+        path: `themes/${mainTheme.id}/assets`,
+        query: { "asset[key]": "config/settings_data.json" },
+      })
+    ),
+    shopifyRestRequest(shopDomain, () =>
+      client.get({
         path: `themes/${mainTheme.id}/assets`,
         query: { "asset[key]": "config/settings_schema.json" },
       })
-      .catch(() => null),
+    ).catch(() => null),
     extractColorsFromLiveStorefront(shopDomain),
   ]);
 
@@ -741,7 +818,7 @@ async function fetchThemeStyleTokens(shopify, session) {
   const early = mergeColors(fromStorefront, fromSchemes, assignColorsFromPool(pool));
   if (!early.primary || !early.text) {
     try {
-      pool.push(...(await extractColorsFromCssAssets(client, mainTheme.id)));
+      pool.push(...(await extractColorsFromCssAssets(client, mainTheme.id, shopDomain)));
     } catch {
       /* ignore */
     }
@@ -787,6 +864,35 @@ async function fetchThemeStyleTokens(shopify, session) {
     foundAnyColor,
     source: fromStorefront.primary || fromStorefront.text ? "storefront" : "theme_settings",
   };
+}
+
+async function fetchThemeStyleTokens(shopify, session) {
+  const shopDomain = session?.shop;
+  if (!shopDomain) return fetchThemeStyleTokensUncached(shopify, session);
+
+  const cached = themeTokenCache.get(shopDomain);
+  if (cached && cached.expiresAt > Date.now()) return cached.tokens;
+  if (cached) themeTokenCache.delete(shopDomain);
+
+  const existingRequest = themeTokenRequests.get(shopDomain);
+  if (existingRequest) return existingRequest;
+
+  const request = fetchThemeStyleTokensUncached(shopify, session)
+    .then((tokens) => {
+      themeTokenCache.set(shopDomain, {
+        tokens,
+        expiresAt: Date.now() + THEME_TOKEN_CACHE_TTL_MS,
+      });
+      return tokens;
+    })
+    .finally(() => {
+      if (themeTokenRequests.get(shopDomain) === request) {
+        themeTokenRequests.delete(shopDomain);
+      }
+    });
+
+  themeTokenRequests.set(shopDomain, request);
+  return request;
 }
 
 export default {

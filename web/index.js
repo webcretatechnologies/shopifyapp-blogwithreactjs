@@ -116,6 +116,7 @@ import sidebarRoutes from "./src/routes/sidebar.js";
 import blogTemplateRoutes from "./src/routes/blogTemplates.js";
 import aiArticleRoutes from "./src/routes/aiArticles.js";
 import aiCreditPackRoutes from "./src/routes/aiCreditPacks.js";
+import { settleAiCreditPurchase } from "./src/services/AiCreditPurchaseService.js";
 
 // Process-level event handlers to prevent crashes from unhandled network errors
 process.on("unhandledRejection", (reason, promise) => {
@@ -365,7 +366,12 @@ app.post(
                 } else {
                   await prisma.shop.update({
                     where: { domain: shop },
-                    data: { planKey: 'free' }
+                    data: {
+                      planKey: "free",
+                      aiCreditPeriodStartedAt: null,
+                      aiCreditPeriodEndsAt: null,
+                      aiCreditPeriodPlanKey: null,
+                    }
                   });
                 }
               }
@@ -392,30 +398,9 @@ app.post(
             const status = purchase?.status;
             if (!shopifyPurchaseId || !status) return;
 
-            const record = await prisma.aiCreditPurchase.findUnique({ where: { shopifyPurchaseId } });
-            if (!record || record.status !== "PENDING") return; // Already resolved, or not ours.
-
-            if (status === "ACTIVE") {
-              // Credit the shop and flip the row to APPROVED in one go, gated on it still being
-              // PENDING — the same "only the first webhook to see PENDING gets to act" guard
-              // reconcilePendingCouponClaims/APP_SUBSCRIPTIONS_UPDATE rely on elsewhere in this
-              // file, so a duplicate delivery can never double-credit.
-              const { count } = await prisma.aiCreditPurchase.updateMany({
-                where: { shopifyPurchaseId, status: "PENDING" },
-                data: { status: "APPROVED" },
-              });
-              if (count > 0) {
-                await prisma.shop.update({
-                  where: { id: record.shopId },
-                  data: { aiCreditsPurchased: { increment: record.credits } },
-                });
-              }
-            } else if (["DECLINED", "CANCELLED", "EXPIRED"].includes(status)) {
-              await prisma.aiCreditPurchase.updateMany({
-                where: { shopifyPurchaseId, status: "PENDING" },
-                data: { status },
-              });
-            }
+            // The same atomic/idempotent settlement is also used by the recovery query on the
+            // Plans page, so a delayed webhook racing that query can never grant twice.
+            await settleAiCreditPurchase(prisma, shopifyPurchaseId, status);
           } catch (err) {
             console.error("APP_PURCHASES_ONE_TIME_UPDATE error:", err);
           }
@@ -436,7 +421,13 @@ app.post(
               // 'pro' meant a merchant who reinstalled got full paid-plan access for free until
               // the next reconcile happened to catch it — confirmed happening live, not just a
               // theoretical race.
-              data: { uninstalledAt: new Date(), planKey: "free" },
+              data: {
+                uninstalledAt: new Date(),
+                planKey: "free",
+                aiCreditPeriodStartedAt: null,
+                aiCreditPeriodEndsAt: null,
+                aiCreditPeriodPlanKey: null,
+              },
             });
             if (shopRecord) {
               await prisma.appPlan.updateMany({
