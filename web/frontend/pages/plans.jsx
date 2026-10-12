@@ -84,7 +84,7 @@ export default function Plans() {
   // unlimited, same convention as postLimit.
   const [templateCount, setTemplateCount] = useState(0);
   const [templateLimit, setTemplateLimit] = useState(null);
-  // Lifetime AI allowance (PlanFeature "ai_credits"); null = unlimited.
+  // Free credits are lifetime; paid-plan AI credits refresh monthly. null = unlimited.
   const [aiUsed, setAiUsed] = useState(0);
   const [aiLimit, setAiLimit] = useState(null);
   // Extra generations bought via one-time AiCreditPurchase packs, on top of aiLimit.
@@ -460,9 +460,11 @@ export default function Plans() {
                   <BlockStack gap="050">
                     <Text as="h3" variant="headingMd">Plan usage</Text>
                     <Text as="p" variant="bodySm" tone="subdued">
-                      {billingCycle?.renewsOn
-                        ? `Current billing period · resets ${formatDate(billingCycle.renewsOn)}`
-                        : "Usage limits reset at the start of your next billing cycle."}
+                      {isFreePlanActive
+                        ? "Your 3 Free AI credits are a one-time lifetime allowance."
+                        : billingCycle?.renewsOn
+                        ? `AI credits reset monthly. Subscription renews ${formatDate(billingCycle.renewsOn)}`
+                        : "AI credits reset monthly while your plan is active."}
                     </Text>
                   </BlockStack>
                   <InlineStack gap="200" blockAlign="center">
@@ -837,7 +839,9 @@ export default function Plans() {
                         <Text as="strong" variant="bodySm">Usage Limits</Text>
                         {usageLimits.map((limit) => (
                           <InlineStack key={limit.label} align="space-between" gap="100" wrap={false} className="plan-usage-limit">
-                            <Text as="span" variant="bodySm" tone="subdued">{limit.label}</Text>
+                            <Text as="span" variant="bodySm" tone="subdued">
+                              {limit.label === "AI credits" && plan.interval === "ANNUAL" ? "AI credits / month" : limit.label}
+                            </Text>
                             <Text as="span" variant="bodySm" fontWeight="semibold" alignment="end">{limit.value}</Text>
                           </InlineStack>
                         ))}

@@ -33,9 +33,11 @@ model Shop {
   accessToken   String        @db.Text
   planKey       String        @default("free")
   timezone      String?
-  /** Lifetime AI generations consumed. Deliberately never reset: the plan's ai_credits is a
-      one-off allowance, not a monthly quota, so this only ever counts up. */
+  /** AI generations consumed in the current plan-credit period, plus already-consumed
+      purchased credits. The plan portion resets every month. */
   aiCreditsUsed Int           @default(0)
+  aiCreditPeriodStartedAt DateTime?
+  aiCreditPeriodPlanKey String?
   /** Lifetime total AI generations bought via one-time AppPurchaseOneTime credit packs. Only ever
       incremented by the app_purchases_one_time/update webhook once Shopify confirms the charge
       is ACTIVE, never optimistically on checkout redirect. Never decremented - it's a purchase

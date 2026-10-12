@@ -1,6 +1,6 @@
 import express from "express";
 import { prisma } from "../../shopify.js";
-import { getAiCreditLimit, getAiCreditStatus } from "../services/PlanFeatureService.js";
+import { getAiCreditLimit, getAiCreditStatus, refreshAiCreditPeriod } from "../services/PlanFeatureService.js";
 import { generateArticleBlocks, AI_STAGES } from "../services/AiArticleService.js";
 import { isShopFirstPost } from "../utils/firstPost.js";
 
@@ -9,7 +9,8 @@ const router = express.Router();
 async function getShopFromSession(res) {
   const session = res.locals.shopify?.session;
   if (!session?.shop) return null;
-  return prisma.shop.findUnique({ where: { domain: session.shop } });
+  const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
+  return refreshAiCreditPeriod(shop, prisma);
 }
 
 /**

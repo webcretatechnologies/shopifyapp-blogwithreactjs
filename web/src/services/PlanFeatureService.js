@@ -326,14 +326,39 @@ export function getSavedTemplateLimit(planKey) {
 }
 
 /**
- * How many AI article generations a shop gets in total. null = unlimited.
+ * How many AI article generations a shop gets each month. null = unlimited.
  *
- * Deliberately a lifetime allowance, not a monthly quota: Shop.aiCreditsUsed only ever counts
- * up, so raising a plan's number here grants the difference to every shop on it immediately,
- * and nothing silently refills at a month boundary.
+ * Paid-plan allowances refresh monthly even when Shopify charges the subscription annually.
+ * The Free plan remains a one-time, lifetime allowance.
  */
 export function getAiCreditLimit(planKey) {
   return getFeatureLimit(planKey, "ai_credits");
+}
+
+/** Refresh paid plan-funded allowances once per calendar month. Free-plan credits and one-time
+ * purchased credits never expire here. aiCreditsUsed retains aiCreditsPurchasedUsed as its
+ * baseline so the existing two-pool calculation still reports zero plan usage after a reset. */
+export async function refreshAiCreditPeriod(shop, prismaClient) {
+  if (!shop) return shop;
+  const planKey = shop.planKey || "free";
+  // Free includes a small, lifetime credit allowance. Only paid subscription tiers replenish.
+  if (resolvePlanBucket(planKey) === "free") return shop;
+
+  const now = new Date();
+  const startedAt = shop.aiCreditPeriodStartedAt ? new Date(shop.aiCreditPeriodStartedAt) : null;
+  const nextReset = startedAt ? new Date(startedAt) : null;
+  if (nextReset) nextReset.setMonth(nextReset.getMonth() + 1);
+  const needsReset = shop.aiCreditPeriodPlanKey !== planKey || !nextReset || nextReset <= now;
+  if (!needsReset) return shop;
+
+  return prismaClient.shop.update({
+    where: { id: shop.id },
+    data: {
+      aiCreditsUsed: shop.aiCreditsPurchasedUsed || 0,
+      aiCreditPeriodStartedAt: now,
+      aiCreditPeriodPlanKey: planKey,
+    },
+  });
 }
 
 /**

@@ -15,6 +15,7 @@ import {
   getArticleLimit,
   getSavedTemplateLimit,
   getAiCreditStatus,
+  refreshAiCreditPeriod,
   isFeatureEnabled,
 } from "../services/PlanFeatureService.js";
 import { EditorContentCompiler } from "../services/EditorContentCompiler.js";
@@ -122,7 +123,7 @@ async function getShopFromSession(res) {
   const session = res.locals.shopify?.session;
   if (!session) return null;
   const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
-  return shop;
+  return refreshAiCreditPeriod(shop, prisma);
 }
 
 // ─── GET /api/posts — List all posts for shop ─────────────────────────────────

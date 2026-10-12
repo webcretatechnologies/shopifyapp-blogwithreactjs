@@ -1,14 +1,15 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
 import { listActiveAiCreditPacks, getActiveAiCreditPack } from "../services/AiCreditPackService.js";
-import { getAiCreditLimit, getAiCreditStatus } from "../services/PlanFeatureService.js";
+import { getAiCreditLimit, getAiCreditStatus, refreshAiCreditPeriod } from "../services/PlanFeatureService.js";
 
 const router = express.Router();
 
 async function getShopFromSession(res) {
   const session = res.locals.shopify?.session;
   if (!session?.shop) return null;
-  return prisma.shop.findUnique({ where: { domain: session.shop } });
+  const shop = await prisma.shop.findUnique({ where: { domain: session.shop } });
+  return refreshAiCreditPeriod(shop, prisma);
 }
 
 // ─── GET /api/ai/credit-packs — pack options plus the shop's own current balance ──

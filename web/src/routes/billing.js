@@ -1,6 +1,6 @@
 import express from "express";
 import shopify, { prisma } from "../../shopify.js";
-import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled, getSavedTemplateLimit, getAiCreditStatus
+import { getArticleLimit, buildTieredPlanFeatures, isFeatureEnabled, getSavedTemplateLimit, getAiCreditStatus, refreshAiCreditPeriod
 } from "../services/PlanFeatureService.js";
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 import { listingLayoutForPlan, writeListingLayoutMetafield, THEME_LISTING_LAYOUT } from "../services/ListingLayoutMetafield.js";
@@ -231,14 +231,18 @@ router.get("/check", async (req, res) => {
     // Saved templates are the app's second plan cap (PlanFeature "template_limit"), so the usage
     // card can show both without a second round trip.
     const templateLimit = getSavedTemplateLimit(activePlan);
-    const aiCreditsPurchased = shop?.aiCreditsPurchased || 0;
+    const currentShop = await refreshAiCreditPeriod(
+      shop ? { ...shop, planKey: activePlan } : shop,
+      prisma,
+    );
+    const aiCreditsPurchased = currentShop?.aiCreditsPurchased || 0;
     // aiCreditsUsed/aiCreditLimit are the METER-SAFE pair (getAiCreditStatus's meterUsed/
     // meterLimit), not raw shop.aiCreditsUsed vs the bare plan limit — a raw pair can invert
     // (used > limit) right after a downgrade shrinks the plan's own allowance below lifetime
     // usage even though unspent purchased credits still cover it, which would render as a broken
     // >100% progress bar on the plans page. aiCreditsPurchased stays the raw lifetime-purchased
     // count (unrelated to the meter) so the page can still show "+10 purchased" as its own label.
-    const aiCreditStatus = getAiCreditStatus(activePlan, shop?.aiCreditsUsed || 0, aiCreditsPurchased, shop?.aiCreditsPurchasedUsed || 0);
+    const aiCreditStatus = getAiCreditStatus(activePlan, currentShop?.aiCreditsUsed || 0, aiCreditsPurchased, currentShop?.aiCreditsPurchasedUsed || 0);
     const aiCreditLimit = aiCreditStatus.meterLimit;
     const aiCreditsUsed = aiCreditStatus.meterUsed;
     const templateCount = shop
