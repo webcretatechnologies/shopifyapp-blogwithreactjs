@@ -19,7 +19,11 @@ const BLANK_COUPON = {
 };
 
 function couponDiscountLabel(coupon) {
-  if (coupon.discountType === "FIXED_PRICE") return "Plan-specific price";
+  if (coupon.discountType === "FIXED_PRICE") {
+    const prices = Object.entries(coupon.planPrices || {})
+      .map(([plan, price]) => `${plan.replace(/ Plan$/, "")} $${Number(price).toFixed(2)}`);
+    return prices.length ? prices.join(" · ") : "Plan-specific price";
+  }
   return coupon.discountType === "PERCENTAGE"
     ? `${Number(coupon.percentOff)}% off`
     : `$${Number(coupon.amountOff).toFixed(2)} off`;
@@ -41,6 +45,11 @@ function claimWindowLabel(coupon) {
   if (coupon.startsAt && coupon.endsAt) return `${fmt(coupon.startsAt)} – ${fmt(coupon.endsAt)}`;
   if (coupon.startsAt) return `From ${fmt(coupon.startsAt)}`;
   return `Until ${fmt(coupon.endsAt)}`;
+}
+
+function listDescription(value, maxWords = 12) {
+  const words = String(value || "").trim().split(/\s+/).filter(Boolean);
+  return words.length > maxWords ? `${words.slice(0, maxWords).join(" ")}…` : words.join(" ");
 }
 
 const STATUS_BADGE_TONE = { APPROVED: "success", PENDING: "attention", DECLINED: "critical", CANCELLED: "critical", EXPIRED: undefined };
@@ -281,18 +290,19 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
             <BlockStack gap="050">
               <Text as="span" fontWeight="semibold">{coupon.code}</Text>
               {coupon.description && (
-                <Text as="span" variant="bodySm" tone="subdued">{coupon.description}</Text>
+                <span title={coupon.description} style={{ display: "block", maxWidth: "360px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <Text as="span" variant="bodySm" tone="subdued">{listDescription(coupon.description)}</Text>
+                </span>
               )}
             </BlockStack>
           </IndexTable.Cell>
-          <IndexTable.Cell>{couponDiscountLabel(coupon)}</IndexTable.Cell>
           <IndexTable.Cell>
-            <BlockStack gap="050">
-              <Text as="span" variant="bodySm">{applies.primary}</Text>
-              {applies.secondary && <Text as="span" variant="bodySm" tone="subdued">{applies.secondary}</Text>}
+            <BlockStack gap="100">
+              <Text as="span" variant="bodySm" fontWeight="medium">{couponDiscountLabel(coupon)}</Text>
+              <Text as="span" variant="bodySm">{applies.primary}{applies.secondary ? ` · ${applies.secondary}` : ""}</Text>
+              <Text as="span" variant="bodySm" tone="subdued">{coupon.durationMonths} month{coupon.durationMonths === 1 ? "" : "s"}</Text>
             </BlockStack>
           </IndexTable.Cell>
-          <IndexTable.Cell>{coupon.durationMonths} months</IndexTable.Cell>
           <IndexTable.Cell>{claimWindowLabel(coupon)}</IndexTable.Cell>
           <IndexTable.Cell>
             <BlockStack gap="050">
@@ -306,8 +316,8 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
             <StatusToggle active={coupon.active} onToggle={() => handleToggleActive(coupon)} />
           </IndexTable.Cell>
           <IndexTable.Cell>
-            <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}>
-              <InlineStack gap="200">
+            <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", whiteSpace: "nowrap" }}>
+              <InlineStack gap="100" wrap={false}>
                 <Button size="slim" onClick={() => openEditCoupon(coupon)}>Edit</Button>
                 <Button size="slim" onClick={() => openUsageForCoupon(coupon)}>Usage</Button>
                 <Button size="slim" tone="critical" onClick={() => handleDeleteCoupon(coupon)}>Delete</Button>
@@ -354,8 +364,7 @@ export default function CouponsModule({ active, token, adminFetch, showToast, se
                 <IndexTable
                   itemCount={coupons.length}
                   headings={[
-                    { title: "Code" }, { title: "Discount" }, { title: "Applies To" },
-                    { title: "Duration" }, { title: "Claim Window" }, { title: "Used / Limits" },
+                    { title: "Coupon" }, { title: "Offer details" }, { title: "Claim window" }, { title: "Used / limits" },
                     { title: "Status" }, { title: "Action" },
                   ]}
                   selectable={false}
