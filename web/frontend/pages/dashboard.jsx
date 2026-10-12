@@ -171,6 +171,8 @@ export default function Dashboard() {
   const [showRefreshBadge, setShowRefreshBadge] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [launchOfferAvailable, setLaunchOfferAvailable] = useState(false);
+  const [launchOfferDismissed, setLaunchOfferDismissed] = useState(() => sessionStorage.getItem("blogger_first50_dismissed") === "1");
   const [nowTick, setNowTick] = useState(Date.now());
   // Mirrors SetupGuide's dismissal flag: while the guide is visible it already
   // contains the enable-tracking step, so the banner would be a duplicate prompt. Uses
@@ -245,6 +247,13 @@ export default function Dashboard() {
     } catch {}
   };
 
+  const fetchLaunchOffer = async () => {
+    try {
+      const res = await fetch("/api/billing/coupon/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: "FIRST50" }) });
+      setLaunchOfferAvailable(res.ok && (await res.json()).coupon?.code === "FIRST50");
+    } catch {}
+  };
+
   const fetchSetupStatus = async ({ silent = false } = {}) => {
     if (!silent) setSetupLoading(true);
     try {
@@ -262,6 +271,7 @@ export default function Dashboard() {
     fetchAnalytics();
     fetchExtras();
     fetchBillingCycle();
+    fetchLaunchOffer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -300,9 +310,14 @@ export default function Dashboard() {
   // Second plan cap on the same card: templates the merchant has saved of their own.
   const templatesUsed = planUsage?.templatesUsed ?? 0;
   const templatesLimit = planUsage?.templatesLimit ?? null;
+  // FIRST50 is an acquisition offer, not an upsell for merchants who already pay for a plan.
+  // Coupon validation already excludes a store that has claimed it; this additional gate keeps
+  // the campaign out of the dashboard and setup guide once any paid plan is active.
+  const isFreePlan = String(shopInfo?.planKey || "free").trim().toLowerCase() === "free";
+  const showLaunchOffer = isFreePlan && launchOfferAvailable;
   // Same decoupling as SetupGuide below: post count is available from dashboard-extras
   // (extrasLoading) without waiting on the separately-fetched, slower analytics summary.
-  const isNewShop = !setupLoading && !extrasLoading && (extras?.planUsage?.used ?? 0) === 0;
+  const isNewShop = !setupLoading && !extrasLoading && (extras?.totalPosts ?? 0) === 0;
 
   return (
     <>
@@ -345,6 +360,14 @@ export default function Dashboard() {
             </Layout.Section>
           )}
 
+          {showLaunchOffer && !launchOfferDismissed && (
+            <Layout.Section>
+              <Banner title="Early access offer: save on your first month" tone="success" onDismiss={() => { sessionStorage.setItem("blogger_first50_dismissed", "1"); setLaunchOfferDismissed(true); }} action={{ content: "View plans", onAction: () => navigate("/plans") }}>
+                <Text as="p">Use code <strong>FIRST50</strong> for Starter at $9.99 or Pro at $19.99 for your first month. Limited to the first 50 stores.</Text>
+              </Banner>
+            </Layout.Section>
+          )}
+
           {/* ── Get Started — prominent for new/unconfigured shops, still available (collapsed
                by SetupGuide's own internal state) once everything's done ──────────────────
                Gated on setup + extras loading only, NOT analyticsLoading — this card's own data
@@ -358,7 +381,8 @@ export default function Dashboard() {
                 isExtensionActive={setupStatus?.analyticsTracker?.active}
                 isMetaRobotsActive={setupStatus?.metaRobots?.active}
                 themeSupportsAppEmbeds={setupStatus?.themeSupportsAppEmbeds}
-                hasPosts={(extras?.planUsage?.used ?? 0) > 0}
+                hasPosts={(extras?.totalPosts ?? 0) > 0}
+                launchOfferAvailable={showLaunchOffer}
                 onCreatePost={() => setWizardOpen(true)}
               />
             </Layout.Section>

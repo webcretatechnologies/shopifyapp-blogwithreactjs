@@ -9,7 +9,7 @@ import { APP_NAME } from "../utils/appName";
 // same x-position, regardless of whether that row shows a numbered circle or a checkmark icon.
 const LEAD_COLUMN_WIDTH = "28px";
 
-export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive, themeSupportsAppEmbeds, hasPosts, onCreatePost }) {
+export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive, themeSupportsAppEmbeds, hasPosts, onCreatePost, launchOfferAvailable = false }) {
   const navigate = useNavigate();
   const [isDismissed, setIsDismissed] = useState(true); // default true to prevent flicker before useEffect runs
   const [expandedId, setExpandedId] = useState(null);
@@ -74,7 +74,15 @@ export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive
         else navigate("/posts/new");
       },
       isCompleted: hasPosts
-    }
+    },
+    ...(launchOfferAvailable ? [{
+      id: 4,
+      title: "Unlock your early access offer",
+      description: "Use code FIRST50 for Starter at $9.99 or Pro at $19.99 for your first month. Limited to the first 50 stores.",
+      actionLabel: "View plans",
+      action: () => navigate("/plans"),
+      isCompleted: false,
+    }] : [])
   ];
 
   const completedSteps = steps.filter(s => s.isCompleted).length;

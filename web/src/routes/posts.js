@@ -1082,6 +1082,9 @@ router.get("/meta/dashboard-extras", async (req, res) => {
     const aiCreditStatus = getAiCreditStatus(shop.planKey, shop.aiCreditsUsed || 0, shop.aiCreditsPurchased || 0, shop.aiCreditsPurchasedUsed || 0, shop.freeAiCreditsUsed || 0);
 
     res.json({
+      // Lifetime/current stored-post count. Keep this separate from planUsage.used, which is a
+      // monthly paid-plan allowance and therefore must not drive onboarding completion.
+      totalPosts,
       published: publishedCount,
       drafts: draftCount,
       scheduled: scheduledCount,
