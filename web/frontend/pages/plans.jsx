@@ -29,6 +29,14 @@ function intervalSuffix(interval) {
   return interval === "ANNUAL" ? "/year" : "/month";
 }
 
+function formatCreditPackMoney(value, currency = "USD") {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Number(value));
+  } catch {
+    return `$${Number(value).toFixed(2)}`;
+  }
+}
+
 function couponDurationLabel(durationMonths, interval) {
   if (interval !== "ANNUAL") {
     return `Applies for ${durationMonths} month${durationMonths === 1 ? "" : "s"}, then the regular price.`;
@@ -496,77 +504,50 @@ export default function Plans() {
           <Layout.Section>
             <Card>
               <Box padding="500">
-                <BlockStack gap="400">
-                  <div>
-                    <Text as="h3" variant="headingMd">Need more AI credits right now?</Text>
-                    <Text as="p" variant="bodySm" tone="subdued">
-                      Buy a one-time credit pack instead of changing plans — credits never expire and stack with your plan's own allowance.
-                    </Text>
+                <BlockStack gap="500">
+                  <div style={{ padding: "18px 20px", borderRadius: "var(--p-border-radius-300)", background: "linear-gradient(112deg, #f0fdf4 0%, #eff6ff 100%)", border: "1px solid #bbf7d0" }}>
+                    <InlineStack align="space-between" blockAlign="center" gap="400" wrap={false}>
+                      <BlockStack gap="100">
+                        <Text as="h3" variant="headingLg">Keep your content momentum going</Text>
+                        <Text as="p" tone="subdued">Add credits whenever you need them. They never expire and stack with your plan allowance.</Text>
+                      </BlockStack>
+                      <div style={{ minWidth: 92, paddingLeft: 20, borderLeft: "1px solid #bbf7d0", textAlign: "right" }}>
+                        <Text as="p" variant="headingLg">{Math.max(0, (aiLimit ?? 0) - aiUsed)}</Text>
+                        <Text as="p" variant="bodySm" tone="subdued">available now</Text>
+                      </div>
+                    </InlineStack>
                   </div>
                   <InlineGrid columns={{ xs: 1, sm: Math.min(creditPacks.length, 3) }} gap="300">
                     {(() => {
-                      // The smallest pack (by credit count) is the undiscounted anchor rate —
-                      // every other pack's "Save X%" badge is how much cheaper its own
-                      // price-per-credit is against that baseline, the same framing Bloggle's
-                      // "Save 10%" preset labels use relative to their smallest tier.
                       const smallestPack = creditPacks.reduce(
                         (min, p) => (p.credits < min.credits ? p : min),
                         creditPacks[0]
                       );
                       const baselinePerCredit = smallestPack.price / smallestPack.credits;
                       return creditPacks.map((pack) => {
-                        // Super Admin-set flag (pack.isRecommended, edited via
-                        // EditCreditPackModal's "Best Value / Highlight Pack in UI" checkbox) —
-                        // not auto-computed here.
                         const isBestValue = !!pack.isRecommended;
                         const perCredit = pack.price / pack.credits;
-                        const savePct = Math.round((1 - perCredit / baselinePerCredit) * 100);
-                        const showSavings = pack !== smallestPack && savePct > 0;
+                        const savePct = Math.max(0, Math.round((1 - perCredit / baselinePerCredit) * 100));
                         return (
-                          // No reserved top space — every card's border starts at the same
-                          // height, and the "Best value" ribbon is meant to sit right ON that
-                          // border (roughly half above it, half overlapping the card), pinned at
-                          // the corner, rather than floating fully clear of it.
-                          <div key={pack.key} style={{ position: "relative", height: "100%" }}>
-                            {isBestValue && (
-                              <div style={{ position: "absolute", top: -12, right: 16, zIndex: 1 }}>
-                                <Badge tone="success">Best value</Badge>
+                          <div key={pack.key} style={{ display: "flex", flexDirection: "column", minHeight: 244, overflow: "hidden", border: isBestValue ? "2px solid #008060" : "1px solid var(--p-color-border)", borderRadius: "var(--p-border-radius-300)", background: isBestValue ? "linear-gradient(180deg, #effcf6 0%, #ffffff 54%)" : "var(--p-color-bg-surface)", boxShadow: isBestValue ? "0 8px 18px rgba(0, 128, 96, 0.12)" : "none", boxSizing: "border-box" }}>
+                            <div style={{ height: 31, display: "flex", alignItems: "center", justifyContent: "center", background: isBestValue ? "#008060" : "transparent", color: "#fff" }}>
+                              {isBestValue && <Text as="span" variant="bodySm" fontWeight="semibold">BEST VALUE</Text>}
+                            </div>
+                            <div style={{ display: "flex", flex: 1, flexDirection: "column", padding: "6px 14px 14px", textAlign: "center" }}>
+                              <BlockStack gap="100" inlineAlign="center">
+                                <Text as="p" variant="heading2xl">{pack.credits}</Text>
+                                <Text as="p" tone="subdued">AI credits</Text>
+                              </BlockStack>
+                              <div style={{ minHeight: 28, display: "flex", justifyContent: "center", alignItems: "center", marginTop: 8 }}>
+                                {savePct > 0 ? <Badge tone="success">{`Save ${savePct}% per credit`}</Badge> : <Text as="span" variant="bodySm" tone="subdued">Perfect for a quick boost</Text>}
                               </div>
-                            )}
-                            <div
-                              style={{
-                                height: "100%",
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                // Match the Recommended plan card: its Polaris `050` border is
-                                // the 2px inverse border. The standard packs retain `025` (1px).
-                                border: isBestValue
-                                  ? "2px solid var(--p-color-border-inverse)"
-                                  : "1px solid var(--p-color-border)",
-                                borderRadius: "var(--p-border-radius-300)",
-                                background: "var(--p-color-bg-surface-secondary)",
-                                padding: "20px 16px 16px",
-                                boxSizing: "border-box",
-                              }}
-                            >
-                              <Text as="span" variant="heading2xl">{pack.credits}</Text>
-                              <Text as="span" variant="bodySm" tone="subdued">AI credits</Text>
-                              {/* Fixed-height slot, rendered on every card whether or not it has a
-                                  discount, so the Buy button lines up at the same height across
-                                  the whole row instead of drifting up on cards with no badge. */}
-                              <div style={{ height: 24, marginTop: 8, visibility: showSavings ? "visible" : "hidden" }}>
-                                <Badge tone="success">{`Save ${savePct}%`}</Badge>
+                              <div style={{ marginTop: 8, paddingTop: 10, borderTop: "1px solid var(--p-color-border-secondary)" }}>
+                                <Text as="p" variant="headingMd">{formatCreditPackMoney(pack.price, pack.currency)}</Text>
+                                <Text as="p" variant="bodySm" tone="subdued">{`${formatCreditPackMoney(perCredit, pack.currency)} per credit`}</Text>
                               </div>
-                              <div style={{ width: "100%", marginTop: "auto", paddingTop: 12 }}>
-                                <Button
-                                  fullWidth
-                                  variant="primary"
-                                  onClick={() => buyCreditPack(pack.key)}
-                                  loading={purchasingPack === pack.key}
-                                  disabled={purchasingPack != null}
-                                >
-                                  {`Buy for $${pack.price.toFixed(2)}`}
+                              <div style={{ marginTop: "auto", paddingTop: 12 }}>
+                                <Button fullWidth variant="primary" onClick={() => buyCreditPack(pack.key)} loading={purchasingPack === pack.key} disabled={purchasingPack != null}>
+                                  Choose this pack
                                 </Button>
                               </div>
                             </div>
@@ -575,6 +556,12 @@ export default function Plans() {
                       });
                     })()}
                   </InlineGrid>
+                  <div style={{ borderTop: "1px solid var(--p-color-border-secondary)", paddingTop: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 7 }}>
+                      <span aria-hidden="true" style={{ color: "#008060", fontSize: 15, fontWeight: 700, lineHeight: 1 }}>✓</span>
+                      <Text as="span" variant="bodySm" tone="subdued">Secure one-time Shopify charge · Credits never expire</Text>
+                    </div>
+                  </div>
                 </BlockStack>
               </Box>
             </Card>
@@ -713,23 +700,34 @@ export default function Plans() {
                 ? discountedPrice / 12
                 : null;
 
+              const statusLabel = isRecommended ? "RECOMMENDED" : isCurrent ? "CURRENT PLAN" : null;
+              const statusStyle = isRecommended
+                ? { background: "#008060", color: "#fff" }
+                : isCurrent
+                  ? { background: "#e7f7ed", color: "#006e52" }
+                  : { background: "transparent", color: "transparent" };
+
               return (
-                <Box
+                <div
                   key={plan.name}
-                  borderWidth={isRecommended ? "050" : "025"}
-                  borderColor={isRecommended ? "border-inverse" : "border"}
-                  borderRadius="300"
-                  background="bg-surface"
-                  padding="0"
+                  style={{
+                    height: "100%",
+                    overflow: "hidden",
+                    border: isRecommended ? "2px solid #008060" : "1px solid var(--p-color-border)",
+                    borderRadius: "var(--p-border-radius-300)",
+                    background: isRecommended ? "linear-gradient(180deg, #effcf6 0%, #ffffff 31%)" : "var(--p-color-bg-surface)",
+                    boxShadow: isRecommended ? "0 8px 18px rgba(0, 128, 96, 0.10)" : "none",
+                    boxSizing: "border-box",
+                  }}
                 >
+                  <div style={{ height: 31, display: "flex", alignItems: "center", justifyContent: "center", ...statusStyle }}>
+                    {statusLabel && <Text as="span" variant="bodySm" fontWeight="semibold">{statusLabel}</Text>}
+                  </div>
                   <Box padding="500">
                     <BlockStack gap="400">
                       <InlineStack align="space-between" blockAlign="start">
                         <BlockStack gap="100">
-                          <InlineStack gap="150" blockAlign="center" wrap>
-                            <Text as="h3" variant="headingMd">{plan.title} Plan</Text>
-                            {isRecommended && <Badge tone="info">Recommended</Badge>}
-                          </InlineStack>
+                          <Text as="h3" variant="headingMd">{plan.title} Plan</Text>
                           <Text as="p" variant="bodySm" tone="subdued">{plan.description}</Text>
                         </BlockStack>
                       </InlineStack>
@@ -859,7 +857,7 @@ export default function Plans() {
                       </Box>
                     </BlockStack>
                   </Box>
-                </Box>
+                </div>
               );
             })}
           </InlineGrid>
