@@ -5,6 +5,7 @@ import { getArticleLimit, getArticleUsageStatus, buildTieredPlanFeatures, isFeat
 import { validateCouponForShop, applyCouponDiscount } from "../services/CouponService.js";
 import { listingLayoutForPlan, writeListingLayoutMetafield, THEME_LISTING_LAYOUT } from "../services/ListingLayoutMetafield.js";
 import { getActiveOverride } from "../services/ShopPlanOverrideService.js";
+import { isBillingTestMode } from "../services/BillingModeService.js";
 
 const router = express.Router();
 
@@ -465,7 +466,7 @@ router.post("/request", async (req, res) => {
     // shows a "This is a test charge" banner on Shopify's approval screen). Flip it to "false"
     // once real, paying charges should go out. Previously this was a DB row toggled from a Super
     // Admin UI control that no longer exists — env var is the new single source of truth.
-    const isTestMode = process.env.BILLING_TEST_MODE !== "false";
+    const isTestMode = await isBillingTestMode("subscription");
 
     // Lands back on the Plans & Billing page itself (not the app root) with a `subscribed=1`
     // flag — plans.jsx uses that to show a real Shopify success toast once the merchant returns

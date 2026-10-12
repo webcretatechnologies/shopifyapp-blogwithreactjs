@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Card, Box, Text, BlockStack, InlineStack, Banner, Divider, Button } from "@shopify/polaris";
+import { Card, Box, Text, BlockStack, InlineStack, Banner, Divider, Button, Checkbox } from "@shopify/polaris";
 import ConfirmActionModal from "../../ConfirmActionModal";
 import PlanCard from "../PlanCard";
 import EditPlanCoreModal from "../EditPlanCoreModal";
@@ -17,6 +17,7 @@ const BLANK_PLAN = {
 export default function PricingModule({ active, adminFetch, showToast, setError }) {
   const [features, setFeatures] = useState([]);
   const [dynamicPlans, setDynamicPlans] = useState([]);
+  const [billingModes, setBillingModes] = useState({ subscriptionTestMode: true, oneTimeTestMode: true });
 
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
@@ -33,6 +34,8 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
       setFeatures(featuresData.features || []);
       const plansData = await adminFetch("/admin-api/pricing/plans");
       setDynamicPlans(plansData.plans || []);
+      const modes = await adminFetch("/admin-api/billing-test-modes");
+      setBillingModes(modes);
     } catch (err) {
       setError(err.message);
     }
@@ -135,10 +138,26 @@ export default function PricingModule({ active, adminFetch, showToast, setError 
     }
   };
 
+  const changeBillingMode = (key, value) => {
+    const next = { ...billingModes, [key]: value };
+    const save = async () => { await adminFetch("/admin-api/billing-test-modes", { method: "PUT", body: JSON.stringify(next) }); setBillingModes(next); showToast("Billing mode updated"); };
+    if (!value) {
+      setConfirmAction({ title: "Enable live Shopify charges?", body: "New purchases in this category will create real Shopify charges. Test mode remains enabled for the other category.", confirmText: "Enable live charges", confirmTone: "critical", onConfirm: save });
+    } else save().catch((err) => setError(err.message));
+  };
+
   if (!active) return null;
 
   return (
     <BlockStack gap="500">
+      <Card>
+        <Box padding="500"><BlockStack gap="300">
+          <Text variant="headingMd" as="h3">Shopify billing modes</Text>
+          <Banner tone="warning"><Text as="p" variant="bodySm">Test mode creates Shopify test charges. Turn it off only when you are ready to collect real money.</Text></Banner>
+          <Checkbox label="Subscription billing test mode" helpText="Starter and Pro recurring subscriptions" checked={billingModes.subscriptionTestMode} onChange={(value) => changeBillingMode("subscriptionTestMode", value)} />
+          <Checkbox label="One-time AI credit pack test mode" helpText="One-time AI credit pack purchases" checked={billingModes.oneTimeTestMode} onChange={(value) => changeBillingMode("oneTimeTestMode", value)} />
+        </BlockStack></Box>
+      </Card>
       <Card>
         <Box padding="500">
           <BlockStack gap="400">

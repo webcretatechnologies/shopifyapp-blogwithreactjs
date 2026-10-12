@@ -3,6 +3,7 @@ import shopify, { prisma } from "../../shopify.js";
 import { listActiveAiCreditPacks, getActiveAiCreditPack } from "../services/AiCreditPackService.js";
 import { reconcilePendingAiCreditPurchases } from "../services/AiCreditPurchaseService.js";
 import { getAiCreditLimit, getAiCreditStatus, refreshAiCreditPeriod } from "../services/PlanFeatureService.js";
+import { isBillingTestMode } from "../services/BillingModeService.js";
 
 const router = express.Router();
 
@@ -115,7 +116,7 @@ router.post("/purchase", async (req, res) => {
     // Same BILLING_TEST_MODE convention as billing.js's subscription flow — while set, every
     // appPurchaseOneTimeCreate call goes through as a Shopify "test charge" (no real money
     // moves).
-    const isTestMode = process.env.BILLING_TEST_MODE !== "false";
+    const isTestMode = await isBillingTestMode("oneTime");
 
     // Lands back on the Plans & Billing page with a `credits_purchased=1` flag, mirroring
     // billing.js's `subscribed=1` — plans.jsx uses it to show a real confirmation toast once the

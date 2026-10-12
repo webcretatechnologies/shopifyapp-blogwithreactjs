@@ -6,6 +6,7 @@ import { refreshPlanFeaturesCache, buildFeatureComparisonTable } from "../servic
 import { countedClaimsWhere } from "../services/CouponService.js";
 import { getLivePlans, priceForPlanKey } from "../services/PricingRatesService.js";
 import { getShopAnalytics } from "../services/AnalyticsTrackingService.js";
+import { BILLING_MODE_KEYS } from "../services/BillingModeService.js";
 
 export const SHOP_SAFE_SELECT = {
   id: true,
@@ -19,6 +20,18 @@ export const SHOP_SAFE_SELECT = {
 };
 
 const router = express.Router();
+
+router.get("/billing-test-modes", validateSuperAdmin, async (_req, res) => {
+  const rows = await prisma.adminSetting.findMany({ where: { key: { in: Object.values(BILLING_MODE_KEYS) } } });
+  const values = Object.fromEntries(rows.map((row) => [row.key, row.value === "true"]));
+  res.json({ subscriptionTestMode: values[BILLING_MODE_KEYS.subscription] ?? true, oneTimeTestMode: values[BILLING_MODE_KEYS.oneTime] ?? true });
+});
+router.put("/billing-test-modes", validateSuperAdmin, async (req, res) => {
+  const subscriptionTestMode = Boolean(req.body.subscriptionTestMode);
+  const oneTimeTestMode = Boolean(req.body.oneTimeTestMode);
+  await prisma.$transaction(Object.entries({ [BILLING_MODE_KEYS.subscription]: subscriptionTestMode, [BILLING_MODE_KEYS.oneTime]: oneTimeTestMode }).map(([key, value]) => prisma.adminSetting.upsert({ where: { key }, create: { key, value: String(value) }, update: { value: String(value) } })));
+  res.json({ subscriptionTestMode, oneTimeTestMode });
+});
 
 // Shared by the create/update plan routes below. Catches what the frontend form's own `type`
 // attributes/guards don't: an emptied price field (parseFloat("") => NaN => JSON.stringify(NaN)
