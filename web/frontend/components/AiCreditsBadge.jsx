@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { Badge, Banner, BlockStack, Button, InlineGrid, InlineStack, Modal, Spinner, Text } from "@shopify/polaris";
 
 function money(value, currency = "USD") {
@@ -34,6 +35,7 @@ function clearPendingPurchase() {
 
 /** Shared balance chip and fast path for buying one-time AI credit packs. */
 export default function AiCreditsBadge() {
+  const shopify = useAppBridge();
   const location = useLocation();
   const navigate = useNavigate();
   const [credits, setCredits] = useState(null);
@@ -42,7 +44,6 @@ export default function AiCreditsBadge() {
   const [loadingPacks, setLoadingPacks] = useState(false);
   const [purchasingPack, setPurchasingPack] = useState(null);
   const [purchaseError, setPurchaseError] = useState("");
-  const [notification, setNotification] = useState(null);
 
   const loadCredits = useCallback(async () => {
     try {
@@ -54,12 +55,10 @@ export default function AiCreditsBadge() {
   }, []);
 
   const notify = useCallback((content, error = false) => {
-    // App Bridge uses Shopify's native admin notification. Always retain the in-app notice too:
-    // some live embedded-admin contexts can suppress or delay the App Bridge toast during the
-    // top-level return redirect from Shopify's purchase approval page.
-    setNotification({ content, error });
-    if (window.shopify?.toast) window.shopify.toast.show(content, error ? { isError: true } : undefined);
-  }, []);
+    // `useAppBridge` remains available after Shopify's top-level purchase return, unlike the
+    // browser-global bridge object which can be absent while the embedded app is rehydrating.
+    shopify.toast.show(content, error ? { isError: true } : undefined);
+  }, [shopify]);
 
   useEffect(() => {
     loadCredits();
@@ -107,6 +106,8 @@ export default function AiCreditsBadge() {
         if (cancelled) return;
 
         if (purchase?.status === "APPROVED") {
+          // The shared balance changes too, but the merchant still needs an explicit native
+          // Shopify confirmation after returning from the approval screen.
           notify(`🎉 ${purchase.credits} AI credits added to your account`);
           loadCredits();
           clearPurchaseReturnFlag();
@@ -185,15 +186,8 @@ export default function AiCreditsBadge() {
     }
   };
 
-  const notificationMarkup = notification && (
-    <div style={{ position: "fixed", top: 16, right: 16, zIndex: 600, maxWidth: 440 }}>
-      <Banner tone={notification.error ? "critical" : "success"} onDismiss={() => setNotification(null)}>{notification.content}</Banner>
-    </div>
-  );
-
-  // An unlimited plan has no reason to buy a top-up, so do not add noise to its header. Preserve
-  // a pending purchase result notice even if the balance request has not completed yet.
-  if (!credits || credits.limit == null) return notificationMarkup || null;
+  // An unlimited plan has no reason to buy a top-up, so do not add noise to its header.
+  if (!credits || credits.limit == null) return null;
   const atLimit = (credits.remaining ?? 0) <= 0;
   const smallestPack = packs.length
     ? packs.reduce((smallest, pack) => (Number(pack.credits) < Number(smallest.credits) ? pack : smallest), packs[0])
@@ -320,7 +314,6 @@ export default function AiCreditsBadge() {
         </Modal.Section>
       </Modal>
 
-      {notificationMarkup}
     </>
   );
 }
