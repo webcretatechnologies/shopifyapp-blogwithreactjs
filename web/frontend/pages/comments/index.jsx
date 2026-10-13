@@ -385,6 +385,15 @@ export default function Comments() {
     }
   );
 
+  const hasActiveCommentFilter = Boolean(
+    articleIdParam || queryValue.trim() || (statusFilter[0] && statusFilter[0] !== "all")
+  );
+  const showCommentSetup = !loading
+    && !networkError
+    && !protectedDataRequired
+    && comments.length === 0
+    && !hasActiveCommentFilter;
+
   return (
     <Frame>
       <Page
@@ -447,6 +456,29 @@ export default function Comments() {
                 onDismiss={() => navigate("/comments")}
               >
                 <p>You are viewing comments scoped to a specific blog article.</p>
+              </Banner>
+            </Layout.Section>
+          )}
+
+          {showCommentSetup && (
+            <Layout.Section>
+              <Banner
+                title="Set up comments for your blog"
+                action={{
+                  content: "Manage blogs",
+                  onAction: () => navigate("/blogs"),
+                }}
+              >
+                <BlockStack gap="100">
+                  <Text as="p">
+                    Comments are enabled per blog, not per individual post. Open Manage blogs and choose
+                    <strong> Allowed, pending moderation</strong> to review comments before they appear,
+                    or <strong>Allowed</strong> to publish them immediately.
+                  </Text>
+                  <Text as="p" tone="subdued">
+                    New customer comments will appear here, where you can approve, mark as spam, or delete them.
+                  </Text>
+                </BlockStack>
               </Banner>
             </Layout.Section>
           )}
@@ -516,8 +548,18 @@ export default function Comments() {
                       <p>The network request was interrupted. Please click retry to reload.</p>
                     </EmptyState>
                   ) : (
-                    <EmptyState heading="No comments found">
-                      <p>There are no comments matching your request.</p>
+                    <EmptyState
+                      heading={hasActiveCommentFilter ? "No matching comments" : "No comments yet"}
+                      action={!hasActiveCommentFilter ? {
+                        content: "Manage blogs",
+                        onAction: () => navigate("/blogs"),
+                      } : undefined}
+                    >
+                      <p>
+                        {hasActiveCommentFilter
+                          ? "There are no comments matching your request."
+                          : "Enable comments for a blog to start collecting and moderating customer feedback here."}
+                      </p>
                     </EmptyState>
                   )
                 }
