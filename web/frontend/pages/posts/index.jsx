@@ -19,7 +19,6 @@ import {
   ChoiceList,
   Toast,
   Frame,
-  Thumbnail,
   Box,
   InlineStack,
   BlockStack,
@@ -44,6 +43,7 @@ import {
 import ConfirmActionModal from "../../components/ConfirmActionModal";
 import UpgradePrompt from "../../components/UpgradePrompt";
 import KpiRow from "../../components/common/KpiRow";
+import PostThumbnail from "../../components/common/PostThumbnail";
 
 const STATUS_BADGE_MAP = {
   published: "success",
@@ -620,29 +620,7 @@ export default function Articles() {
     >
       <IndexTable.Cell>
         <InlineStack gap="300" align="start" blockAlign="center" wrap={false}>
-          {post.featuredImage ? (
-            <Thumbnail
-              source={post.featuredImage}
-              alt={post.title}
-              size="small"
-            />
-          ) : (
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                background: "#f1f2f3",
-                borderRadius: 8,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 18,
-                flexShrink: 0,
-              }}
-            >
-              📝
-            </div>
-          )}
+          <PostThumbnail src={post.featuredImage} alt={post.title} />
           {/* A long title wrapping to a second line makes only that row disproportionately
               tall next to single-line rows — truncate to one line with an ellipsis instead,
               same fix as the Import from Shopify list. Needs an explicit max-width since a flex

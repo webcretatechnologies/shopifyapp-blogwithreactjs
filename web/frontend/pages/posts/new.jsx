@@ -2620,9 +2620,10 @@ export default function PostEditor() {
                               alt={post.featuredImageAlt || "Featured image"}
                               style={{
                                 width: "100%",
+                                height: "auto",
                                 display: "block",
-                                maxHeight: "220px",
-                                objectFit: "cover",
+                                maxHeight: "360px",
+                                objectFit: "contain",
                               }}
                             />
                           </div>

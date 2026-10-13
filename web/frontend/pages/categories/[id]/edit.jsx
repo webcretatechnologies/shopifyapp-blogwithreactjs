@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
 import AiCreditTitleAction from "../../../components/AiCreditTitleAction";
 import { smartBackAction } from "../../../utils/smartBack";
+import PostThumbnail from "../../../components/common/PostThumbnail";
 import {
   Page,
   Layout,
@@ -15,7 +16,6 @@ import {
   Button,
   Box,
   IndexTable,
-  Thumbnail,
   Toast,
   Frame,
   Modal,
@@ -302,26 +302,7 @@ export default function EditCategory() {
                     >
                       <IndexTable.Cell>
                         <InlineStack gap="300" blockAlign="center" wrap={false}>
-                          {post.featuredImage ? (
-                            <Thumbnail source={post.featuredImage} alt="" size="small" />
-                          ) : (
-                            <div
-                              aria-hidden="true"
-                              style={{
-                                width: 40,
-                                height: 40,
-                                background: "#f1f2f3",
-                                borderRadius: 8,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 18,
-                                flexShrink: 0,
-                              }}
-                            >
-                              📝
-                            </div>
-                          )}
+                          <PostThumbnail src={post.featuredImage} alt="" />
                           <BlockStack gap="050">
                             <Text as="span" variant="bodyMd" fontWeight="semibold">
                               {post.title}

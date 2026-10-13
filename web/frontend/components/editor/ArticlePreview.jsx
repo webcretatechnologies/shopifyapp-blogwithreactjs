@@ -291,8 +291,9 @@ export default function ArticlePreview({
                   alt={title}
                   style={{
                     width: "100%",
+                    height: "auto",
                     maxHeight: isMobile ? "280px" : isTablet ? "380px" : "480px",
-                    objectFit: "cover",
+                    objectFit: "contain",
                     display: "block",
                   }}
                 />
