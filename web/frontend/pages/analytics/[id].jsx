@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../components/AiCreditTitleAction";
 import { smartBackAction } from "../../utils/smartBack";
 import {
   Page,
@@ -208,7 +209,8 @@ export default function PostAnalytics() {
 
   return (
     <>
-    <TitleBar title={post?.title || "Post analytics"}>
+      <TitleBar title={post?.title || "Post analytics"}>
+        <AiCreditTitleAction />
       <button variant="breadcrumb" onClick={() => navigate("/analytics")}>
         Analytics
       </button>

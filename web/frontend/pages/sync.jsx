@@ -4,6 +4,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../components/AiCreditTitleAction";
 import { smartBackAction } from "../utils/smartBack";
 import UpgradePrompt from "../components/UpgradePrompt";
 import KpiRow from "../components/common/KpiRow";
@@ -374,7 +375,9 @@ export default function SyncDashboard() {
     );
   });    return (
     <Frame>
-      <TitleBar title="Sync status" />
+      <TitleBar title="Sync status">
+        <AiCreditTitleAction />
+      </TitleBar>
       {toast && (
         <Toast
           content={toast.content}

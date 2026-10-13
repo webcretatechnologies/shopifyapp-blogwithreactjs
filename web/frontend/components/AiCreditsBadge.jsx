@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { Badge, Banner, BlockStack, Button, InlineGrid, InlineStack, Modal, Spinner, Text } from "@shopify/polaris";
+import { AI_CREDIT_BALANCE_UPDATED_EVENT, OPEN_AI_CREDIT_PURCHASE_EVENT } from "./AiCreditTitleAction";
 
 function money(value, currency = "USD") {
   try {
@@ -110,6 +111,7 @@ export default function AiCreditsBadge() {
           // Shopify confirmation after returning from the approval screen.
           notify(`🎉 ${purchase.credits} AI credits added to your account`);
           loadCredits();
+          window.dispatchEvent(new Event(AI_CREDIT_BALANCE_UPDATED_EVENT));
           clearPurchaseReturnFlag();
           return;
         }
@@ -138,7 +140,7 @@ export default function AiCreditsBadge() {
     };
   }, [loadCredits, location.pathname, location.search, navigate, notify]);
 
-  const openPurchaseModal = async () => {
+  const openPurchaseModal = useCallback(async () => {
     setOpen(true);
     setPurchaseError("");
     setLoadingPacks(true);
@@ -152,7 +154,12 @@ export default function AiCreditsBadge() {
     } finally {
       setLoadingPacks(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener(OPEN_AI_CREDIT_PURCHASE_EVENT, openPurchaseModal);
+    return () => window.removeEventListener(OPEN_AI_CREDIT_PURCHASE_EVENT, openPurchaseModal);
+  }, [openPurchaseModal]);
 
   const buyPack = async (packKey) => {
     setPurchaseError("");
@@ -188,7 +195,6 @@ export default function AiCreditsBadge() {
 
   // An unlimited plan has no reason to buy a top-up, so do not add noise to its header.
   if (!credits || credits.limit == null) return null;
-  const atLimit = (credits.remaining ?? 0) <= 0;
   const smallestPack = packs.length
     ? packs.reduce((smallest, pack) => (Number(pack.credits) < Number(smallest.credits) ? pack : smallest), packs[0])
     : null;
@@ -196,27 +202,6 @@ export default function AiCreditsBadge() {
 
   return (
     <>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label="Buy more AI credits"
-        onClick={openPurchaseModal}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            openPurchaseModal();
-          }
-        }}
-        style={{ display: "inline-flex", cursor: "pointer", margin: "8px 16px 0" }}
-      >
-        <Badge tone={atLimit ? "critical" : undefined}>
-          <InlineStack gap="100" blockAlign="center">
-            <Text as="span">✨</Text>
-            <Text as="span">{`${Math.max(0, credits.remaining ?? 0)} AI credit${credits.remaining === 1 ? "" : "s"} left`}</Text>
-          </InlineStack>
-        </Badge>
-      </div>
-
       <Modal open={open} onClose={() => !purchasingPack && setOpen(false)} title="Add AI credits" size="large">
         <Modal.Section>
           <BlockStack gap="500">

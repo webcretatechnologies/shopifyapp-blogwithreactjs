@@ -21,6 +21,7 @@ import {
   Divider,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../components/AiCreditTitleAction";
 import { SearchIcon, PageAddIcon } from "@shopify/polaris-icons";
 import TemplateGalleryCard, { BlankTemplateCard } from "../../components/builder/TemplateGalleryCard";
 import CreateArticleWizard from "../../components/builder/CreateArticleWizard";
@@ -253,7 +254,9 @@ export default function BlogTemplatesLibrary() {
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}
       subtitle="Pick a layout and it opens as a new draft article - blocks, sample images and placeholder copy included. Hover a card to scroll its full design."
     >
-      <TitleBar title="Blog templates" />
+      <TitleBar title="Blog templates">
+        <AiCreditTitleAction />
+      </TitleBar>
       <Layout>
         <Layout.Section>
           <KpiRow

@@ -38,6 +38,7 @@ import {
   List,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../components/AiCreditTitleAction";
 import { ViewIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, EditIcon, CalendarIcon, DeleteIcon } from "@shopify/polaris-icons";
 import { DateTime } from "luxon";
 import FirstPostCongratsModal from "../../components/FirstPostCongratsModal";
@@ -1969,6 +1970,7 @@ export default function PostEditor() {
         </div>
       )}
       <TitleBar title={isEditing ? `Edit: ${post.title || "Article"}` : "New article"}>
+        <AiCreditTitleAction />
         <button variant="breadcrumb" onClick={() => leaveEditor("/posts")}>
           Articles
         </button>

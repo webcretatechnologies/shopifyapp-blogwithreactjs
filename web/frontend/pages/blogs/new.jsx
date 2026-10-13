@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../components/AiCreditTitleAction";
 import { smartBackAction } from "../../utils/smartBack";
 import {
   Page,
@@ -177,6 +178,7 @@ export default function NewBlog() {
   return (
     <Frame>
       <TitleBar title="Add blog">
+        <AiCreditTitleAction />
         <button variant="breadcrumb" onClick={() => navigate("/blogs")}>
           Blogs
         </button>

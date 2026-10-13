@@ -22,6 +22,7 @@ import {
   Thumbnail,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../components/AiCreditTitleAction";
 import { useNavigate, useLocation } from "react-router-dom";
 import { smartBackAction } from "../../utils/smartBack";
 import KpiRow from "../../components/common/KpiRow";
@@ -441,6 +442,7 @@ export default function ArticleImporter() {
   return (
     <Frame>
       <TitleBar title="Import from Shopify">
+        <AiCreditTitleAction />
         <button variant="breadcrumb" onClick={() => navigate("/posts")}>
           Articles
         </button>

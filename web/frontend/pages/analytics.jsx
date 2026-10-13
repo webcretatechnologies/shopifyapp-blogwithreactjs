@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../components/AiCreditTitleAction";
 import { smartBackAction } from "../utils/smartBack";
 import UpgradePrompt from "../components/UpgradePrompt";
 import {
@@ -248,7 +249,9 @@ export default function Analytics() {
 
   return (
     <>
-    <TitleBar title="Analytics" />
+    <TitleBar title="Analytics">
+      <AiCreditTitleAction />
+    </TitleBar>
     <Page
       title="Analytics"
       subtitle="Comprehensive insights into your blog's performance — views, conversions, and more"

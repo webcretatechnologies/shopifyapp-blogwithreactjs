@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../components/AiCreditTitleAction";
 import { smartBackAction } from "../../utils/smartBack";
 import KpiRow from "../../components/common/KpiRow";
 import {
@@ -250,6 +251,7 @@ export default function Blogs() {
   return (
     <Frame>
       <TitleBar title="Blogs">
+        <AiCreditTitleAction />
         <button variant="breadcrumb" onClick={() => navigate("/posts")}>
           Articles
         </button>

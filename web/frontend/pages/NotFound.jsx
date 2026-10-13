@@ -2,6 +2,7 @@ import { Card, EmptyState, Page } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../components/AiCreditTitleAction";
 import { notFoundImage } from "../assets";
 import { smartBackAction } from "../utils/smartBack";
 
@@ -11,7 +12,9 @@ export default function NotFound() {
   const location = useLocation();
   return (
     <>
-    <TitleBar title={t("NotFound.heading")} />
+    <TitleBar title={t("NotFound.heading")}>
+      <AiCreditTitleAction />
+    </TitleBar>
     <Page backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}>
       <Card>
         <EmptyState heading={t("NotFound.heading")} image={notFoundImage}>

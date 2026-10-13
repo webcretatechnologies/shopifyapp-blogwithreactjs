@@ -4,7 +4,6 @@ import { NavMenu } from "@shopify/app-bridge-react";
 import Routes from "./Routes";
 import { QueryProvider, PolarisProvider } from "./components";
 import AiCreditsBadge from "./components/AiCreditsBadge";
-import { Box } from "@shopify/polaris";
 
 export default function App() {
   const pages = import.meta.glob("./pages/**/!(*.test.[jt]sx)*.([jt]sx)", {
@@ -35,10 +34,10 @@ export default function App() {
           {isAdminPath ? (
             <Routes pages={pages} />
           ) : (
-            <Box paddingBlockEnd="400">
+            <>
               <AiCreditsBadge />
               <Routes pages={pages} />
-            </Box>
+            </>
           )}
         </QueryProvider>
       </BrowserRouter>

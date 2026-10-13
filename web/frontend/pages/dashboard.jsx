@@ -22,6 +22,7 @@ import {
   SkeletonDisplayText,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../components/AiCreditTitleAction";
 import {
   RefreshIcon,
   CheckCircleIcon,
@@ -321,7 +322,9 @@ export default function Dashboard() {
 
   return (
     <>
-      <TitleBar title={t("Navigation.dashboard")} />
+      <TitleBar title={t("Navigation.dashboard")}>
+        <AiCreditTitleAction />
+      </TitleBar>
       <Page
         title={t("Navigation.dashboard")}
         subtitle={

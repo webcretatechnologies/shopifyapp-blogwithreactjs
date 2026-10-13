@@ -31,6 +31,7 @@ import {
   Tooltip,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../components/AiCreditTitleAction";
 import {
   PlusIcon,
   ImportIcon,
@@ -744,7 +745,9 @@ export default function Articles() {
 
   return (
     <Frame>
-      <TitleBar title="Articles" />
+      <TitleBar title="Articles">
+        <AiCreditTitleAction />
+      </TitleBar>
       {toastMessage && (
         <Toast
           content={toastMessage.content}

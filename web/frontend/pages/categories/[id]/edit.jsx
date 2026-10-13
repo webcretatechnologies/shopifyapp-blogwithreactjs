@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../../components/AiCreditTitleAction";
 import { smartBackAction } from "../../../utils/smartBack";
 import {
   Page,
@@ -125,6 +126,7 @@ export default function EditCategory() {
   return (
     <Frame>
       <TitleBar title={category.name}>
+        <AiCreditTitleAction />
         <button variant="breadcrumb" onClick={() => navigate("/categories")}>
           Categories
         </button>

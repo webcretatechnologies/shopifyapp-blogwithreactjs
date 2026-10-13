@@ -36,6 +36,7 @@ import {
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../../components/AiCreditTitleAction";
 import { smartBackAction } from "../../../utils/smartBack";
 import UpgradePrompt from "../../../components/UpgradePrompt";
 import { BlockRegistry } from "../../../components/builder/BlockRegistry";
@@ -1648,6 +1649,7 @@ export default function PostTranslationPage() {
     return (
       <Frame>
         <TitleBar title="Translate">
+          <AiCreditTitleAction />
           <button variant="breadcrumb" onClick={() => navigate(`/posts/${id}/edit`)}>
             Back to edit
           </button>
@@ -1680,6 +1682,7 @@ export default function PostTranslationPage() {
   return (
     <Frame>
       <TitleBar title="Translate post">
+        <AiCreditTitleAction />
         <button variant="breadcrumb" onClick={() => navigate(`/posts/${id}/edit`)}>
           Back to edit
         </button>

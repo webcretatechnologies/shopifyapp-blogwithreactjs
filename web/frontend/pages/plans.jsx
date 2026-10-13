@@ -21,6 +21,7 @@ import { CheckIcon } from "@shopify/polaris-icons";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../components/AiCreditTitleAction";
 import { smartBackAction } from "../utils/smartBack";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import PlanUsageMeters from "../components/PlanUsageMeters";
@@ -397,7 +398,9 @@ export default function Plans() {
 
   return (
     <>
-    <TitleBar title="Plans & Billing" />
+    <TitleBar title="Plans & Billing">
+      <AiCreditTitleAction />
+    </TitleBar>
     <Page
       title="Plans & Billing"
       backAction={smartBackAction(navigate, location, "/dashboard", "Dashboard")}

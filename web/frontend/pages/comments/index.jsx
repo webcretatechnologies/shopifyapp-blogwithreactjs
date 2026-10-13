@@ -27,6 +27,7 @@ import {
   Banner
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
+import AiCreditTitleAction from "../../components/AiCreditTitleAction";
 import { MenuHorizontalIcon } from "@shopify/polaris-icons";
 
 const STATUS_BADGE_MAP = {
@@ -392,7 +393,9 @@ export default function Comments() {
         subtitle={articleIdParam ? "Filtered by specific article" : "Manage all article comments across your store"}
         fullWidth
       >
-        <TitleBar title="Comments" />
+        <TitleBar title="Comments">
+          <AiCreditTitleAction />
+        </TitleBar>
         <Layout>
           {networkError && (
             <Layout.Section>
