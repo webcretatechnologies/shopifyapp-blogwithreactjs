@@ -151,6 +151,8 @@ model Post {
   categoryId            Int?
   /** Shopify blog selected before publish (ShopifyArticle doesn't exist yet); publish reads this if the merchant didn't change it. */
   blogId                String?
+  /** Active theme article template suffix. Empty/null uses Shopify's default article template. */
+  articleTemplateSuffix String?           @db.VarChar(120)
   /** Set when an AI generation for this post degraded to filler text (Groq unavailable/failed).
       Cleared on the post's next manual save, since that's the merchant reviewing it. */
   aiWarning             String?           @db.VarChar(500)

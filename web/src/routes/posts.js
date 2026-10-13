@@ -257,6 +257,7 @@ router.post("/", async (req, res) => {
       categoryId,
       tags = [],
       blogId,
+      articleTemplateSuffix,
       editorMode = "builder",
       metaTitle,
       metaDescription,
@@ -280,6 +281,10 @@ router.post("/", async (req, res) => {
     } = req.body;
 
     if (!title) return res.status(422).json({ error: "Title is required" });
+    const normalizedArticleTemplateSuffix = String(articleTemplateSuffix || "").trim();
+    if (normalizedArticleTemplateSuffix && !/^[a-z0-9][a-z0-9_-]*$/i.test(normalizedArticleTemplateSuffix)) {
+      return res.status(422).json({ error: "Invalid article template suffix" });
+    }
 
     if (Array.isArray(relatedPostIds) && relatedPostIds.length > 0 && !isFeatureEnabled(shop.planKey, "related_posts_manual")) {
       return res.status(403).json({ error: "Manually selecting related posts requires the Starter plan or higher." });
@@ -345,6 +350,7 @@ router.post("/", async (req, res) => {
         productSliderConfig: productSliderConfig || null,
         categoryId: categoryId ? parseInt(categoryId) : null,
         blogId: blogId || null,
+        articleTemplateSuffix: normalizedArticleTemplateSuffix || null,
         relatedPostsSourceMode: modeVal,
         blogSidebarOverride: sidebarOv,
         editorMode: "builder",
@@ -440,6 +446,7 @@ router.put("/:id", async (req, res) => {
       excludeFromSitemap,
       richSnippetType,
       blogId,
+      articleTemplateSuffix,
       relatedPostIds,
       relatedPostsSourceMode,
       blogSidebarOverride,
@@ -449,6 +456,13 @@ router.put("/:id", async (req, res) => {
       // it shouldn't clear the "needs review" banner the way an actual save does.
       silentAutoSave,
     } = req.body;
+
+    const normalizedArticleTemplateSuffix = articleTemplateSuffix === undefined
+      ? undefined
+      : String(articleTemplateSuffix || "").trim();
+    if (normalizedArticleTemplateSuffix && !/^[a-z0-9][a-z0-9_-]*$/i.test(normalizedArticleTemplateSuffix)) {
+      return res.status(422).json({ error: "Invalid article template suffix" });
+    }
 
     if (Array.isArray(relatedPostIds) && relatedPostIds.length > 0 && !isFeatureEnabled(shop.planKey, "related_posts_manual")) {
       return res.status(403).json({ error: "Manually selecting related posts requires the Starter plan or higher." });
@@ -515,6 +529,7 @@ router.put("/:id", async (req, res) => {
         ...(productSliderConfig && { productSliderConfig }),
         ...(categoryId !== undefined && { categoryId: categoryId ? parseInt(categoryId) : null }),
         ...(blogId !== undefined && { blogId: blogId || null }),
+        ...(normalizedArticleTemplateSuffix !== undefined && { articleTemplateSuffix: normalizedArticleTemplateSuffix || null }),
         // A manual save is the merchant reviewing the post, whether or not this specific save
         // touched the flagged content - the "needs review" banner has done its job once it's
         // been seen and acted on once. The silent auto-save isn't that - it fires before the
@@ -1259,6 +1274,41 @@ router.post("/shopify/products/by-ids", async (req, res) => {
 });
 
 // ─── GET /api/posts/shopify/blogs — Fetch Shopify blogs list ─────────────────
+// ─── GET /api/posts/shopify/article-templates — active theme article templates ──
+router.get("/shopify/article-templates", async (req, res) => {
+  try {
+    const session = res.locals.shopify?.session;
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+
+    const client = new shopify.api.clients.Rest({ session });
+    const themesResult = await client.get({ path: "themes" });
+    const mainTheme = (themesResult.body?.themes || []).find((theme) => theme.role === "main");
+    if (!mainTheme) return res.status(404).json({ error: "Published theme not found" });
+
+    const assetsResult = await client.get({ path: `themes/${mainTheme.id}/assets` });
+    const suffixes = new Set();
+    for (const asset of assetsResult.body?.assets || []) {
+      const match = String(asset.key || "").match(/^templates\/article(?:\.([a-z0-9][a-z0-9_-]*))?\.(?:json|liquid)$/i);
+      if (match?.[1]) suffixes.add(match[1]);
+    }
+
+    const templates = [
+      { label: "Default blog post", value: "" },
+      ...Array.from(suffixes)
+        .sort((a, b) => a.localeCompare(b))
+        .map((suffix) => ({
+          value: suffix,
+          label: suffix.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        })),
+    ];
+
+    res.json({ theme: { id: String(mainTheme.id), name: mainTheme.name }, templates });
+  } catch (err) {
+    console.error("GET /api/posts/shopify/article-templates error:", err.message);
+    res.status(500).json({ error: "Could not load article templates from the published theme" });
+  }
+});
+
 router.get("/shopify/blogs", async (req, res) => {
   try {
     const session = res.locals.shopify?.session;
@@ -1897,6 +1947,7 @@ function serializePost(post) {
     categoryId: post.categoryId,
     category: post.category || null,
     blogId: post.blogId,
+    articleTemplateSuffix: post.articleTemplateSuffix || "",
     aiWarning: post.aiWarning || null,
     needsAutoSave: Boolean(post.needsAutoSave),
     relatedPostsSourceMode: post.relatedPostsSourceMode || null,

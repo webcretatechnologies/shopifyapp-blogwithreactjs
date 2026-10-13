@@ -170,7 +170,7 @@ function buildListingSummary(storefrontHtml, merchantExcerpt) {
   return `${text.slice(0, 220).replace(/\s+\S*$/, "")}…`;
 }
 
-function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image, summary, meta_title, meta_description, meta_robots, publishAt }) {
+function toArticleGraphQLInput({ title, body_html, author, published, tags, handle, image, summary, meta_title, meta_description, meta_robots, publishAt, templateSuffix }) {
   const input = {
     title,
     body: body_html,
@@ -184,6 +184,8 @@ function toArticleGraphQLInput({ title, body_html, author, published, tags, hand
   if (publishAt) {
     input.publishDate = publishAt;
   }
+  // An empty suffix deliberately restores Shopify's default article template.
+  if (templateSuffix !== undefined) input.templateSuffix = templateSuffix || "";
 
   if (summary !== undefined) {
     input.summary = summary || "";
@@ -1146,6 +1148,7 @@ async function pushPostToShopify(postId, { publishMode = false } = {}) {
     meta_title: post.metaTitle,
     meta_description: post.metaDescription,
     meta_robots: metaRobotsDirective,
+    templateSuffix: post.articleTemplateSuffix || "",
   });
 
   // resultingImageUrl: when we DID upload an image this push, Shopify re-hosts it under its own

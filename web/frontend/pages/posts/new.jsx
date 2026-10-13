@@ -905,7 +905,9 @@ export default function PostEditor() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [showRelatedPostsSetting, setShowRelatedPostsSetting] = useState(true);
   const [shopRelatedSourceMode, setShopRelatedSourceMode] = useState("smart");
-  const [themeTemplate, setThemeTemplate] = useState("default");
+  const [themeTemplate, setThemeTemplate] = useState("");
+  const [themeTemplates, setThemeTemplates] = useState([{ label: "Default blog post", value: "" }]);
+  const [isLoadingThemeTemplates, setIsLoadingThemeTemplates] = useState(false);
   const [metaRobotsActive, setMetaRobotsActive] = useState(null); // null = checking
 
   useEffect(() => {
@@ -1073,6 +1075,7 @@ export default function PostEditor() {
         relatedPosts: data.post.relatedPosts || [],
         relatedPostsSourceMode: data.post.relatedPostsSourceMode || "inherit",
         blogSidebarOverride: data.post.blogSidebarOverride || "inherit",
+        articleTemplateSuffix: data.post.articleTemplateSuffix || "",
         categoryId: data.post.categoryId || null,
         aiWarning: data.post.aiWarning || null,
         needsAutoSave: Boolean(data.post.needsAutoSave),
@@ -1089,6 +1092,7 @@ export default function PostEditor() {
       setFeatures(data.features || {});
       setFeaturesLoaded(true);
       setShopifyBlogId(data.post.shopifyArticle?.shopifyBlogId || data.post.blogId || "");
+      setThemeTemplate(data.post.articleTemplateSuffix || "");
 
       // Reset save bar on fresh load
       if (window.shopify?.saveBar) {
@@ -1123,19 +1127,29 @@ export default function PostEditor() {
   // Load Shopify blogs and features
   const loadShopifyBlogs = async () => {
     try {
-      const [blogsRes, featuresRes] = await Promise.all([
+      setIsLoadingThemeTemplates(true);
+      const [blogsRes, featuresRes, templatesRes] = await Promise.all([
         fetch("/api/posts/shopify/blogs"),
         fetch("/api/posts/plan/features"),
+        fetch("/api/posts/shopify/article-templates"),
       ]);
       const blogsData = await blogsRes.json();
       const featData = await featuresRes.json();
       setShopifyBlogs(blogsData.blogs || []);
+      if (templatesRes.ok) {
+        const templatesData = await templatesRes.json();
+        if (Array.isArray(templatesData.templates) && templatesData.templates.length) {
+          setThemeTemplates(templatesData.templates);
+        }
+      }
       // Was previously only set for new posts, so plan-gated UI (Schedule, SEO fields, etc.)
       // always rendered as locked when editing an existing post, regardless of the real plan.
       setFeatures(featData.features || {});
       setFeaturesLoaded(true);
     } catch {
       setFeaturesLoaded(true);
+    } finally {
+      setIsLoadingThemeTemplates(false);
     }
   };
 
@@ -1296,6 +1310,7 @@ export default function PostEditor() {
         isFieldDirty(post.customCss, "") ||
         tags.length > 0 ||
         isFieldDirty(shopifyBlogId, "") ||
+        isFieldDirty(themeTemplate, "") ||
         isFieldDirty(seoData.metaTitle, "") ||
         isFieldDirty(seoData.metaDescription, "") ||
         isFieldDirty(seoData.canonicalUrl, "") ||
@@ -1322,6 +1337,7 @@ export default function PostEditor() {
       isFieldDirty(post.featuredImageAlt, o.featuredImageAlt) ||
       isFieldDirty(post.customCss, o.customCss) ||
       isFieldDirty(shopifyBlogId, origBlogId) ||
+      isFieldDirty(themeTemplate, o.articleTemplateSuffix || "") ||
       isFieldDirty(seoData.metaTitle, o.metaTitle) ||
       isFieldDirty(seoData.metaDescription, o.metaDescription) ||
       isFieldDirty(seoData.canonicalUrl, o.canonicalUrl) ||
@@ -1348,7 +1364,7 @@ export default function PostEditor() {
       !tags.every((t) => originalTags.includes(t));
 
     return isPostDirty || isTagsDirty || isRelatedPostsDirty;
-  }, [isBlocksDirty, post, tags, shopifyBlogId, originalPost, isEditing, seoData, isLoading, relatedPostsSelection, relatedPostsSourceMode, blogSidebarOverride]);
+  }, [isBlocksDirty, post, tags, shopifyBlogId, themeTemplate, originalPost, isEditing, seoData, isLoading, relatedPostsSelection, relatedPostsSourceMode, blogSidebarOverride]);
 
   const saveBarId = "post-editor-save-bar";
 
@@ -1538,6 +1554,7 @@ export default function PostEditor() {
       relatedPostsSourceMode,
       blogSidebarOverride,
       categoryId: post.categoryId || null,
+      articleTemplateSuffix: themeTemplate,
     };
   };
 
@@ -1593,6 +1610,7 @@ export default function PostEditor() {
           relatedPosts: [...relatedPostsSelection],
           relatedPostsSourceMode: relatedPostsSourceMode === "inherit" ? null : relatedPostsSourceMode,
           blogSidebarOverride: blogSidebarOverride === "inherit" ? null : blogSidebarOverride,
+          articleTemplateSuffix: themeTemplate,
           contentJson: currentSavedBlocks,
           // A save that reaches here just pushed OUR content to Shopify, so the sync direction
           // is unambiguously "app_to_shopify" now — without this, post.shopifyArticle (a nested
@@ -1652,6 +1670,7 @@ export default function PostEditor() {
       setOriginalContentHtml(originalPost.contentHtml || "");
       setTags(originalPost.tags || []);
       setShopifyBlogId(originalPost.shopifyArticle?.shopifyBlogId || "");
+      setThemeTemplate(originalPost.articleTemplateSuffix || "");
       setSeoData({
         metaTitle: originalPost.metaTitle || "",
         metaDescription: originalPost.metaDescription || "",
@@ -2814,9 +2833,11 @@ export default function PostEditor() {
                       </BlockStack>
                       <Select
                         label="Theme template"
-                        options={[{ label: "Default blog post", value: "default" }]}
+                        options={themeTemplates}
                         value={themeTemplate}
                         onChange={setThemeTemplate}
+                        disabled={isLoadingThemeTemplates}
+                        helpText={isLoadingThemeTemplates ? "Loading templates from your published theme…" : "Choose the article template defined by your published Shopify theme."}
                       />
                     </BlockStack>
                   </Box>
