@@ -36,8 +36,8 @@
     per-item inline style tag only ever sets --col-span (never grid-column directly), so our
     !important grid-column reset below still wins regardless of that variable's value.
   {%- endcomment -%}
-  {%- assign li_grid = ":is(.blog-articles, .blog-articles.blog-articles--collage, .blog__posts, .blog-list, .blog-post-list, .main-blog .blog-articles, ul.blog-articles, #MainContent .blog-articles, #MainContent .blog__posts, #MainContent .blog-list, .blog-posts-container)" -%}
-  {%- assign li_collage = ".blog-articles--collage" -%}
+  {%- assign li_grid = "[data-blogger-listing-grid]" -%}
+  {%- assign li_collage = "[data-blogger-listing-grid].blog-articles--collage" -%}
   {%- assign li_item = ":is(.card.article-card, .article-card, .article)" -%}
   {%- comment -%}
     NEVER target the featured post with a bare :first-child. Themes are free to put
@@ -70,10 +70,16 @@
     {{ li_collage }} > *:nth-child(3n + 2):last-child .ratio::before {
       padding-bottom: var(--ratio-percent, 66.67%) !important;
     }
+    {{ li_grid }} .media,
+    {{ li_grid }} .card__media,
+    {{ li_grid }} .article-card__image {
+      background: #f1f2f3 !important;
+    }
     {{ li_grid }} .media > img,
     {{ li_grid }} .card__media img,
-    {{ li_grid }} .article-card__image img {
-      object-fit: cover !important;
+    {{ li_grid }} .article-card__image img,
+    {{ li_grid }} .blog-post-card__image-container img {
+      object-fit: contain !important;
       object-position: center center !important;
     }
     {% if listing_layout == 'list' %}
@@ -125,6 +131,31 @@
     }
     {% elsif listing_layout == 'grid_3' %}
     {{ li_grid }} { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+    {{ li_grid }} .blog-post-card {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      height: 100% !important;
+    }
+    {{ li_grid }} .blog-post-card__image-container {
+      flex: 0 0 auto !important;
+      width: 100% !important;
+      max-width: none !important;
+      aspect-ratio: 2 / 1 !important;
+      overflow: hidden !important;
+      background: #f1f2f3 !important;
+    }
+    {{ li_grid }} .blog-post-card__image-container img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      object-position: center !important;
+    }
+    {{ li_grid }} .blog-post-card__content {
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+    }
     @media (max-width: 989px) {
       {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     }
@@ -133,6 +164,31 @@
     }
     {% elsif listing_layout == 'grid_2' %}
     {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    {{ li_grid }} .blog-post-card {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      height: 100% !important;
+    }
+    {{ li_grid }} .blog-post-card__image-container {
+      flex: 0 0 auto !important;
+      width: 100% !important;
+      max-width: none !important;
+      aspect-ratio: 16 / 9 !important;
+      overflow: hidden !important;
+      background: #f1f2f3 !important;
+    }
+    {{ li_grid }} .blog-post-card__image-container img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain !important;
+      object-position: center !important;
+    }
+    {{ li_grid }} .blog-post-card__content {
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+    }
     @media (max-width: 749px) {
       {{ li_grid }} { grid-template-columns: minmax(0, 1fr) !important; }
     }
@@ -150,6 +206,30 @@
     {{ li_grid }} > {{ li_first }},
     {{ li_collage }} > {{ li_first }} {
       grid-column: 1 / span 2 !important;
+    }
+    {{ li_grid }} > {{ li_first }} .blog-post-card {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+    }
+    {{ li_grid }} > {{ li_first }} .blog-post-card__image-container {
+      flex: 0 0 auto !important;
+      width: 100% !important;
+      max-width: none !important;
+      aspect-ratio: 16 / 9 !important;
+      overflow: hidden !important;
+      background: #f1f2f3 !important;
+    }
+    {{ li_grid }} > {{ li_first }} .blog-post-card__image-container img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain !important;
+      object-position: center !important;
+    }
+    {{ li_grid }} > {{ li_first }} .blog-post-card__content {
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
     }
     @media (max-width: 989px) {
       {{ li_grid }} { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
@@ -217,7 +297,7 @@
           // Prefer the outer-most link for a given article (a card's title link usually wraps
           // more of the card than a nested "Read more" link to the same article).
           var cur = byPath[p];
-          if (!cur || (cur.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_CONTAINS)) {
+          if (!cur || (a.compareDocumentPosition(cur) & Node.DOCUMENT_POSITION_CONTAINS)) {
             byPath[p] = a;
           }
         }
@@ -302,45 +382,46 @@
         }).catch(function () {});
       }
 
-      // Stamps the first RENDERED child of each known grid container, so the featured-post
-      // rules can't land on an interleaved style/script node (see the li_first comment).
-      function markFirstRendered() {
-        var containers = document.querySelectorAll(KNOWN_SELECTORS.join(','));
-        Array.prototype.forEach.call(containers, function (container) {
-          var marked = false;
-          Array.prototype.forEach.call(container.children, function (child) {
-            if (marked) { child.removeAttribute('data-blogger-listing-first'); return; }
-            if (getComputedStyle(child).display === 'none') return;
-            child.setAttribute('data-blogger-listing-first', '');
-            marked = true;
-          });
+      // Stamps the first rendered article on the one selected list only. This
+      // deliberately avoids marking nested theme grids that may also use a known
+      // class name.
+      function markFirstRendered(container, items) {
+        var marked = false;
+        var children = items || Array.prototype.slice.call(container.children);
+        children.forEach(function (child) {
+          if (marked) { child.removeAttribute('data-blogger-listing-first'); return; }
+          if (getComputedStyle(child).display === 'none') return;
+          child.setAttribute('data-blogger-listing-first', '');
+          marked = true;
         });
       }
 
       function run() {
-        var knownMatch = null;
-        for (var i = 0; i < KNOWN_SELECTORS.length; i++) {
-          try {
-            if (document.querySelector(KNOWN_SELECTORS[i])) { knownMatch = KNOWN_SELECTORS[i]; break; }
-          } catch (e) {}
-        }
-        // A known selector matched: the static critical style block above already applied the right CSS,
-        // but it still needs the real first item stamped for the featured layouts.
-        if (knownMatch) {
-          try { markFirstRendered(); } catch (e) {}
-          report(true, knownMatch);
-          return;
-        }
-
         var detected = null;
         try { detected = detectListingContainer(); } catch (e) { detected = null; }
         if (detected) {
+          detected.container.setAttribute('data-blogger-listing-grid', '');
+          try { markFirstRendered(detected.container, detected.items); } catch (e) {}
           try { applyGenericLayout(detected, layout); } catch (e) {}
           window.addEventListener('resize', function () {
             try { applyGenericLayout(detected, layout); } catch (e) {}
           });
           report(true, '(generic-detected)');
           return;
+        }
+
+        // Fallback only for a theme whose article structure cannot be inferred.
+        // We still activate exactly one container instead of styling every nested
+        // matching element on the page.
+        for (var i = 0; i < KNOWN_SELECTORS.length; i++) {
+          try {
+            var fallback = document.querySelector(KNOWN_SELECTORS[i]);
+            if (!fallback) continue;
+            fallback.setAttribute('data-blogger-listing-grid', '');
+            markFirstRendered(fallback);
+            report(true, KNOWN_SELECTORS[i]);
+            return;
+          } catch (e) {}
         }
 
         // Neither path found anything to style. Leave the theme's own listing exactly as-is

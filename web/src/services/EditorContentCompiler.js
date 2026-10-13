@@ -43,7 +43,11 @@ function resolveBlogLayoutWidth(settings = {}) {
  * Target both so Settings layouts actually hit the live listing.
  */
 function listingGridSelector() {
-  return ":is(.blog-articles, .blog-articles, .blog-articles.blog-articles--collage, .blog-articles.blog-articles--collage, .blog__posts, .blog-list, .blog-post-list, .main-blog .blog-articles, .main-blog .blog-articles, ul.blog-articles, ul.blog-articles, #MainContent .blog-articles, #MainContent .blog-articles, .blog-posts-container)";
+  // The app embed finds the one real repeating article container at runtime and
+  // stamps this attribute on it. Targeting a long list of theme class names here
+  // caused nested theme components to become grids too, separating an image from
+  // its own article content on some newer themes.
+  return "[data-blogger-listing-grid]";
 }
 
 /** Item wrapper for the newer block-based ("Horizon"-family) theme, which spans
@@ -54,7 +58,7 @@ function listingItemSelector() {
 }
 
 function listingCollageSelector() {
-  return ":is(.blog-articles--collage, .blog-articles--collage)";
+  return "[data-blogger-listing-grid].blog-articles--collage";
 }
 
 /**
@@ -79,15 +83,92 @@ function listingMediaCss(list, collage, first, bang, layout) {
 
 function listingImageFitCss(list, bang) {
   return `
+  ${list} .media,
+  ${list} .card__media,
+  ${list} .article-card__image {
+    background: #f1f2f3${bang};
+  }
   ${list} .media > img,
   ${list} .card__media img,
   ${list} .article-card__image img,
   ${list} .article-card .media img,
-  ${list} .card.article-card .media img {
-    object-fit: cover${bang};
+  ${list} .card.article-card .media img,
+  ${list} .blog-post-card__image-container img {
+    object-fit: contain${bang};
     object-position: center center${bang};
     width: 100%${bang};
     height: 100%${bang};
+  }`;
+}
+
+/**
+ * Horizon-family themes promote their first blog card with a horizontal
+ * image/content arrangement. That is appropriate for our Featured and Magazine
+ * layouts, but leaks into plain grids and makes their first tile look unrelated
+ * to every other card. Normalize only grid_2 and grid_3 to stacked cards.
+ */
+function listingPlainGridCardCss(list, bang, layout) {
+  if (layout !== "grid_2" && layout !== "grid_3") return "";
+  return `
+  ${list} .blog-post-card {
+    display: flex${bang};
+    flex-direction: column${bang};
+    align-items: stretch${bang};
+    height: 100%${bang};
+  }
+  ${list} .blog-post-card__image-container {
+    flex: 0 0 auto${bang};
+    width: 100%${bang};
+    max-width: none${bang};
+    aspect-ratio: 16 / 9${bang};
+    overflow: hidden${bang};
+    background: #f1f2f3${bang};
+  }
+  ${list} .blog-post-card__image-container img {
+    display: block${bang};
+    width: 100%${bang};
+    height: 100%${bang};
+    object-fit: contain${bang};
+    object-position: center${bang};
+  }
+  ${list} .blog-post-card__content {
+    flex: 1 1 auto${bang};
+    min-width: 0${bang};
+  }`;
+}
+
+/**
+ * The Magazine preview is a two-column-wide lead beside one regular card.
+ * The lead's copy stays below its image instead of inheriting Horizon's
+ * horizontal-card treatment.
+ */
+function listingMagazineLeadCardCss(first, bang, layout) {
+  if (layout !== "magazine") return "";
+  return `
+  ${first} .blog-post-card {
+    display: flex${bang};
+    flex-direction: column${bang};
+    align-items: stretch${bang};
+  }
+  ${first} .blog-post-card__image-container {
+    flex: 0 0 auto${bang};
+    width: 100%${bang};
+    max-width: none${bang};
+    /* A shorter editorial hero preserves the original Magazine composition. */
+    aspect-ratio: 2 / 1${bang};
+    overflow: hidden${bang};
+    background: #f1f2f3${bang};
+  }
+  ${first} .blog-post-card__image-container img {
+    display: block${bang};
+    width: 100%${bang};
+    height: 100%${bang};
+    object-fit: cover${bang};
+    object-position: center${bang};
+  }
+  ${first} .blog-post-card__content {
+    flex: 1 1 auto${bang};
+    min-width: 0${bang};
   }`;
 }
 
@@ -271,6 +352,8 @@ function generateBlogListingCss(settings = {}, bang = " !important") {
 ${layoutRules}
 ${listingMediaCss(list, collage, first, bang, layout)}
 ${listingImageFitCss(list, bang)}
+${listingPlainGridCardCss(list, bang, layout)}
+${listingMagazineLeadCardCss(first, bang, layout)}
   ${list} .article-card__excerpt .blogger-byline,
   ${list} .article-card__excerpt .blogger-author,
   ${list} .article-card__excerpt .blogger-published-date,
@@ -2197,7 +2280,7 @@ ${this.generateGlobalCss(settings)}
   .blogger-related-posts__list-thumb {
     width: 88px !important;
     height: 66px !important;
-    object-fit: cover !important;
+    object-fit: contain !important;
     border-radius: 6px;
     flex-shrink: 0;
     background: #f1f2f3;
