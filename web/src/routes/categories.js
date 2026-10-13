@@ -93,7 +93,20 @@ router.get("/:id", async (req, res) => {
 
     const category = await prisma.category.findFirst({
       where: { id, shopId: shop.id },
-      include: { _count: { select: { posts: true } } },
+      include: {
+        _count: { select: { posts: true } },
+        posts: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            status: true,
+            featuredImage: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: "desc" },
+        },
+      },
     });
     if (!category) return res.status(404).json({ error: "Category not found" });
 
@@ -103,6 +116,7 @@ router.get("/:id", async (req, res) => {
         name: category.name,
         slug: category.slug,
         postCount: category._count.posts,
+        posts: category.posts,
         createdAt: category.createdAt,
         updatedAt: category.updatedAt,
       },
