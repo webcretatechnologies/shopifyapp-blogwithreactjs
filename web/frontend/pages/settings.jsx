@@ -1337,6 +1337,53 @@ const TABS = [
   { id: "advanced", content: "Advanced" },
 ];
 
+function BrandColorField({ label, description, value, onChange }) {
+  const colorValue = /^#[0-9a-f]{6}$/i.test(value || "") ? value : "#000000";
+  return (
+    <div
+      style={{
+        border: "1px solid #e1e3e5",
+        borderRadius: 10,
+        padding: 12,
+        background: "#fff",
+      }}
+    >
+      <BlockStack gap="200">
+        <InlineStack gap="200" blockAlign="center" wrap={false}>
+          <input
+            aria-label={`${label} color picker`}
+            type="color"
+            value={colorValue}
+            onChange={(event) => onChange(event.target.value)}
+            style={{
+              width: 36,
+              height: 36,
+              padding: 0,
+              border: "1px solid #c9cccf",
+              borderRadius: 8,
+              background: "transparent",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          />
+          <BlockStack gap="050">
+            <Text as="span" variant="bodySm" fontWeight="semibold">{label}</Text>
+            <Text as="span" variant="bodySm" tone="subdued">{description}</Text>
+          </BlockStack>
+        </InlineStack>
+        <TextField
+          label={`${label} hex value`}
+          labelHidden
+          value={value || ""}
+          onChange={onChange}
+          autoComplete="off"
+          placeholder="#008060"
+        />
+      </BlockStack>
+    </div>
+  );
+}
+
 // A single, reusable card-header pattern: title + optional trailing action/badge.
 function SectionCard({ title, trailing, children }) {
   return (
@@ -1907,12 +1954,17 @@ export default function Settings() {
                         Sync from theme
                       </Button>
                     }
-                  >
-                    <BlockStack gap="400">
-                      <Text as="p" variant="bodyMd" tone="subdued">
-                        Set brand colors used by new blog blocks. Sync from theme to pull
-                        colors from your live Shopify theme, then save.
-                      </Text>
+                    >
+                    <BlockStack gap="500">
+                      <BlockStack gap="100">
+                        <Text as="p" variant="bodyMd" fontWeight="semibold">
+                          Create a consistent look for every new blog block.
+                        </Text>
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          Choose your core colors below, or import them from the active Shopify theme.
+                          Changes apply when you save settings.
+                        </Text>
+                      </BlockStack>
 
                       {featuresLoaded && !features.theme_style_sync?.enabled && (
                         <UpgradePrompt
@@ -1923,116 +1975,90 @@ export default function Settings() {
                         />
                       )}
 
-                      <FormLayout>
-                        <FormLayout.Group>
-                          <TextField
-                            label="Primary color"
-                            type="color"
-                            value={settings.primaryColor}
-                            onChange={set("primaryColor")}
-                            autoComplete="off"
-                          />
-                          <TextField
-                            label="Secondary color"
-                            type="color"
-                            value={settings.secondaryColor}
-                            onChange={set("secondaryColor")}
-                            autoComplete="off"
-                          />
-                          <TextField
-                            label="Font color"
-                            type="color"
-                            value={settings.textColor}
-                            onChange={set("textColor")}
-                            autoComplete="off"
-                          />
-                        </FormLayout.Group>
-
-                        {/* One field in a 3-column group keeps radius at ~1/3 width
-                            (Polaris FormLayout.Group equal columns). */}
-                        <FormLayout.Group>
-                          <TextField
-                            label="Button corner radius"
-                            type="number"
-                            min={0}
-                            max={40}
-                            suffix="px"
-                            value={settings.buttonRadius}
-                            onChange={set("buttonRadius")}
-                            autoComplete="off"
-                            helpText="Applied to new Button, FAQ, and Product Card blocks"
-                          />
-                          <div />
-                          <div />
-                        </FormLayout.Group>
-                      </FormLayout>
-
-                      <Box
-                        padding="400"
-                        background="bg-surface-secondary"
-                        borderRadius="200"
-                        borderWidth="025"
-                        borderColor="border"
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                          gap: 12,
+                        }}
                       >
-                        <BlockStack gap="300">
-                          <Text as="h3" variant="headingSm">
-                            Preview
-                          </Text>
-                          <InlineStack gap="300" wrap>
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                background: settings.primaryColor,
-                                padding: "8px 16px",
-                                borderRadius: `${Number(settings.buttonRadius) || 0}px`,
-                                color: "#fff",
-                                fontSize: 13,
-                                fontWeight: 600,
-                                lineHeight: 1.25,
-                              }}
-                            >
-                              Primary
-                            </span>
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                background: settings.secondaryColor,
-                                padding: "8px 16px",
-                                borderRadius: `${Number(settings.buttonRadius) || 0}px`,
-                                color: "#fff",
-                                fontSize: 13,
-                                fontWeight: 600,
-                                lineHeight: 1.25,
-                              }}
-                            >
-                              Secondary
-                            </span>
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                background: "transparent",
-                                border: `var(--p-border-width-025) solid ${settings.primaryColor}`,
-                                padding: "8px 16px",
-                                borderRadius: `${Number(settings.buttonRadius) || 0}px`,
-                                color: settings.primaryColor,
-                                fontSize: 13,
-                                fontWeight: 600,
-                                lineHeight: 1.25,
-                              }}
-                            >
-                              Outline
-                            </span>
-                          </InlineStack>
-                          <Text as="p" variant="bodyMd">
-                            <span style={{ color: settings.textColor }}>
-                              Sample body text in your font color
-                            </span>
-                          </Text>
-                        </BlockStack>
-                      </Box>
+                        <BrandColorField
+                          label="Primary"
+                          description="Main buttons and links"
+                          value={settings.primaryColor}
+                          onChange={set("primaryColor")}
+                        />
+                        <BrandColorField
+                          label="Secondary"
+                          description="Supporting accents"
+                          value={settings.secondaryColor}
+                          onChange={set("secondaryColor")}
+                        />
+                        <BrandColorField
+                          label="Text"
+                          description="Article body copy"
+                          value={settings.textColor}
+                          onChange={set("textColor")}
+                        />
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                          gap: 16,
+                          alignItems: "stretch",
+                        }}
+                      >
+                        <Box padding="400" background="bg-surface-secondary" borderRadius="200">
+                          <BlockStack gap="200">
+                            <Text as="h3" variant="headingSm">Button shape</Text>
+                            <TextField
+                              label="Corner radius"
+                              type="number"
+                              min={0}
+                              max={40}
+                              suffix="px"
+                              value={settings.buttonRadius}
+                              onChange={set("buttonRadius")}
+                              autoComplete="off"
+                              helpText="Used by new Button, FAQ, and Product Card blocks."
+                            />
+                          </BlockStack>
+                        </Box>
+
+                        <div
+                          style={{
+                            border: "1px solid #e1e3e5",
+                            borderRadius: 10,
+                            padding: 16,
+                            background: "linear-gradient(135deg, #fafbfb 0%, #f4f6f6 100%)",
+                          }}
+                        >
+                          <BlockStack gap="250">
+                            <InlineStack align="space-between" blockAlign="center">
+                              <Text as="h3" variant="headingSm">Live preview</Text>
+                              <Text as="span" variant="bodySm" tone="subdued">New blog blocks</Text>
+                            </InlineStack>
+                            <Text as="p" variant="headingMd">
+                              <span style={{ color: settings.textColor }}>A story worth sharing</span>
+                            </Text>
+                            <Text as="p" variant="bodySm">
+                              <span style={{ color: settings.textColor, opacity: 0.82 }}>
+                                Your selected colors create a clear, consistent reading experience.
+                              </span>
+                            </Text>
+                            <InlineStack gap="200" wrap>
+                              <span style={{ display: "inline-flex", alignItems: "center", background: settings.primaryColor, padding: "8px 14px", borderRadius: `${Number(settings.buttonRadius) || 0}px`, color: "#fff", fontSize: 13, fontWeight: 600 }}>
+                                Read article
+                              </span>
+                              <span style={{ display: "inline-flex", alignItems: "center", background: "transparent", border: `1px solid ${settings.secondaryColor}`, padding: "8px 14px", borderRadius: `${Number(settings.buttonRadius) || 0}px`, color: settings.secondaryColor, fontSize: 13, fontWeight: 600 }}>
+                                Explore more
+                              </span>
+                            </InlineStack>
+                          </BlockStack>
+                        </div>
+                      </div>
                     </BlockStack>
                   </SectionCard>
                 </Layout.Section>
