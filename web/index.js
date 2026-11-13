@@ -439,6 +439,13 @@ app.post(
                 data: { isActive: false },
               });
             }
+            // Drop every online and offline session for this shop. ensureInstalledOnShop()
+            // treats a leftover Session row as a valid install and serves the app UI before
+            // OAuth. Shopify revokes the token on uninstall, so the next open must go through
+            // /api/auth again. Session is keyed by shop domain, not a Shop foreign key, so
+            // this is the same explicit delete SHOP_REDACT uses.
+            const deletedSessions = await prisma.session.deleteMany({ where: { shop } });
+            console.log(`[APP_UNINSTALLED] Cleared ${deletedSessions.count} session(s) for ${shop}`);
           } catch (err) {
             console.error("APP_UNINSTALLED webhook error:", err);
           }
