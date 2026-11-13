@@ -7,10 +7,10 @@ placeholders are marked `[ ]`.
 
 ## App name
 
-Blogger — Visual Blog Builder & SEO
+SmartBlog – AI, SEO & Insights
 
-*(Must match the name configured in the Partner Dashboard / `shopify.app.toml`. Avoid marketing
-text or special characters per Shopify's naming requirements — keep this short and factual.)*
+*(Must match the name in the Partner Dashboard and `shopify.app.production.toml`. 30 characters,
+which is Shopify’s app-name limit.)*
 
 ## Tagline (one line, ~70 characters max)
 

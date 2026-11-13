@@ -43,7 +43,7 @@ function parseThemeJson(raw) {
  * Theme app embed block `type` looks like:
  *   shopify://apps/{app-handle}/blocks/{block-handle}/{uuid}
  *
- * App handle varies by install (Blogger React - Local, Blog Builder - Aauram, App Store name).
+ * App handle varies by install (SmartBlog local, older Blog Builder installs, App Store name).
  * Match our embeds by block handle + a loose app-handle allowlist — never require one brand name.
  */
 function isEnabled(block) {
@@ -61,11 +61,12 @@ function isMetaRobotsEmbed(block) {
 
 /**
  * Tokens that appear in our app handles across local / production / App Store names.
- * Production "Blog Builder - Aauram" → shopify://apps/blog-builder-aauram/...
- * Local "Blogger React - Local" → ...blogger-react...
- * Must NOT rely only on "blogger" — "blog-builder" does not contain that substring.
+ * Production "SmartBlog – AI, SEO & Insights" → shopify://apps/smartblog-ai-seo-insights/...
+ * Local "SmartBlog – AI, SEO Local" → ...smartblog-ai-seo-local...
+ * Older installs may still use blog-builder or blogger-react handles.
  */
 const OUR_APP_HANDLE_HINTS = [
+  "smartblog",
   "blog-builder",
   "blog_builder",
   "blogbuilder",

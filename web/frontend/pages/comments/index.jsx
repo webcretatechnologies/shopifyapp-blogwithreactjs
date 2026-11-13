@@ -436,7 +436,7 @@ export default function Comments() {
                   </Text>
                   <ol style={{ paddingLeft: "20px", margin: 0 }}>
                     <li>Open your <strong>Shopify Partner Dashboard</strong>.</li>
-                    <li>Go to <strong>Apps</strong> &gt; Select <strong>Blogger React - Local</strong> (or your app) &gt; <strong>App setup</strong>.</li>
+                    <li>Go to <strong>Apps</strong> &gt; Select <strong>SmartBlog – AI, SEO Local</strong> (or your app) &gt; <strong>App setup</strong>.</li>
                     <li>Scroll down to <strong>Protected customer data access</strong>.</li>
                     <li>Click <strong>Select protected customer data fields</strong>, check <strong>Customer name, email and address</strong>, and click <strong>Save</strong>.</li>
                   </ol>

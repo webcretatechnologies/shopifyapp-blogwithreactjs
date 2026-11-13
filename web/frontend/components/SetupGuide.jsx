@@ -110,7 +110,7 @@ export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive
 
   return (
     <BlockStack gap="300">
-      <Text variant="headingLg" as="h2">Get started with Blogger React!</Text>
+      <Text variant="headingLg" as="h2">Get started with {APP_NAME}!</Text>
       {/* One flat card containing the whole list, rows separated by hairline Dividers — matches
           Shopify's own setup-guide composition. The previous version nested a bordered, shadowed
           Box for every row inside the outer Card, which read as "boxes stacked inside a box"

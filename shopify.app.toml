@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "946c7f95fc6780b88559e90d45ad7f96"
-name = "Blogger React - Local"
+name = "SmartBlog – AI, SEO Local"
 application_url = "https://clause-valued-insertion-intellectual.trycloudflare.com"
 embedded = true
 

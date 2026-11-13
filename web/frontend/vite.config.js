@@ -20,7 +20,7 @@ if (
 }
 
 process.env.VITE_SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
-process.env.VITE_APP_NAME = process.env.APP_NAME || "Blogger";
+process.env.VITE_APP_NAME = process.env.APP_NAME || "SmartBlog – AI, SEO & Insights";
 
 const proxyOptions = {
   target: `http://127.0.0.1:${process.env.BACKEND_PORT}`,
