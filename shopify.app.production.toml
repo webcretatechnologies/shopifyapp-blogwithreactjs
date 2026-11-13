@@ -8,6 +8,8 @@
 # replace it with that app's own client_id.
 client_id = "f8e0930c60752d499542301d06d88640"
 name = "SmartBlog – AI, SEO & Insights"
+# Admin URL slug. Deploying this replaces /apps/blog-builder-21. Old admin links break.
+handle = "smartblog"
 application_url = "https://blogapp-dev.boxtasks.com"
 embedded = true
 
