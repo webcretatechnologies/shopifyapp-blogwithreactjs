@@ -2373,7 +2373,7 @@ export default function PostEditor() {
                                 <Banner tone="warning" title="One-time setup needed">
                                   <BlockStack gap="200">
                                     <Text variant="bodySm" as="p">
-                                      Activate the "Blog Meta Robots" app embed so this selection
+                                      Activate the "SmartBlog Meta Robots" app embed so this selection
                                       renders on the live page. One click, applies to every
                                       article from then on.
                                     </Text>

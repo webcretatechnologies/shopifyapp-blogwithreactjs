@@ -66,7 +66,7 @@ export function themeAppEmbedUrl(shop, handle, template = "index") {
   return `${base}?${params.toString()}`;
 }
 
-/** Blog Meta Robots app embed — article preview context (robots apply on articles). */
+/** SmartBlog Meta Robots app embed — article preview context (robots apply on articles). */
 export function metaRobotsActivateUrl(shop) {
   return themeAppEmbedUrl(shop, THEME_EMBED_HANDLES.metaRobots, "article");
 }

@@ -92,8 +92,8 @@ export default function ThemeIntegrationsPanel({
         ) : (
           <BlockStack gap="300">
             <IntegrationRow
-              title={`${APP_NAME} Analytics Tracker`}
-              description="Tracks live blog views, referrers, and product attribution. Also powers blog listing layouts on the storefront."
+              title="SmartBlog Analytics"
+              description="Tracks live blog views, referrers, and product attribution. Also powers blog listing layouts, sidebar, and related posts on the storefront."
               installed={!!analyticsActive}
               unsupported={unsupported}
               shop={shop}
@@ -101,7 +101,7 @@ export default function ThemeIntegrationsPanel({
             />
             <Divider />
             <IntegrationRow
-              title="Blog Meta Robots"
+              title={`${APP_NAME} Meta Robots`}
               description="Applies each article's Index/Noindex and Follow/Nofollow settings on the live page."
               installed={!!metaRobotsActive}
               unsupported={unsupported}

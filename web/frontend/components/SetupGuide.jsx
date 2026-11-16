@@ -37,7 +37,7 @@ export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive
       title: `Activate ${APP_NAME} Analytics on your storefront`,
       description: embedUnsupportedCopy
         ? "Your current theme doesn't support app embeds (requires Online Store 2.0). Switch to an Online Store 2.0 theme to enable live visitor tracking."
-        : "Enable the Blog Analytics Tracker App Embed in your Theme Editor to start collecting live visitor data.",
+        : "Enable the SmartBlog Analytics App Embed in your Theme Editor to start collecting live visitor data.",
       actionLabel: embedUnsupportedCopy ? "Browse themes" : "Enable tracking",
       action: () => {
         window.open(
@@ -45,7 +45,7 @@ export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive
             ? `https://${shop}/admin/themes`
             // Pre-activates the block via activateAppId, same trick as meta robots below — the
             // merchant lands with the toggle already on and just clicks Save, instead of having
-            // to find "Blog Analytics Tracker" among every other app embed themselves.
+            // to find "SmartBlog Analytics" among every other app embed themselves.
             : analyticsTrackerActivateUrl(shop),
           '_blank'
         );
@@ -54,10 +54,10 @@ export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive
     },
     {
       id: 2,
-      title: "Activate Meta Robots on your storefront",
+      title: `Activate ${APP_NAME} Meta Robots on your storefront`,
       description: embedUnsupportedCopy
         ? "Your current theme doesn't support app embeds (requires Online Store 2.0), so per-article Index/Noindex settings can't take effect yet."
-        : "Enable the Blog Meta Robots app embed so each article's Index/Noindex setting takes effect on the live page.",
+        : `Enable the ${APP_NAME} Meta Robots app embed so each article's Index/Noindex setting takes effect on the live page.`,
       actionLabel: embedUnsupportedCopy ? "Browse themes" : "Activate now",
       action: () => {
         window.open(embedUnsupportedCopy ? `https://${shop}/admin/themes` : metaRobotsActivateUrl(shop), '_blank');
