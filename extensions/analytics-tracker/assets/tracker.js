@@ -1,5 +1,35 @@
 (function() {
+  // Prefer the app HOST (/track/*) over Shopify App Proxy (/apps/blog-analytics).
+  // Proxy returns empty 404s when the install lacks write_app_proxy; /track/* is public CORS
+  // and already powers view.gif. Liquid sets BloggerAnalytics.endpoint; synced articles also
+  // set __BLOG_ANALYTICS__.endpoint via bootstrap.js.
   const PROXY_URL = '/apps/blog-analytics';
+
+  function getAnalyticsEndpoint() {
+    if (window.__BLOG_ANALYTICS__ && window.__BLOG_ANALYTICS__.endpoint) {
+      return String(window.__BLOG_ANALYTICS__.endpoint).replace(/\/$/, '');
+    }
+    if (window.BloggerAnalytics && window.BloggerAnalytics.endpoint) {
+      return String(window.BloggerAnalytics.endpoint).replace(/\/$/, '');
+    }
+    return '';
+  }
+
+  function getTrackingKey() {
+    if (window.__BLOG_ANALYTICS__ && window.__BLOG_ANALYTICS__.postKey) {
+      return window.__BLOG_ANALYTICS__.postKey;
+    }
+    try {
+      return sessionStorage.getItem('blogger_tracking_key') || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function rememberTrackingKey(key) {
+    if (!key) return;
+    try { sessionStorage.setItem('blogger_tracking_key', String(key)); } catch (e) {}
+  }
 
   // How long a "candidate" blog-post visit stays eligible to be CONFIRMED as the source of a
   // later add-to-cart, and separately, how long a CONFIRMED attribution stays eligible to credit
@@ -89,14 +119,35 @@
 
   function sendEvent(postId, eventType, value = 0, currency = 'USD') {
     if (!postId) return;
-    const payload = JSON.stringify({
-      postId: postId,
-      eventType: eventType,
-      productId: window.BloggerAnalytics ? window.BloggerAnalytics.productId : null,
-      value: value,
-      currency: currency
-    });
-    const url = `${PROXY_URL}/event`;
+    const endpoint = getAnalyticsEndpoint();
+    const trackingKey = getTrackingKey();
+    const productId = window.BloggerAnalytics ? window.BloggerAnalytics.productId : null;
+    const shop = window.BloggerAnalytics ? window.BloggerAnalytics.shop : null;
+
+    // Prefer public /track/event (works without App Proxy). Fall back to proxied /event.
+    let url;
+    let payload;
+    if (endpoint && trackingKey) {
+      url = endpoint + '/track/event';
+      payload = JSON.stringify({
+        k: trackingKey,
+        event: eventType,
+        productId: productId,
+        value: value,
+        currency: currency,
+        shop: shop,
+        sid: getSessionId()
+      });
+    } else {
+      url = PROXY_URL + '/event';
+      payload = JSON.stringify({
+        postId: postId,
+        eventType: eventType,
+        productId: productId,
+        value: value,
+        currency: currency
+      });
+    }
     // checkout/conversion fire right as the page is navigating away — a plain fetch() here is
     // routinely cancelled by the browser mid-flight when the page unloads before the response
     // arrives. keepalive:true is fetch's purpose-built answer to exactly that (request survives
@@ -147,11 +198,20 @@
     // to the right post AND restricted to purchases that actually involve what's in it.
     if (window.BloggerAnalytics.template === 'article' && window.BloggerAnalytics.articleId) {
       const articleId = window.BloggerAnalytics.articleId;
+      const shop = window.BloggerAnalytics.shop || '';
+      const endpoint = getAnalyticsEndpoint();
+      const trackingKey = getTrackingKey();
+      const resolveUrl = endpoint
+        ? (endpoint + '/track/resolve')
+        : (PROXY_URL + '/resolve');
+      const body = trackingKey
+        ? { k: trackingKey, shopifyArticleId: articleId, shop: shop }
+        : { shopifyArticleId: articleId, shop: shop };
 
-      fetch(`${PROXY_URL}/resolve`, {
+      fetch(resolveUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shopifyArticleId: articleId })
+        body: JSON.stringify(body)
       })
       .then(res => {
         const contentType = res.headers.get("content-type");
@@ -167,6 +227,7 @@
         // being counted as blog-driven, which is exactly what "any checkout on the site
         // increments revenue" turned out to be caused by.
         if (data && data.postId) {
+          if (data.trackingKey) rememberTrackingKey(data.trackingKey);
           setCandidate(data.postId, data.productIds, data.variantIds);
         }
       })

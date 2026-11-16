@@ -19,7 +19,9 @@ redirect_urls = [
 ]
 
 [access_scopes]
-scopes = "read_content,write_content,read_products,write_products,read_customers,read_orders,read_themes,write_themes,read_script_tags,write_script_tags,write_files,read_locales,read_translations,write_translations"
+# write_app_proxy is required for /apps/<subpath> storefront proxy routes to work.
+# Without it, Shopify returns empty 404s for /apps/blog-analytics/* even when [app_proxy] is set.
+scopes = "read_content,write_content,read_products,write_products,read_customers,read_orders,read_themes,write_themes,read_script_tags,write_script_tags,write_files,read_locales,read_translations,write_translations,write_app_proxy"
 
 [webhooks]
 api_version = "2025-10"
@@ -53,6 +55,7 @@ embedded = false
 # Production URLs are set explicitly above and should not be silently rewritten by `dev`.
 
 [app_proxy]
-url = "https://smartblog.boxtasks.com/api/proxy"
+# Relative to application_url. Absolute URLs also work, but relative is the CLI-recommended form.
+url = "/api/proxy"
 subpath = "blog-analytics"
 prefix = "apps"

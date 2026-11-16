@@ -443,6 +443,13 @@
   window.BloggerAnalytics = window.BloggerAnalytics || {};
   window.BloggerAnalytics.shop = "{{ shop.permanent_domain }}";
   window.BloggerAnalytics.template = "{{ template.name }}";
+  {%- comment -%}
+    Direct app HOST for /track/resolve + /track/event. App Proxy (/apps/blog-analytics)
+    404s when write_app_proxy is not granted on the install. Prefer shop metafield (written
+    from HOST on boot); fall back to the production app URL so ATC still works.
+  {%- endcomment -%}
+  {% assign smartblog_app_host = shop.metafields.blog_app.app_host.value | default: shop.metafields.blog_app.app_host %}
+  window.BloggerAnalytics.endpoint = {{ smartblog_app_host | default: "https://smartblog.boxtasks.com" | json }};
 
   {% if article %}
     window.BloggerAnalytics.articleId = "{{ article.id }}";

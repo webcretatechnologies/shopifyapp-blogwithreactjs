@@ -6,9 +6,15 @@
  *
  * Endpoints:
  *   GET  /track/view.gif   —  1x1 transparent pixel for counting views
+ *   POST /track/resolve    —  Resolve Shopify article → postId + featured products
  *   POST /track/event      —  Rich event tracking (add_to_cart, checkout, conversion)
  *   GET  /track/event.gif  —  Image-based fallback for events
  *   GET  /track/pixel.gif  —  Legacy pixel alias
+ *
+ * /track/* is intentionally public + CORS-open so the theme embed can call the app HOST
+ * directly. Shopify App Proxy (/apps/blog-analytics) also works when write_app_proxy is
+ * granted, but installs without that scope get empty 404s from Shopify — views still work
+ * via view.gif, while resolve/event must not depend on the proxy alone.
  */
 import express from "express";
 import { PrismaClient } from "@prisma/client";
@@ -22,6 +28,7 @@ import {
   detectSource,
   detectCountry,
   validateEventValue,
+  extractFeaturedProductRefs,
 } from "../services/AnalyticsTrackingService.js";
 
 const router = express.Router();
@@ -112,9 +119,94 @@ router.options("/event", (req, res) => {
   res.status(204).end();
 });
 
+router.options("/resolve", (req, res) => {
+  setCorsHeaders(res);
+  res.status(204).end();
+});
+
 router.options("/event.gif", (req, res) => {
   setCorsHeaders(res);
   res.status(204).end();
+});
+
+// ─── POST /track/resolve — Article → postId + featured product refs ───────
+// Same payload shape as /api/proxy/resolve so tracker.js can call either path.
+// Accepts shopifyArticleId (and optional shop) or tracking key `k`. Soft-200 when
+// the article is not linked yet — never a 404 that looks like a dead route.
+router.post("/resolve", express.json(), async (req, res) => {
+  setCorsHeaders(res);
+  try {
+    const shopifyArticleId = req.body?.shopifyArticleId || req.query?.shopifyArticleId || "";
+    const shop = String(req.body?.shop || req.query?.shop || "").trim().toLowerCase();
+    const k = req.body?.k || req.query?.k || "";
+
+    let postId = null;
+    let trackingKey = null;
+
+    if (k) {
+      const post = await resolveTrackingKey(k);
+      if (post) {
+        postId = post.id;
+        trackingKey = k;
+      }
+    } else if (shopifyArticleId) {
+      const sa = await prisma.shopifyArticle.findFirst({
+        where: { shopifyArticleId: String(shopifyArticleId) },
+        select: {
+          postId: true,
+          post: {
+            select: {
+              trackingKey: true,
+              shop: { select: { domain: true } },
+            },
+          },
+        },
+      });
+      if (sa?.postId) {
+        // Optional shop guard — ignore mismatches rather than leaking another shop's post.
+        if (shop && sa.post?.shop?.domain && sa.post.shop.domain.toLowerCase() !== shop) {
+          return res.status(200).json({
+            success: false,
+            postId: null,
+            productIds: [],
+            variantIds: [],
+            reason: "shop_mismatch",
+          });
+        }
+        postId = sa.postId;
+        trackingKey = sa.post?.trackingKey || null;
+      }
+    } else {
+      return res.status(400).json({ error: "Missing shopifyArticleId or tracking key (k)" });
+    }
+
+    if (!postId) {
+      return res.status(200).json({
+        success: false,
+        postId: null,
+        productIds: [],
+        variantIds: [],
+        trackingKey: null,
+        reason: "not_synced",
+      });
+    }
+
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      select: { contentJson: true, trackingKey: true },
+    });
+    const { productIds, variantIds } = extractFeaturedProductRefs(post?.contentJson);
+    res.json({
+      success: true,
+      postId,
+      productIds,
+      variantIds,
+      trackingKey: trackingKey || post?.trackingKey || null,
+    });
+  } catch (err) {
+    console.error("[Tracking] resolve error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // ─── GET /track/view.gif — View tracking pixel ───────────────────────────
