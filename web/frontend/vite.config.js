@@ -87,6 +87,7 @@ export default defineConfig({
       "^/custom-code\\.json(/|(\\?.*)?$)": proxyOptions,
       "^/branding\\.json(/|(\\?.*)?$)": proxyOptions,
       "^/privacy-policy(/|(\\?.*)?$)": proxyOptions,
+      "^/pricing(/|(\\?.*)?$)": proxyOptions,
     },
   },
 });

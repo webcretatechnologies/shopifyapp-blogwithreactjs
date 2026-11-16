@@ -1,136 +1,134 @@
-# Shopify App Store Listing Content
+# Shopify App Store listing
 
-Draft copy for the Partner Dashboard listing form. Review and adjust before publishing —
-placeholders are marked `[ ]`.
+Paste-ready copy for the Partner Dashboard. Lengths match Shopify’s listing limits:
+app name 30, app card subtitle under 62, introduction 100, details 500, each feature 80.
+Prices and plan bullets match the defaults in `web/prisma/seed.js` and
+`web/src/services/PlanFeatureService.js`. If a Super Admin has changed live prices or
+limits, use those live values instead.
 
----
+Do not put prices, review quotes, or statistics in the introduction, details, features, or images.
 
-## App name
+## App name (30)
 
 SmartBlog – AI, SEO & Insights
 
-*(Must match the name in the Partner Dashboard and `shopify.app.production.toml`. 30 characters,
-which is Shopify’s app-name limit.)*
+Must match `shopify.app.production.toml`. The dev name “SmartBlog – AI, SEO Local” is not the listing name.
 
-## Tagline (one line, ~70 characters max)
+## App card subtitle (59)
 
-Drag-and-drop blog builder with SEO, analytics, and native Shopify sync.
+Publish blog posts in a visual editor, without theme edits.
 
-## Category
+## App introduction (76)
 
-Marketing → Content marketing *(or "Store design" — confirm against Shopify's current category
-list in the Partner Dashboard, as exact taxonomy changes over time)*
+Write posts in a visual editor and see which ones lead shoppers to checkout.
 
-## App introduction (1–2 sentences, shown at the top of the listing)
+## App details (381)
 
-Build and publish blog posts visually — no code, no theme editing — with a real drag-and-drop
-editor, built-in SEO tools, and product blocks that turn content into sales, fully synced with
-Shopify's native blog.
+Build posts in a drag-and-drop editor and publish them as native Shopify articles. Add headings, images, video, FAQs, and product blocks that use your store prices. Set meta titles, descriptions, canonical URLs, and structured data. See views and which posts are tied to orders. Translate posts into your store languages, start from templates, and sync edits with the Shopify blog.
 
-## App details (longer description)
+## Feature list (5 maximum, each under 80)
 
-Turn your Shopify blog into a real content and SEO channel — without writing HTML or touching
-your theme.
+1. Drag-and-drop editor for headings, images, video, tables, and FAQs
+2. Publish each post as a native Shopify blog article
+3. Embed live products, collections, and buy buttons in a post
+4. Set meta titles, descriptions, canonical URLs, and structured data
+5. See post views and which posts are connected to orders
 
-**Visual Drag & Drop Builder**
-Build blog posts block-by-block: headings, rich text, images, video, tables, FAQs, callouts, and
-layout blocks like sections and multi-column rows. Preview instantly on desktop, tablet, and
-mobile, and hide any block on specific devices.
+Translations, templates, scheduling, and device visibility stay in App details and in the Pro plan. They do not get their own feature row.
 
-**Sell directly from your content**
-Embed real products right inside your posts — Buy Buttons, product grids, sliders, collections,
-featured product blocks, and a product sidebar — all pulling live pricing and inventory from your
-store, no manual updates needed.
+## Search terms (5)
 
-**Built-in SEO, not an afterthought**
-Meta titles and descriptions, canonical URLs, Open Graph tags, meta robots controls, JSON-LD rich
-snippets, an auto-generated XML sitemap, and a Table of Contents block with anchor links and
-smooth scrolling — all built into every post.
+1. blog builder
+2. SEO
+3. translations
+4. analytics
+5. templates
 
-**Stays in sync with Shopify**
-Two-way sync with Shopify's native blog articles: edit in the app or directly in Shopify admin,
-and changes reconcile automatically. Nothing is locked into a proprietary format — your content
-lives as real Shopify articles.
+## Category and eligibility
 
-**Know what's working**
-Built-in analytics track views, unique visitors, and which posts actually drive orders — attributed
-directly to the blog post that sent the customer to checkout.
-
-**Reach more customers**
-Translate posts into every language your store supports, manually or with one-click
-auto-translate, without leaving the block structure of your original post behind.
-
-**Related posts, comments, and templates**
-Automatic or manually-curated related posts, a lightweight comment moderation dashboard, and a
-library of ready-to-use blog templates to start from instead of a blank page.
-
-## Key benefits (bulleted, shown as a scannable list in the listing)
-
-- No-code visual editor — build posts the same way you'd build a page, block by block
-- Real two-way sync with Shopify's native blog — never locked in
-- Embed live products (Buy Button, grids, sliders, collections) directly in content
-- Full on-page SEO toolkit: meta tags, canonical URLs, rich snippets, sitemap
-- Built-in analytics with order attribution back to individual posts
-- Multi-language translation, manual or automatic
-- Hide any block per device (mobile / tablet / desktop)
-- Works with your existing theme — no theme code edits required
+- Primary category: Store design › Content › Blogs
+- Content creation: Drag-and-drop editor, Templates, AI generation
+- SEO: Meta tags, Rich snippets
+- Display options: Layouts, Featured posts
+- Sales channel: Online Store is required
+- App UI language: English only. Post translation is a storefront feature, not an admin-UI language
+- Integrations: leave empty. Do not list Shopify
 
 ## Pricing
 
-*(Must exactly match what's configured in the Partner Dashboard's pricing section — this app uses
-the Shopify Billing API via `appSubscriptionCreate`, not external billing.)*
+Billing method: Recurring charge, with a free plan. No free trial. All charges go through Shopify Billing.
 
-| Plan | Price | Highlights |
-|---|---|---|
-| Free | $0/mo | Visual builder, up to [ N ] articles, basic SEO, automatic related posts, comment moderation |
-| Starter | $[ X ]/mo | Everything in Free, plus: higher/unlimited article limit, manual sync actions, scheduled publishing, manual related posts, advanced SEO (OG tags, canonical URL), custom CSS, product blocks |
-| Pro | $[ Y ]/mo | Everything in Starter, plus: translations, custom global header/footer code, advanced analytics, remove branding, device-based visibility controls, XML sitemap controls |
+Show plans from lowest to highest. Yearly prices are the annual charge, not a per-month figure.
 
-*Confirm exact price points and feature-per-tier wording against the live pricing page before
-submission — this table should mirror `plans.jsx` / the Partner Dashboard exactly.*
+### Free — $0
 
-## Support
+- Up to 2 articles (lifetime)
+- 2 AI credits (lifetime, does not refresh)
+- 1 saved template
+- Drag-and-drop builder
+- Basic SEO meta title and description
+- Analytics for views and visitors
+- Blog comments
+- Import from the store’s existing Shopify blogs
+- 21 blog templates
+- Theme color sync
+- “Powered by” badge shown
 
-- **Support email:** `[ support@yourdomain.com ]`
-- **Support URL (optional):** `[ https://yourdomain.com/support ]`
+### Starter — $14.99 every 30 days, or $99.99 per year
 
-## Privacy policy URL
+Everything in Free, plus:
 
-`https://[ your-production-domain ]/privacy-policy`
+- Up to 30 articles per month
+- 15 AI credits per month
+- 10 saved templates
+- Shopify product blocks
+- FAQ block and table of contents
+- Two-way sync with Shopify articles
+- Meta robots and rich snippets
+- Custom CSS
+- Related posts and listing layout
+- Clone article
+- Remove the “Powered by” badge
 
-*(Served by the app itself — see `web/privacyPolicyContent.js` and the `/privacy-policy` route
-in `web/index.js`. Publicly accessible, no login required. Update the domain once deployed.)*
+### Pro — $29.99 every 30 days, or $199.99 per year
 
-## Screenshots (minimum required by Shopify — confirm current count in Partner Dashboard)
+Everything in Starter, plus:
 
-Suggested shots to capture once the app is live on a demo store:
+- Unlimited articles
+- 40 AI credits per month
+- Unlimited saved templates
+- Blog post scheduling
+- Multi-language post translation
+- Hide sections by device
+- Blog sidebar
+- XML sitemap
+- Custom header and footer code
+- Advanced analytics, including orders tied to a post
 
-1. The visual drag-and-drop builder canvas with a few blocks placed (hero shot)
-2. The block picker sidebar showing available content and commerce blocks
-3. A published blog post on the live storefront with an embedded product block
-4. The SEO panel (meta title/description, rich snippet, sitemap controls)
-5. The analytics dashboard showing views/visitors/conversions
-6. The Translate Article page showing a non-English translation
-7. Settings page (appearance / content display options)
+### Additional charges
 
-*(Actual screenshots must be captured from a real running instance — not included here.)*
+One-time AI credit packs, billed with Shopify’s one-time charge. Purchased credits do not expire and stack on the plan allowance.
 
-## App icon
+- 5 credits — $4.99
+- 20 credits — $9.99
+- 50 credits — $19.99
 
-`[ 1200×1200px PNG, no transparency, per Shopify's icon requirements ]`
+## Links still needed before submit
 
-## Demo store / test instructions for reviewers
+- Support email: not set in the repo. The privacy policy tells merchants to use the listing’s support channel
+- Privacy policy URL: `https://blogapp-dev.boxtasks.com/privacy-policy`
+- More pricing information URL: `https://blogapp-dev.boxtasks.com/pricing`
+- Demo store URL: a development store opened on a published post that shows a product block
 
-`[ Provide a link to a demo store or a note describing how to reach a fully set-up blog post for
-review, since app functionality centers on content that needs to exist to be evaluated. ]`
+## Desktop screenshots
 
----
+Use these six files from the Drive folder. Each is already 1600×900. Leave Mobile and Point of Sale empty.
 
-## Notes for whoever finalizes this listing
+1. Image-1.png — Drag-and-drop blog editor with content and product blocks
+2. Image-7.png — Blog template library for reviews, roundups, and comparisons
+3. Image-2.png — SEO title, description, rich snippet, and sitemap fields
+4. Image-6.png — Blog listing layouts with a related-posts sidebar
+5. Image-5.png — Blog posts synced with native Shopify articles
+6. Image-8.png — Schedule a blog post to publish on a later date
 
-- Replace every `[ ]` placeholder before submitting.
-- Pricing table must be word-for-word consistent with the in-app pricing page and the Partner
-  Dashboard's billing configuration — Shopify checks for this.
-- The "Data protection details" questionnaire in the Partner Dashboard must accurately describe
-  what's in the Privacy Policy above (order-attribution cart attribute, anonymous analytics
-  events, no customer PII stored).
+Do not upload Image-3.png. It shows a revenue figure and funnel counts, which Shopify rejects in listing images. Do not upload Image-4.png until the “128 with AI” figure is removed.

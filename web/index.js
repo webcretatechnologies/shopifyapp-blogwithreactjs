@@ -95,6 +95,11 @@ import serveStatic from "serve-static";
 import shopify, { prisma } from "./shopify.js";
 import PrivacyWebhookHandlers from "./privacy.js";
 import { PRIVACY_POLICY_HTML } from "./privacyPolicyContent.js";
+import {
+  DEFAULT_PRICING,
+  buildPricingFromDb,
+  renderPricingPageHtml,
+} from "./pricingPageContent.js";
 import { ArticleSyncService } from "./src/services/ArticleSyncService.js";
 import { getEmbedStatus, getMissingScopes } from "./src/services/ThemeEmbedStatusService.js";
 import { trackEvent } from "./src/services/AnalyticsTrackingService.js";
@@ -717,6 +722,29 @@ app.use("/uploads", express.static(uploadsDir));
 // merchants/customers to review independent of being logged into the app.
 app.get("/privacy-policy", (_req, res) => {
   res.status(200).set("Content-Type", "text/html; charset=utf-8").send(PRIVACY_POLICY_HTML);
+});
+
+// Public pricing page for the App Store "more pricing information" URL. Unauthenticated —
+// merchants and reviewers must be able to open it without installing the app.
+app.get("/pricing", async (_req, res) => {
+  try {
+    const [plans, packs] = await Promise.all([
+      prisma.subscriptionPlan.findMany({
+        where: { isActive: true },
+        select: { name: true, title: true, price: true, currency: true, interval: true },
+      }),
+      prisma.aiCreditPack.findMany({
+        where: { isActive: true },
+        select: { credits: true, price: true, currency: true, isActive: true, sortOrder: true },
+        orderBy: { sortOrder: "asc" },
+      }),
+    ]);
+    const pricing = buildPricingFromDb({ plans, packs });
+    res.status(200).set("Content-Type", "text/html; charset=utf-8").send(renderPricingPageHtml(pricing));
+  } catch (err) {
+    console.error("[PricingPage] Falling back to defaults:", err.message);
+    res.status(200).set("Content-Type", "text/html; charset=utf-8").send(renderPricingPageHtml(DEFAULT_PRICING));
+  }
 });
 
 // ─── Frontend Serving ─────────────────────────────────────────────────────────
