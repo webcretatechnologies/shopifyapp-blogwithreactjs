@@ -355,6 +355,54 @@ export function renderPricingPageHtml(pricing = DEFAULT_PRICING) {
     margin: 8px 0 0;
     font-size: 0.92rem;
   }
+  .offer {
+    margin: 36px 0 8px;
+    padding: 26px 28px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #ffffff 0%, #eef8f2 100%);
+    border: 1px solid rgba(15, 107, 76, 0.28);
+    box-shadow: var(--shadow);
+  }
+  .offer-label {
+    display: inline-block;
+    margin: 0 0 10px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .offer h2 {
+    margin: 0 0 8px;
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 1.55rem;
+  }
+  .offer p {
+    margin: 0 0 12px;
+    color: var(--muted);
+    max-width: 70ch;
+  }
+  .offer-code {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 14px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #14201b;
+    color: #fff;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  .offer ul {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--ink);
+  }
+  .offer li { margin: 6px 0; }
   .note {
     margin-top: 36px;
     padding: 22px 24px;
@@ -389,6 +437,18 @@ export function renderPricingPageHtml(pricing = DEFAULT_PRICING) {
       <h1>Pricing built for blogs that sell</h1>
       <p class="lede">SmartBlog plans unlock AI drafting, SEO, product-ready posts, and Insights that show what drives orders. Add optional AI credit packs when you need more drafts. Every charge is billed through Shopify.</p>
     </header>
+
+    <aside class="offer" aria-label="Early access offer">
+      <span class="offer-label">Early access</span>
+      <h2>First 50 stores save on the first month</h2>
+      <p>New merchants can unlock a one-month launch price with code <strong>FIRST50</strong>. After the first month, the plan renews at the regular monthly rate. Limited to 50 stores, one use per store. Applies to monthly Starter and Pro only.</p>
+      <div class="offer-code" aria-label="Coupon code">FIRST50</div>
+      <ul>
+        <li>Starter: <strong>$9.99</strong> for the first month, then $14.99 every 30 days</li>
+        <li>Pro: <strong>$19.99</strong> for the first month, then $29.99 every 30 days</li>
+        <li>Redeem in the app under Plans &amp; Billing after install</li>
+      </ul>
+    </aside>
 
     <h2 class="section-title">Subscription plans</h2>
     <p class="section-copy">Upgrade or downgrade anytime from Plans &amp; Billing inside the app. Development stores can test paid plans without a charge when enabled.</p>
