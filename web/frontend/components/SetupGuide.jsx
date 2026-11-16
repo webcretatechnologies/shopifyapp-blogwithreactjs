@@ -54,10 +54,10 @@ export default function SetupGuide({ shop, isExtensionActive, isMetaRobotsActive
     },
     {
       id: 2,
-      title: `Activate ${APP_NAME} Meta Robots on your storefront`,
+      title: "Activate SmartBlog Meta Robots on your storefront",
       description: embedUnsupportedCopy
         ? "Your current theme doesn't support app embeds (requires Online Store 2.0), so per-article Index/Noindex settings can't take effect yet."
-        : `Enable the ${APP_NAME} Meta Robots app embed so each article's Index/Noindex setting takes effect on the live page.`,
+        : "Enable the SmartBlog Meta Robots app embed so each article's Index/Noindex setting takes effect on the live page.",
       actionLabel: embedUnsupportedCopy ? "Browse themes" : "Activate now",
       action: () => {
         window.open(embedUnsupportedCopy ? `https://${shop}/admin/themes` : metaRobotsActivateUrl(shop), '_blank');

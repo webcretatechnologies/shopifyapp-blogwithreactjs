@@ -5,7 +5,6 @@
  * pre-activated (Shopify activateAppId). Merchant only clicks Save.
  */
 import { Banner, Badge, BlockStack, Button, Card, Divider, InlineStack, Text, Spinner } from "@shopify/polaris";
-import { APP_NAME } from "../utils/appName";
 import {
   analyticsTrackerActivateUrl,
   browseThemesUrl,
@@ -101,7 +100,7 @@ export default function ThemeIntegrationsPanel({
             />
             <Divider />
             <IntegrationRow
-              title={`${APP_NAME} Meta Robots`}
+              title="SmartBlog Meta Robots"
               description="Applies each article's Index/Noindex and Follow/Nofollow settings on the live page."
               installed={!!metaRobotsActive}
               unsupported={unsupported}
