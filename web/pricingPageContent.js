@@ -386,8 +386,8 @@ export function renderPricingPageHtml(pricing = DEFAULT_PRICING) {
   <main class="wrap">
     <header class="hero">
       <span class="eyebrow">${escapeHtml(APP_NAME)}</span>
-      <h1>Simple pricing for blogging that sells</h1>
-      <p class="lede">Choose a subscription plan that fits your store. Add optional AI credit packs when you need more drafts. Every charge is billed through Shopify.</p>
+      <h1>Pricing built for blogs that sell</h1>
+      <p class="lede">SmartBlog plans unlock AI drafting, SEO, product-ready posts, and Insights that show what drives orders. Add optional AI credit packs when you need more drafts. Every charge is billed through Shopify.</p>
     </header>
 
     <h2 class="section-title">Subscription plans</h2>

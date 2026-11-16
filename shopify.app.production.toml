@@ -10,12 +10,12 @@ client_id = "f8e0930c60752d499542301d06d88640"
 name = "SmartBlog – AI, SEO & Insights"
 # Admin URL slug. Deploying this replaces /apps/blog-builder-21. Old admin links break.
 handle = "smartblog"
-application_url = "https://blogapp-dev.boxtasks.com"
+application_url = "https://smartblog.boxtasks.com"
 embedded = true
 
 [auth]
 redirect_urls = [
-  "https://blogapp-dev.boxtasks.com/api/auth/callback",
+  "https://smartblog.boxtasks.com/api/auth/callback",
 ]
 
 [access_scopes]
@@ -53,6 +53,6 @@ embedded = false
 # Production URLs are set explicitly above and should not be silently rewritten by `dev`.
 
 [app_proxy]
-url = "https://blogapp-dev.boxtasks.com/api/proxy"
+url = "https://smartblog.boxtasks.com/api/proxy"
 subpath = "blog-analytics"
 prefix = "apps"

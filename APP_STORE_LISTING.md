@@ -14,35 +14,35 @@ SmartBlog – AI, SEO & Insights
 
 Must match `shopify.app.production.toml`. The dev name “SmartBlog – AI, SEO Local” is not the listing name.
 
-## App card subtitle (59)
+## App card subtitle (52)
 
-Publish blog posts in a visual editor, without theme edits.
+Turn your blog into a sales channel with AI and SEO.
 
-## App introduction (76)
+## App introduction (97)
 
-Write posts in a visual editor and see which ones lead shoppers to checkout.
+SmartBlog helps you publish posts that rank, sell products, and show which content drives orders.
 
-## App details (381)
+## App details (391)
 
-Build posts in a drag-and-drop editor and publish them as native Shopify articles. Add headings, images, video, FAQs, and product blocks that use your store prices. Set meta titles, descriptions, canonical URLs, and structured data. See views and which posts are tied to orders. Translate posts into your store languages, start from templates, and sync edits with the Shopify blog.
+SmartBlog is your store’s blog studio. Draft with AI, shape posts in a visual editor, and publish them as native articles that match your theme. Drop in live products so readers can buy from the post. Tune SEO as you write, then use Insights to see which articles bring shoppers to checkout. Start from templates, translate for every market, and keep everything in sync with your store blog.
 
 ## Feature list (5 maximum, each under 80)
 
-1. Drag-and-drop editor for headings, images, video, tables, and FAQs
-2. Publish each post as a native Shopify blog article
-3. Embed live products, collections, and buy buttons in a post
-4. Set meta titles, descriptions, canonical URLs, and structured data
-5. See post views and which posts are connected to orders
+1. AI drafts that get you from blank page to publish-ready faster
+2. Visual editor for posts that look great on desktop and mobile
+3. Live product blocks that put your catalog inside the post
+4. Built-in SEO so every article is ready to be found
+5. Insights that show which posts are tied to orders
 
-Translations, templates, scheduling, and device visibility stay in App details and in the Pro plan. They do not get their own feature row.
+Keep translations, templates, and scheduling in plan features and the pricing page. Do not add them as extra feature rows.
 
 ## Search terms (5)
 
 1. blog builder
-2. SEO
-3. translations
-4. analytics
-5. templates
+2. SEO blog
+3. AI writing
+4. content marketing
+5. product blog
 
 ## Category and eligibility
 
@@ -116,8 +116,8 @@ One-time AI credit packs, billed with Shopify’s one-time charge. Purchased cre
 ## Links still needed before submit
 
 - Support email: not set in the repo. The privacy policy tells merchants to use the listing’s support channel
-- Privacy policy URL: `https://blogapp-dev.boxtasks.com/privacy-policy`
-- More pricing information URL: `https://blogapp-dev.boxtasks.com/pricing`
+- Privacy policy URL: `https://smartblog.boxtasks.com/privacy-policy`
+- More pricing information URL: `https://smartblog.boxtasks.com/pricing`
 - Demo store URL: a development store opened on a published post that shows a product block
 
 ## Desktop screenshots
