@@ -375,35 +375,86 @@ router.get("/sidebar.json", async (req, res) => {
                       where: { status: "published", id: { not: postId } },
                       orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
                       take: maxPosts,
-                      select: { id: true, title: true, slug: true },
+                      select: {
+                        id: true,
+                        title: true,
+                        slug: true,
+                        blogId: true,
+                        shopifyArticle: {
+                          select: { shopifyBlogId: true, shopifyArticleId: true },
+                        },
+                      },
                     },
                   }
                 : {}),
             },
           });
 
+          // Category posts can live on different Shopify blogs than the article currently
+          // open (e.g. viewing /blogs/recipes/... while a "News" category post belongs to
+          // /blogs/news/...). Reusing the current page's blogHandle here produced 404s.
+          const handleByBlogId = new Map();
+          if (session && showPosts) {
+            const blogKeys = new Map(); // blogId|articleId -> { blogId, shopifyArticleId }
+            for (const c of cats) {
+              for (const p of c.posts || []) {
+                const pBlogId = p.shopifyArticle?.shopifyBlogId || p.blogId || null;
+                const pArticleId = p.shopifyArticle?.shopifyArticleId || null;
+                if (!pBlogId && !pArticleId) continue;
+                const key = pBlogId ? `blog:${pBlogId}` : `article:${pArticleId}`;
+                if (!blogKeys.has(key)) blogKeys.set(key, { blogId: pBlogId, shopifyArticleId: pArticleId });
+              }
+            }
+            await Promise.all(
+              [...blogKeys.entries()].map(async ([key, refs]) => {
+                const handle = await resolveBlogHandle(session, refs.blogId, refs.shopifyArticleId);
+                if (handle) handleByBlogId.set(key, handle);
+              })
+            );
+          }
+
+          function postBlogHandle(p) {
+            const pBlogId = p.shopifyArticle?.shopifyBlogId || p.blogId || null;
+            const pArticleId = p.shopifyArticle?.shopifyArticleId || null;
+            if (pBlogId && handleByBlogId.has(`blog:${pBlogId}`)) return handleByBlogId.get(`blog:${pBlogId}`);
+            if (pArticleId && handleByBlogId.has(`article:${pArticleId}`)) {
+              return handleByBlogId.get(`article:${pArticleId}`);
+            }
+            return null;
+          }
+
           // Skip categories with no *other* published posts — otherwise viewing the only
           // post in "Recipes" leaves a lonely "Recipes (1)" with nothing useful underneath.
           let catItems = cats
             .filter((c) => c._count.posts > 0)
-            .map((c) => ({
-              name: c.name,
-              slug: c.slug,
-              count: showCounts ? c._count.posts : null,
-              postCount: c._count.posts,
-              href: blogHandle
-                ? `https://${shopDomain}/blogs/${blogHandle}/tagged/${encodeURIComponent(c.slug)}`
-                : `https://${shopDomain}/blogs`,
-              posts:
-                showPosts && blogHandle
-                  ? (c.posts || [])
-                      .filter((p) => p.id !== postId)
-                      .map((p) => ({
-                        title: p.title,
-                        href: `https://${shopDomain}/blogs/${blogHandle}/${p.slug}`,
-                      }))
-                  : [],
-            }));
+            .map((c) => {
+              let tagHandle = blogHandle;
+              const posts = [];
+              if (showPosts) {
+                for (const p of c.posts || []) {
+                  if (p.id === postId || !p.slug) continue;
+                  const handle = postBlogHandle(p);
+                  if (!handle) continue;
+                  if (!tagHandle) tagHandle = handle;
+                  posts.push({
+                    title: p.title,
+                    href: `https://${shopDomain}/blogs/${handle}/${p.slug}`,
+                  });
+                }
+              }
+              // Shopify /blogs/{handle}/tagged/... is per-blog. Prefer a handle from this
+              // category's listed posts so the heading matches where those posts live.
+              return {
+                name: c.name,
+                slug: c.slug,
+                count: showCounts ? c._count.posts : null,
+                postCount: c._count.posts,
+                href: tagHandle
+                  ? `https://${shopDomain}/blogs/${tagHandle}/tagged/${encodeURIComponent(c.slug)}`
+                  : `https://${shopDomain}/blogs`,
+                posts,
+              };
+            });
 
           if (sort === "count") {
             catItems.sort((a, b) => b.postCount - a.postCount || a.name.localeCompare(b.name));
