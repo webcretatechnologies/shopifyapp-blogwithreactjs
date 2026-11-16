@@ -84,7 +84,18 @@ router.post("/resolve", express.json(), verifyProxySignature, async (req, res) =
     if (!shopifyArticleId) return res.status(400).json({ error: "Missing article ID" });
 
     const postId = await resolvePostIdByShopifyId(shopifyArticleId);
-    if (!postId) return res.status(404).json({ error: "Post not synced" });
+    // Soft 200 when the storefront article is not linked yet — a 404 looked like a broken
+    // app-proxy route in DevTools even though the proxy itself was fine. tracker.js already
+    // no-ops unless data.postId is present.
+    if (!postId) {
+      return res.status(200).json({
+        success: false,
+        postId: null,
+        productIds: [],
+        variantIds: [],
+        reason: "not_synced",
+      });
+    }
 
     // Product/variant IDs actually featured in this post — lets tracker.js (and the
     // ORDERS_CREATE/CHECKOUTS_CREATE webhooks server-side) restrict attribution to purchases that
@@ -111,7 +122,9 @@ router.post("/view", express.json(), verifyProxySignature, async (req, res) => {
     if (!shopifyArticleId) return res.status(400).json({ error: "Missing article ID" });
 
     const postId = await resolvePostIdByShopifyId(shopifyArticleId);
-    if (!postId) return res.status(404).json({ error: "Post not synced" });
+    if (!postId) {
+      return res.status(200).json({ success: false, postId: null, reason: "not_synced" });
+    }
 
     const ua = userAgent || req.headers["user-agent"] || "";
     const ip = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
